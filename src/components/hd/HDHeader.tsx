@@ -8,6 +8,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useMarketDataConnection } from '../../hooks/useMassiveData';
 import { massiveClient } from '../../lib/massive/client';
 import { useStreamingIndex } from '../../hooks/useIndicesAdvanced';
+import { useMarketSession } from '../../hooks/useMarketSession';
+import { getSessionColor } from '../../lib/marketSession';
 
 export type VoiceState = 'idle' | 'listening' | 'processing';
 
@@ -33,47 +35,9 @@ export function HDHeader({
   const { quote: spxQuote } = useStreamingIndex('SPX');
   const { quote: vixQuote } = useStreamingIndex('VIX');
   
-  const [marketStatus, setMarketStatus] = useState<{
-    status: 'open' | 'closed' | 'pre-market' | 'after-hours';
-    time: string;
-  } | null>(null);
+  const { session, sessionState } = useMarketSession();
   
   const { isConnected, hasApiKey, lastError } = useMarketDataConnection();
-
-  useEffect(() => {
-    const fetchMarketStatus = async () => {
-      try {
-        const data = await massiveClient.getMarketStatus();
-        
-        let status: 'open' | 'closed' | 'pre-market' | 'after-hours' = 'closed';
-        if (data.market === 'open') {
-          status = 'open';
-        } else if (data.earlyHours) {
-          status = 'pre-market';
-        } else if (data.afterHours) {
-          status = 'after-hours';
-        }
-        
-        const serverTime = new Date(data.serverTime);
-        const etTime = serverTime.toLocaleTimeString('en-US', {
-          timeZone: 'America/New_York',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        });
-        
-        setMarketStatus({ status, time: `${etTime} ET` });
-      } catch (error) {
-        console.error('[v0] Failed to fetch market status:', error);
-      }
-    };
-    
-    fetchMarketStatus();
-    
-    const interval = setInterval(fetchMarketStatus, 60000);
-    
-    return () => clearInterval(interval);
-  }, []);
 
   const getConnectionStatus = () => {
     if (!isConnected) {
@@ -96,26 +60,21 @@ export function HDHeader({
   const StatusIcon = connectionStatus.icon;
   
   const getMarketStatusDisplay = () => {
-    if (!marketStatus) return null;
+    if (!sessionState) return null;
     
-    const statusColors = {
-      'open': 'text-green-500',
-      'closed': 'text-red-500',
-      'pre-market': 'text-yellow-500',
-      'after-hours': 'text-blue-500',
-    };
+    const colorClass = getSessionColor(session);
     
-    const statusLabels = {
-      'open': 'Open',
-      'closed': 'Closed',
-      'pre-market': 'Pre-Market',
-      'after-hours': 'After-Hours',
-    };
+    const time = new Date(sessionState.asOf).toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
     
     return {
-      label: statusLabels[marketStatus.status],
-      time: marketStatus.time,
-      color: statusColors[marketStatus.status],
+      label: sessionState.label,
+      time: `${time} ET`,
+      color: colorClass,
     };
   };
   
