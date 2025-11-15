@@ -1,0 +1,431 @@
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
+import { massiveWS } from '../../lib/massive/websocket';
+import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
+import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
+
+export interface TradeEvent {
+  type: 'load' | 'enter' | 'trim' | 'update' | 'exit';
+  timestamp: number;
+  price: number;
+  label: string;
+  color?: string;
+}
+
+interface HDLiveChartProps {
+  ticker: string;
+  timeframe?: '1' | '5' | '15' | '60'; // minutes
+  indicators?: IndicatorConfig;
+  events?: TradeEvent[];
+  marketHours?: { open: string; close: string; preMarket: string; afterHours: string };
+  orbWindow?: number; // First N minutes for ORB
+  height?: number;
+  className?: string;
+}
+
+export function HDLiveChart({
+  ticker,
+  timeframe = '1',
+  indicators = { ema: { periods: [8, 21, 50, 200] }, vwap: { enabled: true, bands: false } },
+  events = [],
+  marketHours = { open: '09:30', close: '16:00', preMarket: '04:00', afterHours: '20:00' },
+  orbWindow = 5,
+  height = 400,
+  className = '',
+}: HDLiveChartProps) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const emaSeriesRefs = useRef<Map<number, ISeriesApi<'Line'>>>(new Map());
+  const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bollingerRefs = useRef<{ upper: ISeriesApi<'Line'>; middle: ISeriesApi<'Line'>; lower: ISeriesApi<'Line'> } | null>(null);
+  
+  const [bars, setBars] = useState<Bar[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [dataSource, setDataSource] = useState<'websocket' | 'rest'>('rest');
+  const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
+  const [fps, setFps] = useState<number>(60);
+  
+  const rafRef = useRef<number | null>(null);
+  const pendingUpdatesRef = useRef<Bar[]>([]);
+  const lastRenderTimeRef = useRef<number>(0);
+  
+  const fetchHistoricalBars = useCallback(async () => {
+    try {
+      const isOption = ticker.startsWith('O:');
+      const endpoint = isOption
+        ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
+        : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
+      
+      const to = new Date();
+      const from = new Date(to.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
+      
+      const response = await fetch(
+        `${endpoint}/${from.toISOString().split('T')[0]}/${to.toISOString().split('T')[0]}?adjusted=true&sort=asc&limit=500`
+      );
+      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      if (!data.results || data.results.length === 0) return;
+      
+      const historicalBars: Bar[] = data.results.map((r: any) => ({
+        time: Math.floor(r.t / 1000) as Time,
+        open: r.o,
+        high: r.h,
+        low: r.l,
+        close: r.c,
+        volume: r.v,
+        vwap: r.vw,
+      }));
+      
+      setBars(historicalBars);
+      setDataSource('rest');
+      console.log(`[HDLiveChart] Loaded ${historicalBars.length} historical bars for ${ticker}`);
+    } catch (error) {
+      console.error('[HDLiveChart] Failed to fetch historical data:', error);
+    }
+  }, [ticker, timeframe]);
+  
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+    
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height,
+      layout: {
+        background: { color: '#0a0a0a' },
+        textColor: '#9CA3AF',
+      },
+      grid: {
+        vertLines: { color: '#1F2937' },
+        horzLines: { color: '#1F2937' },
+      },
+      crosshair: {
+        mode: 1,
+      },
+      rightPriceScale: {
+        borderColor: '#374151',
+      },
+      timeScale: {
+        borderColor: '#374151',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+    
+    chartRef.current = chart;
+    
+    // Create candlestick series
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#16A34A',
+      downColor: '#EF4444',
+      borderUpColor: '#16A34A',
+      borderDownColor: '#EF4444',
+      wickUpColor: '#16A34A',
+      wickDownColor: '#EF4444',
+    });
+    candleSeriesRef.current = candleSeries;
+    
+    // Create EMA series
+    if (indicators?.ema?.periods) {
+      const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
+      indicators.ema.periods.forEach((period, i) => {
+        const emaSeries = chart.addLineSeries({
+          color: colors[i % colors.length],
+          lineWidth: 1,
+          title: `EMA${period}`,
+        });
+        emaSeriesRefs.current.set(period, emaSeries);
+      });
+    }
+    
+    // Create VWAP series
+    if (indicators?.vwap?.enabled) {
+      const vwapSeries = chart.addLineSeries({
+        color: '#10B981',
+        lineWidth: 2,
+        lineStyle: 2, // Dashed
+        title: 'VWAP',
+      });
+      vwapSeriesRef.current = vwapSeries;
+    }
+    
+    // Create Bollinger Bands
+    if (indicators?.bollinger) {
+      const upperSeries = chart.addLineSeries({
+        color: '#6366F1',
+        lineWidth: 1,
+        title: 'BB Upper',
+      });
+      const middleSeries = chart.addLineSeries({
+        color: '#6366F1',
+        lineWidth: 1,
+        lineStyle: 2,
+        title: 'BB Middle',
+      });
+      const lowerSeries = chart.addLineSeries({
+        color: '#6366F1',
+        lineWidth: 1,
+        title: 'BB Lower',
+      });
+      bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+    }
+    
+    // Handle resize
+    const handleResize = () => {
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+        });
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+      chartRef.current = null;
+    };
+  }, [height, indicators]);
+  
+  useEffect(() => {
+    fetchHistoricalBars();
+  }, [fetchHistoricalBars]);
+  
+  useEffect(() => {
+    if (!candleSeriesRef.current || bars.length === 0) return;
+    
+    const renderUpdate = () => {
+      const now = performance.now();
+      const delta = now - lastRenderTimeRef.current;
+      
+      // Calculate FPS
+      if (delta > 0) {
+        const currentFps = 1000 / delta;
+        setFps(Math.round(currentFps));
+      }
+      
+      // Downsample if FPS drops below 30
+      const barsToRender = fps < 30 ? downsampleBars(bars, 200) : bars;
+      
+      // Update candlestick data
+      const candleData: CandlestickData[] = barsToRender.map(bar => ({
+        time: bar.time as Time,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      }));
+      candleSeriesRef.current?.setData(candleData);
+      
+      // Update indicators
+      if (indicators?.ema?.periods) {
+        const closes = barsToRender.map(b => b.close);
+        indicators.ema.periods.forEach(period => {
+          const emaValues = calculateEMA(closes, period);
+          const emaData: LineData[] = emaValues
+            .map((value, i) => ({
+              time: barsToRender[i].time as Time,
+              value: isNaN(value) ? null : value,
+            }))
+            .filter(d => d.value !== null) as LineData[];
+          
+          emaSeriesRefs.current.get(period)?.setData(emaData);
+        });
+      }
+      
+      if (indicators?.vwap?.enabled && vwapSeriesRef.current) {
+        const vwapValues = calculateVWAP(barsToRender);
+        const vwapData: LineData[] = vwapValues.map((value, i) => ({
+          time: barsToRender[i].time as Time,
+          value,
+        }));
+        vwapSeriesRef.current.setData(vwapData);
+      }
+      
+      if (indicators?.bollinger && bollingerRefs.current) {
+        const closes = barsToRender.map(b => b.close);
+        const { upper, middle, lower } = calculateBollingerBands(
+          closes,
+          indicators.bollinger.period,
+          indicators.bollinger.stdDev
+        );
+        
+        const createBBData = (values: number[]): LineData[] =>
+          values
+            .map((value, i) => ({
+              time: barsToRender[i].time as Time,
+              value: isNaN(value) ? null : value,
+            }))
+            .filter(d => d.value !== null) as LineData[];
+        
+        bollingerRefs.current.upper.setData(createBBData(upper));
+        bollingerRefs.current.middle.setData(createBBData(middle));
+        bollingerRefs.current.lower.setData(createBBData(lower));
+      }
+      
+      // Add trade event markers
+      if (events.length > 0 && candleSeriesRef.current) {
+        const markers = events.map(event => ({
+          time: Math.floor(event.timestamp / 1000) as Time,
+          position: event.type === 'enter' || event.type === 'load' ? 'belowBar' as const : 'aboveBar' as const,
+          color: event.color || (event.type === 'exit' ? '#EF4444' : '#16A34A'),
+          shape: 'circle' as const,
+          text: event.label,
+        }));
+        candleSeriesRef.current.setMarkers(markers);
+      }
+      
+      chartRef.current?.timeScale().fitContent();
+      lastRenderTimeRef.current = now;
+    };
+    
+    renderUpdate();
+  }, [bars, indicators, events, fps]);
+  
+  useEffect(() => {
+    const isOption = ticker.startsWith('O:');
+    
+    const unsubscribe = isOption
+      ? massiveWS.subscribeOptionAggregates([ticker], (message) => {
+          if (message.type === 'aggregate' && message.data.ticker === ticker) {
+            const agg = message.data;
+            const newBar: Bar = {
+              time: Math.floor(agg.timestamp / 1000) as Time,
+              open: agg.open,
+              high: agg.high,
+              low: agg.low,
+              close: agg.close,
+              volume: agg.volume,
+              vwap: agg.vwap,
+            };
+            
+            pendingUpdatesRef.current.push(newBar);
+            setIsConnected(true);
+            setDataSource('websocket');
+            setLastUpdate(Date.now());
+            
+            // Batch update with RAF
+            if (!rafRef.current) {
+              rafRef.current = requestAnimationFrame(() => {
+                setBars(prev => {
+                  const updated = [...prev];
+                  pendingUpdatesRef.current.forEach(bar => {
+                    const existingIndex = updated.findIndex(b => b.time === bar.time);
+                    if (existingIndex >= 0) {
+                      updated[existingIndex] = bar;
+                    } else {
+                      updated.push(bar);
+                    }
+                  });
+                  pendingUpdatesRef.current = [];
+                  return updated.sort((a, b) => (a.time as number) - (b.time as number));
+                });
+                rafRef.current = null;
+              });
+            }
+          }
+        })
+      : massiveWS.subscribeAggregates([ticker], (message) => {
+          if (message.type === 'aggregate') {
+            const agg = message.data;
+            const newBar: Bar = {
+              time: Math.floor(agg.timestamp / 1000) as Time,
+              open: agg.open,
+              high: agg.high,
+              low: agg.low,
+              close: agg.close,
+              volume: agg.volume,
+            };
+            
+            pendingUpdatesRef.current.push(newBar);
+            setIsConnected(true);
+            setDataSource('websocket');
+            setLastUpdate(Date.now());
+            
+            if (!rafRef.current) {
+              rafRef.current = requestAnimationFrame(() => {
+                setBars(prev => {
+                  const updated = [...prev];
+                  pendingUpdatesRef.current.forEach(bar => {
+                    const existingIndex = updated.findIndex(b => b.time === bar.time);
+                    if (existingIndex >= 0) {
+                      updated[existingIndex] = bar;
+                    } else {
+                      updated.push(bar);
+                    }
+                  });
+                  pendingUpdatesRef.current = [];
+                  return updated.sort((a, b) => (a.time as number) - (b.time as number));
+                });
+                rafRef.current = null;
+              });
+            }
+          }
+        });
+    
+    // REST fallback polling every 3 seconds
+    const fallbackInterval = setInterval(() => {
+      if (Date.now() - lastUpdate > 3000) {
+        setIsConnected(false);
+        setDataSource('rest');
+        fetchHistoricalBars();
+      }
+    }, 3000);
+    
+    return () => {
+      unsubscribe();
+      clearInterval(fallbackInterval);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [ticker, lastUpdate, fetchHistoricalBars]);
+  
+  const getAsOfText = () => {
+    const secondsAgo = Math.floor((Date.now() - lastUpdate) / 1000);
+    if (secondsAgo < 5) return 'Live';
+    if (secondsAgo < 60) return `${secondsAgo}s ago`;
+    return `${Math.floor(secondsAgo / 60)}m ago`;
+  };
+  
+  return (
+    <div className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className}`}>
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-[var(--border-hairline)] flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h3 className="text-[var(--text-high)] text-xs font-medium uppercase tracking-wide">
+            Live Chart ({timeframe}m)
+          </h3>
+          <div className="flex items-center gap-1.5">
+            {isConnected ? (
+              <Wifi className="w-3.5 h-3.5 text-green-500" />
+            ) : (
+              <WifiOff className="w-3.5 h-3.5 text-yellow-500" />
+            )}
+            <span className="text-micro text-[var(--text-muted)]">
+              {dataSource === 'websocket' ? 'Streaming' : 'REST'} • {getAsOfText()}
+            </span>
+          </div>
+          {fps < 30 && (
+            <span className="text-micro text-yellow-500 flex items-center gap-1">
+              <Activity className="w-3 h-3" />
+              Downsampled ({fps} fps)
+            </span>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2 text-micro text-[var(--text-muted)]">
+          {indicators?.ema?.periods.map(p => (
+            <span key={p}>EMA{p}</span>
+          ))}
+          {indicators?.vwap?.enabled && <span>VWAP</span>}
+          {indicators?.bollinger && <span>BB(20,2)</span>}
+        </div>
+      </div>
+      
+      {/* Chart Canvas */}
+      <div ref={chartContainerRef} style={{ position: 'relative', width: '100%', height: `${height}px` }} />
+    </div>
+  );
+}

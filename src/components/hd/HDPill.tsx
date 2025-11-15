@@ -1,0 +1,46 @@
+import { SessionStatus } from '../../types';
+import { cn } from '../../lib/utils';
+
+interface HDPillProps {
+  status: SessionStatus;
+  className?: string;
+}
+
+const sessionConfig = {
+  premarket: {
+    label: 'Pre-Market',
+    color: 'var(--session-premarket)'
+  },
+  open: {
+    label: 'Open',
+    color: 'var(--session-open)'
+  },
+  afterhours: {
+    label: 'After Hours',
+    color: 'var(--session-afterhours)'
+  },
+  closed: {
+    label: 'Closed',
+    color: 'var(--session-closed)'
+  }
+};
+
+export function HDPill({ status, className }: HDPillProps) {
+  const config = sessionConfig[status];
+  
+  return (
+    <div
+      className={cn(
+        'inline-flex items-center gap-2 px-3 h-7 rounded-[var(--radius)]',
+        'border border-[var(--border-hairline)] bg-[var(--surface-1)]',
+        className
+      )}
+    >
+      <div
+        className="w-2 h-2 rounded-full"
+        style={{ backgroundColor: config.color }}
+      />
+      <span className="text-[var(--text-high)]">{config.label}</span>
+    </div>
+  );
+}

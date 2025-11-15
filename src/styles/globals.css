@@ -1,0 +1,207 @@
+@import "tailwindcss";
+
+@layer base {
+  /* CSS Variables - Design Tokens */
+  :root {
+    /* Backgrounds - Trading desk dark theme */
+    --bg-base: #0A0B0E;
+    --surface-1: #111216;
+    --surface-2: #16181C;
+    --surface-3: #1C1E23;
+    
+    /* Borders */
+    --border-hairline: #272A31;
+    --border-focus: #2F3239;
+    
+    /* Text */
+    --text-high: #EBEDF0;
+    --text-med: #B8BCC5;
+    --text-muted: #898E99;
+    --text-faint: #5E6169;
+    
+    /* Brand */
+    --brand-primary: #E2B714;
+    --brand-primary-hover: #F0C520;
+    --brand-primary-pressed: #D4A912;
+    
+    /* Status (Accent) */
+    --accent-positive: #16A34A;
+    --accent-positive-bg: rgba(22, 163, 74, 0.08);
+    --accent-negative: #EF4444;
+    --accent-negative-bg: rgba(239, 68, 68, 0.08);
+    
+    /* Trade Types */
+    --trade-scalp: #EF4444;
+    --trade-scalp-bg: rgba(239, 68, 68, 0.1);
+    --trade-day: #F59E0B;
+    --trade-day-bg: rgba(245, 158, 11, 0.1);
+    --trade-swing: #7C3AED;
+    --trade-swing-bg: rgba(124, 58, 237, 0.1);
+    --trade-leap: #16A34A;
+    --trade-leap-bg: rgba(22, 163, 74, 0.1);
+    
+    /* Chart Colors */
+    --chart-ema-primary: #9CA3AF;
+    --chart-ema-secondary: #6B7280;
+    --itm-background: #0a1929;
+    --zebra-stripe: rgba(255, 255, 255, 0.02);
+    
+    /* Session */
+    --session-premarket: #F59E0B;
+    --session-open: #16A34A;
+    --session-afterhours: #7C3AED;
+    --session-closed: #6B7280;
+    
+    /* Data freshness */
+    --data-stale: #FBBF24;
+    
+    /* Spacing - 8px grid system */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    
+    /* Radius - Consistent 4px */
+    --radius: 4px;
+    --radius-lg: 6px;
+    
+    /* Shadows - Subtle, trading-desk style */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 4px 8px -2px rgba(0, 0, 0, 0.5);
+  }
+  
+  * {
+    border-color: var(--border-hairline);
+  }
+  
+  body {
+    /* Use direct CSS properties to avoid Tailwind v4 @apply issues */
+    background-color: var(--bg-base);
+    color: var(--text-high);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: 'tnum' 1, 'cv11' 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Typography - Dense, trading terminal style */
+  h1 {
+    font-size: 18px;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  
+  h2 {
+    font-size: 15px;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  
+  h3 {
+    font-size: 13px;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  
+  p, div, span {
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+  
+  button {
+    font-size: 13px;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  
+  input, select, textarea {
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+  
+  /* Small text - labels, captions */
+  .text-xs {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  
+  /* Extra small text for ultra-compact UI */
+  .text-micro {
+    font-size: 10px;
+    line-height: 1.3;
+  }
+  
+  /* Mobile typography - slightly larger for touch */
+  @media (max-width: 1023px) {
+    h1 {
+      font-size: 20px;
+    }
+    
+    h2 {
+      font-size: 16px;
+    }
+    
+    p, div, span {
+      font-size: 14px;
+    }
+    
+    button {
+      font-size: 14px;
+    }
+    
+    input, select, textarea {
+      font-size: 16px; /* Prevent zoom on iOS */
+    }
+  }
+  
+  /* Focus styles */
+  *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--brand-primary), 0 0 0 4px var(--bg-base);
+  }
+  
+  /* Tabular numbers for all numeric content */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  
+  /* Custom animations for voice UI */
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  .animate-slide-up {
+    animation: slide-up 0.2s ease-out forwards;
+  }
+  
+  /* Slow flash animation for active trades indicator */
+  @keyframes slow-flash {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+  
+  .animate-slow-flash {
+    animation: slow-flash 2s ease-in-out infinite;
+  }
+}
