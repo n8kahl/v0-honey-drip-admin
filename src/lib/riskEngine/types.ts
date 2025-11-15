@@ -56,6 +56,8 @@ export interface RiskCalculationInput {
   theta?: number;
   expirationISO?: string;
   tradeType?: TradeType; // Can be passed or inferred
+  macroContext?: MacroContext; // Added for macro context
+  liquidityQuality?: LiquidityQuality; // Added for liquidity quality
 }
 
 export interface RiskCalculationResult {
@@ -89,4 +91,31 @@ export interface LevelCandidate {
   reason: string;
   weight: number;
   distance: number;
+}
+
+// Added for macro context
+export interface MacroContext {
+  spx: {
+    price: number;
+    change: number;
+    changePercent: number;
+  };
+  vix: {
+    price: number;
+    level: 'low' | 'normal' | 'elevated' | 'high';
+  };
+  ndx: {
+    price: number;
+    change: number;
+    changePercent: number;
+  };
+  regime: 'bull' | 'bear' | 'choppy';
+  bias: 'bullish' | 'bearish' | 'neutral';
+  updatedAt: number;
+}
+
+// Added for liquidity quality
+export interface LiquidityQuality {
+  quality: 'excellent' | 'good' | 'fair' | 'poor';
+  warnings: string[];
 }

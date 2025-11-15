@@ -5,6 +5,7 @@ import { HDCard } from './hd/HDCard';
 import { Settings, Mic, MicOff, Activity, Info, User } from 'lucide-react';
 import { MobileWatermark } from './MobileWatermark';
 import { useAuth } from '../contexts/AuthContext';
+import { createBrowserClient } from '@supabase/ssr';
 
 interface DesktopSettingsProps {
   onOpenDiscordSettings?: () => void;
@@ -33,6 +34,11 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
   const [dteDayThreshold, setDteDayThreshold] = useState(14);
   const [dteSwingThreshold, setDteSwingThreshold] = useState(60);
   const [orbMinutes, setOrbMinutes] = useState(15);
+  const [trackIndices, setTrackIndices] = useState(true);
+  const [enabledIndices, setEnabledIndices] = useState<string[]>(['SPX', 'VIX', 'NDX']);
+  const [vixLowThreshold, setVixLowThreshold] = useState(15);
+  const [vixElevatedThreshold, setVixElevatedThreshold] = useState(20);
+  const [vixHighThreshold, setVixHighThreshold] = useState(30);
 
   // Load profile data on mount
   useEffect(() => {
@@ -40,31 +46,98 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
   }, []);
 
   const loadProfile = async () => {
-    // TODO: Load from Supabase profiles table
-    console.log('[v0] Loading profile for user:', user?.id);
+    if (!user?.id) return;
+
+    try {
+      const supabase = createBrowserClient(
+        import.meta.env.VITE_SUPABASE_URL!,
+        import.meta.env.VITE_SUPABASE_ANON_KEY!
+      );
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // Profile doesn't exist yet, create it
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                id: user.id,
+                display_name: '',
+                discord_handle: '',
+                avatar_url: '',
+              },
+            ]);
+
+          if (insertError) {
+            console.error('Error creating profile:', insertError);
+          }
+        } else {
+          console.error('Error loading profile:', error);
+        }
+        return;
+      }
+
+      if (data) {
+        setProfile({
+          displayName: data.display_name || '',
+          email: user.email || '',
+          discordHandle: data.discord_handle || '',
+          avatarUrl: data.avatar_url || '',
+          defaultChannels: profile.defaultChannels, // Keep from state for now
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load profile:', err);
+    }
   };
 
   const handleSaveProfile = async () => {
-    console.log('[v0] Saving profile...', profile);
-    // TODO: Save to Supabase profiles table
-    import('sonner').then(({ toast }) => {
-      toast.success('Profile updated');
-    });
+    if (!user?.id) return;
+
+    try {
+      const supabase = createBrowserClient(
+        import.meta.env.VITE_SUPABASE_URL!,
+        import.meta.env.VITE_SUPABASE_ANON_KEY!
+      );
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert([
+          {
+            id: user.id,
+            display_name: profile.displayName,
+            discord_handle: profile.discordHandle,
+            avatar_url: profile.avatarUrl,
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+
+      if (error) {
+        console.error('Error saving profile:', error);
+        import('sonner').then(({ toast }) => {
+          toast.error('Failed to update profile');
+        });
+        return;
+      }
+
+      import('sonner').then(({ toast }) => {
+        toast.success('Profile updated');
+      });
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+      import('sonner').then(({ toast }) => {
+        toast.error('Failed to update profile');
+      });
+    }
   };
   
   const handleSave = () => {
-    console.log('Saving settings...', { 
-      tpStrategy, 
-      slStrategy, 
-      voiceEnabled, 
-      voiceRequireConfirmation,
-      atrMultiTimeframe,
-      tradeTypeInference,
-      dteScalpThreshold,
-      dteDayThreshold,
-      dteSwingThreshold,
-      orbMinutes
-    });
     import('sonner').then(({ toast }) => {
       toast.success('Settings saved successfully');
     });
@@ -573,6 +646,126 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
                 <div className="p-3 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] text-xs text-[var(--text-muted)]">
                   <Info className="w-3.5 h-3.5 inline-block mr-1.5 text-[var(--accent-positive)]" />
                   These annotations document future behavior when live WebSocket connections are implemented.
+                </div>
+              </div>
+            </HDCard>
+          </section>
+          
+          {/* Indices Tracking */}
+          <section>
+            <HDCard>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <Activity className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h2 className="text-[var(--text-high)] mb-1">Indices Tracking</h2>
+                    <p className="text-[var(--text-muted)] text-xs">
+                      Configure macro context monitoring with SPX, VIX, and other indices
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="space-y-4 pt-2">
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={trackIndices}
+                      onChange={(e) => setTrackIndices(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <span className="text-[var(--text-high)] text-sm group-hover:text-[var(--brand-primary)] transition-colors">
+                        Enable indices tracking
+                      </span>
+                      <p className="text-[var(--text-muted)] text-xs mt-0.5">
+                        Monitor SPX, VIX, NDX for macro context and market regime detection
+                      </p>
+                    </div>
+                  </label>
+                  
+                  {trackIndices && (
+                    <div className="pl-7 space-y-4 pt-2">
+                      {/* Enabled Indices */}
+                      <div>
+                        <label className="block text-[var(--text-muted)] text-sm mb-2">
+                          Tracked Indices
+                        </label>
+                        <div className="space-y-2">
+                          {['SPX', 'VIX', 'NDX', 'DJI', 'RUT'].map((index) => (
+                            <label key={index} className="flex items-center gap-2 cursor-pointer group">
+                              <input
+                                type="checkbox"
+                                checked={enabledIndices.includes(index)}
+                                onChange={(e) => {
+                                  const updated = e.target.checked
+                                    ? [...enabledIndices, index]
+                                    : enabledIndices.filter((i) => i !== index);
+                                  setEnabledIndices(updated);
+                                }}
+                                className="w-4 h-4 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer"
+                              />
+                              <span className="text-[var(--text-high)] text-sm group-hover:text-[var(--brand-primary)] transition-colors">
+                                {index}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      {/* VIX Thresholds */}
+                      <div>
+                        <label className="block text-[var(--text-muted)] text-sm mb-2">
+                          VIX Classification Thresholds
+                        </label>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[var(--text-muted)] text-xs mb-1.5">
+                              Low (&lt; N)
+                            </label>
+                            <input
+                              type="number"
+                              min={10}
+                              max={25}
+                              value={vixLowThreshold}
+                              onChange={(e) => setVixLowThreshold(parseInt(e.target.value))}
+                              className="w-full h-8 px-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] text-sm"
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-[var(--text-muted)] text-xs mb-1.5">
+                              Elevated (&lt; N)
+                            </label>
+                            <input
+                              type="number"
+                              min={15}
+                              max={30}
+                              value={vixElevatedThreshold}
+                              onChange={(e) => setVixElevatedThreshold(parseInt(e.target.value))}
+                              className="w-full h-8 px-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] text-sm"
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-[var(--text-muted)] text-xs mb-1.5">
+                              High (&gt;= N)
+                            </label>
+                            <input
+                              type="number"
+                              min={25}
+                              max={50}
+                              value={vixHighThreshold}
+                              onChange={(e) => setVixHighThreshold(parseInt(e.target.value))}
+                              className="w-full h-8 px-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] text-sm"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[var(--text-muted)] text-xs mt-2">
+                          Thresholds: Low &lt; {vixLowThreshold}, Normal {vixLowThreshold}-{vixElevatedThreshold}, Elevated {vixElevatedThreshold}-{vixHighThreshold}, High &gt;= {vixHighThreshold}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </HDCard>

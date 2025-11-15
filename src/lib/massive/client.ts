@@ -26,14 +26,12 @@ class MassiveClient {
 
   constructor(baseUrl: string = MASSIVE_API_BASE) {
     this.baseUrl = baseUrl;
-    console.log('[Massive API] Client initialized with proxy:', baseUrl);
   }
 
   private async fetch(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      console.log('[Massive API] Fetching:', endpoint);
       const response = await fetch(url, {
         ...options,
         headers: {
@@ -54,7 +52,6 @@ class MassiveClient {
       this.connected = true;
       this.lastError = null;
       const data = await response.json();
-      console.log('[Massive API] Response:', data);
       return data;
     } catch (error: any) {
       this.connected = false;
@@ -118,8 +115,6 @@ class MassiveClient {
             const underlyingChange = underlying?.change || underlying?.change_today || 0;
             const underlyingChangePercent = underlying?.change_percent || 0;
             
-            console.log(`[v0] Extracted underlying price for ${symbol}:`, underlyingPrice);
-            
             quotes.push({
               symbol: symbol,
               last: underlyingPrice,
@@ -162,13 +157,10 @@ class MassiveClient {
   }
 
   async getOptionsChain(underlyingTicker: string, expirationDate?: string): Promise<MassiveOptionsChain> {
-    console.log('[v0] getOptionsChain called for:', underlyingTicker, 'with expiration:', expirationDate);
-    
     let currentPrice = 0;
     try {
       const quotes = await this.getQuotes([underlyingTicker]);
       currentPrice = quotes[0]?.last || 0;
-      console.log('[v0] Current underlying price:', currentPrice);
     } catch (error) {
       console.error('[v0] Failed to get current price, using fallback');
     }
@@ -178,12 +170,9 @@ class MassiveClient {
       contractsEndpoint += `&expiration_date=${expirationDate}`;
     }
     
-    console.log('[v0] Fetching contracts from:', contractsEndpoint);
     const contractsData = await this.fetch(contractsEndpoint);
-    console.log('[v0] Contracts response:', contractsData?.results?.length || 0, 'contracts');
     
     if (!contractsData || !contractsData.results || contractsData.results.length === 0) {
-      console.log('[v0] No contracts found');
       return contractsData;
     }
     
@@ -198,8 +187,6 @@ class MassiveClient {
       contractsByExpiry.get(expiry)!.push(contract);
     }
     
-    console.log('[v0] Found', contractsByExpiry.size, 'unique expiration dates');
-    
     const filteredContracts: any[] = [];
     for (const [expiry, contracts] of contractsByExpiry.entries()) {
       const calls = contracts.filter(c => c.contract_type === 'call').sort((a, b) => a.strike_price - b.strike_price);
@@ -212,15 +199,9 @@ class MassiveClient {
       const otmPuts = puts.filter(c => c.strike_price <= currentPrice).slice(-10);
       
       filteredContracts.push(...itmCalls, ...otmCalls, ...itmPuts, ...otmPuts);
-      
-      console.log(`[v0] ${expiry}: ${itmCalls.length + otmCalls.length} calls, ${itmPuts.length + otmPuts.length} puts (10 ITM + 10 OTM each)`);
     }
     
-    console.log('[v0] Filtered to', filteredContracts.length, 'relevant contracts around ATM');
-    
-    console.log('[v0] Fetching snapshot data for filtered contracts...');
     const snapshotData = await this.fetch(`/v3/snapshot/options/${underlyingTicker}?limit=250`);
-    console.log('[v0] Snapshot response:', snapshotData?.results?.length || 0, 'contracts');
     
     const snapshotMap = new Map();
     if (snapshotData.results) {
@@ -243,8 +224,6 @@ class MassiveClient {
         open_interest: snapshot?.open_interest,
       };
     });
-    
-    console.log(`[v0] Enriched ${enrichedResults.length} contracts with pricing data`);
     
     return {
       ...contractsData,

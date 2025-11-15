@@ -407,3 +407,22 @@ export function calculateTrailingStop(
 ): number {
   return highWaterMark - atr * atrMultiplier;
 }
+
+export interface RiskCalculationResult {
+  targetPrice: number;
+  stopLoss: number;
+  targetPrice2?: number;
+  targetPremium?: number;
+  targetPremium2?: number;
+  stopLossPremium?: number;
+  riskRewardRatio: number;
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+  calculatedAt: number;
+  usedLevels: string[];
+  tradeType?: TradeType;
+  profile?: string;
+  dte?: number;
+  liquidityQuality?: 'excellent' | 'good' | 'fair' | 'poor';
+  liquidityWarnings?: string[];
+}

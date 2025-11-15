@@ -14,6 +14,9 @@ import { HDLiveChart } from './HDLiveChart';
 import { TradeEvent } from '../../types';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from './HDConfluenceChips';
+import { useMemo } from 'react';
+import { buildChartLevelsForTrade } from '../../lib/riskEngine/chartLevels';
+import { KeyLevels } from '../../lib/riskEngine/types';
 
 interface HDEnteredTradeCardProps {
   trade: Trade;
@@ -94,6 +97,25 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
       label: update.type.charAt(0).toUpperCase() + update.type.slice(1),
     })),
   ];
+  
+  const chartLevels = useMemo(() => {
+    // Mock key levels - in production, get these from risk engine context
+    const keyLevels: KeyLevels = {
+      preMarketHigh: 0,
+      preMarketLow: 0,
+      orbHigh: 0,
+      orbLow: 0,
+      priorDayHigh: 0,
+      priorDayLow: 0,
+      vwap: 0,
+      vwapUpperBand: 0,
+      vwapLowerBand: 0,
+      bollingerUpper: 0,
+      bollingerLower: 0,
+    };
+    
+    return buildChartLevelsForTrade(trade, keyLevels);
+  }, [trade]);
   
   return (
     <div className="bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-3 lg:p-4 space-y-3">
@@ -188,7 +210,7 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
         )}
       </div>
       
-      {/* HDLiveChart */}
+      {/* HDLiveChart with levels */}
       <HDLiveChart
         ticker={trade.ticker}
         timeframe="1"
@@ -198,6 +220,7 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
           bollinger: { period: 20, stdDev: 2 },
         }}
         events={tradeEvents}
+        levels={chartLevels} // Pass chart levels
         height={350}
         className="my-3"
       />

@@ -87,7 +87,6 @@ export function DesktopLiveCockpit({
   // Close all modals when tab changes on mobile
   useEffect(() => {
     if (isMobile && activeTab) {
-      console.log('📱 Mobile tab changed to:', activeTab, '- closing modals');
       setShowAlert(false);
       setShowChallengeDetail(false);
     }
@@ -102,15 +101,11 @@ export function DesktopLiveCockpit({
   
   // Handle focused trade from external navigation (e.g., clicking from Active tab)
   useEffect(() => {
-    console.log('🔍 focusedTrade effect triggered:', { focusedTrade: focusedTrade?.ticker, hasFocusedTrade: !!focusedTrade });
     if (focusedTrade) {
-      console.log('⚠️ CLOSING ALERT DUE TO FOCUSED TRADE CHANGE');
       setCurrentTrade(focusedTrade);
       setTradeState(focusedTrade.state);
       setActiveTicker(watchlist.find(t => t.symbol === focusedTrade.ticker) || null);
       setShowAlert(false);
-      // Clear the focused trade signal after handling it
-      // (We rely on parent to pass null or a new trade next time)
     }
   }, [focusedTrade, watchlist]);
   
@@ -148,44 +143,27 @@ export function DesktopLiveCockpit({
         };
       });
       
-      console.log('[v0] Auto-refreshed streaming contracts:', realContracts.length, 'contracts');
       setContracts(realContracts);
     }
   }, [streamingContracts, activeTicker]);
   
   const openAlertComposer = (type: AlertType, options?: { updateKind?: 'trim' | 'generic' | 'sl' }) => {
-    console.log('🚀 Opening alert composer:', { type, options, currentTrade });
     setAlertType(type);
     setAlertOptions(options || {});
     setShowAlert(true);
-    console.log('✅ Alert state set to true');
   };
   
-  // Add effect to track showAlert changes
-  useEffect(() => {
-    console.log('⚡ showAlert changed to:', showAlert);
-    if (showAlert) {
-      console.log('📝 Alert type:', alertType, 'Alert options:', alertOptions);
-      console.log('💡 Current trade:', currentTrade?.ticker);
-    }
-  }, [showAlert, alertType, alertOptions, currentTrade]);
-  
   const handleTickerClick = async (ticker: Ticker) => {
-    console.log('[v0] ==> handleTickerClick called for:', ticker.symbol);
-    
     setActiveTicker(ticker);
     setTradeState('WATCHING');
     setCurrentTrade(null);
     setShowAlert(false);
     onTickerClick(ticker);
     
-    console.log('[v0] Fetching real options chain for', ticker.symbol);
     try {
       const optionsData = await massiveClient.getOptionsChain(ticker.symbol);
-      console.log('[v0] Received options chain data:', optionsData);
       
       if (!optionsData || !optionsData.results || optionsData.results.length === 0) {
-        console.log('[v0] No options contracts found in response');
         toast.error(`No options contracts found for ${ticker.symbol}`);
         setContracts([]);
         return;
@@ -217,11 +195,10 @@ export function DesktopLiveCockpit({
         };
       });
       
-      console.log('[v0] Transformed contracts:', realContracts.length, 'contracts');
       setContracts(realContracts);
       
     } catch (error: any) {
-      console.error('[v0] Failed to fetch options chain:', error);
+      console.error('Failed to fetch options chain:', error);
       toast.error(`Failed to load options for ${ticker.symbol}: ${error.message}`);
       setContracts([]);
     }
@@ -230,7 +207,6 @@ export function DesktopLiveCockpit({
   const handleContractSelect = (contract: Contract) => {
     if (!activeTicker) return;
     
-    console.log('[v0] Creating trade from real contract:', contract);
     const trade: Trade = {
       id: `trade-${Date.now()}`,
       ticker: activeTicker.symbol,
@@ -248,7 +224,6 @@ export function DesktopLiveCockpit({
       timestamp: new Date(),
     };
     
-    console.log('[v0] Created trade:', trade);
     setCurrentTrade(trade);
     setTradeState('LOADED');
     setAlertType('load');
@@ -262,16 +237,11 @@ export function DesktopLiveCockpit({
   ) => {
     if (!currentTrade) return;
     
-    // Convert channel IDs to channel objects
     const selectedChannels = channels.filter(c => channelIds.includes(c.id));
     
-    console.log('Sending alert:', { channels: selectedChannels, challengeIds, comment, alertType, alertOptions });
-    
-    // Helper to create a TradeUpdate entry
     const createUpdate = (type: TradeUpdate['type']): TradeUpdate => {
       let message = comment || '';
       
-      // Default messages if no comment provided
       if (!message) {
         switch (type) {
           case 'enter':
@@ -315,24 +285,19 @@ export function DesktopLiveCockpit({
     };
     
     if (alertType === 'load') {
-      // Loaded idea – add to active list, remain LOADED
-      // No update logged for 'load' since it's not a trade action yet
       setActiveTrades(prev => [...prev, updatedTrade]);
       setCurrentTrade(updatedTrade);
       setTradeState('LOADED');
       setShowAlert(false);
-      setExpandedLoadedList(true); // Expand the loaded trades section
-      // Reset contract view to go back to main cockpit
+      setExpandedLoadedList(true);
       setContracts([]);
       setActiveTicker(null);
       
-      // Show success toast
       showAlertToast('load', currentTrade.ticker, selectedChannels);
       return;
     }
 
     if (alertType === 'enter') {
-      // Transition to ENTERED
       const enterUpdate = createUpdate('enter');
       const previousUpdates = currentTrade.updates || [];
       
@@ -341,7 +306,7 @@ export function DesktopLiveCockpit({
         state: 'ENTERED' as TradeState,
         discordChannels: selectedChannels.filter(c => c && c.id).map(c => c.id),
         challenges: challengeIds,
-        entryPrice: currentTrade.contract.mid, // Set entry price
+        entryPrice: currentTrade.contract.mid,
         entryTime: new Date(),
         updates: [...previousUpdates, enterUpdate],
       };
@@ -353,12 +318,9 @@ export function DesktopLiveCockpit({
       setTradeState('ENTERED');
       setShowAlert(false);
       
-      // Show success toast
       showAlertToast('enter', currentTrade.ticker, selectedChannels);
       
-      // On mobile, when entering a trade, switch to Trade tab after state updates
       if (onMobileTabChange) {
-        // Small delay to ensure state has propagated before tab switch
         setTimeout(() => {
           onMobileTabChange('active');
         }, 100);
@@ -367,7 +329,6 @@ export function DesktopLiveCockpit({
     }
 
     if (alertType === 'exit') {
-      // Mark as EXITED and remove from Active Trades
       const exitUpdate = createUpdate('exit');
       const previousUpdates = currentTrade.updates || [];
       
@@ -382,13 +343,11 @@ export function DesktopLiveCockpit({
       setTradeState('EXITED');
       setShowAlert(false);
       
-      // Show success toast
       const pnlText = currentTrade.movePercent 
         ? ` (${currentTrade.movePercent > 0 ? '+' : ''}${currentTrade.movePercent.toFixed(1)}%)` 
         : '';
       showAlertToast('exit', currentTrade.ticker, selectedChannels, currentTrade.movePercent);
       
-      // Call the onExitedTrade callback if provided
       if (onExitedTrade) {
         onExitedTrade(exitedTrade);
       }
@@ -396,7 +355,6 @@ export function DesktopLiveCockpit({
     }
 
     if (alertType === 'trail_stop') {
-      // Enable trailing stop, stay ENTERED
       const trailStopUpdate = createUpdate('trail-stop');
       const previousUpdates = currentTrade.updates || [];
       
@@ -414,12 +372,10 @@ export function DesktopLiveCockpit({
       setTradeState('ENTERED');
       setShowAlert(false);
       
-      // Show success toast
       showAlertToast('trail-stop', currentTrade.ticker, selectedChannels);
       return;
     }
 
-    // Handle 'update' alert type with different updateKind variations
     if (alertType === 'update') {
       let updateType: TradeUpdate['type'] = 'update';
       let toastMessage = 'Update sent';
@@ -451,12 +407,10 @@ export function DesktopLiveCockpit({
       setTradeState('ENTERED');
       setShowAlert(false);
       
-      // Show success toast
       showAlertToast(updateType, currentTrade.ticker, selectedChannels);
       return;
     }
 
-    // Handle 'add' alert type
     if (alertType === 'add') {
       const addUpdate = createUpdate('add');
       const previousUpdates = currentTrade.updates || [];
@@ -474,7 +428,6 @@ export function DesktopLiveCockpit({
       setTradeState('ENTERED');
       setShowAlert(false);
       
-      // Show success toast
       showAlertToast('add', currentTrade.ticker, selectedChannels);
       return;
     }
@@ -484,56 +437,48 @@ export function DesktopLiveCockpit({
     setAlertType('enter');
     setShowAlert(true);
     
-    // On mobile, when entering a trade, switch to Trade tab after alert is sent
-    // The actual tab switch happens in handleSendAlert for enter alerts
+    if (isMobile && onMobileTabChange) {
+      onMobileTabChange('active');
+    }
   };
   
   const handleDiscard = () => {
-    // If discarding a LOADED trade, remove it from activeTrades
     if (currentTrade && currentTrade.state === 'LOADED') {
       setActiveTrades(prev => prev.filter(t => t.id !== currentTrade.id));
     }
     
-    // Reset to WATCHING state and show contract grid
     setCurrentTrade(null);
     setTradeState('WATCHING');
     setShowAlert(false);
   };
   
   const handleCancelAlert = () => {
-    // Cancel without removing trade - just close the alert and go back to Watch tab
     setShowAlert(false);
     
-    // On mobile, switch back to Watch tab
     if (isMobile && onMobileTabChange) {
       onMobileTabChange('live');
     }
   };
   
   const handleUnloadTrade = () => {
-    // Remove trade from loaded list and close alert
     if (currentTrade && currentTrade.state === 'LOADED') {
       setActiveTrades(prev => prev.filter(t => t.id !== currentTrade.id));
       toast.success(`${currentTrade.ticker} unloaded from watchlist`);
     }
     
-    // Reset to WATCHING state
     setCurrentTrade(null);
     setTradeState('WATCHING');
     setShowAlert(false);
     
-    // On mobile, switch back to the Watch tab
     if (window.innerWidth < 1024 && onMobileTabChange) {
       onMobileTabChange('live');
     }
   };
   
   const handleRemoveLoadedTrade = (trade: Trade) => {
-    // Remove loaded trade without alerting
     setActiveTrades(prev => prev.filter(t => t.id !== trade.id));
     toast.success(`${trade.ticker} removed from loaded trades`);
     
-    // If this was the current trade, reset state
     if (currentTrade?.id === trade.id) {
       setCurrentTrade(null);
       setTradeState('WATCHING');
@@ -546,15 +491,10 @@ export function DesktopLiveCockpit({
     challengeIds: string[],
     comment?: string
   ) => {
-    console.log('🚀 handleEnterAndAlert START');
     if (!currentTrade) return;
     
-    // Convert channel IDs to channel objects
     const selectedChannels = channels.filter(c => channelIds.includes(c.id));
     
-    console.log('Enter and Alert:', { channels: selectedChannels, challengeIds, comment });
-    
-    // Transition trade to ENTERED state
     const entryPrice = currentTrade.entryPrice || currentTrade.contract.mid;
     const targetPrice = currentTrade.targetPrice || currentTrade.contract.mid * 1.5;
     const stopLoss = currentTrade.stopLoss || currentTrade.contract.mid * 0.5;
@@ -580,38 +520,24 @@ export function DesktopLiveCockpit({
       ],
     };
     
-    console.log('✅ Trade transitioned to ENTERED:', enteredTrade);
-    
-    // Update the trade in active trades list
     setActiveTrades(prev => {
       const existingIndex = prev.findIndex(t => t.id === currentTrade.id);
       if (existingIndex >= 0) {
-        // Trade exists - update it
         return prev.map(t => t.id === currentTrade.id ? enteredTrade : t);
       } else {
-        // Trade doesn't exist yet - add it
         return [...prev, enteredTrade];
       }
     });
     setCurrentTrade(enteredTrade);
     setTradeState('ENTERED');
     
-    console.log('📢 Showing toast and closing alert...');
-    
-    // Show success toast
     showAlertToast('enter', currentTrade.ticker, selectedChannels);
     
-    // Close the alert composer
-    console.log('🔒 CALLING setShowAlert(false)');
     setShowAlert(false);
     
-    // On mobile, switch to the Trade tab to show the entered trade
     if (window.innerWidth < 1024 && onMobileTabChange) {
-      console.log('📱 CALLING onMobileTabChange("active")');
       onMobileTabChange('active');
     }
-    
-    console.log('🏁 handleEnterAndAlert END');
   };
   
   const handleTrim = () => {
@@ -644,13 +570,11 @@ export function DesktopLiveCockpit({
     openAlertComposer('exit');
   };
   
-  // Voice Commands Integration
   const voice = useVoiceCommands({
     watchlist,
     activeTrades,
     currentTrade,
     onAddTicker: (symbol) => {
-      // Mock implementation - would need actual ticker adding logic
       toast.success(`Added ${symbol} to watchlist`);
     },
     onRemoveTicker,
@@ -668,18 +592,13 @@ export function DesktopLiveCockpit({
   };
   
   useEffect(() => {
-    console.log('[StreamingManager] Subscribing to watchlist quotes');
-    
-    // Subscribe to all visible watchlist tickers
     const handles = watchlist.map(ticker => 
       streamingManager.subscribe(ticker.symbol, ['quotes'], (data) => {
-        console.log(`[StreamingManager] Quote update for ${ticker.symbol}:`, data);
-        // Updates are handled by individual useStreamingQuote hooks in HDRowWatchlist
+        // Updates handled by individual useStreamingQuote hooks
       })
     );
     
     return () => {
-      console.log('[StreamingManager] Unsubscribing from watchlist quotes');
       handles.forEach(handle => streamingManager.unsubscribe(handle));
     };
   }, [watchlist]);
@@ -688,26 +607,20 @@ export function DesktopLiveCockpit({
     const enteredTrades = activeTrades.filter(t => t.state === 'ENTERED');
     if (enteredTrades.length === 0) return;
     
-    console.log('[StreamingManager] Subscribing to entered trade contracts');
-    
     const handles = enteredTrades.map(trade => 
       streamingManager.subscribe(trade.contract.id, ['quotes', 'agg1s'], (data) => {
-        console.log(`[StreamingManager] Real-time update for ${trade.ticker}:`, data);
-        // Updates are handled by HDEnteredTradeCard components
+        // Updates handled by HDEnteredTradeCard components
       })
     );
     
     return () => {
-      console.log('[StreamingManager] Unsubscribing from trade contracts');
       handles.forEach(handle => streamingManager.unsubscribe(handle));
     };
   }, [activeTrades]);
   
   return (
     <>
-      {/* Main three-panel cockpit - hide on mobile when on active tab */}
       <div className={`relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden ${hideMobilePanelsOnActiveTab ? 'hidden lg:flex' : ''}`}>
-        {/* Voice Command HUD - Desktop only */}
         {voice.hudState && (
           <div className="hidden lg:block">
             <HDVoiceHUD
@@ -722,7 +635,6 @@ export function DesktopLiveCockpit({
           </div>
         )}
         
-        {/* Left Panel - Watchlist + Challenges */}
         <div className={`
           w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-[var(--border-hairline)] 
           overflow-y-auto
@@ -730,7 +642,6 @@ export function DesktopLiveCockpit({
           ${hideMobilePanelsOnActiveTab ? 'hidden lg:block' : ''}
           ${!hideDesktopPanels && !hideMobilePanelsOnActiveTab && ((tradeState === 'WATCHING' && contracts.length === 0) || tradeState === 'LOADED' || tradeState === 'ENTERED') ? 'flex-1 lg:flex-initial' : 'hidden lg:block'}
         `}>
-          {/* Macro Panel at top of watchlist panel */}
           <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
             <HDMacroPanel />
           </div>
@@ -756,7 +667,6 @@ export function DesktopLiveCockpit({
               }
             }}
             onChallengeClick={(challenge) => {
-              console.log('Challenge clicked:', challenge);
               setSelectedChallenge(challenge);
               setShowChallengeDetail(true);
             }}
@@ -770,10 +680,6 @@ export function DesktopLiveCockpit({
           />
         </div>
         
-        {/* Center Panel - Contract Grid / Trade Details */}
-        {/* On mobile (< lg), only show when we have contracts OR LOADED/ENTERED trade */}
-        {/* On desktop (>= lg), always show */}
-        {/* Hide completely when hideDesktopPanels is true */}
         <div className={`
           flex-1 overflow-y-auto bg-[#0a0a0a] relative
           ${hideDesktopPanels ? 'hidden' : ''}
@@ -781,11 +687,9 @@ export function DesktopLiveCockpit({
           ${!hideDesktopPanels && (tradeState === 'WATCHING' && contracts.length === 0) ? 'hidden lg:flex lg:flex-1' : ''}
           ${!hideDesktopPanels && (tradeState === 'WATCHING' && contracts.length > 0) ? 'flex-1' : ''}
         `}>
-          {/* Watermark - visible on all states */}
           <MobileWatermark />
           
           {tradeState === 'WATCHING' && contracts.length > 0 && activeTicker ? (
-            // Contract Grid for selecting contracts
             <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
               <HDLiveChart
                 ticker={activeTicker.symbol}
@@ -806,7 +710,6 @@ export function DesktopLiveCockpit({
               />
             </div>
           ) : tradeState === 'LOADED' && currentTrade && !showAlert ? (
-            // LOADED Trade Card with Enter/Discard CTAs (Desktop only now)
             <div className="p-4 lg:p-6 pointer-events-auto">
               <HDLoadedTradeCard
                 trade={currentTrade}
@@ -824,7 +727,6 @@ export function DesktopLiveCockpit({
               />
             </div>
           ) : tradeState === 'ENTERED' && currentTrade && !showAlert ? (
-            // ENTERED Trade Card (compact with confluence)
             <div className="p-4 lg:p-6 pointer-events-auto">
               <HDEnteredTradeCard
                 trade={currentTrade}
@@ -839,7 +741,6 @@ export function DesktopLiveCockpit({
               />
             </div>
           ) : showAlert ? (
-            // When alert is showing on mobile, hide center content
             <div className="hidden lg:block p-4 lg:p-6 pointer-events-auto">
               {currentTrade && (
                 <HDPanelFocusedTrade
@@ -851,7 +752,6 @@ export function DesktopLiveCockpit({
             </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
-              {/* Background logo - large and visible */}
               <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
                 <img 
                   src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png" 
@@ -866,7 +766,6 @@ export function DesktopLiveCockpit({
                 />
               </div>
               
-              {/* Foreground text */}
               <div className="relative z-10 text-center space-y-4 max-w-md">
                 <h3 className="text-xl lg:text-2xl font-semibold text-white">
                   Honey Drip Admin
@@ -879,9 +778,6 @@ export function DesktopLiveCockpit({
           )}
         </div>
         
-        {/* Right Panel - Alert Composer & Quick Actions */}
-        {/* On mobile: Show as full screen when alert is open */}
-        {/* On desktop: Always show appropriate content */}
         <div className={cn(
           "w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-[var(--border-hairline)] flex flex-col h-full",
           !showAlert && tradeState === 'LOADED' && "hidden lg:flex",
@@ -903,7 +799,6 @@ export function DesktopLiveCockpit({
               />
             </div>
           ) : tradeState === 'LOADED' && currentTrade ? (
-            // Right panel reminder for LOADED state (desktop only) - NO DUPLICATE CTA
             <div className="flex flex-col h-auto lg:h-full bg-[var(--surface-2)] p-6">
               <div className="flex-1 flex flex-col items-center justify-center">
                 <div className="text-center space-y-3 max-w-[200px]">
@@ -920,7 +815,6 @@ export function DesktopLiveCockpit({
               </div>
             </div>
           ) : tradeState === 'ENTERED' && currentTrade ? (
-            // Quick Actions for ENTERED state
             <div className="h-auto lg:h-full bg-[var(--surface-2)] p-4 lg:p-6">
               <HDQuickActions
                 state={tradeState}
@@ -933,7 +827,6 @@ export function DesktopLiveCockpit({
               />
             </div>
           ) : (
-            // Empty state
             <div className="flex items-center justify-center h-auto lg:h-full bg-[var(--surface-2)] p-4 lg:p-6 min-h-[200px]">
               <p className="text-[var(--text-muted)] text-sm text-center">
                 Select a contract to load a trade
@@ -942,7 +835,6 @@ export function DesktopLiveCockpit({
           )}
         </div>
         
-        {/* Challenge Detail Dialog */}
         <HDDialogChallengeDetail
           open={showChallengeDetail}
           onOpenChange={setShowChallengeDetail}
@@ -950,10 +842,8 @@ export function DesktopLiveCockpit({
           trades={activeTrades}
           channels={channels}
           onTradeClick={(trade) => {
-            // Close the dialog
             setShowChallengeDetail(false);
             
-            // Navigate based on trade state
             if (trade.state === 'ENTERED' && onOpenActiveTrade) {
               onOpenActiveTrade(trade.id);
             } else if (trade.state === 'EXITED' && onOpenReviewTrade) {
@@ -963,7 +853,6 @@ export function DesktopLiveCockpit({
         />
       </div>
       
-      {/* Mobile Now Playing Sheet - Always render outside main cockpit so it works even when cockpit is hidden */}
       <div className="lg:hidden">
         <MobileNowPlayingSheet
           trade={currentTrade}
@@ -980,32 +869,25 @@ export function DesktopLiveCockpit({
           onEnter={handleEnterTrade}
           onDiscard={handleDiscard}
           onAction={(type) => {
-            console.log('📱 MobileNowPlayingSheet onAction called with type:', type);
             if (type === 'trim') {
-              console.log('→ Calling handleTrim()');
               handleTrim();
             }
             else if (type === 'update-sl') {
-              console.log('→ Calling handleUpdateSL()');
               handleUpdateSL();
             }
             else if (type === 'update') {
-              console.log('→ Calling handleUpdate()');
               handleUpdate();
             }
             else if (type === 'add') {
-              console.log('→ Calling handleAdd()');
               handleAdd();
             }
             else if (type === 'exit') {
-              console.log('→ Calling handleExit()');
               handleExit();
             }
           }}
         />
       </div>
       
-      {/* Mobile Alert Composer - Fullscreen overlay (outside main cockpit) */}
       {showAlert && currentTrade && (
         <div className="lg:hidden fixed inset-0 z-[100] bg-[var(--bg-base)] flex flex-col">
           <HDAlertComposer
@@ -1022,7 +904,6 @@ export function DesktopLiveCockpit({
         </div>
       )}
       
-      {/* Mobile Watermark - Always render outside main cockpit so it works even when cockpit is hidden */}
       <div className="lg:hidden">
         <MobileWatermark />
       </div>

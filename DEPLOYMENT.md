@@ -1,29 +1,114 @@
 # Deployment Guide
 
-## Deploying to Vercel
+## Overview
 
-This app is designed to run on Vercel and uses the v0 environment.
+HoneyDrip Admin is a Vite SPA with an Express backend for secure API proxying. It can be deployed to Railway, Heroku, or any Node.js hosting platform.
 
-### Automatic Deployment
+## Architecture
 
-1. Click the "Publish" button in the top right of the v0 interface
-2. The app will be automatically deployed to Vercel
-3. All environment variables (Supabase credentials) are already configured
+- **Frontend**: Vite SPA (React + TypeScript)
+- **Backend**: Express server with API proxies
+- **Database**: Supabase (PostgreSQL + Auth)
+- **Market Data**: Massive.com API (proxied through backend)
+- **Alerts**: Discord webhooks (proxied through backend)
 
-### Manual Deployment
+---
 
-If you want to deploy manually:
+## Deploying to Railway
+
+Railway is the recommended hosting platform for this app.
+
+### Step 1: Prepare Repository
+
+1. Push your code to GitHub
+2. Ensure `.env` is in `.gitignore` (it should be)
+3. Verify `package.json` has proper scripts:
+   \`\`\`json
+   {
+     "scripts": {
+       "build": "vite build && tsc --project tsconfig.server.json && cp -r server dist-server",
+       "start": "node dist-server/index.js"
+     }
+   }
+   \`\`\`
+
+### Step 2: Create Railway Project
+
+1. Go to [railway.app](https://railway.app)
+2. Click "New Project"
+3. Select "Deploy from GitHub repo"
+4. Choose your repository
+
+### Step 3: Configure Environment Variables
+
+In Railway dashboard, add these environment variables:
+
+**Required:**
+\`\`\`
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+MASSIVE_API_KEY=your_massive_api_key
+NODE_ENV=production
+PORT=3000
+\`\`\`
+
+**Optional:**
+\`\`\`
+DISCORD_WEBHOOK_SECRET=your_optional_secret
+VITE_MASSIVE_WS_URL=wss://stream.massive.com
+\`\`\`
+
+### Step 4: Deploy
+
+1. Railway will automatically detect Node.js and run:
+   - `npm install`
+   - `npm run build`
+   - `npm start`
+2. Your app will be live at `your-app.railway.app`
+
+### Step 5: Configure Custom Domain (Optional)
+
+1. Go to Settings > Domains in Railway
+2. Click "Add Custom Domain"
+3. Follow DNS configuration instructions
+4. Update Supabase redirect URLs:
+   - Go to Supabase Dashboard > Authentication > URL Configuration
+   - Add `https://yourdomain.com` to "Site URL"
+   - Add `https://yourdomain.com/**` to "Redirect URLs"
+
+---
+
+## Alternative: Deploying to Heroku
+
+### Step 1: Install Heroku CLI
 
 \`\`\`bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel
-
-# Deploy to production
-vercel --prod
+npm install -g heroku
+heroku login
 \`\`\`
+
+### Step 2: Create Heroku App
+
+\`\`\`bash
+heroku create your-app-name
+\`\`\`
+
+### Step 3: Set Environment Variables
+
+\`\`\`bash
+heroku config:set VITE_SUPABASE_URL=your_url
+heroku config:set VITE_SUPABASE_ANON_KEY=your_key
+heroku config:set MASSIVE_API_KEY=your_key
+heroku config:set NODE_ENV=production
+\`\`\`
+
+### Step 4: Deploy
+
+\`\`\`bash
+git push heroku main
+\`\`\`
+
+---
 
 ## Post-Deployment Steps
 
@@ -38,117 +123,173 @@ After first deployment:
 
 This creates all necessary tables with proper RLS policies.
 
-### 2. Configure Optional Services
-
-**Massive.com** (for live market data):
-1. Sign up at https://massive.com
-2. Get your API key
-3. Add to Vercel environment variables:
-   - `VITE_MASSIVE_API_KEY=your_key_here`
-
-**Discord** (handled in-app):
-1. Create Discord webhooks in your server
-2. Add them via Settings > Discord Integration in the app
-3. No environment variables needed - stored in Supabase
-
-### 3. Test the Deployment
+### 2. Test the Deployment
 
 1. Visit your deployment URL
 2. Sign up for a new account
 3. Check your email for verification
 4. Verify your account and sign in
 5. Test adding a ticker to the watchlist
-6. Test creating a Discord channel (if configured)
+6. Test creating a challenge
+7. Test Discord alerts (if configured)
 
-## Environment Variables
+### 3. Monitor Health
 
-All environment variables are managed in Vercel:
+Visit `https://your-app.railway.app/api/health` to check backend status:
 
-**Required** (already configured in v0):
-- `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anon key
+\`\`\`json
+{
+  "status": "ok",
+  "timestamp": "2024-01-15T12:00:00.000Z",
+  "services": {
+    "massive": true,
+    "discord": true
+  }
+}
+\`\`\`
 
-**Optional**:
-- `VITE_MASSIVE_API_KEY` - Massive.com API key for live data
-- `VITE_MASSIVE_WS_URL` - WebSocket URL (defaults to Massive.com)
+---
 
-## Domain Configuration
+## Environment Variables Reference
 
-To use a custom domain:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_SUPABASE_URL` | Yes | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Yes | Your Supabase anon key |
+| `MASSIVE_API_KEY` | Yes | Massive.com API key (server-side only) |
+| `NODE_ENV` | Yes | Set to `production` |
+| `PORT` | No | Server port (default: 3000) |
+| `DISCORD_WEBHOOK_SECRET` | No | Optional secret for Discord webhook validation |
+| `VITE_MASSIVE_WS_URL` | No | Override WebSocket URL |
 
-1. Go to your Vercel project settings
-2. Navigate to "Domains"
-3. Add your custom domain
-4. Update DNS records as instructed
-5. Update Supabase redirect URLs:
-   - Go to Supabase Dashboard > Authentication > URL Configuration
-   - Add your custom domain to "Site URL"
-   - Add `https://yourdomain.com/**` to "Redirect URLs"
+---
+
+## Security Considerations
+
+1. **API Keys**: Never commit `.env` file to version control
+2. **CORS**: Backend configured for same-origin requests only
+3. **Rate Limiting**: Discord webhook proxy respects Discord's rate limits
+4. **Input Validation**: All API requests are validated
+5. **RLS Policies**: Supabase Row Level Security enabled
+
+---
 
 ## Monitoring
 
-**Application Logs**:
-- View in Vercel Dashboard > Deployments > [Your Deployment] > Functions
+### Application Logs
 
-**Database Monitoring**:
+**Railway:**
+- View in Railway Dashboard > Deployments > Logs
+
+**Heroku:**
+\`\`\`bash
+heroku logs --tail
+\`\`\`
+
+### Database Monitoring
+
 - View in Supabase Dashboard > Database > Query Performance
 
-**Error Tracking**:
-- Check browser console for client-side errors
-- Check Vercel function logs for server-side errors
+### API Health Check
 
-## Scaling Considerations
+Monitor `/api/health` endpoint for:
+- Server uptime
+- Massive.com API connectivity
+- Discord webhook availability
 
-**Database**:
-- Supabase automatically handles connection pooling
-- Consider upgrading Supabase plan for high traffic
-
-**Market Data**:
-- Massive.com has rate limits based on your plan
-- WebSocket connections are persistent per client
-
-**Discord Webhooks**:
-- Discord has rate limits (30 requests per minute per webhook)
-- App handles this automatically with batching
+---
 
 ## Troubleshooting
 
-**Users can't sign up**:
-- Check Supabase email settings
-- Verify SMTP configuration in Supabase
+### Build Fails
 
-**No market data showing**:
-- Verify `VITE_MASSIVE_API_KEY` is set (or check mock data is working)
-- Check browser console for API errors
+**Issue**: TypeScript compilation errors
 
-**Discord alerts not sending**:
-- Verify webhook URLs are correct
-- Test webhooks using the "Test" button in settings
-- Check Discord server permissions
+**Solution**:
+\`\`\`bash
+npm run build
+# Fix any TypeScript errors shown
+\`\`\`
 
-**Database errors**:
-- Verify SQL script was run
-- Check RLS policies are enabled
-- Ensure user is authenticated
+### Backend Not Starting
+
+**Issue**: Port already in use
+
+**Solution**: Set `PORT` environment variable to a different port
+
+### No Market Data
+
+**Issue**: Massive.com API not responding
+
+**Solution**:
+1. Verify `MASSIVE_API_KEY` is set correctly
+2. Check `/api/health` endpoint
+3. View server logs for API errors
+
+### Discord Webhooks Failing
+
+**Issue**: 429 Too Many Requests
+
+**Solution**: Backend automatically handles rate limiting. Wait 60 seconds and retry.
+
+### CORS Errors
+
+**Issue**: Frontend can't reach backend
+
+**Solution**: Ensure frontend is served from same domain as backend
+
+---
+
+## Scaling Considerations
+
+### Database
+- Supabase automatically handles connection pooling
+- Consider upgrading Supabase plan for high traffic
+
+### Market Data
+- Massive.com has rate limits based on your plan
+- WebSocket connections are persistent per client
+- Backend caches responses when possible
+
+### Discord Webhooks
+- Discord limits: 30 requests per minute per webhook
+- Backend queues and batches requests automatically
+
+---
 
 ## Backup and Recovery
 
-**Database Backups**:
+### Database Backups
 - Supabase automatically backs up daily
 - Download backups from Supabase Dashboard > Database > Backups
 
-**Configuration Backup**:
-- Export Discord channels and challenges from Settings
-- Store environment variables securely
+### Configuration Backup
+- Export challenges from Settings
+- Store environment variables securely (use password manager)
+
+---
 
 ## Production Checklist
 
+- [ ] Code pushed to GitHub
+- [ ] Railway/Heroku project created
+- [ ] Environment variables configured
 - [ ] Database schema deployed
 - [ ] Supabase email confirmation configured
 - [ ] Custom domain configured (if applicable)
-- [ ] Massive.com API key added (if using live data)
-- [ ] Discord webhooks tested
+- [ ] Health check endpoint verified
 - [ ] Sign up flow tested end-to-end
 - [ ] Trade lifecycle tested
+- [ ] Discord alerts tested
 - [ ] Mobile responsiveness verified
 - [ ] Browser compatibility tested
+
+---
+
+## Support
+
+For issues:
+1. Check server logs first
+2. Verify environment variables
+3. Test `/api/health` endpoint
+4. Review Supabase logs for database errors

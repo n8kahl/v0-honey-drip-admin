@@ -4,6 +4,7 @@ import { HDTagTradeType } from './hd/HDTagTradeType';
 import { HDButton } from './hd/HDButton';
 import { HDAlertPreview } from './hd/HDAlertPreview';
 import { HDSparkline } from './hd/HDSparkline';
+import { HDMacroPanelMobile } from './hd/HDMacroPanelMobile';
 import { formatPercent, formatPrice, formatTime, cn } from '../lib/utils';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -137,6 +138,8 @@ export function MobileNowPlaying({
   
   return (
     <div className="fixed inset-x-0 bottom-16 bg-[var(--surface-1)] border-t border-[var(--border-hairline)] max-h-[70vh] overflow-y-auto">
+      <HDMacroPanelMobile />
+      
       {/* Drag Handle */}
       <button
         onClick={() => setExpanded(false)}

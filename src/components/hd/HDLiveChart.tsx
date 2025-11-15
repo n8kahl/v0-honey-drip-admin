@@ -3,6 +3,7 @@ import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } f
 import { massiveWS } from '../../lib/massive/websocket';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
+import { ChartLevel } from '../../types/tradeLevels';
 
 export interface TradeEvent {
   type: 'load' | 'enter' | 'trim' | 'update' | 'exit';
@@ -17,8 +18,9 @@ interface HDLiveChartProps {
   timeframe?: '1' | '5' | '15' | '60'; // minutes
   indicators?: IndicatorConfig;
   events?: TradeEvent[];
+  levels?: ChartLevel[]; // Added levels prop
   marketHours?: { open: string; close: string; preMarket: string; afterHours: string };
-  orbWindow?: number; // First N minutes for ORB
+  orbWindow?: number;
   height?: number;
   className?: string;
 }
@@ -28,6 +30,7 @@ export function HDLiveChart({
   timeframe = '1',
   indicators = { ema: { periods: [8, 21, 50, 200] }, vwap: { enabled: true, bands: false } },
   events = [],
+  levels = [], // Added default empty array for levels
   marketHours = { open: '09:30', close: '16:00', preMarket: '04:00', afterHours: '20:00' },
   orbWindow = 5,
   height = 400,
@@ -39,6 +42,7 @@ export function HDLiveChart({
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<'Line'>>>(new Map());
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bollingerRefs = useRef<{ upper: ISeriesApi<'Line'>; middle: ISeriesApi<'Line'>; lower: ISeriesApi<'Line'> } | null>(null);
+  const levelSeriesRefs = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   
   const [bars, setBars] = useState<Bar[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -185,6 +189,14 @@ export function HDLiveChart({
     
     return () => {
       window.removeEventListener('resize', handleResize);
+      levelSeriesRefs.current.forEach(series => {
+        try {
+          chart.removeSeries(series);
+        } catch (e) {
+          // Series might already be removed
+        }
+      });
+      levelSeriesRefs.current.clear();
       chart.remove();
       chartRef.current = null;
     };
@@ -382,6 +394,93 @@ export function HDLiveChart({
     };
   }, [ticker, lastUpdate, fetchHistoricalBars]);
   
+  useEffect(() => {
+    if (!chartRef.current || levels.length === 0) return;
+    
+    // Clear existing level series
+    levelSeriesRefs.current.forEach((series, key) => {
+      try {
+        chartRef.current?.removeSeries(series);
+      } catch (e) {
+        // Series might already be removed
+      }
+    });
+    levelSeriesRefs.current.clear();
+    
+    // Helper to get color and style for level type
+    const getLevelStyle = (type: ChartLevel['type']) => {
+      switch (type) {
+        case 'ENTRY':
+          return { color: '#9CA3AF', width: 2, style: 0, title: 'Entry' }; // Solid gray
+        case 'TP':
+          return { color: '#16A34A', width: 2, style: 0, title: 'TP' }; // Solid green
+        case 'SL':
+          return { color: '#EF4444', width: 2, style: 0, title: 'SL' }; // Solid red
+        case 'PREMARKET_HIGH':
+        case 'PREMARKET_LOW':
+          return { color: '#8B5CF6', width: 1, style: 2, title: 'PM' }; // Dashed purple
+        case 'ORB_HIGH':
+        case 'ORB_LOW':
+          return { color: '#F59E0B', width: 1, style: 2, title: 'ORB' }; // Dashed orange
+        case 'PREV_DAY_HIGH':
+        case 'PREV_DAY_LOW':
+          return { color: '#3B82F6', width: 1, style: 2, title: 'PDH/L' }; // Dashed blue
+        case 'VWAP':
+          return { color: '#10B981', width: 1, style: 2, title: 'VWAP' }; // Dashed green
+        case 'VWAP_BAND':
+          return { color: '#10B981', width: 1, style: 3, title: 'VWAP Band' }; // Dotted green
+        case 'BOLLINGER':
+          return { color: '#6366F1', width: 1, style: 3, title: 'BB' }; // Dotted indigo
+        default:
+          return { color: '#6B7280', width: 1, style: 2, title: 'Level' }; // Dashed gray
+      }
+    };
+    
+    // Sort levels by importance (entry/TP/SL first, then key levels)
+    const sortedLevels = [...levels].sort((a, b) => {
+      const importance = { ENTRY: 0, TP: 1, SL: 2 };
+      const aImportance = importance[a.type] ?? 10;
+      const bImportance = importance[b.type] ?? 10;
+      return aImportance - bImportance;
+    });
+    
+    // Create price line for each level
+    sortedLevels.forEach((level, index) => {
+      const style = getLevelStyle(level.type);
+      const key = `${level.type}-${level.label}-${index}`;
+      
+      try {
+        const lineSeries = chartRef.current!.addLineSeries({
+          color: style.color,
+          lineWidth: style.width,
+          lineStyle: style.style as any,
+          title: `${level.label}`,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        
+        // Create a horizontal line by setting same price for all time points
+        // We'll use a single data point and rely on price line feature
+        const priceLineOptions = {
+          price: level.price,
+          color: style.color,
+          lineWidth: style.width,
+          lineStyle: style.style as any,
+          axisLabelVisible: true,
+          title: level.label,
+        };
+        
+        lineSeries.createPriceLine(priceLineOptions);
+        
+        levelSeriesRefs.current.set(key, lineSeries);
+      } catch (error) {
+        console.error(`[HDLiveChart] Failed to create level line for ${level.label}:`, error);
+      }
+    });
+    
+    console.log(`[HDLiveChart] Rendered ${levels.length} level lines for ${ticker}`);
+  }, [levels, ticker]);
+  
   const getAsOfText = () => {
     const secondsAgo = Math.floor((Date.now() - lastUpdate) / 1000);
     if (secondsAgo < 5) return 'Live';
@@ -421,6 +520,9 @@ export function HDLiveChart({
           ))}
           {indicators?.vwap?.enabled && <span>VWAP</span>}
           {indicators?.bollinger && <span>BB(20,2)</span>}
+          {levels.map(level => (
+            <span key={level.label}>{level.label}</span>
+          ))}
         </div>
       </div>
       

@@ -53,7 +53,9 @@ export class StreamingManager {
   ): () => void {
     const id = this.getSubscriptionId(symbol, options);
     
-    console.log(`[StreamingManager] 📡 Subscribing: ${id} channels=${channels.join(',')}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 📡 Subscribing: ${id} channels=${channels.join(',')}`);
+    }
     
     // Add callback
     if (!this.callbacks.has(id)) {
@@ -89,7 +91,9 @@ export class StreamingManager {
         
         // If no more callbacks, clean up subscription
         if (callbacks.size === 0) {
-          console.log(`[StreamingManager] 🔌 Unsubscribing: ${id}`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[StreamingManager] 🔌 Unsubscribing: ${id}`);
+          }
           this.cleanup(id);
         }
       }
@@ -101,15 +105,21 @@ export class StreamingManager {
    * Tries WebSocket first, falls back to REST if needed
    */
   private startStreaming(sub: StreamSubscription) {
-    console.log(`[StreamingManager] 🚀 Starting stream: ${sub.id}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 🚀 Starting stream: ${sub.id}`);
+    }
     
     // Try WebSocket first
     const wsState = massiveWS.getConnectionState();
-    console.log(`[StreamingManager] WebSocket state: ${wsState}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] WebSocket state: ${wsState}`);
+    }
     
     if (wsState === 'closed') {
       // WebSocket not available, start REST polling immediately
-      console.log(`[StreamingManager] ⚠️ WebSocket closed, starting REST fallback for ${sub.id}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[StreamingManager] ⚠️ WebSocket closed, starting REST fallback for ${sub.id}`);
+      }
       this.startRestPolling(sub);
       this.scheduleReconnect(sub);
     } else {
@@ -127,7 +137,9 @@ export class StreamingManager {
       return;
     }
     
-    console.log(`[StreamingManager] 🔗 Subscribing to WebSocket: ${sub.id}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 🔗 Subscribing to WebSocket: ${sub.id}`);
+    }
     
     let unsubscribe: (() => void) | null = null;
     
@@ -160,7 +172,9 @@ export class StreamingManager {
     if (!this.subscriptions.has(sub.id)) return;
     
     const now = Date.now();
-    console.log(`[StreamingManager] 📨 WebSocket data: ${sub.id} channel=${channel}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 📨 WebSocket data: ${sub.id} channel=${channel}`);
+    }
     
     // Update subscription
     sub.lastUpdate = now;
@@ -168,7 +182,9 @@ export class StreamingManager {
     
     // Stop REST polling if active
     if (this.restPollers.has(sub.id)) {
-      console.log(`[StreamingManager] ✅ WebSocket recovered, stopping REST fallback for ${sub.id}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[StreamingManager] ✅ WebSocket recovered, stopping REST fallback for ${sub.id}`);
+      }
       clearInterval(this.restPollers.get(sub.id));
       this.restPollers.delete(sub.id);
     }
@@ -195,7 +211,9 @@ export class StreamingManager {
       return;
     }
     
-    console.log(`[StreamingManager] 🔄 Starting REST polling: ${sub.id} every ${this.POLL_INTERVAL}ms`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 🔄 Starting REST polling: ${sub.id} every ${this.POLL_INTERVAL}ms`);
+    }
     
     // Poll immediately
     this.pollRest(sub);
@@ -257,7 +275,9 @@ export class StreamingManager {
         });
       }
     } catch (error) {
-      console.error(`[StreamingManager] ❌ REST poll failed for ${sub.id}:`, error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[StreamingManager] ❌ REST poll failed for ${sub.id}:`, error);
+      }
     }
   }
   
@@ -283,7 +303,9 @@ export class StreamingManager {
       if (wsState === 'closed' || isStale) {
         // WebSocket unhealthy, ensure REST polling is active
         if (!this.restPollers.has(sub.id)) {
-          console.log(`[StreamingManager] ⚠️ Stream unhealthy (state=${wsState}, stale=${isStale}), activating REST fallback for ${sub.id}`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[StreamingManager] ⚠️ Stream unhealthy (state=${wsState}, stale=${isStale}), activating REST fallback for ${sub.id}`);
+          }
           this.startRestPolling(sub);
           
           // Try to reconnect WebSocket
@@ -294,7 +316,9 @@ export class StreamingManager {
       } else if (wsState === 'open' && !isStale) {
         // WebSocket healthy, ensure we're subscribed
         if (!this.wsUnsubscribers.has(sub.id)) {
-          console.log(`[StreamingManager] ✅ WebSocket healthy, resubscribing ${sub.id}`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[StreamingManager] ✅ WebSocket healthy, resubscribing ${sub.id}`);
+          }
           this.subscribeWebSocket(sub);
         }
       }
@@ -314,7 +338,9 @@ export class StreamingManager {
     const jitter = Math.random() * 1000;
     const delay = Math.min(baseDelay + jitter, this.MAX_RECONNECT_DELAY);
     
-    console.log(`[StreamingManager] 🔄 Scheduling reconnect for ${sub.id} in ${Math.round(delay)}ms (attempt ${attempts + 1})`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 🔄 Scheduling reconnect for ${sub.id} in ${Math.round(delay)}ms (attempt ${attempts + 1})`);
+    }
     
     setTimeout(() => {
       if (!this.subscriptions.has(sub.id)) return;
@@ -324,7 +350,9 @@ export class StreamingManager {
       // Try to reconnect
       const wsState = massiveWS.getConnectionState();
       if (wsState === 'closed') {
-        console.log(`[StreamingManager] 🔌 Reconnecting WebSocket for ${sub.id}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[StreamingManager] 🔌 Reconnecting WebSocket for ${sub.id}`);
+        }
         massiveWS.connect();
       }
       
@@ -348,7 +376,9 @@ export class StreamingManager {
         try {
           callback(data);
         } catch (error) {
-          console.error(`[StreamingManager] ❌ Callback error for ${id}:`, error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error(`[StreamingManager] ❌ Callback error for ${id}:`, error);
+          }
         }
       });
     }
@@ -358,7 +388,9 @@ export class StreamingManager {
    * Clean up a subscription
    */
   private cleanup(id: string) {
-    console.log(`[StreamingManager] 🧹 Cleaning up: ${id}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 🧹 Cleaning up: ${id}`);
+    }
     
     // Unsubscribe from WebSocket
     const wsUnsub = this.wsUnsubscribers.get(id);
@@ -415,7 +447,9 @@ export class StreamingManager {
    * Disconnect all streams
    */
   disconnectAll() {
-    console.log(`[StreamingManager] 🔌 Disconnecting all streams`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[StreamingManager] 🔌 Disconnecting all streams`);
+    }
     const ids = Array.from(this.subscriptions.keys());
     ids.forEach(id => this.cleanup(id));
   }
