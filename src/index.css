@@ -3771,7 +3771,6 @@
     transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1)) rotate(var(--tw-exit-rotate, 0));
   }
 }
-
 @import "tailwindcss";
 /* virtual-fs:file:///styles/globals.css */
 @layer base {
@@ -3809,135 +3808,17 @@
     --session-open: #16A34A;
     --session-afterhours: #7C3AED;
     --session-closed: #6B7280;
-    --data-stale: #FBBF24;
-    --space-1: 4px;
-    --space-2: 8px;
-    --space-3: 12px;
-    --space-4: 16px;
-    --space-5: 20px;
-    --space-6: 24px;
-    --space-8: 32px;
-    --radius: 4px;
-    --radius-lg: 6px;
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 2px 4px -1px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 4px 8px -2px rgba(0, 0, 0, 0.5);
+    --radius: 8px;
   }
+}
+
+@layer base {
   * {
-    border-color: var(--border-hairline);
+    @apply border-border;
   }
+
   body {
-    background-color: var(--bg-base);
-    color: var(--text-high);
-    font-family:
-      "Inter",
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
-    font-feature-settings: "tnum" 1, "cv11" 1;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-  h1 {
-    font-size: 18px;
-    line-height: 1.25;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-  h2 {
-    font-size: 15px;
-    line-height: 1.3;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-  h3 {
-    font-size: 13px;
-    line-height: 1.3;
-    font-weight: 600;
-    letter-spacing: 0;
-  }
-  p,
-  div,
-  span {
-    font-size: 13px;
-    line-height: 1.4;
-    font-weight: 400;
-  }
-  button {
-    font-size: 13px;
-    line-height: 1.2;
-    font-weight: 500;
-    letter-spacing: 0;
-  }
-  input,
-  select,
-  textarea {
-    font-size: 13px;
-    line-height: 1.4;
-    font-weight: 400;
-  }
-  .text-xs {
-    font-size: 11px;
-    line-height: 1.3;
-  }
-  .text-micro {
-    font-size: 10px;
-    line-height: 1.3;
-  }
-  @media (max-width: 1023px) {
-    h1 {
-      font-size: 20px;
-    }
-    h2 {
-      font-size: 16px;
-    }
-    p,
-    div,
-    span {
-      font-size: 14px;
-    }
-    button {
-      font-size: 14px;
-    }
-    input,
-    select,
-    textarea {
-      font-size: 16px;
-    }
-  }
-  *:focus-visible {
-    outline-none: true;
-    ring-2: true;
-    ring-[var(--brand-primary)]: true;
-    ring-offset-1: true;
-    ring-offset-[var(--bg-base)]: true;
-  }
-  .tabular-nums {
-    font-variant-numeric: tabular-nums;
-  }
-  @keyframes slide-up {
-    from {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  .animate-slide-up {
-    animation: slide-up 0.2s ease-out forwards;
-  }
-  @keyframes slow-flash {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
-  .animate-slow-flash {
-    animation: slow-flash 2s ease-in-out infinite;
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }

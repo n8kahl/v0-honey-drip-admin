@@ -416,7 +416,7 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
                             className="w-full h-8 px-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] text-sm"
                           />
                           <p className="text-[var(--text-muted)] text-xs mt-1">
-                            Multi-day holds (>N DTE = LEAP)
+                            Multi-day holds (&gt;N DTE = LEAP)
                           </p>
                         </div>
                         
