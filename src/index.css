@@ -431,7 +431,7 @@
   }
 
   * {
-    border-color: oklch(.922 0 0);
+    border-color: var(--border);
   }
 
   body {
@@ -3809,12 +3809,13 @@
     --session-afterhours: #7C3AED;
     --session-closed: #6B7280;
     --radius: 8px;
+    --border: oklch(.922 0 0);
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
 
   body {
