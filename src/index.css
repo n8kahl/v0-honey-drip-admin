@@ -3819,7 +3819,8 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--bg-base);
+    color: var(--text-high);
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
