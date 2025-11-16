@@ -208,12 +208,11 @@ const fetchHistoricalBars = useCallback(async () => {
     if (!container) return;
 
     if (chartRef.current) {
-      try {
-        chartRef.current.remove();
-      } catch {
-        // ignore removal errors
-      }
-      chartRef.current = null;
+      chartRef.current.applyOptions({
+        width: container.clientWidth,
+        height,
+      });
+      return;
     }
 
     const chart = createChart(container, {
@@ -340,7 +339,7 @@ const fetchHistoricalBars = useCallback(async () => {
         });
       }
     };
-    
+
     window.addEventListener('resize', handleResize);
 
     return () => {
