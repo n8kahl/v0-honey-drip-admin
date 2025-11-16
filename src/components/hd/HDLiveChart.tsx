@@ -50,12 +50,19 @@ export function HDLiveChart({
   const [dataSource, setDataSource] = useState<'websocket' | 'rest'>('rest');
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [fps, setFps] = useState<number>(60);
+  const [ready, setReady] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   
   const rafRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Bar[]>([]);
   const lastRenderTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (bars.length > 0 && !ready) {
+      setReady(true);
+    }
+  }, [bars.length, ready]);
   
   const fetchHistoricalBars = useCallback(async () => {
     const isOption = ticker.startsWith('O:');
@@ -583,6 +590,14 @@ export function HDLiveChart({
     return `${Math.floor(secondsAgo / 60)}m ago`;
   };
   
+  if (!ready) {
+    return (
+      <div className="h-[var(--chart-height,400px)] flex items-center justify-center bg-[var(--surface-2)] rounded-[var(--radius)] border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] text-sm">
+        Loading market data…
+      </div>
+    );
+  }
+
   return (
     <div className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className}`}>
       {/* Header */}
