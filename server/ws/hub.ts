@@ -1,4 +1,4 @@
-import WebSocket, { RawData } from 'ws';
+import WebSocket from 'ws';
 import { setInterval, clearInterval } from 'timers';
 
 type Asset = 'options' | 'indices';
@@ -27,11 +27,11 @@ export class MassiveHub {
 
   constructor(private opts: HubOpts) {}
 
-  attachClient = (clientWs: WS) => {
+  attachClient = (clientWs: WebSocket) => {
     const ctx: ClientCtx = { ws: clientWs, subs: new Set() };
     this.clients.add(ctx);
 
-    clientWs.on('message', (raw) => this.onClientMessage(ctx, raw));
+    clientWs.on('message', (raw: WebSocket.RawData) => this.onClientMessage(ctx, raw));
     clientWs.on('close', () => this.detachClient(ctx));
     clientWs.on('error', () => this.detachClient(ctx));
 
@@ -159,7 +159,7 @@ export class MassiveHub {
     }
   }
 
-  private onClientMessage(ctx: ClientCtx, raw: RawData) {
+  private onClientMessage(ctx: ClientCtx, raw: WebSocket.RawData) {
     let msg: any;
     try {
       msg = JSON.parse(String(raw));
