@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { massiveClient, hasApiKey, type MassiveQuote, type MassiveOptionsChain } from '../lib/massive/client';
+import { MassiveError } from '../lib/massive/proxy';
 import { createTransport } from '../lib/massive/transport-policy';
 import type { Contract } from '../types';
 
@@ -105,13 +106,13 @@ export function useOptionsChain(symbol: string | null, expiry?: string) {
   const [optionsChain, setOptionsChain] = useState<MassiveOptionsChain & { asOf?: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rateLimitedRef = useRef(false);
 
   const fetchOptionsChain = useCallback(async () => {
     if (!symbol) return;
 
     try {
       setLoading(true);
-      
       console.log('[useOptionsChain] Fetching options chain snapshot for', symbol);
       const data = await massiveClient.getOptionsChain(symbol, expiry);
       setOptionsChain({
@@ -119,8 +120,14 @@ export function useOptionsChain(symbol: string | null, expiry?: string) {
         asOf: Date.now(),
       });
       setError(null);
+      rateLimitedRef.current = false;
     } catch (err: any) {
-      setError(err.message);
+      if (err instanceof MassiveError && err.code === 'RATE_LIMIT') {
+        setError('Rate limited by Massive — pausing refresh');
+        rateLimitedRef.current = true;
+      } else {
+        setError(err.message || 'Failed to fetch options chain');
+      }
       console.error('[useOptionsChain] Failed to fetch options chain:', err);
     } finally {
       setLoading(false);
@@ -135,6 +142,10 @@ export function useOptionsChain(symbol: string | null, expiry?: string) {
 
     // Refresh every 3 seconds while panel is open
     const refreshInterval = setInterval(() => {
+      if (rateLimitedRef.current) {
+        console.warn('[useOptionsChain] Skipping refresh while rate limited');
+        return;
+      }
       console.log('[useOptionsChain] Auto-refreshing options chain for', symbol);
       fetchOptionsChain();
     }, 3000);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, IChartApi, ISeriesApi, LineSeriesOptions, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { massiveFetch } from '../../lib/massive/proxy';
+import { massiveFetch, MassiveError } from '../../lib/massive/proxy';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
 import { ChartLevel } from '../../types/tradeLevels';
@@ -50,6 +50,8 @@ export function HDLiveChart({
   const [dataSource, setDataSource] = useState<'websocket' | 'rest'>('rest');
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [fps, setFps] = useState<number>(60);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   
   const rafRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Bar[]>([]);
@@ -73,13 +75,13 @@ export function HDLiveChart({
 
       const url = `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=${limit}`;
       const response = await massiveFetch(url);
-      if (!response.ok) {
-        const error = new Error(`HTTP ${response.status}`);
-        (error as any).status = response.status;
-        throw error;
-      }
       return response.json();
     };
+
+    if (rateLimited) {
+      console.warn('[HDLiveChart] Skipping historical fetch while rate limited:', rateLimitMessage);
+      return;
+    }
 
     const attemptDays = [1, 0.5, 0.25, 0.166666];
     let lastError: Error | null = null;
@@ -115,6 +117,14 @@ export function HDLiveChart({
           `[HDLiveChart] Failed to fetch ${ticker} historical bars for ${days}d (status=${status ?? 'unknown'}):`,
           error
         );
+
+        if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
+          setRateLimited(true);
+          setRateLimitMessage(error.message);
+          console.warn('[HDLiveChart] Rate limited, stopping retries:', error.message);
+          return;
+        }
+
         if (!isRetryable) break;
       }
     }
@@ -122,7 +132,11 @@ export function HDLiveChart({
     if (lastError) {
       console.error('[HDLiveChart] Failed to load historical bars after retries:', lastError);
     }
-  }, [ticker, timeframe]);
+    if (rateLimited && !lastError) {
+      setRateLimited(false);
+      setRateLimitMessage(null);
+    }
+  }, [ticker, timeframe, rateLimited, rateLimitMessage]);
   
   useEffect(() => {
     const container = chartContainerRef.current;

@@ -1,6 +1,17 @@
 const MASSIVE_PROXY_TOKEN = import.meta.env.VITE_MASSIVE_PROXY_TOKEN;
 let warnedAboutMissingToken = false;
 
+export class MassiveError extends Error {
+  status: number;
+  code?: 'RATE_LIMIT';
+
+  constructor(message: string, status: number, code?: 'RATE_LIMIT') {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 function buildHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers ?? {});
 
@@ -27,8 +38,7 @@ export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit)
   const response = await fetch(input, withMassiveProxyInit(init));
 
   if (!response.ok) {
-    const cloned = response.clone();
-    const text = await cloned.text();
+    const text = await response.text();
     const method = (init?.method || 'GET').toString().toUpperCase();
     const path =
       typeof input === 'string'
@@ -42,7 +52,18 @@ export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit)
       status: response.status,
       text,
     });
-    throw new Error(`HTTP ${response.status}: ${text || response.statusText}`);
+
+    const message = text || response.statusText || `HTTP ${response.status}`;
+    const isRateLimit =
+      response.status === 429 ||
+      message.includes('Massive 429') ||
+      message.toLowerCase().includes('maximum requests per minute');
+
+    if (isRateLimit) {
+      throw new MassiveError(message, 429, 'RATE_LIMIT');
+    }
+
+    throw new MassiveError(message, response.status);
   }
 
   return response;
