@@ -17,6 +17,14 @@ const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
   return day;
 };
 
+const INDEX_TICKERS = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
+const TIMEFRAME_LOOKBACK_DAYS: Record<string, number> = {
+  '1': 2,
+  '5': 5,
+  '15': 10,
+  '60': 30,
+};
+
 export interface TradeEvent {
   type: 'load' | 'enter' | 'trim' | 'update' | 'exit';
   timestamp: number;
@@ -72,13 +80,29 @@ const chartRef = useRef<IChartApi | null>(null);
   const rafRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Bar[]>([]);
   const lastRenderTimeRef = useRef<number>(0);
-  const inflightFetchesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const barsCacheRef = useRef<Map<string, Bar[]>>(new Map());
+  const inflightFetchesRef = useRef<Map<string, Promise<Bar[]>>>(new Map());
 
   useEffect(() => {
     if (bars.length > 0 && !ready) {
       setReady(true);
     }
   }, [bars.length, ready]);
+
+  const ensurePriceSeries = useCallback(() => {
+    if (!chartReady || !chartRef.current) return null;
+    if (!candleSeriesRef.current) {
+      candleSeriesRef.current = chartRef.current.addCandlestickSeries({
+        upColor: '#16A34A',
+        downColor: '#EF4444',
+        borderUpColor: '#16A34A',
+        borderDownColor: '#EF4444',
+        wickUpColor: '#16A34A',
+        wickDownColor: '#EF4444',
+      });
+    }
+    return candleSeriesRef.current;
+  }, [chartReady]);
 
   useEffect(() => {
     let canceled = false;
@@ -122,104 +146,97 @@ const chartRef = useRef<IChartApi | null>(null);
     };
   }, []);
   
-const fetchHistoricalBars = useCallback(async () => {
+const loadHistoricalBars = useCallback(async () => {
     if (rateLimited) {
       console.warn('[HDLiveChart] Skipping historical fetch while rate limited:', rateLimitMessage);
       return;
     }
 
-    const indexSymbols = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
     const isOption = ticker.startsWith('O:');
-    const isIndex =
-      ticker.startsWith('I:') || indexSymbols.has(ticker) || ticker.toUpperCase().startsWith('I:');
-    const symbolParam = isIndex && ticker.startsWith('I:') ? ticker.slice(2) : ticker;
-
+    const isIndex = ticker.startsWith('I:') || INDEX_TICKERS.has(ticker);
+    const symbolParam = isIndex ? (ticker.startsWith('I:') ? ticker : `I:${ticker}`) : ticker;
     const multiplier = Number(timeframe) || 1;
     const timespan = 'minute';
-    const limit = isOption ? 5000 : isIndex ? 250 : 144;
-    const barFetcher = isOption
-      ? getOptionBars
-      : isIndex
-      ? getIndexBars
-      : getStockBars;
-
+    const lookbackDays = TIMEFRAME_LOOKBACK_DAYS[timeframe] ?? 5;
     const lastTradingDay = getMostRecentTradingDay(new Date(), holidaysSet);
     const toDate = formatIsoDate(lastTradingDay);
-    const cacheKey = `${ticker}:${timeframe}:${toDate}`;
+    const fromDate = formatIsoDate(
+      new Date(lastTradingDay.getTime() - lookbackDays * 24 * 60 * 60 * 1000)
+    );
+    const cacheKey = `${symbolParam}:${timeframe}:${fromDate}:${toDate}`;
 
-    if (inflightFetchesRef.current.has(cacheKey)) {
-      return inflightFetchesRef.current.get(cacheKey);
+    if (barsCacheRef.current.has(cacheKey)) {
+      setBars(barsCacheRef.current.get(cacheKey)!);
+      setDataSource('rest');
+      return;
     }
 
-    const attemptDays = [1, 0.5, 0.25, 0.166666];
+    if (inflightFetchesRef.current.has(cacheKey)) {
+      try {
+        const cached = await inflightFetchesRef.current.get(cacheKey)!;
+        setBars(cached);
+        setDataSource('rest');
+      } catch (error) {
+        console.error('[HDLiveChart] Cached historical fetch failed:', error);
+      }
+      return;
+    }
 
-    const buildRequest = async (days: number) => {
-      const from = new Date(lastTradingDay.getTime() - days * 24 * 60 * 60 * 1000);
-      const fromDate = formatIsoDate(from);
-      return barFetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
-    };
+    const fetcher = isOption ? getOptionBars : isIndex ? getIndexBars : getStockBars;
+    const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
 
     const fetchPromise = (async () => {
-      let lastError: Error | null = null;
+      try {
+        const response = await fetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
+        const results = Array.isArray(response?.results)
+          ? response.results
+          : Array.isArray(response)
+          ? response
+          : [];
 
-      for (const days of attemptDays) {
-        try {
-          const data = await buildRequest(days);
-          const results = data.results || data;
-          if (!Array.isArray(results) || results.length === 0) {
-            console.warn(`[HDLiveChart] ${ticker} historical data returned empty for ${days}d window`);
-            continue;
-          }
-
-          const historicalBars: Bar[] = results.map((r: any) => ({
-            time: Math.floor(r.t / 1000) as Time,
-            open: r.o,
-            high: r.h,
-            low: r.l,
-            close: r.c,
-            volume: r.v,
-            vwap: r.vw,
-          }));
-
-          setBars(historicalBars);
-          setDataSource('rest');
-          setRateLimited(false);
-          setRateLimitMessage(null);
-          console.log(`[HDLiveChart] Loaded ${historicalBars.length} historical bars for ${ticker}`);
-          return;
-        } catch (error: any) {
-          lastError = error;
-          const status = typeof error?.status === 'number' ? error.status : undefined;
-          const isRetryable = !status || status >= 500;
-          console.warn(
-            `[HDLiveChart] Failed to fetch ${ticker} historical bars for ${days}d (status=${status ?? 'unknown'}):`,
-            error
-          );
-
-          if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
-            setRateLimited(true);
-            setRateLimitMessage(error.message);
-            console.warn('[HDLiveChart] Rate limited, stopping retries:', error.message);
-            return;
-          }
-
-          if (!isRetryable) break;
+        if (!Array.isArray(results) || results.length === 0) {
+          throw new Error('No historical data returned');
         }
-      }
 
-      if (lastError) {
-        console.error('[HDLiveChart] Failed to load historical bars after retries:', lastError);
+        const parsed: Bar[] = results.map((r: any) => ({
+          time: Math.floor(r.t / 1000) as Time,
+          open: r.o,
+          high: r.h,
+          low: r.l,
+          close: r.c,
+          volume: r.v,
+          vwap: r.vw,
+        }));
+
+        barsCacheRef.current.set(cacheKey, parsed);
+        return parsed;
+      } catch (error: any) {
+        if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
+          setRateLimited(true);
+          setRateLimitMessage(error.message);
+          console.warn('[HDLiveChart] Rate limited while fetching historical bars:', error.message);
+        }
+        throw error;
       }
     })();
 
     inflightFetchesRef.current.set(cacheKey, fetchPromise);
     try {
-      await fetchPromise;
+      const parsedBars = await fetchPromise;
+      setBars(parsedBars);
+      setRateLimited(false);
+      setRateLimitMessage(null);
+      setDataSource('rest');
+      console.log(`[HDLiveChart] Loaded ${parsedBars.length} historical bars for ${ticker}`);
+    } catch (error) {
+      if (!(error instanceof MassiveError && error.code === 'RATE_LIMIT')) {
+        console.error('[HDLiveChart] Failed to load historical bars:', error);
+      }
     } finally {
       inflightFetchesRef.current.delete(cacheKey);
     }
   }, [ticker, timeframe, rateLimited, rateLimitMessage, holidaysSet]);
-  
+
   useEffect(() => {
     const container = chartContainerRef.current;
     if (!container) return;
@@ -265,16 +282,6 @@ const fetchHistoricalBars = useCallback(async () => {
     chartRef.current = chart;
     setChartReady(true);
     waitingForChartRef.current = false;
-
-    const priceSeries = chart.addCandlestickSeries({
-      upColor: '#16A34A',
-      downColor: '#EF4444',
-      borderUpColor: '#16A34A',
-      borderDownColor: '#EF4444',
-      wickUpColor: '#16A34A',
-      wickDownColor: '#EF4444',
-    });
-    candleSeriesRef.current = priceSeries;
 
     const createLineSeries = (opts: LineSeriesOptions, label?: string) => {
       if (typeof chart.addLineSeries !== 'function') {
@@ -382,11 +389,12 @@ const fetchHistoricalBars = useCallback(async () => {
   }, [height, indicators]);
   
   useEffect(() => {
-    fetchHistoricalBars();
-  }, [fetchHistoricalBars]);
+    loadHistoricalBars();
+  }, [loadHistoricalBars]);
   
   useEffect(() => {
-    if (!chartReady || !candleSeriesRef.current) {
+    const priceSeries = ensurePriceSeries();
+    if (!priceSeries) {
       if (!chartReady && !waitingForChartRef.current) {
         console.debug('[HDLiveChart] Waiting for chart API before creating series');
         waitingForChartRef.current = true;
@@ -418,7 +426,7 @@ const fetchHistoricalBars = useCallback(async () => {
         low: bar.low,
         close: bar.close,
       }));
-      candleSeriesRef.current?.setData(candleData);
+      priceSeries.setData(candleData);
       
       // Update indicators
       if (indicators?.ema?.periods) {
@@ -475,7 +483,7 @@ const fetchHistoricalBars = useCallback(async () => {
           shape: 'circle' as const,
           text: event.label,
         }));
-        candleSeriesRef.current.setMarkers(markers);
+        priceSeries.setMarkers(markers);
       }
       
       chartRef.current?.timeScale().fitContent();
@@ -483,7 +491,7 @@ const fetchHistoricalBars = useCallback(async () => {
     };
     
     renderUpdate();
-  }, [bars, indicators, events, fps]);
+  }, [bars, indicators, events, fps, ensurePriceSeries]);
   
   useEffect(() => {
     const isOption = ticker.startsWith('O:');
@@ -571,7 +579,7 @@ const fetchHistoricalBars = useCallback(async () => {
       if (Date.now() - lastUpdate > 3000) {
         setIsConnected(false);
         setDataSource('rest');
-        fetchHistoricalBars();
+        loadHistoricalBars();
       }
     }, 3000);
     
@@ -580,7 +588,7 @@ const fetchHistoricalBars = useCallback(async () => {
       clearInterval(fallbackInterval);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [ticker, lastUpdate, fetchHistoricalBars]);
+  }, [ticker, lastUpdate, loadHistoricalBars]);
   
   useEffect(() => {
     if (!chartRef.current || levels.length === 0) return;

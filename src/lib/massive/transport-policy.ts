@@ -69,6 +69,15 @@ export class TransportPolicy {
   private lastDataTimestamp = 0;
   private isActive = false;
   private lastWsState: 'connecting' | 'open' | 'closed' = 'closed';
+  private fetchingBars = false;
+  private consecutiveNoChange = 0;
+  private lastRestPrice: number | null = null;
+  private currentPollInterval: number;
+  private readonly basePollInterval: number;
+  private readonly maxPollInterval = 15000;
+  private readonly closedMarketPollInterval = 12000;
+  private lastMarketStatusCheck = 0;
+  private marketOpen = true;
 
   constructor(config: TransportConfig, callback: TransportCallback) {
     this.config = {
@@ -77,6 +86,8 @@ export class TransportPolicy {
       ...config,
     };
     this.callback = callback;
+    this.basePollInterval = this.config.pollInterval!;
+    this.currentPollInterval = this.basePollInterval;
   }
 
   start() {
@@ -105,16 +116,17 @@ export class TransportPolicy {
     }
     
     // Clean up polling
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
+    this.clearPollTimer();
     
     // Clean up reconnect
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  setFetchingBars(value: boolean) {
+    this.fetchingBars = value;
   }
 
   private tryWebSocket() {
@@ -172,8 +184,7 @@ export class TransportPolicy {
     // Stop polling if running
     if (this.pollTimer) {
       console.log(`[TransportPolicy] WebSocket recovered, stopping REST fallback for ${this.config.symbol}`);
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
+      this.clearPollTimer();
     }
 
     // Reset reconnect attempts on successful data
@@ -184,55 +195,86 @@ export class TransportPolicy {
 
   private startPolling() {
     if (this.pollTimer) {
-      // Already polling
       return;
     }
 
-    console.log(`[TransportPolicy] Starting REST polling for ${this.config.symbol} every ${this.config.pollInterval}ms`);
+    console.log(
+      `[TransportPolicy] Starting REST polling for ${this.config.symbol} (interval ${this.basePollInterval}ms)`
+    );
+    this.currentPollInterval = this.basePollInterval;
+    void this.pollData();
+  }
 
-    // Poll immediately
-    this.pollData();
+  private clearPollTimer() {
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
 
-    // Then poll at interval
-    this.pollTimer = setInterval(() => {
-      this.pollData();
-    }, this.config.pollInterval);
+  private scheduleNextPoll(delay?: number) {
+    if (!this.isActive) return;
+    const wait = typeof delay === 'number' ? delay : this.currentPollInterval;
+    this.clearPollTimer();
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.pollData();
+    }, wait);
   }
 
   private async pollData() {
     if (!this.isActive) return;
+
+    if (this.fetchingBars) {
+      console.debug(
+        `[TransportPolicy] Skipping REST poll for ${this.config.symbol} while historical bars are loading`
+      );
+      this.scheduleNextPoll();
+      return;
+    }
+
+    const marketOpen = await this.isMarketOpen();
+    if (!marketOpen) {
+      this.currentPollInterval = Math.max(this.currentPollInterval, this.closedMarketPollInterval);
+    }
+
+    let priceChanged = false;
 
     try {
       const now = Date.now();
       let data: any;
 
       if (this.config.isOption) {
-        // Fetch option snapshot
         const response = await massiveClient.getOptionsSnapshot(this.config.symbol);
         data = response.results?.[0];
       } else if (this.config.isIndex) {
-        // Fetch index value
         data = await massiveClient.getIndex(this.config.symbol);
       } else {
-        // Fetch stock quote
         const quotes = await massiveClient.getQuotes([this.config.symbol]);
         data = quotes[0];
       }
 
       if (data) {
         const quote = mapMassiveMessageToQuote(data, this.config.symbol);
-        if (!quote) {
+        if (quote) {
+          const previousPrice = this.lastRestPrice;
+          priceChanged =
+            previousPrice === null || Math.abs(previousPrice - quote.last) > 1e-6;
+          this.lastRestPrice = quote.last;
+          this.lastDataTimestamp = now;
+          this.callback(quote, 'rest', now);
+        } else {
           console.debug(
             `[TransportPolicy] Ignoring non-quote REST message for ${this.config.symbol}:`,
             data
           );
-        } else {
-          this.lastDataTimestamp = now;
-          this.callback(quote, 'rest', now);
         }
       }
     } catch (error) {
       console.error(`[TransportPolicy] REST poll failed for ${this.config.symbol}:`, error);
+    } finally {
+      this.adjustPollInterval(priceChanged, marketOpen);
+      this.scheduleNextPoll();
     }
   }
 
@@ -309,6 +351,46 @@ export class TransportPolicy {
     }, delay);
   }
 
+  private adjustPollInterval(priceChanged: boolean, marketOpen: boolean) {
+    if (!marketOpen) {
+      this.currentPollInterval = Math.max(this.currentPollInterval, this.closedMarketPollInterval);
+      this.consecutiveNoChange = 0;
+      return;
+    }
+
+    if (priceChanged) {
+      this.consecutiveNoChange = 0;
+      this.currentPollInterval = this.basePollInterval;
+      return;
+    }
+
+    this.consecutiveNoChange += 1;
+    if (this.consecutiveNoChange >= 3) {
+      this.currentPollInterval = Math.min(
+        this.maxPollInterval,
+        this.currentPollInterval + 2000
+      );
+    }
+  }
+
+  private async isMarketOpen(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.lastMarketStatusCheck < 60_000) {
+      return this.marketOpen;
+    }
+
+    this.lastMarketStatusCheck = now;
+    try {
+      const status = await massiveClient.getMarketStatus();
+      const marketState = status?.market?.toLowerCase?.() ?? '';
+      this.marketOpen = marketState.includes('open');
+    } catch (error) {
+      // Fall back to recent activity if status endpoint fails
+      this.marketOpen = now - this.lastDataTimestamp < 3 * 60 * 1000;
+    }
+    return this.marketOpen;
+  }
+
   getLastDataTimestamp(): number {
     return this.lastDataTimestamp;
   }
@@ -327,7 +409,7 @@ export function createTransport(
   symbol: string,
   callback: TransportCallback,
   options?: { isOption?: boolean; isIndex?: boolean; pollInterval?: number }
-): () => void {
+): (() => void) & { setFetchingBars: (value: boolean) => void } {
   const transport = new TransportPolicy(
     {
       symbol,
@@ -340,5 +422,9 @@ export function createTransport(
 
   transport.start();
 
-  return () => transport.stop();
+  const cleanup = (() => transport.stop()) as (() => void) & {
+    setFetchingBars: (value: boolean) => void;
+  };
+  cleanup.setFetchingBars = (value) => transport.setFetchingBars(value);
+  return cleanup;
 }
