@@ -13,6 +13,7 @@ const app = express();
 
 // ===== Security & perf =====
 const WEB_ORIGIN = process.env.WEB_ORIGIN || '*'; // set this in Railway
+const IMAGE_HOST = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com';
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -29,6 +30,7 @@ app.use(
           'wss://hdadmin.up.railway.app',
           'wss://socket.massive.com',
         ],
+        imgSrc: ["'self'", 'data:', IMAGE_HOST],
         frameAncestors: ["'self'"],
       },
     },
