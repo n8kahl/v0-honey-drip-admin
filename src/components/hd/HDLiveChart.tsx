@@ -131,13 +131,16 @@ export function HDLiveChart({
         wickUpColor: '#16A34A',
         wickDownColor: '#EF4444',
       });
-    } else {
+    } else if (typeof chart.addLineSeries === 'function') {
       console.warn('[HDLiveChart] Lightweight Charts missing candlestick support, falling back to a line series');
       candleSeriesRef.current = chart.addLineSeries({
         color: '#16A34A',
         lineWidth: 2,
         priceLineVisible: false,
       });
+    } else {
+      console.error('[HDLiveChart] Lightweight Charts missing both candlestick and line series APIs');
+      candleSeriesRef.current = null;
     }
     
     // Create EMA series
