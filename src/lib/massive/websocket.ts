@@ -7,9 +7,9 @@ import { massiveFetch } from './proxy';
 const MASSIVE_WS_URL_OPTIONS = 'wss://socket.massive.com/options';
 const MASSIVE_WS_URL_INDICES = 'wss://socket.massive.com/indices';
 
-async function getEphemeralToken(plan: 'options' | 'indices' = 'options'): Promise<string> {
+async function getEphemeralToken(): Promise<string> {
   try {
-    const response = await massiveFetch(`/api/massive/ws-token/${plan}`, {
+    const response = await massiveFetch('/api/massive/ws-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -96,7 +96,7 @@ class MassiveWebSocket {
   private initialized = false;
   private ephemeralToken: string | null = null;
 
-  constructor(private plan: 'options' | 'indices' = 'options') {
+  constructor() {
     // Defer initialization until first use
     if (typeof window !== 'undefined') {
       // Initialize on next tick to ensure environment is ready
@@ -127,9 +127,9 @@ class MassiveWebSocket {
     this.connectionError = null;
 
     try {
-      this.ephemeralToken = await getEphemeralToken(this.plan);
+      this.ephemeralToken = await getEphemeralToken();
       
-      const wsUrl = this.plan === 'indices' ? MASSIVE_WS_URL_INDICES : MASSIVE_WS_URL_OPTIONS;
+      const wsUrl = MASSIVE_WS_URL_OPTIONS;
       console.log('[Massive WS] Attempting connection to', wsUrl);
       this.ws = new WebSocket(wsUrl);
 
