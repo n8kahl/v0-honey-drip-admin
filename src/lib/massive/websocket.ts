@@ -2,12 +2,14 @@
 // Real-time streaming options and indices data
 // Documentation: https://massive.com/docs/websocket/quickstart
 
+import { massiveFetch } from './proxy';
+
 const MASSIVE_WS_URL_OPTIONS = 'wss://socket.massive.com/options';
 const MASSIVE_WS_URL_INDICES = 'wss://socket.massive.com/indices';
 
 async function getEphemeralToken(): Promise<string> {
   try {
-    const response = await fetch('/api/massive/ws-token', {
+    const response = await massiveFetch('/api/massive/ws-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });

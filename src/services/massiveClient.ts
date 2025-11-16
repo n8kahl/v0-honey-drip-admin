@@ -1,3 +1,5 @@
+import { massiveFetch } from '../lib/massive/proxy';
+
 // Massive.com API client for market data
 // Read-only market data service - no trading/order routing
 
@@ -64,7 +66,7 @@ export async function fetchTrendMetrics(underlyingTicker: string): Promise<Massi
     
     for (const tf of timeframes) {
       try {
-        const response = await fetch(
+        const response = await massiveFetch(
           `${MASSIVE_API_BASE}/v2/aggs/ticker/${symbol}/range/1/${tf}/minute/2024-01-01/2024-12-31?limit=50`
         );
         
@@ -135,7 +137,7 @@ export async function fetchVolatilityMetrics(
   try {
     const optionSymbol = constructOptionSymbol(ticker, expiry, strike, type);
     
-    const response = await fetch(
+    const response = await massiveFetch(
       `${MASSIVE_API_BASE}/v3/snapshot/options/${ticker}/${optionSymbol}`
     );
     
@@ -190,7 +192,7 @@ export async function fetchLiquidityMetrics(
   try {
     const optionSymbol = constructOptionSymbol(ticker, expiry, strike, type);
     
-    const response = await fetch(
+    const response = await massiveFetch(
       `${MASSIVE_API_BASE}/v3/quotes/${ticker}/${optionSymbol}`
     );
     

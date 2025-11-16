@@ -1,4 +1,5 @@
 import type { MassiveQuote, MassiveOption, MassiveOptionsChain, MassiveIndex } from './types';
+import { massiveFetch } from './proxy';
 
 const MASSIVE_API_BASE = '/api/massive';
 
@@ -32,13 +33,13 @@ class MassiveClient {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
+    const response = await massiveFetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
 
       if (!response.ok) {
         const errorText = await response.text();

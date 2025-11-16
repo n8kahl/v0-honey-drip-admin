@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { massiveWS } from '../../lib/massive/websocket';
+import { massiveFetch } from '../../lib/massive/proxy';
 
 interface HDMicroChartProps {
   ticker: string;
@@ -38,7 +39,7 @@ async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
     
     console.log('[v0] Fetching real 5-minute chart data for:', ticker, fromDate, toDate, 'endpoint:', endpoint);
     
-    const response = await fetch(
+    const response = await massiveFetch(
       `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=120`
     );
 

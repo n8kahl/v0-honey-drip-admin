@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
+import { massiveFetch } from '../../lib/massive/proxy';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
 import { ChartLevel } from '../../types/tradeLevels';
@@ -64,7 +65,7 @@ export function HDLiveChart({
       const to = new Date();
       const from = new Date(to.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
       
-      const response = await fetch(
+      const response = await massiveFetch(
         `${endpoint}/${from.toISOString().split('T')[0]}/${to.toISOString().split('T')[0]}?adjusted=true&sort=asc&limit=500`
       );
       
