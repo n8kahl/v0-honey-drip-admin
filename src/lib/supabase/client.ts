@@ -1,12 +1,18 @@
 import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js';
 
-console.log('[v0] Supabase client module loaded');
-console.log('[v0] Environment variables check:', {
-  hasSupabaseUrl: !!import.meta.env.VITE_SUPABASE_URL,
-  hasSupabaseAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
-  supabaseUrl: import.meta.env.VITE_SUPABASE_URL?.substring(0, 30) + '...',
-  anonKeyLength: import.meta.env.VITE_SUPABASE_ANON_KEY?.length || 0,
-});
+// Immediate check when module loads
+const ENV_CHECK = {
+  VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+  VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
+  MODE: import.meta.env.MODE,
+  ALL_KEYS: Object.keys(import.meta.env),
+};
+
+console.log('[v0] 🔍 Supabase client module loading - IMMEDIATE CHECK');
+console.log('[v0] 📋 All import.meta.env keys:', ENV_CHECK.ALL_KEYS);
+console.log('[v0] 🔑 VITE_SUPABASE_URL:', ENV_CHECK.VITE_SUPABASE_URL || '❌ UNDEFINED');
+console.log('[v0] 🔑 VITE_SUPABASE_ANON_KEY:', ENV_CHECK.VITE_SUPABASE_ANON_KEY ? '✅ Present (length: ' + ENV_CHECK.VITE_SUPABASE_ANON_KEY.length + ')' : '❌ UNDEFINED');
+console.log('[v0] 🔑 MODE:', ENV_CHECK.MODE);
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -15,7 +21,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 let supabaseInstance: SupabaseClient | null = null;
 
 export function createClient(): SupabaseClient {
-  console.log('[v0] createClient() called');
+  console.log('[v0] 🚀 createClient() called');
   
   if (!supabaseInstance) {
     console.log('[v0] Creating new Supabase instance...');
