@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import path from 'path';
 import apiRouter from './routes/api';
-import { createWebSocketProxies } from './ws/proxies';
+import { attachWsServers } from './ws';
 
 const app = express();
 
@@ -88,7 +88,7 @@ app.use((err: any, _req: express.Request, res: express.Response, next: express.N
 
 // ===== HTTP server + WS proxies =====
 const httpServer = http.createServer(app);
-createWebSocketProxies({ server: httpServer });
+attachWsServers(httpServer);
 
 const defaultPort = process.env.NODE_ENV === 'development' ? 3000 : 8080;
 const PORT = Number(process.env.PORT || defaultPort);
