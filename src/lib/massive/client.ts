@@ -268,11 +268,13 @@ class MassiveClient {
   }
 
   async getAggregates(symbol: string, timeframe: '1' | '5' | '15' | '60', lookback: number = 200): Promise<MassiveAggregateBar[]> {
-    const minutes = Number(timeframe);
+    // Normalize timeframe to ensure values like "1/5" fall back to the last segment
+    const timeframeSegments = timeframe.split('/');
+    const normalizedTimeframe = Number(timeframeSegments[timeframeSegments.length - 1]) || 1;
     const to = new Date();
-    const from = new Date(to.getTime() - minutes * lookback * 60 * 1000);
+    const from = new Date(to.getTime() - normalizedTimeframe * lookback * 60 * 1000);
     const formatDay = (date: Date) => date.toISOString().split('T')[0];
-    const endpoint = `/v2/aggs/ticker/${symbol}/range/${timeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+    const endpoint = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
     const data = await this.fetch(endpoint);
     const results: any[] = data.results || data;
     if (!Array.isArray(results)) return [];
