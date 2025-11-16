@@ -182,3 +182,31 @@ export async function getIndicesSnapshot(tickers: string[]) {
   }
   return res.data;
 }
+
+const holidaysCache = new Map<number, string[]>();
+
+export async function getMarketHolidays(year?: number): Promise<string[]> {
+  const targetYear = typeof year === 'number' ? year : new Date().getFullYear();
+  if (holidaysCache.has(targetYear)) {
+    return holidaysCache.get(targetYear)!;
+  }
+
+  const params = new URLSearchParams();
+  params.set('year', String(targetYear));
+  const res = await callMassive<any>(`/v1/market/holidays?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to fetch market holidays'}`);
+  }
+  const payload = res.data;
+  const items: any[] = Array.isArray(payload?.results)
+    ? payload.results
+    : Array.isArray(payload)
+    ? payload
+    : [];
+  const dates = items
+    .map((item: any) => item?.date || item?.holiday_date)
+    .filter(Boolean)
+    .map((value: any) => String(value));
+  holidaysCache.set(targetYear, dates);
+  return dates;
+}

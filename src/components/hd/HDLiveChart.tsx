@@ -1,20 +1,21 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, LineSeriesOptions, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
 import { massiveFetch, MassiveError } from '../../lib/massive/proxy';
+import { massiveClient } from '../../lib/massive/client';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
+import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
+import { ChartLevel } from '../../types/tradeLevels';
 
 const formatIsoDate = (date: Date) => date.toISOString().split('T')[0];
-const getMostRecentTradingDay = (reference: Date) => {
+const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
   const day = new Date(reference);
   day.setHours(0, 0, 0, 0);
-  while (day.getDay() === 0 || day.getDay() === 6) {
+  while (day.getDay() === 0 || day.getDay() === 6 || holidays.has(formatIsoDate(day))) {
     day.setDate(day.getDate() - 1);
   }
   return day;
 };
-import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
-import { ChartLevel } from '../../types/tradeLevels';
 
 export interface TradeEvent {
   type: 'load' | 'enter' | 'trim' | 'update' | 'exit';
@@ -63,6 +64,8 @@ export function HDLiveChart({
   const [ready, setReady] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [holidayDates, setHolidayDates] = useState<string[]>([]);
+  const holidaysSet = useMemo(() => new Set(holidayDates), [holidayDates]);
   
   const rafRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Bar[]>([]);
@@ -74,6 +77,33 @@ export function HDLiveChart({
       setReady(true);
     }
   }, [bars.length, ready]);
+
+  useEffect(() => {
+    let canceled = false;
+    const loadHolidays = async () => {
+      const now = new Date();
+      const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1]);
+      const aggregated = new Set<string>();
+
+      for (const year of years) {
+        try {
+          const dates = await massiveClient.getMarketHolidays(year);
+          dates.forEach((date) => aggregated.add(date));
+        } catch (err) {
+          console.warn(`[HDLiveChart] Failed to load Massive holidays for ${year}`, err);
+        }
+      }
+
+      if (!canceled) {
+        setHolidayDates(Array.from(aggregated));
+      }
+    };
+
+    loadHolidays();
+    return () => {
+      canceled = true;
+    };
+  }, []);
   
   const fetchHistoricalBars = useCallback(async () => {
     if (rateLimited) {
@@ -86,7 +116,7 @@ export function HDLiveChart({
       ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
       : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
     const timeframeMinutes = Number(timeframe) || 1;
-    const lastTradingDay = getMostRecentTradingDay(new Date());
+    const lastTradingDay = getMostRecentTradingDay(new Date(), holidaysSet);
     const toDate = formatIsoDate(lastTradingDay);
     const cacheKey = `${ticker}:${timeframe}:${toDate}`;
 
@@ -165,7 +195,7 @@ export function HDLiveChart({
     } finally {
       inflightFetchesRef.current.delete(cacheKey);
     }
-  }, [ticker, timeframe, rateLimited, rateLimitMessage]);
+  }, [ticker, timeframe, rateLimited, rateLimitMessage, holidaysSet]);
   
   useEffect(() => {
     const container = chartContainerRef.current;
