@@ -21,11 +21,11 @@ export function useStreamingIndex(symbol: string): {
   useEffect(() => {
     console.log(`[useStreamingIndex] Subscribing to ${symbol}`);
     let mounted = true;
+    const massiveSymbol = symbol.startsWith('I:') ? symbol : `I:${symbol}`;
 
-    // Initial fetch via REST
     const initialFetch = async () => {
       try {
-        const data = await fetchIndexQuote(symbol);
+        const data = await fetchIndexQuote(massiveSymbol);
         if (mounted) {
           setQuote(data);
           setIsLoading(false);
@@ -42,27 +42,30 @@ export function useStreamingIndex(symbol: string): {
 
     initialFetch();
 
-    // Subscribe to WebSocket for real-time updates
     const handle = streamingManager.subscribe(
-      symbol,
+      massiveSymbol,
       ['quotes'],
-      (data) => {
+      (update) => {
         if (!mounted) return;
-        
-        console.log(`[useStreamingIndex] Received ${symbol} quote:`, data);
-        
-        setQuote({
-          symbol,
-          value: data.price || data.last || 0,
-          change: data.change || 0,
-          changePercent: data.changePercent || 0,
-          timestamp: data.timestamp || Date.now(),
-          asOf: new Date(data.timestamp || Date.now()).toLocaleTimeString(),
-        });
+
+        const payload = (update as any)?.data ?? update;
+        console.log(`[useStreamingIndex] Received ${massiveSymbol} quote:`, payload);
+
+        const nextQuote: IndexQuote = {
+          symbol: payload?.symbol || symbol,
+          value: payload?.value ?? payload?.last ?? payload?.price ?? 0,
+          change: payload?.change ?? 0,
+          changePercent: payload?.changePercent ?? payload?.change_percent ?? 0,
+          timestamp: payload?.timestamp ?? payload?.t ?? Date.now(),
+          asOf: new Date(payload?.timestamp ?? payload?.t ?? Date.now()).toLocaleTimeString(),
+        };
+
+        setQuote(nextQuote);
         setDataSource('websocket');
         setLastUpdateTime(Date.now());
         setError(null);
-      }
+      },
+      { isIndex: true }
     );
 
     return () => {
