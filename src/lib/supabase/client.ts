@@ -9,7 +9,9 @@ let supabaseInstance: SupabaseClient | null = null;
 export function createClient(): SupabaseClient {
   if (!supabaseInstance) {
     if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('[Supabase] Missing environment variables. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+      throw new Error(
+        'Missing Supabase environment variables. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Railway.'
+      );
     }
     
     supabaseInstance = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
