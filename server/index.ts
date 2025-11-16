@@ -84,12 +84,14 @@ app.use((err: any, _req: express.Request, res: express.Response, next: express.N
 });
 
 // ===== HTTP server + WS proxies =====
-const server = http.createServer(app);
-createWebSocketProxies({ server });
+const httpServer = http.createServer(app);
+createWebSocketProxies({ server: httpServer });
 
-const PORT = Number(process.env.PORT || 3000);
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✓ Server listening on ${PORT}`);
+const defaultPort = process.env.NODE_ENV === 'development' ? 3000 : 8080;
+const PORT = Number(process.env.PORT || defaultPort);
+
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`✓ Server listening on ${PORT} (${process.env.NODE_ENV || 'production'})`);
   if (!process.env.MASSIVE_API_KEY) {
     console.warn('⚠️  MASSIVE_API_KEY is not set — REST/WS proxy will reject upstream calls');
   }

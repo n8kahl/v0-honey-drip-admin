@@ -21,16 +21,16 @@ Railway is the recommended hosting platform for this app.
 ### Step 1: Prepare Repository
 
 1. Push your code to GitHub
-2. Ensure `.env` is in `.gitignore` (it should be)
-3. Verify `package.json` has proper scripts:
-   \`\`\`json
+2. Ensure `.env` (or any secrets file) is in `.gitignore`
+3. Verify `package.json` uses the current build/start scripts:
+   ```json
    {
      "scripts": {
-       "build": "vite build && tsc --project tsconfig.server.json && cp -r server dist-server",
-       "start": "node dist-server/index.js"
+       "build": "vite build && tsc -p tsconfig.server.json",
+       "start": "node server/dist/index.js"
      }
    }
-   \`\`\`
+   ```
 
 ### Step 2: Create Railway Project
 
@@ -44,26 +44,28 @@ Railway is the recommended hosting platform for this app.
 In Railway dashboard, add these environment variables:
 
 **Required:**
-\`\`\`
+```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 MASSIVE_API_KEY=your_massive_api_key
+MASSIVE_PROXY_TOKEN=<secure-proxy-token>
+VITE_MASSIVE_PROXY_TOKEN=<matching-mirror-token>
 NODE_ENV=production
-PORT=3000
-\`\`\`
+PORT=8080
+```
 
 **Optional:**
-\`\`\`
+```
 DISCORD_WEBHOOK_SECRET=your_optional_secret
-VITE_MASSIVE_WS_URL=wss://stream.massive.com
-\`\`\`
+VITE_MASSIVE_WS_URL=wss://socket.massive.com
+```
 
 ### Step 4: Deploy
 
 1. Railway will automatically detect Node.js and run:
-   - `npm install`
-   - `npm run build`
-   - `npm start`
+   - `pnpm install --frozen-lockfile`
+   - `pnpm run build`
+   - `pnpm run start`
 2. Your app will be live at `your-app.railway.app`
 
 ### Step 5: Configure Custom Domain (Optional)
@@ -156,9 +158,11 @@ Visit `https://your-app.railway.app/api/health` to check backend status:
 |----------|----------|-------------|
 | `VITE_SUPABASE_URL` | Yes | Your Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Yes | Your Supabase anon key |
-| `MASSIVE_API_KEY` | Yes | Massive.com API key (server-side only) |
+| `MASSIVE_API_KEY` | Yes | Massive.com API key (server-only) |
+| `MASSIVE_PROXY_TOKEN` | Yes | Secret required by `/api/massive/*` and WebSocket proxies |
+| `VITE_MASSIVE_PROXY_TOKEN` | Yes | Client mirror of the proxy token (sent as `x-massive-proxy-token`) |
 | `NODE_ENV` | Yes | Set to `production` |
-| `PORT` | No | Server port (default: 3000) |
+| `PORT` | Yes (Railway) | Server port (default: 3000 for dev, 8080 for production) |
 | `DISCORD_WEBHOOK_SECRET` | No | Optional secret for Discord webhook validation |
 | `VITE_MASSIVE_WS_URL` | No | Override WebSocket URL |
 

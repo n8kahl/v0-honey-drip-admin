@@ -1,76 +1,61 @@
 # HoneyDrip Admin Server
 
-Express backend for secure API proxying.
-
-## Architecture
-
-- **Vite SPA**: Built frontend served from `/build`
-- **Express API**: Secure proxy for Massive.com and Discord
-- **Environment**: Node 18+, ready for Railway deployment
+Express backend for the Vite SPA that keeps Massive.com and Discord integrations secure.
 
 ## Environment Variables
 
-Required:
-- `MASSIVE_API_KEY` - Your Massive.com API key
-- `PORT` - Server port (default: 3000)
+**Required**
+- `MASSIVE_API_KEY` – Your Massive.com API key (server-side only)
+- `MASSIVE_PROXY_TOKEN` – Shared secret required by `/api/massive/*` routes and WebSocket proxies
+- `NODE_ENV` – Typically `production` in deployment
+- `PORT` – Server port (Railway expects `8080`, `NODE_ENV=production` uses that by default)
 
-Optional:
-- `MASSIVE_BASE_URL` - Massive API base URL (default: https://api.massive.com)
-- `SUPABASE_URL` - For Discord webhook storage
-- `SUPABASE_SERVICE_ROLE_KEY` - For Discord webhook storage
+**Optional**
+- `MASSIVE_BASE_URL` – Override the default `https://api.massive.com`
+- `DISCORD_WEBHOOK_SECRET` – Used when sending alerts via Discord
 
 ## Development
 
-\`\`\`bash
-# Install dependencies
-npm install
-
-# Run dev server (hot reload)
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
-\`\`\`
+```bash
+pnpm install
+pnpm run dev          # Vite dev server + tsx-watched Express server
+pnpm run build        # Vite build + tsc (output in server/dist)
+pnpm run start        # Production server (uses server/dist/index.js)
+```
 
 ## API Endpoints
 
-### Health
-- `GET /api/health` - Server health check
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `GET` | `/api/health` | Basic uptime/health check |
+| `POST` | `/api/massive/ws-token` | Returns an ephemeral Massive WS token (requires `x-massive-proxy-token` header) |
+| `GET` | `/api/massive/options/chain` | Option chain snapshot (requires token header) |
+| `GET` | `/api/massive/options/contracts` | Option contract reference (requires token header) |
+| `GET` | `/api/massive/indices` | Snapshot for indices tickers (requires token header) |
+| `ANY` | `/api/massive/*` | Generic Massive REST proxy (requires token header) |
 
-### Massive.com Proxy
-- `GET /api/massive/options/chain?symbol=TSLA` - Get options chain
-- `GET /api/massive/options/quote?underlying=TSLA` - Get option quote
-- `GET /api/massive/options/aggregates?symbol=...&interval=1m&from=...` - Get aggregates
-- `GET /api/massive/options/indicators?symbol=...&indicator=rsi&timeframes=1h,1d` - Get indicators
-- `GET /api/massive/market-status` - Get market status
-- `GET /api/massive/quotes?symbols=TSLA,AAPL` - Get multiple quotes
-- `GET /api/massive/indices?tickers=SPX,VIX` - Get indices snapshot
+## WebSocket Proxies
 
-### Discord Proxy
-- `POST /api/discord/send` - Send Discord alert
-  \`\`\`json
-  {
-    "channelIds": ["channel-1", "channel-2"],
-    "message": "Trade alert content",
-    "embeds": [...],
-    "webhookUrls": ["https://discord.com/api/webhooks/..."]
-  }
-  \`\`\`
+The server exposes `wss://<host>/ws/options` and `/ws/indices`. Each path:
+
+1. Rejects connections without the `token` query parameter matching `MASSIVE_PROXY_TOKEN`
+2. Authenticates to Massive with `MASSIVE_API_KEY` before subscribing
+3. Mirrors subscribe/unsubscribe/ping flows between the client and Massive sockets
+
+Use the client-side helper to call `/api/massive/ws-token`, then connect to `/ws/options?token=...`.
 
 ## Railway Deployment
 
-1. Connect your GitHub repo
-2. Set environment variables in Railway dashboard
-3. Railway will auto-detect and run:
-   - Build: `npm run build`
-   - Start: `npm start`
+Railway will detect the Node.js project and run:
+
+1. `pnpm install --frozen-lockfile`
+2. `pnpm run build`
+3. `pnpm run start`
+
+Make sure `PORT=8080` is set in the Railway environment, otherwise Railway's health checks see a refusal.
 
 ## Security
 
-- API keys never exposed to client
-- All Massive.com calls proxied through server
-- Discord webhooks validated server-side
-- CORS configured for frontend origin
+- API keys stay on the server and are never bundled into the Vite build
+- Rate limiting and helmet harden critical API routes
+- WebSocket proxies require the same shared `MASSIVE_PROXY_TOKEN` as the REST proxy
