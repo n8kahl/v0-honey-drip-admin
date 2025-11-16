@@ -23,13 +23,15 @@ export async function callMassive(path: string, options: MassiveRequestOptions =
   try {
     console.log(`[Massive] ${method} ${path}`);
     
+    const normalizedMethod = method.toUpperCase();
+    const hasBody = normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD';
     const response = await fetch(url, {
-      method,
+      method: normalizedMethod,
       headers: {
         'Authorization': `Bearer ${MASSIVE_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: hasBody && body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
 
