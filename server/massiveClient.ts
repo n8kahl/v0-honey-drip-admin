@@ -92,27 +92,25 @@ export async function getMarketStatus() {
 }
 
 export async function getQuotes(symbols: string[]) {
-  const results = [];
-  
-  for (const symbol of symbols) {
+  const quoteRequests = symbols.map(async (symbol) => {
     try {
       const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
-      
+
       if (isIndex) {
         const cleanTicker = symbol.replace('I:', '');
         const data = await callMassive(`/v3/snapshot/indices/${cleanTicker}`);
-        results.push(data);
-      } else {
-        const data = await callMassive(`/v3/snapshot/options/${symbol}?limit=1`);
-        results.push(data);
+        return data;
       }
-    } catch (error) {
+
+      const data = await callMassive(`/v3/snapshot/options/${symbol}?limit=1`);
+      return data;
+    } catch (error: any) {
       console.error(`[Massive] Failed to get quote for ${symbol}:`, error);
-      results.push({ error: `Failed to fetch ${symbol}` });
+      return { error: `Failed to fetch ${symbol}` };
     }
-  }
-  
-  return results;
+  });
+
+  return Promise.all(quoteRequests);
 }
 
 export async function getIndicesSnapshot(tickers: string[]) {

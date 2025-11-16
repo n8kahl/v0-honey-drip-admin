@@ -20,10 +20,23 @@ export function useStreamingQuote(symbol: string | null) {
   const [asOf, setAsOf] = useState<number>(Date.now());
   const [source, setSource] = useState<'websocket' | 'rest'>('rest');
   const [isStale, setIsStale] = useState(false);
+  const asOfRef = useRef(asOf);
+  const sourceRef = useRef(source);
   
   useEffect(() => {
-    if (!symbol) return;
-    
+    if (!symbol) {
+      setQuote(null);
+      setIsStale(false);
+      return;
+    }
+
+    const now = Date.now();
+    setAsOf(now);
+    asOfRef.current = now;
+    setSource('rest');
+    sourceRef.current = 'rest';
+    setIsStale(false);
+
     const handle = streamingManager.subscribe(symbol, ['quotes'], (data) => {
       if (data.type === 'quote') {
         setQuote({
@@ -31,24 +44,29 @@ export function useStreamingQuote(symbol: string | null) {
           changePercent: data.data.changePercent || 0,
         });
         setAsOf(data.timestamp);
+        asOfRef.current = data.timestamp;
         setSource(data.source);
+        sourceRef.current = data.source;
         setIsStale(false);
       }
     });
-    
-    // Check for stale data every 5 seconds
-    const staleCheckInterval = setInterval(() => {
-      const secondsAgo = (Date.now() - asOf) / 1000;
-      // Mark as stale if >5s for websocket or >6s (2x poll interval) for REST
-      const threshold = source === 'websocket' ? 5 : 6;
-      setIsStale(secondsAgo > threshold);
-    }, 5000);
-    
+
     return () => {
       streamingManager.unsubscribe(handle);
-      clearInterval(staleCheckInterval);
     };
-  }, [symbol, asOf, source]);
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!symbol) return;
+
+    const staleCheckInterval = setInterval(() => {
+      const secondsAgo = (Date.now() - asOfRef.current) / 1000;
+      const threshold = sourceRef.current === 'websocket' ? 5 : 6;
+      setIsStale(secondsAgo > threshold);
+    }, 5000);
+
+    return () => clearInterval(staleCheckInterval);
+  }, [symbol]);
   
   return { quote, asOf, source, isStale };
 }

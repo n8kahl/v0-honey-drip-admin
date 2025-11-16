@@ -3,6 +3,7 @@ import * as massive from '../massiveClient';
 import * as discord from '../discordClient';
 
 const router = Router();
+const MASSIVE_PROXY_TOKEN = process.env.MASSIVE_PROXY_TOKEN || '';
 
 // Health check
 router.get('/health', (req, res) => {
@@ -206,6 +207,15 @@ router.post('/discord/send', async (req, res) => {
 // Catch-all proxy for any other Massive endpoints
 router.all('/massive/*', async (req, res) => {
   try {
+    if (MASSIVE_PROXY_TOKEN) {
+      const providedToken = req.header('x-massive-proxy-token');
+      if (providedToken !== MASSIVE_PROXY_TOKEN) {
+        return res.status(403).json({ error: 'Invalid Massive proxy token' });
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      console.warn('[API] MASSIVE_PROXY_TOKEN is not configured; proxy endpoint is wide open');
+    }
+
     const path = req.path.replace('/massive', '');
     const queryString = new URLSearchParams(req.query as any).toString();
     const fullPath = queryString ? `${path}?${queryString}` : path;
