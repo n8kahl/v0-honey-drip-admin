@@ -3,6 +3,8 @@
 
 import { massiveClient } from './client';
 
+const INDEX_TICKERS = ['SPX', 'NDX', 'VIX', 'RUT'];
+
 export interface IndicatorRequest {
   ema?: number[]; // Periods for EMA
   sma?: number[]; // Periods for SMA
@@ -40,8 +42,11 @@ export async function fetchIndicators(
     timestamp: Date.now(),
   };
   
+  const isIndex = symbol.startsWith('I:') || INDEX_TICKERS.includes(symbol);
+  const aggSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
+
   // Fetch historical aggregates
-  const bars = await massiveClient.getAggregates(symbol, timeframe, lookback);
+  const bars = await massiveClient.getAggregates(aggSymbol, timeframe, lookback);
   
   if (bars.length === 0) {
     return response;
