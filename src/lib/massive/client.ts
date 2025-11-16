@@ -20,6 +20,16 @@ export interface MassiveMarketStatus {
   earlyHours: boolean;
 }
 
+export interface MassiveAggregateBar {
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+  vw?: number;
+}
+
 class MassiveClient {
   private baseUrl: string;
   private connected: boolean = false;
@@ -174,8 +184,28 @@ class MassiveClient {
     const contractsData = await this.fetch(contractsEndpoint);
     
     if (!contractsData || !contractsData.results || contractsData.results.length === 0) {
-      return contractsData;
-    }
+    return contractsData;
+  }
+
+  async getAggregates(symbol: string, timeframe: '1' | '5' | '15' | '60', lookback: number = 200): Promise<MassiveAggregateBar[]> {
+    const minutes = Number(timeframe);
+    const to = new Date();
+    const from = new Date(to.getTime() - minutes * lookback * 60 * 1000);
+    const formatDay = (date: Date) => date.toISOString().split('T')[0];
+    const endpoint = `/v2/aggs/ticker/${symbol}/range/${timeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+    const data = await this.fetch(endpoint);
+    const results: any[] = data.results || data;
+    if (!Array.isArray(results)) return [];
+    return results.map((bar) => ({
+      t: bar.t,
+      o: bar.o,
+      h: bar.h,
+      l: bar.l,
+      c: bar.c,
+      v: bar.v,
+      vw: bar.vw,
+    }));
+  }
     
     const allContracts = contractsData.results;
     const contractsByExpiry = new Map<string, any[]>();
