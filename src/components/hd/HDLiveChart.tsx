@@ -48,8 +48,8 @@ export function HDLiveChart({
   height = 400,
   className = '',
 }: HDLiveChartProps) {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
+const chartContainerRef = useRef<HTMLDivElement>(null);
+const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Line'> | null>(null);
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<'Line'>>>(new Map());
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -64,6 +64,8 @@ export function HDLiveChart({
   const [ready, setReady] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [chartReady, setChartReady] = useState(false);
+  const waitingForChartRef = useRef(false);
   const [holidayDates, setHolidayDates] = useState<string[]>([]);
   const holidaysSet = useMemo(() => new Set(holidayDates), [holidayDates]);
   
@@ -246,6 +248,8 @@ const fetchHistoricalBars = useCallback(async () => {
     }
 
     chartRef.current = chart;
+    setChartReady(true);
+    waitingForChartRef.current = false;
 
     const priceSeries = chart.addCandlestickSeries({
       upColor: '#16A34A',
@@ -358,6 +362,7 @@ const fetchHistoricalBars = useCallback(async () => {
       bollingerRefs.current = null;
       chart.remove();
       chartRef.current = null;
+      setChartReady(false);
     };
   }, [height, indicators]);
   
@@ -366,7 +371,16 @@ const fetchHistoricalBars = useCallback(async () => {
   }, [fetchHistoricalBars]);
   
   useEffect(() => {
-    if (!candleSeriesRef.current || bars.length === 0) return;
+    if (!chartReady || !candleSeriesRef.current) {
+      if (!chartReady && !waitingForChartRef.current) {
+        console.debug('[HDLiveChart] Waiting for chart API before creating series');
+        waitingForChartRef.current = true;
+      }
+      return;
+    }
+    waitingForChartRef.current = false;
+
+    if (bars.length === 0) return;
     
     const renderUpdate = () => {
       const now = performance.now();
