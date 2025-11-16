@@ -24,73 +24,54 @@ interface ChartDataPoint {
 }
 
 async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
-  try {
-    const isOptionsContract = ticker.startsWith('O:');
-    const indexSymbols = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
-    const isIndex = ticker.startsWith('I:') || indexSymbols.has(ticker);
-    const normalizedTicker = isIndex && ticker.startsWith('I:') ? ticker.slice(2) : ticker;
-    const fetcher = isOptionsContract
-      ? getOptionBars
-      : isIndex
-      ? getIndexBars
-      : getStockBars;
+  const isOptionsContract = ticker.startsWith('O:');
+  const indexSymbols = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
+  const isIndex = ticker.startsWith('I:') || indexSymbols.has(ticker);
+  const normalizedTicker = isIndex
+    ? ticker.startsWith('I:')
+      ? ticker
+      : `I:${ticker}`
+    : ticker;
 
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  const today = new Date();
+  const previous = new Date(today);
+  previous.setDate(previous.getDate() - 3);
+  const toDate = today.toISOString().split('T')[0];
+  const fromDate = previous.toISOString().split('T')[0];
 
-    const toDate = today.toISOString().split('T')[0];
-    const fromDate = yesterday.toISOString().split('T')[0];
+  console.log('[v0] Fetching real 5-minute chart data for:', ticker, fromDate, toDate);
 
-    console.log(
-      '[v0] Fetching real 5-minute chart data for:',
-      ticker,
-      fromDate,
-      toDate,
-      'symbol:',
-      normalizedTicker
-    );
+  const fetcher = isOptionsContract
+    ? getOptionBars
+    : isIndex
+    ? getIndexBars
+    : getStockBars;
 
-    const data = await fetcher(normalizedTicker, 5, 'minute', fromDate, toDate, 120);
-    console.log('[v0] Received chart data:', data);
-
-    const results = data.results || data;
-    if (!Array.isArray(results) || results.length === 0) {
-      console.log('[v0] No chart data available');
-      return [];
-    }
-
-    const chartData: ChartDataPoint[] = results.map((bar: any, index: number) => {
-      const timestamp = new Date(bar.t);
-      const time = timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-      const ema9 = calculateEMA(
-        results.slice(Math.max(0, index - 8), index + 1).map((b: any) => b.c),
-        9
-      );
-      const ema21 = calculateEMA(
-        results.slice(Math.max(0, index - 20), index + 1).map((b: any) => b.c),
-        21
-      );
-
-      return {
-        time,
-        price: parseFloat(bar.c.toFixed(2)),
-        open: parseFloat(bar.o.toFixed(2)),
-        high: parseFloat(bar.h.toFixed(2)),
-        low: parseFloat(bar.l.toFixed(2)),
-        close: parseFloat(bar.c.toFixed(2)),
-        ema9: parseFloat(ema9.toFixed(2)),
-        ema21: parseFloat(ema21.toFixed(2)),
-      };
-    });
-
-    console.log('[v0] Transformed chart data:', chartData.length, 'bars');
-    return chartData;
-  } catch (error) {
-    console.error('[v0] Error fetching chart data:', error);
+  const data = await fetcher(normalizedTicker, 5, 'minute', fromDate, toDate, 144);
+  const results = data.results || data;
+  if (!Array.isArray(results) || results.length === 0) {
+    console.log('[v0] No chart data available');
     return [];
   }
+
+  return results.map((bar: any, index: number) => {
+    const timestamp = new Date(bar.t);
+    const time = timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const closes = results.slice(Math.max(0, index - 20), index + 1).map((b: any) => b.c);
+    const ema9 = calculateEMA(closes.slice(-9), 9);
+    const ema21 = calculateEMA(closes, 21);
+
+    return {
+      time,
+      price: parseFloat(bar.c.toFixed(2)),
+      open: parseFloat(bar.o.toFixed(2)),
+      high: parseFloat(bar.h.toFixed(2)),
+      low: parseFloat(bar.l.toFixed(2)),
+      close: parseFloat(bar.c.toFixed(2)),
+      ema9: parseFloat(ema9.toFixed(2)),
+      ema21: parseFloat(ema21.toFixed(2)),
+    };
+  });
 }
 
 // Helper function to calculate simple EMA
@@ -121,6 +102,8 @@ export function HDMicroChart({
 }: HDMicroChartProps) {
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [canRetryAt, setCanRetryAt] = useState<number>(0);
   const [livePrice, setLivePrice] = useState(currentPrice);
   const [chartType, setChartType] = useState<'line' | 'candlestick'>('candlestick');
   const chartRef = useRef<HTMLDivElement>(null);
@@ -130,19 +113,31 @@ export function HDMicroChart({
     
     const loadData = async () => {
       setLoading(true);
-      const chartData = await fetchReal5MinData(ticker);
-      if (mounted) {
-        setData(chartData);
+      setRateLimited(false);
+      try {
+        const chartData = await fetchReal5MinData(ticker);
+        if (mounted) {
+          setData(chartData);
+          setLoading(false);
+        }
+      } catch (error: any) {
+        if (!mounted) return;
         setLoading(false);
+        if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
+          setRateLimited(true);
+          setCanRetryAt(Date.now() + 60_000);
+        }
       }
     };
-    
-    loadData();
+
+    if (!rateLimited || Date.now() > canRetryAt) {
+      loadData();
+    }
     
     return () => {
       mounted = false;
     };
-  }, [ticker]);
+  }, [ticker, rateLimited, canRetryAt]);
   
   useEffect(() => {
     console.log('[v0] Chart subscribing to real-time WebSocket updates for:', ticker);

@@ -25,6 +25,8 @@ const sessionConfig = {
   }
 };
 
+let hasWarned = false;
+
 export function HDPill({ status, className }: HDPillProps) {
   const fallback = {
     label: status || 'Unknown',
@@ -32,8 +34,9 @@ export function HDPill({ status, className }: HDPillProps) {
   };
   const config = sessionConfig[status] ?? fallback;
 
-  if (config === fallback) {
-    console.warn('[HDPill] Unknown session status, using fallback', status);
+  if (config === fallback && process.env.NODE_ENV !== 'production' && !hasWarned) {
+    console.warn('[HDPill] Unknown session status, defaulting to closed', status);
+    hasWarned = true;
   }
   
   return (
