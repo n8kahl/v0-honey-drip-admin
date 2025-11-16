@@ -249,14 +249,20 @@ class MassiveClient {
   }
 
   async getIndex(ticker: string): Promise<MassiveIndex> {
-    const cleanTicker = ticker.replace('I:', '');
-    const data = await this.fetch(`/v3/snapshot/indices?tickers=${cleanTicker}`);
+    const finalTicker = ticker.startsWith('I:') ? ticker : `I:${ticker}`;
+    const data = await this.fetch(
+      `/v3/snapshot/indices?ticker=${encodeURIComponent(finalTicker)}`
+    );
     return data.results?.[0] || data;
   }
 
   async getIndices(tickers: string[]): Promise<MassiveIndex[]> {
-    const cleanTickers = tickers.map(t => t.replace('I:', '')).join(',');
-    const data = await this.fetch(`/v3/snapshot/indices?tickers=${cleanTickers}`);
+    const finalTickers = tickers
+      .map((t) => (t.startsWith('I:') ? t : `I:${t}`))
+      .join(',');
+    const data = await this.fetch(
+      `/v3/snapshot/indices?ticker.any_of=${encodeURIComponent(finalTickers)}`
+    );
     return data.results || [];
   }
 
