@@ -1,19 +1,20 @@
-const WS_BASE = (() => {
-  const http = window.location.origin;
-  return http.replace(/^http/, 'ws');
-})();
+type WsEndpoint = 'options' | 'indices';
 
-const MASSIVE_PROXY_TOKEN = import.meta.env.VITE_MASSIVE_PROXY_TOKEN || '';
-const buildProxyUrl = (path: string) => {
-  if (!MASSIVE_PROXY_TOKEN) {
-    console.warn('[Massive WS] VITE_MASSIVE_PROXY_TOKEN missing; WS proxy will reject connections');
-    return `${WS_BASE}${path}`;
-  }
-  return `${WS_BASE}${path}?token=${encodeURIComponent(MASSIVE_PROXY_TOKEN)}`;
-};
+const WS_BASE = '/ws';
+const TOKEN = import.meta.env.VITE_MASSIVE_PROXY_TOKEN;
 
-const MASSIVE_WS_URL_OPTIONS = buildProxyUrl('/ws/options');
-const MASSIVE_WS_URL_INDICES = buildProxyUrl('/ws/indices');
+if (!TOKEN) {
+  console.warn('[Massive WS] VITE_MASSIVE_PROXY_TOKEN missing; WS proxy will reject connections');
+}
+
+function wsUrl(endpoint: WsEndpoint) {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  const tokenSegment = TOKEN
+    ? `?token=${encodeURIComponent(TOKEN)}`
+    : '';
+  return `${proto}//${host}${WS_BASE}/${endpoint}${tokenSegment}`;
+}
 
 type SubscriptionCallback = (message: WebSocketMessage) => void;
 
@@ -74,15 +75,33 @@ export interface OptionQuoteUpdate {
 }
 
 class MassiveWebSocket {
-  private ws: WebSocket | null = null;
-  private reconnectAttempts = 0;
+  private sockets: Record<WsEndpoint, WebSocket | null> = {
+    options: null,
+    indices: null,
+  };
+  private reconnectAttempts: Record<WsEndpoint, number> = {
+    options: 0,
+    indices: 0,
+  };
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private subscribers: Map<string, Set<SubscriptionCallback>> = new Map();
-  private isConnecting = false;
-  private isAuthenticated = false;
-  private subscriptions: Set<string> = new Set();
-  private heartbeatInterval: any = null;
+  private isConnecting: Record<WsEndpoint, boolean> = {
+    options: false,
+    indices: false,
+  };
+  private isAuthenticated: Record<WsEndpoint, boolean> = {
+    options: false,
+    indices: false,
+  };
+  private subscriptions: Record<WsEndpoint, Set<string>> = {
+    options: new Set(),
+    indices: new Set(),
+  };
+  private heartbeatIntervals: Record<WsEndpoint, any> = {
+    options: null,
+    indices: null,
+  };
   private connectionError: string | null = null;
   private initialized = false;
 
@@ -99,28 +118,37 @@ class MassiveWebSocket {
   }
 
   async connect() {
-    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) {
+    this.connectEndpoint('options');
+    this.connectEndpoint('indices');
+  }
+
+  private connectEndpoint(endpoint: WsEndpoint) {
+    if (this.sockets[endpoint]?.readyState === WebSocket.OPEN || this.isConnecting[endpoint]) {
       return;
     }
 
-    this.isConnecting = true;
-    this.isAuthenticated = true;
+    this.isConnecting[endpoint] = true;
     this.connectionError = null;
+    this.isAuthenticated[endpoint] = false;
 
     try {
-      const wsUrl = MASSIVE_WS_URL_OPTIONS;
-      this.ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl(endpoint));
+      this.sockets[endpoint] = socket;
 
-      this.ws.onopen = () => {
-        this.isConnecting = false;
-        this.reconnectAttempts = 0;
-        this.heartbeatInterval = setInterval(() => this.send({ action: 'ping' }), 25_000);
-        if (this.subscriptions.size) {
-          this.send({ action: 'subscribe', params: Array.from(this.subscriptions).join(',') });
+      socket.onopen = () => {
+        this.isConnecting[endpoint] = false;
+        this.reconnectAttempts[endpoint] = 0;
+        this.isAuthenticated[endpoint] = true;
+        this.heartbeatIntervals[endpoint] = setInterval(
+          () => this.send(endpoint, { action: 'ping' }),
+          25_000
+        );
+        if (this.subscriptions[endpoint].size) {
+          this.send(endpoint, { action: 'subscribe', params: Array.from(this.subscriptions[endpoint]).join(',') });
         }
       };
 
-      this.ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           const messages = Array.isArray(data) ? data : [data];
@@ -130,44 +158,44 @@ class MassiveWebSocket {
         }
       };
 
-      this.ws.onclose = () => {
-        this.isAuthenticated = false;
-        this.cleanup();
-        this.attemptReconnect();
+      socket.onclose = () => {
+        this.isAuthenticated[endpoint] = false;
+        this.cleanup(endpoint);
+        this.attemptReconnect(endpoint);
       };
 
-      this.ws.onerror = (error) => {
+      socket.onerror = (error) => {
         this.connectionError = 'Connection error';
         console.error('[Massive WS] Connection error', error);
-        this.cleanup();
-        this.attemptReconnect();
+        this.cleanup(endpoint);
+        this.attemptReconnect(endpoint);
       };
     } catch (err) {
       console.error('[Massive WS] Connection failed:', err);
-      this.isConnecting = false;
-      this.attemptReconnect();
+      this.isConnecting[endpoint] = false;
+      this.attemptReconnect(endpoint);
     }
   }
 
-  private cleanup() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
+  private cleanup(endpoint: WsEndpoint) {
+    if (this.heartbeatIntervals[endpoint]) {
+      clearInterval(this.heartbeatIntervals[endpoint]);
+      this.heartbeatIntervals[endpoint] = null;
     }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.sockets[endpoint]) {
+      this.sockets[endpoint]?.close();
+      this.sockets[endpoint] = null;
     }
   }
 
-  private attemptReconnect() {
-    this.reconnectAttempts += 1;
-    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+  private attemptReconnect(endpoint: WsEndpoint) {
+    this.reconnectAttempts[endpoint] += 1;
+    if (this.reconnectAttempts[endpoint] > this.maxReconnectAttempts) {
       console.error('[Massive WS] Max reconnection attempts reached');
       return;
     }
-    const delay = this.reconnectDelay * 2 ** (this.reconnectAttempts - 1);
-    setTimeout(() => this.connect(), delay);
+    const delay = this.reconnectDelay * 2 ** (this.reconnectAttempts[endpoint] - 1);
+    setTimeout(() => this.connectEndpoint(endpoint), delay);
   }
 
   private broadcast(payload: any) {
@@ -231,29 +259,31 @@ class MassiveWebSocket {
     this.broadcast(msg);
   }
 
-  private resubscribe() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const params = Array.from(this.subscriptions).join(',');
+  private resubscribe(endpoint: WsEndpoint) {
+    const socket = this.sockets[endpoint];
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const params = Array.from(this.subscriptions[endpoint]).join(',');
     if (!params) return;
-    this.send({ action: 'subscribe', params });
+    this.send(endpoint, { action: 'subscribe', params });
   }
 
-  private addChannels(channels: string[]) {
+  private addChannels(channels: string[], endpoint: WsEndpoint) {
     let added = false;
     for (const channel of channels) {
-      if (!this.subscriptions.has(channel)) {
-        this.subscriptions.add(channel);
+      if (!this.subscriptions[endpoint].has(channel)) {
+        this.subscriptions[endpoint].add(channel);
         added = true;
       }
     }
     if (added) {
-      this.resubscribe();
+      this.resubscribe(endpoint);
     }
   }
 
-  private send(data: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+  private send(endpoint: WsEndpoint, data: any) {
+    const socket = this.sockets[endpoint];
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(data));
     }
   }
 
@@ -277,7 +307,7 @@ class MassiveWebSocket {
       this.subscribers.get(key)!.add(callback);
     });
     const channels = symbols.map((symbol) => `A.${symbol}`);
-    this.addChannels(channels);
+    this.addChannels(channels, 'options');
     return () => {
       symbols.forEach((symbol) => {
         this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
@@ -292,7 +322,7 @@ class MassiveWebSocket {
       this.subscribers.get(key)!.add(callback);
     });
     const channels = optionTickers.map((ticker) => `Q.${ticker}`);
-    this.addChannels(channels);
+    this.addChannels(channels, 'options');
     return () => {
       optionTickers.forEach((ticker) => {
         this.deregisterSubscription(this.createSubscriberKey('option', ticker), callback);
@@ -305,9 +335,15 @@ class MassiveWebSocket {
       const key = this.createSubscriberKey('index', symbol);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
-      this.subscriptions.add(symbol);
     });
-    this.resubscribe();
+    const channels = symbols.map((symbol) => {
+      const base = `A.${symbol}`;
+      const match = base.match(/^(V|AM|A)\.(.+)$/);
+      if (!match) return base;
+      const [_, ev, sym] = match;
+      return sym.startsWith('I:') ? base : `${ev}.I:${sym}`;
+    });
+    this.addChannels(channels, 'indices');
     return () => {
       symbols.forEach((symbol) => {
         this.deregisterSubscription(this.createSubscriberKey('index', symbol), callback);
@@ -361,9 +397,10 @@ class MassiveWebSocket {
   }
 
   getConnectionState(): 'connecting' | 'open' | 'closed' {
-    if (this.isConnecting) return 'connecting';
-    if (!this.ws) return 'closed';
-    if (this.ws.readyState === WebSocket.OPEN) return 'open';
+    if (this.isConnecting.options) return 'connecting';
+    const socket = this.sockets.options;
+    if (!socket) return 'closed';
+    if (socket.readyState === WebSocket.OPEN) return 'open';
     return 'connecting';
   }
 }
