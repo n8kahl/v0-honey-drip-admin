@@ -48,7 +48,7 @@ const server = http.createServer(app);
 createWebSocketProxies({ server });
 
 const PORT = Number(process.env.PORT || 3000);
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`✓ Server listening on ${PORT}`);
   if (!process.env.MASSIVE_API_KEY) {
     console.warn('⚠️  MASSIVE_API_KEY is not set — REST/WS proxy will reject upstream calls');
