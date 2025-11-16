@@ -117,3 +117,93 @@ export function downsampleBars(bars: Bar[], targetCount: number): Bar[] {
   
   return result;
 }
+
+export function ema(values: number[], period: number): number[] {
+  const out: number[] = [];
+  const k = 2 / (period + 1);
+  let prev: number | undefined;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (prev === undefined) prev = v;
+    else prev = v * k + prev * (1 - k);
+    out.push(prev);
+  }
+  return out;
+}
+
+export function rsiWilder(closes: number[], period = 14): number[] {
+  const out: number[] = new Array(closes.length).fill(NaN);
+  if (closes.length <= period) return out;
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const change = closes[i] - closes[i - 1];
+    if (change >= 0) gains += change;
+    else losses -= change;
+  }
+
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+
+  for (let i = period + 1; i < closes.length; i++) {
+    const change = closes[i] - closes[i - 1];
+    const gain = Math.max(change, 0);
+    const loss = Math.max(-change, 0);
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
+export function atrWilder(
+  high: number[],
+  low: number[],
+  close: number[],
+  period = 14
+): number[] {
+  const n = close.length;
+  const tr: number[] = new Array(n).fill(NaN);
+  for (let i = 0; i < n; i++) {
+    const prevClose = i > 0 ? close[i - 1] : close[i];
+    tr[i] = Math.max(
+      high[i] - low[i],
+      Math.abs(high[i] - prevClose),
+      Math.abs(low[i] - prevClose)
+    );
+  }
+  const out: number[] = new Array(n).fill(NaN);
+  if (n <= period) return out;
+  let atr = tr.slice(0, period).reduce((sum, value) => sum + value, 0) / period;
+  out[period - 1] = atr;
+  for (let i = period; i < n; i++) {
+    atr = (atr * (period - 1) + tr[i]) / period;
+    out[i] = atr;
+  }
+  return out;
+}
+
+export function vwapSession(
+  high: number[],
+  low: number[],
+  close: number[],
+  volume: number[],
+  isSessionOpen: boolean[]
+): number[] {
+  const out: number[] = new Array(close.length).fill(NaN);
+  let pvSum = 0;
+  let vSum = 0;
+  for (let i = 0; i < close.length; i++) {
+    if (isSessionOpen[i]) {
+      pvSum = 0;
+      vSum = 0;
+    }
+    const typical = (high[i] + low[i] + close[i]) / 3;
+    pvSum += typical * volume[i];
+    vSum += volume[i];
+    out[i] = vSum > 0 ? pvSum / vSum : NaN;
+  }
+  return out;
+}
