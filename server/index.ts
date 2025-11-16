@@ -13,7 +13,27 @@ const app = express();
 
 // ===== Security & perf =====
 const WEB_ORIGIN = process.env.WEB_ORIGIN || '*'; // set this in Railway
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        connectSrc: [
+          "'self'",
+          'https://ejsaflvzljklapbrcfxr.supabase.co',
+          'https://hdadmin.up.railway.app',
+          'https://api.massive.com',
+          'wss://hdadmin.up.railway.app',
+          'wss://socket.massive.com',
+        ],
+        frameAncestors: ["'self'"],
+      },
+    },
+  })
+);
 app.use(compression());
 app.use(
   cors({
