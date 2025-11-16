@@ -3,8 +3,17 @@ const WS_BASE = (() => {
   return http.replace(/^http/, 'ws');
 })();
 
-const MASSIVE_WS_URL_OPTIONS = `${WS_BASE}/ws/options`;
-const MASSIVE_WS_URL_INDICES = `${WS_BASE}/ws/indices`;
+const MASSIVE_PROXY_TOKEN = import.meta.env.VITE_MASSIVE_PROXY_TOKEN || '';
+const buildProxyUrl = (path: string) => {
+  if (!MASSIVE_PROXY_TOKEN) {
+    console.warn('[Massive WS] VITE_MASSIVE_PROXY_TOKEN missing; WS proxy will reject connections');
+    return `${WS_BASE}${path}`;
+  }
+  return `${WS_BASE}${path}?token=${encodeURIComponent(MASSIVE_PROXY_TOKEN)}`;
+};
+
+const MASSIVE_WS_URL_OPTIONS = buildProxyUrl('/ws/options');
+const MASSIVE_WS_URL_INDICES = buildProxyUrl('/ws/indices');
 
 type SubscriptionCallback = (message: WebSocketMessage) => void;
 
