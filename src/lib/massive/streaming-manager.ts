@@ -99,6 +99,15 @@ export class StreamingManager {
       }
     };
   }
+
+  /**
+   * Convenience helper for callers that stored the unsubscribe handle
+   */
+  unsubscribe(handle?: (() => void) | null) {
+    if (typeof handle === 'function') {
+      handle();
+    }
+  }
   
   /**
    * Start streaming for a subscription
