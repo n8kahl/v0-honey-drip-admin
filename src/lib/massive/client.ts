@@ -2,6 +2,8 @@ import type { MassiveQuote, MassiveOption, MassiveOptionsChain, MassiveIndex } f
 import { massiveFetch } from './proxy';
 
 const MASSIVE_API_BASE = '/api/massive';
+const CONTRACT_TTL_MS = 15 * 60 * 1000;
+const contractCache = new Map<string, { t: number; data: any }>();
 
 export interface MassiveRSI {
   timestamp: number;
@@ -176,12 +178,7 @@ class MassiveClient {
       console.error('[v0] Failed to get current price, using fallback');
     }
     
-    let contractsEndpoint = `/v3/reference/options/contracts?underlying_ticker=${underlyingTicker}&limit=1000`;
-    if (expirationDate) {
-      contractsEndpoint += `&expiration_date=${expirationDate}`;
-    }
-    
-    const contractsData = await this.fetch(contractsEndpoint);
+    const contractsData = await getOptionContracts(underlyingTicker, 1000, expirationDate);
     
     if (!contractsData || !contractsData.results || contractsData.results.length === 0) {
       return contractsData;
@@ -297,6 +294,35 @@ class MassiveClient {
     return this.lastError;
   }
 
+}
+
+const buildContractsUrl = (underlying: string, limit: number, expiration?: string) => {
+  const params = new URLSearchParams({
+    underlying_ticker: underlying,
+    limit: `${Math.min(limit, 1000)}`,
+  });
+  if (expiration) {
+    params.set('expiration_date', expiration);
+  }
+  return `/v3/reference/options/contracts?${params.toString()}`;
+};
+
+async function fetchContractsRaw(underlying: string, limit: number, expiration?: string) {
+  const path = buildContractsUrl(underlying, limit, expiration);
+  const response = await massiveFetch(`${MASSIVE_API_BASE}${path}`);
+  return response.json();
+}
+
+export async function getOptionContracts(underlying: string, limit = 1000, expiration?: string) {
+  const key = `${underlying}:${Math.min(limit, 1000)}:${expiration || ''}`;
+  const now = Date.now();
+  const cached = contractCache.get(key);
+  if (cached && now - cached.t < CONTRACT_TTL_MS) {
+    return cached.data;
+  }
+  const data = await fetchContractsRaw(underlying, limit, expiration);
+  contractCache.set(key, { t: now, data });
+  return data;
 }
 
 export const massiveClient = new MassiveClient();
