@@ -286,6 +286,27 @@ class MassiveClient {
     }));
   }
 
+  async getOptionTrades(
+    optionsTicker: string,
+    params?: { limit?: number; order?: 'asc' | 'desc'; sort?: string; cursor?: string }
+  ): Promise<any[]> {
+    const search = new URLSearchParams();
+    const limit = params?.limit ?? 50;
+    const order = params?.order ?? 'asc';
+    const sort = params?.sort ?? 'timestamp';
+
+    if (limit) search.set('limit', String(limit));
+    if (order) search.set('order', order);
+    if (sort) search.set('sort', sort);
+    if (params?.cursor) search.set('cursor', params.cursor);
+
+    const qs = search.toString();
+    const endpoint = `/v3/trades/${encodeURIComponent(optionsTicker)}${qs ? `?${qs}` : ''}`;
+    const data = await this.fetch(endpoint);
+    const results: any[] = data.results || data || [];
+    return Array.isArray(results) ? results : [];
+  }
+
   isConnected(): boolean {
     return this.connected;
   }

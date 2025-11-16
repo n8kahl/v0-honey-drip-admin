@@ -1,5 +1,6 @@
 import { massiveClient } from './client';
 import { streamingManager } from './streaming-manager';
+import { massiveWS, type TradeUpdate, type WebSocketMessage } from './websocket';
 
 // Core option contract shape used by advanced helpers and tests
 export interface OptionContract {
@@ -261,9 +262,101 @@ export function analyzeTradeTape(
 }
 
 class OptionsAdvancedManager {
-  subscribeTrades(_ticker: string, _callback: (trade: OptionsTrade) => void): () => void {
-    // Trade-level stream not yet wired; return no-op unsubscribe
-    return () => {};
+  private restTradePollers: Map<string, any> = new Map();
+  private lastRestTradeTimestamp: Map<string, number> = new Map();
+
+  subscribeTrades(ticker: string, callback: (trade: OptionsTrade) => void): () => void {
+    let active = true;
+
+    const wsUnsubscribe = massiveWS.subscribeOptionTrades([ticker], (msg: WebSocketMessage) => {
+      if (!active) return;
+      if (msg.type !== 'trade') return;
+      const data = msg.data as TradeUpdate;
+      if (!data || data.ticker !== ticker) return;
+
+      const trade: OptionsTrade = {
+        price: data.price,
+        size: data.size,
+        exchange: data.exchange,
+        conditions: data.conditions,
+        timestamp: data.timestamp,
+      };
+      callback(trade);
+    });
+
+    const pollKey = ticker;
+
+    const startRestPolling = () => {
+      if (this.restTradePollers.has(pollKey)) return;
+
+      const poll = async () => {
+        if (!active) return;
+
+        // Only use REST when WS is not open
+        if (massiveWS.getConnectionState() === 'open') {
+          return;
+        }
+
+        try {
+          const results = await massiveClient.getOptionTrades(ticker, {
+            limit: 50,
+            order: 'asc',
+            sort: 'timestamp',
+          });
+
+          if (!Array.isArray(results) || results.length === 0) return;
+
+          let lastTs = this.lastRestTradeTimestamp.get(pollKey) ?? 0;
+          let maxTs = lastTs;
+
+          for (const r of results as any[]) {
+            const ts =
+              r.sip_timestamp ??
+              r.participant_timestamp ??
+              r.timestamp ??
+              0;
+            if (!ts || ts <= lastTs) continue;
+
+            const trade: OptionsTrade = {
+              price: r.price ?? 0,
+              size: r.size ?? r.volume ?? 0,
+              exchange: r.exchange ?? 0,
+              conditions: Array.isArray(r.conditions) ? r.conditions : [],
+              timestamp: ts,
+            };
+
+            callback(trade);
+            if (ts > maxTs) {
+              maxTs = ts;
+            }
+          }
+
+          if (maxTs > lastTs) {
+            this.lastRestTradeTimestamp.set(pollKey, maxTs);
+          }
+        } catch (error) {
+          console.error('[OptionsAdvanced] REST trades poll failed', error);
+        }
+      };
+
+      // Initial poll
+      void poll();
+      const interval = setInterval(poll, 3000);
+      this.restTradePollers.set(pollKey, interval);
+    };
+
+    startRestPolling();
+
+    return () => {
+      active = false;
+      wsUnsubscribe();
+      const interval = this.restTradePollers.get(pollKey);
+      if (interval) {
+        clearInterval(interval);
+        this.restTradePollers.delete(pollKey);
+      }
+      this.lastRestTradeTimestamp.delete(pollKey);
+    };
   }
 
   subscribeQuotes(ticker: string, callback: (quote: OptionsQuote) => void): () => void {

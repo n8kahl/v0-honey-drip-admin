@@ -30,18 +30,9 @@ export function HDConfluenceDetailPanel({
   const trendScore = trend?.trendScore ?? 50;
   const volPercentile = volatility?.ivPercentile ?? 50;
   const liqScore = liquidity?.liquidityScore ?? 50;
-  
-  // Mock detailed metrics (would come from Massive API in production)
-  const rsi5m = 64;
-  const macd5m = 'above signal';
-  const above5mEMA = true;
-  const iv = 22.4;
-  const ivPercentile = 75;
-  const ivTrend = 'Rising';
-  const expectedMove = 48;
-  const volume = liquidity?.volume ?? 12450;
-  const openInterest = liquidity?.openInterest ?? 8234;
-  const spreadPct = liquidity?.spreadPct ?? 0.8;
+  const volume = liquidity?.volume ?? 0;
+  const openInterest = liquidity?.openInterest ?? 0;
+  const spreadPct = liquidity?.spreadPct ?? 0;
   
   // Trend chip logic
   const getTrendLabel = () => {
@@ -156,28 +147,13 @@ export function HDConfluenceDetailPanel({
               </span>
             </div>
             
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--text-muted)]">RSI (5m)</span>
-                <span className="text-[var(--text-high)] font-medium tabular-nums">
-                  {rsi5m} · <span className={rsi5m > 50 ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}>
-                    {rsi5m > 50 ? 'Bullish' : 'Bearish'}
-                  </span>
-                </span>
+              <div className="space-y-1.5 text-[11px] text-[var(--text-muted)]">
+                <p>
+                  {trend
+                    ? trend.description
+                    : 'Trend metrics are loading from Massive…'}
+                </p>
               </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--text-muted)]">MACD (5m)</span>
-                <span className={macd5m === 'above signal' ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}>
-                  {macd5m === 'above signal' ? 'Trending up' : 'Trending down'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--text-muted)]">Above 5m EMA</span>
-                <span className={above5mEMA ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}>
-                  {above5mEMA ? 'Yes' : 'No'}
-                </span>
-              </div>
-            </div>
             
             <div className="mt-2.5 pt-2.5 border-t border-[var(--border-hairline)]">
               <p className={cn('text-[11px]', isAligned ? 'text-[var(--accent-positive)]' : 'text-[var(--brand-primary)]')}>
@@ -199,24 +175,17 @@ export function HDConfluenceDetailPanel({
             <div className="mb-2.5 pb-2.5 border-b border-[var(--border-hairline)]">
               <div className="text-[10px] text-[var(--text-faint)] uppercase tracking-wide mb-1.5">Pricing & Volatility</div>
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-muted)]">IV</span>
-                  <span className="text-[var(--text-high)] font-medium tabular-nums">
-                    {iv}% <span className={ivPercentile >= 70 ? 'text-[var(--brand-primary)]' : 'text-[var(--text-muted)]'}>
-                      (p{ivPercentile} · {getVolatilityLabel()})
+                {volatility && (
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[var(--text-muted)]">IV Percentile</span>
+                    <span className="text-[var(--text-high)] font-medium tabular-nums">
+                      {volatility.ivPercentile.toFixed(0)} ·{' '}
+                      <span className={volatility.ivPercentile >= 70 ? 'text-[var(--brand-primary)]' : 'text-[var(--text-muted)]'}>
+                        {getVolatilityLabel()}
+                      </span>
                     </span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-muted)]">IV trend (15m)</span>
-                  <span className={ivTrend === 'Rising' ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}>
-                    {ivTrend}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-muted)]">Expected move</span>
-                  <span className="text-[var(--text-high)] tabular-nums">${expectedMove}</span>
-                </div>
+                  </div>
+                )}
               </div>
             </div>
             

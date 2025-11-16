@@ -179,6 +179,15 @@ export function HDAlertComposer({
   };
 
   const getPreviewMessage = () => {
+    const confluenceDataFromTrade = trade.confluence
+      ? {
+          rsi: trade.confluence.rsi14,
+          macdSignal: trade.confluence.macdSignal,
+          volumeChange: trade.confluence.volumeChange,
+          ivPercentile: trade.confluence.ivPercentile,
+        }
+      : undefined;
+
     // Use the Discord formatter with current field selections
     return formatDiscordAlert(trade, alertType, {
       updateKind: alertOptions?.updateKind,
@@ -189,13 +198,7 @@ export function HDAlertComposer({
       includePnL: showPnL,
       includeConfluence: showConfluence,
       comment: comment,
-      // Mock confluence data - replace with real data from props if available
-      confluenceData: showConfluence ? {
-        rsi: 65,
-        macdSignal: 'bullish',
-        volumeChange: 230,
-        ivPercentile: 75,
-      } : undefined,
+      confluenceData: showConfluence ? confluenceDataFromTrade : undefined,
     });
   };
   

@@ -74,6 +74,15 @@ export interface OptionQuoteUpdate {
   volume?: number;
 }
 
+export interface TradeUpdate {
+  ticker: string;
+  price: number;
+  size: number;
+  exchange: number;
+  conditions: number[];
+  timestamp: number;
+}
+
 class MassiveWebSocket {
   private sockets: Record<WsEndpoint, WebSocket | null> = {
     options: null,
@@ -255,6 +264,20 @@ class MassiveWebSocket {
         timestamp: msg.e,
       };
       this.notifySubscribers('quote', sym, message);
+    } else if (ev === 'T') {
+      const message: WebSocketMessage = {
+        type: 'trade',
+        data: {
+          ticker: sym,
+          price: msg.p || 0,
+          size: msg.s || 0,
+          exchange: msg.x ?? 0,
+          conditions: Array.isArray(msg.c) ? msg.c : [],
+          timestamp: msg.t,
+        } as TradeUpdate,
+        timestamp: msg.t,
+      };
+      this.notifySubscribers('trade', sym, message);
     }
     this.broadcast(msg);
   }
@@ -326,6 +349,21 @@ class MassiveWebSocket {
     return () => {
       optionTickers.forEach((ticker) => {
         this.deregisterSubscription(this.createSubscriberKey('option', ticker), callback);
+      });
+    };
+  }
+
+  subscribeOptionTrades(optionTickers: string[], callback: SubscriptionCallback) {
+    optionTickers.forEach((ticker) => {
+      const key = this.createSubscriberKey('trade', ticker);
+      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
+      this.subscribers.get(key)!.add(callback);
+    });
+    const channels = optionTickers.map((ticker) => `T.${ticker}`);
+    this.addChannels(channels, 'options');
+    return () => {
+      optionTickers.forEach((ticker) => {
+        this.deregisterSubscription(this.createSubscriberKey('trade', ticker), callback);
       });
     };
   }
