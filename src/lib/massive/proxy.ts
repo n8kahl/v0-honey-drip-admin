@@ -54,10 +54,15 @@ export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit)
     });
 
     const message = text || response.statusText || `HTTP ${response.status}`;
+    const lowerMessage = message.toLowerCase();
+    const isWrappedRateLimit =
+      (response.status === 502 &&
+        (lowerMessage.includes('massive 429') || lowerMessage.includes('rate limit')));
     const isRateLimit =
       response.status === 429 ||
-      message.includes('Massive 429') ||
-      message.toLowerCase().includes('maximum requests per minute');
+      lowerMessage.includes('massive 429') ||
+      lowerMessage.includes('maximum requests per minute') ||
+      isWrappedRateLimit;
 
     if (isRateLimit) {
       throw new MassiveError(message, 429, 'RATE_LIMIT');
