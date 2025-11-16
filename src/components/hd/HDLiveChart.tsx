@@ -3,6 +3,16 @@ import { createChart, IChartApi, ISeriesApi, LineSeriesOptions, Time, Candlestic
 import { massiveWS } from '../../lib/massive/websocket';
 import { massiveFetch, MassiveError } from '../../lib/massive/proxy';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
+
+const formatIsoDate = (date: Date) => date.toISOString().split('T')[0];
+const getMostRecentTradingDay = (reference: Date) => {
+  const day = new Date(reference);
+  day.setHours(0, 0, 0, 0);
+  while (day.getDay() === 0 || day.getDay() === 6) {
+    day.setDate(day.getDate() - 1);
+  }
+  return day;
+};
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
 import { ChartLevel } from '../../types/tradeLevels';
 
@@ -57,6 +67,7 @@ export function HDLiveChart({
   const rafRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Bar[]>([]);
   const lastRenderTimeRef = useRef<number>(0);
+  const inflightFetchesRef = useRef<Map<string, Promise<void>>>(new Map());
 
   useEffect(() => {
     if (bars.length > 0 && !ready) {
@@ -65,83 +76,94 @@ export function HDLiveChart({
   }, [bars.length, ready]);
   
   const fetchHistoricalBars = useCallback(async () => {
-    const isOption = ticker.startsWith('O:');
-    const endpoint = isOption
-      ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
-      : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
-
-    const timeframeMinutes = Number(timeframe) || 1;
-    const to = new Date();
-    const toDate = to.toISOString().split('T')[0];
-
-    const buildRequest = async (days: number) => {
-      const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
-      const fromDate = from.toISOString().split('T')[0];
-      const estimateBars = Math.ceil((days * 24 * 60) / timeframeMinutes);
-      const limit = Math.min(500, Math.max(50, estimateBars));
-
-      const url = `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=${limit}`;
-      const response = await massiveFetch(url);
-      return response.json();
-    };
-
     if (rateLimited) {
       console.warn('[HDLiveChart] Skipping historical fetch while rate limited:', rateLimitMessage);
       return;
     }
 
+    const isOption = ticker.startsWith('O:');
+    const endpoint = isOption
+      ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
+      : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
+    const timeframeMinutes = Number(timeframe) || 1;
+    const lastTradingDay = getMostRecentTradingDay(new Date());
+    const toDate = formatIsoDate(lastTradingDay);
+    const cacheKey = `${ticker}:${timeframe}:${toDate}`;
+
+    if (inflightFetchesRef.current.has(cacheKey)) {
+      return inflightFetchesRef.current.get(cacheKey);
+    }
+
     const attemptDays = [1, 0.5, 0.25, 0.166666];
-    let lastError: Error | null = null;
 
-    for (const days of attemptDays) {
-      try {
-        const data = await buildRequest(days);
-        const results = data.results || data;
-        if (!Array.isArray(results) || results.length === 0) {
-          console.warn(`[HDLiveChart] ${ticker} historical data returned empty for ${days}d window`);
-          continue;
-        }
+    const buildRequest = async (days: number) => {
+      const from = new Date(lastTradingDay.getTime() - days * 24 * 60 * 60 * 1000);
+      const fromDate = formatIsoDate(from);
+      const estimateBars = Math.ceil((days * 24 * 60) / timeframeMinutes);
+      const limit = Math.min(500, Math.max(50, estimateBars));
+      const url = `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=${limit}`;
+      const response = await massiveFetch(url);
+      return response.json();
+    };
 
-        const historicalBars: Bar[] = results.map((r: any) => ({
-          time: Math.floor(r.t / 1000) as Time,
-          open: r.o,
-          high: r.h,
-          low: r.l,
-          close: r.c,
-          volume: r.v,
-          vwap: r.vw,
-        }));
+    const fetchPromise = (async () => {
+      let lastError: Error | null = null;
 
-        setBars(historicalBars);
-        setDataSource('rest');
-        console.log(`[HDLiveChart] Loaded ${historicalBars.length} historical bars for ${ticker}`);
-        return;
-      } catch (error: any) {
-        lastError = error;
-        const status = typeof error?.status === 'number' ? error.status : undefined;
-        const isRetryable = !status || status >= 500;
-        console.warn(
-          `[HDLiveChart] Failed to fetch ${ticker} historical bars for ${days}d (status=${status ?? 'unknown'}):`,
-          error
-        );
+      for (const days of attemptDays) {
+        try {
+          const data = await buildRequest(days);
+          const results = data.results || data;
+          if (!Array.isArray(results) || results.length === 0) {
+            console.warn(`[HDLiveChart] ${ticker} historical data returned empty for ${days}d window`);
+            continue;
+          }
 
-        if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
-          setRateLimited(true);
-          setRateLimitMessage(error.message);
-          console.warn('[HDLiveChart] Rate limited, stopping retries:', error.message);
+          const historicalBars: Bar[] = results.map((r: any) => ({
+            time: Math.floor(r.t / 1000) as Time,
+            open: r.o,
+            high: r.h,
+            low: r.l,
+            close: r.c,
+            volume: r.v,
+            vwap: r.vw,
+          }));
+
+          setBars(historicalBars);
+          setDataSource('rest');
+          setRateLimited(false);
+          setRateLimitMessage(null);
+          console.log(`[HDLiveChart] Loaded ${historicalBars.length} historical bars for ${ticker}`);
           return;
+        } catch (error: any) {
+          lastError = error;
+          const status = typeof error?.status === 'number' ? error.status : undefined;
+          const isRetryable = !status || status >= 500;
+          console.warn(
+            `[HDLiveChart] Failed to fetch ${ticker} historical bars for ${days}d (status=${status ?? 'unknown'}):`,
+            error
+          );
+
+          if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
+            setRateLimited(true);
+            setRateLimitMessage(error.message);
+            console.warn('[HDLiveChart] Rate limited, stopping retries:', error.message);
+            return;
+          }
+
+          if (!isRetryable) break;
         }
-
-        if (!isRetryable) break;
       }
-    }
 
-    if (lastError) {
-      console.error('[HDLiveChart] Failed to load historical bars after retries:', lastError);
-    }
-    if (rateLimited && !lastError) {
-      setRateLimited(false);
-      setRateLimitMessage(null);
+      if (lastError) {
+        console.error('[HDLiveChart] Failed to load historical bars after retries:', lastError);
+      }
+    })();
+
+    inflightFetchesRef.current.set(cacheKey, fetchPromise);
+    try {
+      await fetchPromise;
+    } finally {
+      inflightFetchesRef.current.delete(cacheKey);
     }
   }, [ticker, timeframe, rateLimited, rateLimitMessage]);
   

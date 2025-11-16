@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 export type DiscordAlertPayload = {
   content: string;
   embeds?: Array<Record<string, any>>;
