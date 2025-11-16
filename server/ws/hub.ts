@@ -1,12 +1,10 @@
-import * as WS from 'ws';
+import WebSocket, { RawData } from 'ws';
 import { setInterval, clearInterval } from 'timers';
-
-const { WebSocket } = WS;
 
 type Asset = 'options' | 'indices';
 
 interface ClientCtx {
-  ws: WS.WebSocket;
+  ws: WebSocket;
   subs: Set<string>;
 }
 
@@ -18,7 +16,7 @@ interface HubOpts {
 }
 
 export class MassiveHub {
-  private upstream?: WS.WebSocket;
+  private upstream?: WebSocket;
   private upstreamOpen = false;
   private upstreamAuthd = false;
   private heartbeat?: NodeJS.Timeout;
@@ -161,7 +159,7 @@ export class MassiveHub {
     }
   }
 
-  private onClientMessage(ctx: ClientCtx, raw: WS.RawData) {
+  private onClientMessage(ctx: ClientCtx, raw: RawData) {
     let msg: any;
     try {
       msg = JSON.parse(String(raw));
