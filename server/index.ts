@@ -1,71 +1,57 @@
-import express from 'express';
+import http from 'http';
+import express, { type Request } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
 import path from 'path';
 import apiRouter from './routes/api';
+import { createWebSocketProxies } from './ws/proxies';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// ===== Security & perf =====
+const WEB_ORIGIN = process.env.WEB_ORIGIN || '*'; // set this in Railway
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(compression());
+app.use(
+  cors({
+    origin: WEB_ORIGIN === '*' ? '*' : [WEB_ORIGIN],
+    credentials: false,
+  })
+);
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    next();
-  });
-}
+// Basic request logging (redact api keys)
+app.use(
+  morgan('tiny', {
+    skip: (req: Request) => req.url.includes('/api/massive'),
+  })
+);
 
-// Health check endpoint for Railway
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV || 'development'
-  });
-});
+// Rate limit API paths
+const limiter = rateLimit({ windowMs: 60_000, max: 1200 });
+app.use('/api', limiter);
 
-// API routes
+// ===== API routes =====
 app.use('/api', apiRouter);
 
-// When compiled, server is in server/dist/index.js, Vite build is in dist/
-const distPath = path.resolve(process.cwd(), 'dist');
-app.use(express.static(distPath));
+// ===== Static SPA (vite build) =====
+const distDir = path.resolve(process.cwd(), 'dist');
+app.use(express.static(distDir));
+app.get('*', (_, res) => res.sendFile(path.join(distDir, 'index.html')));
 
-// SPA fallback - serve index.html for all non-API routes
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(distPath, 'index.html'));
-  } else {
-    res.status(404).json({ error: 'API endpoint not found' });
-  }
-});
+// ===== HTTP server + WS proxies =====
+const server = http.createServer(app);
+createWebSocketProxies({ server });
 
-app.listen(PORT, '0.0.0.0', () => {
-  const isProd = process.env.NODE_ENV === 'production';
-  
-  if (!isProd) {
-    console.log(`
-╔══════════════════════════════════════════════════════╗
-║  HoneyDrip Admin Server                              ║
-║  Port: ${PORT}                                       ║
-║  Environment: ${process.env.NODE_ENV || 'development'}  ║
-║  Time: ${new Date().toISOString()}                   ║
-╚══════════════════════════════════════════════════════╝
-    `);
-  } else {
-    console.log(`Server listening on port ${PORT}`);
-  }
-  
-  // Check environment variables
+const PORT = Number(process.env.PORT || 3000);
+server.listen(PORT, () => {
+  console.log(`✓ Server listening on ${PORT}`);
   if (!process.env.MASSIVE_API_KEY) {
-    console.warn('⚠️  MASSIVE_API_KEY not configured');
-  }
-  
-  if (!isProd) {
-    console.log('✓ Server ready');
+    console.warn('⚠️  MASSIVE_API_KEY is not set — REST/WS proxy will reject upstream calls');
   }
 });
 

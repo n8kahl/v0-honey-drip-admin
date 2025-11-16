@@ -1,121 +1,100 @@
-import fetch from 'node-fetch';
+import fetch, { Response } from 'node-fetch';
+import { URL } from 'url';
 
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || '';
 const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
+const USER_AGENT = 'HD-Options-Admin/1.0 (+railway)';
 
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 interface MassiveRequestOptions {
-  method?: string;
+  method?: Method;
   body?: any;
-  timeout?: number;
+  timeoutMs?: number;
+  retries?: number;
 }
 
-export async function callMassive(path: string, options: MassiveRequestOptions = {}) {
-  const { method = 'GET', body, timeout = 30000 } = options;
-  
-  if (!MASSIVE_API_KEY) {
-    throw new Error('MASSIVE_API_KEY not configured');
-  }
+function buildUrl(pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return new URL(pathOrUrl.replace(/^\/+/, ''), `${MASSIVE_BASE_URL}/`).href;
+}
 
-  const url = `${MASSIVE_BASE_URL}${path}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+function buildHeaders(): Record<string, string> {
+  if (!MASSIVE_API_KEY) throw new Error('MASSIVE_API_KEY not configured');
+  return {
+    'User-Agent': USER_AGENT,
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${MASSIVE_API_KEY}`,
+    'X-API-Key': MASSIVE_API_KEY,
+  };
+}
 
+async function parseJsonSafe(res: Response) {
+  const text = await res.text();
   try {
-    console.log(`[Massive] ${method} ${path}`);
-    
-    const normalizedMethod = method.toUpperCase();
-    const hasBody = normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD';
-    const response = await fetch(url, {
-      method: normalizedMethod,
-      headers: {
-        'Authorization': `Bearer ${MASSIVE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: hasBody && body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Massive] Error ${response.status}:`, errorText);
-      throw new Error(`Massive API error: ${response.status} ${errorText}`);
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    console.error('[Massive] Request failed:', error.message);
-    throw error;
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
   }
 }
 
-export async function getOptionsChain(symbol: string) {
-  return callMassive(`/v3/reference/options/contracts?underlying_ticker=${symbol}&limit=1000`);
-}
+export async function callMassive(pathOrUrl: string, opts: MassiveRequestOptions = {}) {
+  const {
+    method = 'GET',
+    body,
+    timeoutMs = 15_000,
+    retries = 2,
+  } = opts;
 
-export async function getOptionQuote(params: { underlying: string; contractSymbol?: string }) {
-  const { underlying, contractSymbol } = params;
-  if (contractSymbol) {
-    return callMassive(`/v3/snapshot/options/${contractSymbol}`);
-  }
-  return callMassive(`/v3/snapshot/options/${underlying}?limit=1`);
-}
+  const url = buildUrl(pathOrUrl);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-export async function getOptionsAggregates(params: { 
-  symbol: string; 
-  interval: '1s' | '1m'; 
-  from: string; 
-  to?: string 
-}) {
-  const { symbol, interval, from, to } = params;
-  const multiplier = interval === '1s' ? 1 : 1;
-  const timespan = interval === '1s' ? 'second' : 'minute';
-  const toParam = to || new Date().toISOString().split('T')[0];
-  
-  return callMassive(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${toParam}`);
-}
-
-export async function getIndicators(params: { 
-  symbol: string; 
-  indicator: string; 
-  timeframes: string[] 
-}) {
-  const { symbol, indicator, timeframes } = params;
-  const timeframeQuery = timeframes.join(',');
-  
-  return callMassive(`/v1/indicators/${indicator}/${symbol}?timeframe=${timeframeQuery}`);
-}
-
-export async function getMarketStatus() {
-  return callMassive('/v1/marketstatus/now');
-}
-
-export async function getQuotes(symbols: string[]) {
-  const quoteRequests = symbols.map(async (symbol) => {
+  const attempt = async (n: number): Promise<any> => {
     try {
-      const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
+      const res = await fetch(url, {
+        method,
+        headers: buildHeaders(),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
 
-      if (isIndex) {
-        const cleanTicker = symbol.replace('I:', '');
-        const data = await callMassive(`/v3/snapshot/indices?tickers=${cleanTicker}`);
-        return data;
+      if ((res.status === 429 || res.status >= 500) && n < retries) {
+        const retryAfter = Number(res.headers.get('retry-after') || 0);
+        const backoff = retryAfter > 0 ? retryAfter * 1000 : 250 * (2 ** n) + Math.random() * 150;
+        await new Promise((r) => setTimeout(r, backoff));
+        return attempt(n + 1);
       }
 
-      const data = await callMassive(`/v3/snapshot/options/${symbol}?limit=1`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) {
+        const msg = data?.error || res.statusText;
+        throw new Error(`Massive ${res.status}: ${msg}`);
+      }
       return data;
-    } catch (error: any) {
-      console.error(`[Massive] Failed to get quote for ${symbol}:`, error);
-      return { error: `Failed to fetch ${symbol}` };
+    } catch (err) {
+      if (n < retries) return attempt(n + 1);
+      throw err;
     }
-  });
+  };
 
-  return Promise.all(quoteRequests);
+  try {
+    return await attempt(0);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function getOptionChain(underlying: string, params?: Record<string, string | number>) {
+  const qs = new URLSearchParams({ limit: '250', ...(params || {}) }).toString();
+  return callMassive(`/v3/snapshot/options/${encodeURIComponent(underlying)}?${qs}`);
+}
+
+export async function listOptionContracts(filters: Record<string, string>) {
+  const qs = new URLSearchParams(filters).toString();
+  return callMassive(`/v3/reference/options/contracts?${qs}`);
 }
 
 export async function getIndicesSnapshot(tickers: string[]) {
-  const cleanTickers = tickers.map(t => t.replace('I:', '')).join(',');
-  return callMassive(`/v3/snapshot/indices?tickers=${cleanTickers}`);
+  const clean = tickers.map((t) => t.replace(/^I:/, '')).join(',');
+  return callMassive(`/v3/snapshot/indices?tickers=${encodeURIComponent(clean)}`);
 }
