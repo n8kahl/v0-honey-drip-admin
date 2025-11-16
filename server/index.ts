@@ -4,7 +4,7 @@ import path from 'path';
 import apiRouter from './routes/api';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Middleware
 app.use(cors());
@@ -20,7 +20,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Health check endpoint for Railway
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.status(200).json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     env: process.env.NODE_ENV || 'development'
@@ -30,8 +30,8 @@ app.get('/api/health', (req, res) => {
 // API routes
 app.use('/api', apiRouter);
 
-// Serve static files from Vite build
-const distPath = path.join(__dirname, '../../dist');
+// When compiled, server is in server/dist/index.js, Vite build is in dist/
+const distPath = path.resolve(process.cwd(), 'dist');
 app.use(express.static(distPath));
 
 // SPA fallback - serve index.html for all non-API routes
@@ -43,8 +43,7 @@ app.get('*', (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   const isProd = process.env.NODE_ENV === 'production';
   
   if (!isProd) {
@@ -56,6 +55,8 @@ app.listen(PORT, () => {
 ║  Time: ${new Date().toISOString()}                   ║
 ╚══════════════════════════════════════════════════════╝
     `);
+  } else {
+    console.log(`Server listening on port ${PORT}`);
   }
   
   // Check environment variables
