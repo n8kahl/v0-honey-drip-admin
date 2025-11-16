@@ -64,11 +64,13 @@ export interface OptionQuoteUpdate {
   ticker: string;
   bid: number;
   ask: number;
+  mid: number;
   bidSize: number;
   askSize: number;
   bidExchange: number;
   askExchange: number;
   timestamp: number;
+  volume?: number;
 }
 
 class MassiveWebSocket {
@@ -189,16 +191,22 @@ class MassiveWebSocket {
   private handleMessage(msg: any) {
     const { ev, sym } = msg;
     if (ev === 'Q') {
+      const bid = msg.bp || 0;
+      const ask = msg.ap || 0;
+      const mid = bid && ask ? (bid + ask) / 2 : (bid || ask || 0);
       const message: WebSocketMessage = {
         type: 'option',
         data: {
           ticker: sym,
-          bid: msg.bp || 0,
-          ask: msg.ap || 0,
+          bid,
+          ask,
+          mid,
           bidSize: msg.bs || 0,
           askSize: msg.as || 0,
-          bidExchange: msg.bx,
-          askExchange: msg.ax,
+          bidExchange: msg.bx ?? 0,
+          askExchange: msg.ax ?? 0,
+          timestamp: msg.t,
+          volume: msg.v ?? 0,
         } as OptionQuoteUpdate,
         timestamp: msg.t,
       };
@@ -223,10 +231,24 @@ class MassiveWebSocket {
     this.broadcast(msg);
   }
 
-  private resubscribe(symbol: string) {
+  private resubscribe() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const params = Array.from(this.subscriptions).join(',');
+    if (!params) return;
     this.send({ action: 'subscribe', params });
+  }
+
+  private addChannels(channels: string[]) {
+    let added = false;
+    for (const channel of channels) {
+      if (!this.subscriptions.has(channel)) {
+        this.subscriptions.add(channel);
+        added = true;
+      }
+    }
+    if (added) {
+      this.resubscribe();
+    }
   }
 
   private send(data: any) {
@@ -253,9 +275,9 @@ class MassiveWebSocket {
       const key = this.createSubscriberKey('quote', symbol);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
-      this.subscriptions.add(symbol);
     });
-    this.resubscribe(symbols[0]);
+    const channels = symbols.map((symbol) => `A.${symbol}`);
+    this.addChannels(channels);
     return () => {
       symbols.forEach((symbol) => {
         this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
@@ -268,9 +290,9 @@ class MassiveWebSocket {
       const key = this.createSubscriberKey('option', ticker);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
-      this.subscriptions.add(ticker);
     });
-    this.resubscribe(optionTickers[0]);
+    const channels = optionTickers.map((ticker) => `Q.${ticker}`);
+    this.addChannels(channels);
     return () => {
       optionTickers.forEach((ticker) => {
         this.deregisterSubscription(this.createSubscriberKey('option', ticker), callback);
@@ -285,7 +307,7 @@ class MassiveWebSocket {
       this.subscribers.get(key)!.add(callback);
       this.subscriptions.add(symbol);
     });
-    this.resubscribe(symbols[0]);
+    this.resubscribe();
     return () => {
       symbols.forEach((symbol) => {
         this.deregisterSubscription(this.createSubscriberKey('index', symbol), callback);
@@ -321,15 +343,16 @@ class MassiveWebSocket {
     return this.subscribeOptionQuotes(optionTickers, (message) => {
       if (message.type !== 'option') return;
       const data = message.data as OptionQuoteUpdate;
+      const price = data.mid ?? ((data.bid + data.ask) / 2) ?? data.bid ?? data.ask ?? 0;
       callback({
         type: 'aggregate',
         data: {
           ticker: data.ticker,
-          open: data.last,
-          high: data.last,
-          low: data.last,
-          close: data.last,
-          volume: 0,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: data.volume ?? 0,
           timestamp: data.timestamp,
         },
         timestamp: data.timestamp,
