@@ -2,7 +2,6 @@
   "name": "HoneyDrip Admin Trading Dashboard",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "vite build && tsc -p tsconfig.server.json",
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
