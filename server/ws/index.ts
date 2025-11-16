@@ -1,5 +1,5 @@
 import type { Server } from 'http';
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import { MassiveHub } from './hub';
 
 const MASSIVE_PROXY_TOKEN = process.env.MASSIVE_PROXY_TOKEN;
@@ -41,12 +41,12 @@ export function attachWsServers(server: Server) {
     }
 
     if (pathname === '/ws/options') {
-      wssOptions.handleUpgrade(req, socket, head, (ws) => {
+      wssOptions.handleUpgrade(req, socket, head, (ws: WebSocket) => {
         wssOptions.emit('connection', ws, req);
         optionsHub.attachClient(ws);
       });
     } else if (pathname === '/ws/indices') {
-      wssIndices.handleUpgrade(req, socket, head, (ws) => {
+      wssIndices.handleUpgrade(req, socket, head, (ws: WebSocket) => {
         wssIndices.emit('connection', ws, req);
         indicesHub.attachClient(ws);
       });

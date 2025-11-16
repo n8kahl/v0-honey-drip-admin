@@ -97,12 +97,18 @@ router.all('/massive/*', requireProxyToken, async (req, res) => {
     const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
     const fullPath = `/${subPath}${qs}`;
     const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined;
-    const response = await callMassive(fullPath, { method: req.method as any, body });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(`Massive ${response.status}: ${payload?.error || response.statusText}`);
+    const massiveResponse = await callMassive<{ error?: string; [key: string]: any }>(fullPath, {
+      method: req.method as any,
+      body,
+    });
+
+    if (!massiveResponse.ok) {
+      throw new Error(
+        `Massive ${massiveResponse.status}: ${massiveResponse.error ?? 'Massive request failed'}`
+      );
     }
-    res.json(payload);
+
+    res.json(massiveResponse.data);
   } catch (e: any) {
     const msg = String(e?.message || e || '');
     const status =
