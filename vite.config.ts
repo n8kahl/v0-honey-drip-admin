@@ -53,6 +53,8 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'dist',
+    sourcemap: true,
+    minify: false,
   },
   server: {
     port: 3000,
