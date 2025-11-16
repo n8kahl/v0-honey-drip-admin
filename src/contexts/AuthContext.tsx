@@ -14,6 +14,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  console.log('[v0] AuthProvider rendering');
+  
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,32 +23,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
   let supabase;
   try {
+    console.log('[v0] AuthProvider: Calling createClient()...');
     supabase = createClient();
+    console.log('[v0] AuthProvider: createClient() succeeded');
+    console.log('[v0] AuthProvider: supabase object:', {
+      hasAuth: !!supabase?.auth,
+      hasFrom: !!supabase?.from,
+      authKeys: supabase?.auth ? Object.keys(supabase.auth) : [],
+    });
   } catch (error) {
+    console.error('[v0] AuthProvider: createClient() failed:', error);
     setInitError(error instanceof Error ? error.message : 'Failed to initialize Supabase');
     setLoading(false);
   }
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) {
+      console.log('[v0] AuthProvider useEffect: No supabase client, skipping');
+      return;
+    }
+    
+    console.log('[v0] AuthProvider useEffect: Getting initial session...');
     
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[v0] AuthProvider: getSession complete', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+      });
       setSession(session);
       setUser(session?.user ?? null);
+      setLoading(false);
+    }).catch((error) => {
+      console.error('[v0] AuthProvider: getSession error:', error);
       setLoading(false);
     });
 
     // Listen for auth changes
+    console.log('[v0] AuthProvider: Setting up auth state listener...');
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('[v0] AuthProvider: Auth state changed', {
+        event: _event,
+        hasSession: !!session,
+        hasUser: !!session?.user,
+      });
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      console.log('[v0] AuthProvider: Cleaning up auth listener');
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (initError) {
