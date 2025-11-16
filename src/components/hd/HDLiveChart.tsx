@@ -39,7 +39,7 @@ export function HDLiveChart({
 }: HDLiveChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Line'> | null>(null);
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<'Line'>>>(new Map());
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bollingerRefs = useRef<{ upper: ISeriesApi<'Line'>; middle: ISeriesApi<'Line'>; lower: ISeriesApi<'Line'> } | null>(null);
@@ -122,15 +122,23 @@ export function HDLiveChart({
     chartRef.current = chart;
     
     // Create candlestick series
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: '#16A34A',
-      downColor: '#EF4444',
-      borderUpColor: '#16A34A',
-      borderDownColor: '#EF4444',
-      wickUpColor: '#16A34A',
-      wickDownColor: '#EF4444',
-    });
-    candleSeriesRef.current = candleSeries;
+    if (typeof chart.addCandlestickSeries === 'function') {
+      candleSeriesRef.current = chart.addCandlestickSeries({
+        upColor: '#16A34A',
+        downColor: '#EF4444',
+        borderUpColor: '#16A34A',
+        borderDownColor: '#EF4444',
+        wickUpColor: '#16A34A',
+        wickDownColor: '#EF4444',
+      });
+    } else {
+      console.warn('[HDLiveChart] Lightweight Charts missing candlestick support, falling back to a line series');
+      candleSeriesRef.current = chart.addLineSeries({
+        color: '#16A34A',
+        lineWidth: 2,
+        priceLineVisible: false,
+      });
+    }
     
     // Create EMA series
     if (indicators?.ema?.periods) {

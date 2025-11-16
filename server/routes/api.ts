@@ -220,9 +220,10 @@ router.all('/massive/*', async (req, res) => {
     const queryString = new URLSearchParams(req.query as any).toString();
     const fullPath = queryString ? `${path}?${queryString}` : path;
     
+    const hasBody = req.body && Object.keys(req.body).length > 0;
     const data = await massive.callMassive(fullPath, {
       method: req.method,
-      body: req.body,
+      body: hasBody ? req.body : undefined,
     });
     
     res.json(data);
