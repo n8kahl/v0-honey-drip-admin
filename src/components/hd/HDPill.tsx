@@ -26,7 +26,15 @@ const sessionConfig = {
 };
 
 export function HDPill({ status, className }: HDPillProps) {
-  const config = sessionConfig[status];
+  const fallback = {
+    label: status || 'Unknown',
+    color: 'var(--session-closed)',
+  };
+  const config = sessionConfig[status] ?? fallback;
+
+  if (config === fallback) {
+    console.warn('[HDPill] Unknown session status, using fallback', status);
+  }
   
   return (
     <div
