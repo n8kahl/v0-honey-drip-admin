@@ -56,39 +56,71 @@ export function HDLiveChart({
   const lastRenderTimeRef = useRef<number>(0);
   
   const fetchHistoricalBars = useCallback(async () => {
-    try {
-      const isOption = ticker.startsWith('O:');
-      const endpoint = isOption
-        ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
-        : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
-      
-      const to = new Date();
-      const from = new Date(to.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
-      
-      const response = await massiveFetch(
-        `${endpoint}/${from.toISOString().split('T')[0]}/${to.toISOString().split('T')[0]}?adjusted=true&sort=asc&limit=500`
-      );
-      
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
-      const data = await response.json();
-      if (!data.results || data.results.length === 0) return;
-      
-      const historicalBars: Bar[] = data.results.map((r: any) => ({
-        time: Math.floor(r.t / 1000) as Time,
-        open: r.o,
-        high: r.h,
-        low: r.l,
-        close: r.c,
-        volume: r.v,
-        vwap: r.vw,
-      }));
-      
-      setBars(historicalBars);
-      setDataSource('rest');
-      console.log(`[HDLiveChart] Loaded ${historicalBars.length} historical bars for ${ticker}`);
-    } catch (error) {
-      console.error('[HDLiveChart] Failed to fetch historical data:', error);
+    const isOption = ticker.startsWith('O:');
+    const endpoint = isOption
+      ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
+      : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
+
+    const timeframeMinutes = Number(timeframe) || 1;
+    const to = new Date();
+    const toDate = to.toISOString().split('T')[0];
+
+    const buildRequest = async (days: number) => {
+      const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+      const fromDate = from.toISOString().split('T')[0];
+      const estimateBars = Math.ceil((days * 24 * 60) / timeframeMinutes);
+      const limit = Math.min(500, Math.max(50, estimateBars));
+
+      const url = `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=${limit}`;
+      const response = await massiveFetch(url);
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        (error as any).status = response.status;
+        throw error;
+      }
+      return response.json();
+    };
+
+    const attemptDays = [1, 0.5, 0.25, 0.166666];
+    let lastError: Error | null = null;
+
+    for (const days of attemptDays) {
+      try {
+        const data = await buildRequest(days);
+        const results = data.results || data;
+        if (!Array.isArray(results) || results.length === 0) {
+          console.warn(`[HDLiveChart] ${ticker} historical data returned empty for ${days}d window`);
+          continue;
+        }
+
+        const historicalBars: Bar[] = results.map((r: any) => ({
+          time: Math.floor(r.t / 1000) as Time,
+          open: r.o,
+          high: r.h,
+          low: r.l,
+          close: r.c,
+          volume: r.v,
+          vwap: r.vw,
+        }));
+
+        setBars(historicalBars);
+        setDataSource('rest');
+        console.log(`[HDLiveChart] Loaded ${historicalBars.length} historical bars for ${ticker}`);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        const status = typeof error?.status === 'number' ? error.status : undefined;
+        const isRetryable = !status || status >= 500;
+        console.warn(
+          `[HDLiveChart] Failed to fetch ${ticker} historical bars for ${days}d (status=${status ?? 'unknown'}):`,
+          error
+        );
+        if (!isRetryable) break;
+      }
+    }
+
+    if (lastError) {
+      console.error('[HDLiveChart] Failed to load historical bars after retries:', lastError);
     }
   }, [ticker, timeframe]);
   
