@@ -66,18 +66,8 @@ export function useConfluenceData(
       // Fetch all three metrics concurrently
       const [trend, volatility, liquidity] = await Promise.all([
         fetchTrendMetrics(trade.ticker),
-        fetchVolatilityMetrics(
-          trade.ticker,
-          trade.contract.expiry,
-          trade.contract.strike,
-          trade.contract.type
-        ),
-        fetchLiquidityMetrics(
-          trade.ticker,
-          trade.contract.expiry,
-          trade.contract.strike,
-          trade.contract.type
-        ),
+        fetchVolatilityMetrics(trade.contract.id),
+        fetchLiquidityMetrics(trade.contract.id),
       ]);
 
       setData({

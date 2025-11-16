@@ -5,22 +5,7 @@ import { massiveFetch } from '../lib/massive/proxy';
 
 const MASSIVE_API_BASE = '/api/massive';
 
-// Helper to construct option symbol for Massive API
-function constructOptionSymbol(
-  ticker: string,
-  expiry: string,
-  strike: number,
-  type: 'C' | 'P'
-): string {
-  // Format: TICKER_YYMMDD_C/P_STRIKE
-  // e.g., SPX_241115_C_4850
-  const expiryDate = new Date(expiry);
-  const yy = expiryDate.getFullYear().toString().slice(2);
-  const mm = String(expiryDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(expiryDate.getDate()).padStart(2, '0');
-  
-  return `${ticker}_${yy}${mm}${dd}_${type}_${strike}`;
-}
+// Massive options APIs already expect the contract identifier (`O:...`).
 
 // Helper to map ticker to Massive index symbol
 function mapToIndexSymbol(ticker: string): string {
@@ -127,35 +112,20 @@ export async function fetchTrendMetrics(underlyingTicker: string): Promise<Massi
 
 // Fetch volatility metrics (IV percentile)
 export async function fetchVolatilityMetrics(
-  ticker: string,
-  expiry: string,
-  strike: number,
-  type: 'C' | 'P'
+  optionsTicker: string
 ): Promise<MassiveVolatilityMetrics> {
-  console.log('[v0] Fetching real volatility metrics for:', { ticker, expiry, strike, type });
-  
+  console.log('[v0] Fetching real volatility metrics for:', optionsTicker);
+
   try {
-    const optionSymbol = constructOptionSymbol(ticker, expiry, strike, type);
-    
     const response = await massiveFetch(
-      `${MASSIVE_API_BASE}/v3/snapshot/options/${ticker}/${optionSymbol}`
+      `${MASSIVE_API_BASE}/v3/snapshot/options/${encodeURIComponent(optionsTicker)}`
     );
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch volatility data');
-    }
-    
-    const data = await response.json();
-    
-    // Extract IV from response
-    const impliedVol = data.results?.implied_volatility || 0;
-    
-    // For IV percentile, we'd ideally fetch historical IV and compute rank
-    // For now, use a simplified approach: map current IV to percentile estimate
-    // Typical IV ranges: 10-30% = low, 30-50% = normal, 50%+ = elevated
+    const payload = response?.results ?? response;
+    const impliedVol = payload?.implied_volatility ?? payload?.iv ?? 0;
+
     let ivPercentile: number;
     let description: string;
-    
+
     if (impliedVol < 0.2) {
       ivPercentile = 15;
       description = 'Calm · Low IV environment';
@@ -169,10 +139,9 @@ export async function fetchVolatilityMetrics(
       ivPercentile = 88;
       description = `Extreme · ${Math.round(ivPercentile)}th percentile`;
     }
-    
+
     return { ivPercentile, description };
   } catch (error) {
-    // Silently return neutral fallback
     return {
       ivPercentile: 50,
       description: 'Normal',
