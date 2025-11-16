@@ -42,6 +42,10 @@ app.use('/api', apiRouter);
 const distDir = path.resolve(process.cwd(), 'dist');
 const indexFile = path.join(distDir, 'index.html');
 app.use(express.static(distDir));
+app.get('/ping', (_req, res) => {
+  console.log('[Server] /ping hit');
+  res.json({ status: 'pong' });
+});
 app.get('*', (_, res, next) => {
   res.sendFile(indexFile, (err) => {
     if (err) {
