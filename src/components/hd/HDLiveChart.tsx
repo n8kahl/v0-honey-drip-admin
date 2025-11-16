@@ -125,10 +125,20 @@ export function HDLiveChart({
   }, [ticker, timeframe]);
   
   useEffect(() => {
-    if (!chartContainerRef.current) return;
-    
-    const chart = createChart(chartContainerRef.current, {
-      width: chartContainerRef.current.clientWidth,
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    if (chartRef.current) {
+      try {
+        chartRef.current.remove();
+      } catch {
+        // ignore removal errors
+      }
+      chartRef.current = null;
+    }
+
+    const chart = createChart(container, {
+      width: container.clientWidth,
       height,
       layout: {
         background: { color: '#0a0a0a' },
@@ -150,35 +160,27 @@ export function HDLiveChart({
         secondsVisible: false,
       },
     });
-    
-    chartRef.current = chart;
-    
-    // Create candlestick series
-    if (typeof chart.addCandlestickSeries === 'function') {
-      candleSeriesRef.current = chart.addCandlestickSeries({
-        upColor: '#16A34A',
-        downColor: '#EF4444',
-        borderUpColor: '#16A34A',
-        borderDownColor: '#EF4444',
-        wickUpColor: '#16A34A',
-        wickDownColor: '#EF4444',
-      });
-    } else if (typeof chart.addLineSeries === 'function') {
-      console.warn('[HDLiveChart] Lightweight Charts missing candlestick support, falling back to a line series');
-      candleSeriesRef.current = chart.addLineSeries({
-        color: '#16A34A',
-        lineWidth: 2,
-        priceLineVisible: false,
-      });
-    } else {
-      console.error('[HDLiveChart] Lightweight Charts missing both candlestick and line series APIs');
-      candleSeriesRef.current = null;
+
+    if (!chart || typeof chart.addCandlestickSeries !== 'function' || typeof chart.addLineSeries !== 'function') {
+      console.error('[HDLiveChart] Chart API not ready, skipping series creation');
+      chart?.remove();
+      return;
     }
-    
-    const supportsLineSeries = typeof chart.addLineSeries === 'function';
+
+    chartRef.current = chart;
+
+    const priceSeries = chart.addCandlestickSeries({
+      upColor: '#16A34A',
+      downColor: '#EF4444',
+      borderUpColor: '#16A34A',
+      borderDownColor: '#EF4444',
+      wickUpColor: '#16A34A',
+      wickDownColor: '#EF4444',
+    });
+    candleSeriesRef.current = priceSeries;
 
     const createLineSeries = (opts: LineSeriesOptions, label?: string) => {
-      if (!supportsLineSeries) {
+      if (typeof chart.addLineSeries !== 'function') {
         if (label) {
           console.warn(`[HDLiveChart] Line series API unavailable, skipping ${label}`);
         }
@@ -261,7 +263,7 @@ export function HDLiveChart({
     };
     
     window.addEventListener('resize', handleResize);
-    
+
     return () => {
       window.removeEventListener('resize', handleResize);
       levelSeriesRefs.current.forEach(series => {
@@ -272,6 +274,10 @@ export function HDLiveChart({
         }
       });
       levelSeriesRefs.current.clear();
+      candleSeriesRef.current = null;
+      emaSeriesRefs.current.clear();
+      vwapSeriesRef.current = null;
+      bollingerRefs.current = null;
       chart.remove();
       chartRef.current = null;
     };
