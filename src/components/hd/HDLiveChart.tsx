@@ -85,15 +85,30 @@ const chartRef = useRef<IChartApi | null>(null);
     const loadHolidays = async () => {
       const now = new Date();
       const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1]);
-      const aggregated = new Set<string>();
 
-      for (const year of years) {
-        try {
-          const dates = await massiveClient.getMarketHolidays(year);
-          dates.forEach((date) => aggregated.add(date));
-        } catch (err) {
-          console.warn(`[HDLiveChart] Failed to load Massive holidays for ${year}`, err);
-        }
+      if (
+        !massiveClient ||
+        typeof (massiveClient as any).getMarketHolidays !== 'function'
+      ) {
+        console.warn(
+          '[HDLiveChart] Holiday API not available on Massive client, rendering without holiday gaps'
+        );
+        setHolidayDates([]);
+        return;
+      }
+
+      const aggregated = new Set<string>();
+      const mc = massiveClient as any;
+
+      try {
+        const results = await Promise.all(
+          Array.from(years).map((year) => mc.getMarketHolidays(year))
+        );
+        results.forEach((dates: string[]) => dates.forEach((date) => aggregated.add(date)));
+      } catch (err) {
+        console.warn('[HDLiveChart] Failed to load Massive holidays for', Array.from(years), err);
+        setHolidayDates([]);
+        return;
       }
 
       if (!canceled) {
