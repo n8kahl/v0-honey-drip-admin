@@ -4,6 +4,50 @@
 
 import { massiveWS, type WebSocketMessage } from './websocket';
 import { massiveClient } from './client';
+import type { MassiveQuote } from './types';
+
+function toNumber(value: unknown): number {
+  return typeof value === 'number' && !Number.isNaN(value) ? value : 0;
+}
+
+function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuote | null {
+  if (!data) return null;
+
+  const symbol =
+    data.symbol || data.ticker || data.sym || data.underlying_ticker || fallbackSymbol;
+  if (!symbol) return null;
+
+  const last = toNumber(data.last ?? data.value ?? data.price ?? data.c ?? 0);
+  const change = toNumber(data.change ?? data.delta ?? 0);
+  const changePercent = toNumber(
+    data.changePercent ?? data.change_percent ?? data.percent_change ?? 0
+  );
+  const volume = toNumber(data.volume ?? data.v ?? 0);
+  const bid = toNumber(data.bid ?? data.bp ?? 0);
+  const ask = toNumber(data.ask ?? data.ap ?? 0);
+  const high = toNumber(data.high ?? data.h ?? last);
+  const low = toNumber(data.low ?? data.l ?? last);
+  const open = toNumber(data.open ?? data.o ?? last);
+  const previousClose = toNumber(
+    data.previousClose ?? data.close ?? data.c ?? data.lastClose ?? last
+  );
+  const timestamp = toNumber(data.timestamp ?? data.t ?? Date.now());
+
+  return {
+    symbol,
+    last,
+    change,
+    changePercent,
+    bid,
+    ask,
+    volume,
+    high,
+    low,
+    open,
+    previousClose,
+    timestamp,
+  };
+}
 
 export interface TransportConfig {
   symbol: string;
@@ -13,7 +57,7 @@ export interface TransportConfig {
   maxReconnectDelay?: number; // Default: 30000ms
 }
 
-export type TransportCallback = (data: any, source: 'websocket' | 'rest', timestamp: number) => void;
+export type TransportCallback = (data: MassiveQuote, source: 'websocket' | 'rest', timestamp: number) => void;
 
 export class TransportPolicy {
   private config: TransportConfig;
@@ -111,7 +155,19 @@ export class TransportPolicy {
     const now = Date.now();
     this.lastDataTimestamp = now;
 
-    console.log(`[TransportPolicy] WebSocket data received for ${this.config.symbol}:`, message.data);
+    const quote = mapMassiveMessageToQuote(message.data, this.config.symbol);
+    if (!quote) {
+      console.debug(
+        `[TransportPolicy] Ignoring non-quote websocket message for ${this.config.symbol}:`,
+        message.data
+      );
+      return;
+    }
+
+    console.log(
+      `[TransportPolicy] WebSocket data received for ${this.config.symbol}:`,
+      quote
+    );
 
     // Stop polling if running
     if (this.pollTimer) {
@@ -123,7 +179,7 @@ export class TransportPolicy {
     // Reset reconnect attempts on successful data
     this.reconnectAttempts = 0;
 
-    this.callback(message.data, 'websocket', now);
+    this.callback(quote, 'websocket', now);
   }
 
   private startPolling() {
@@ -164,8 +220,16 @@ export class TransportPolicy {
       }
 
       if (data) {
-        this.lastDataTimestamp = now;
-        this.callback(data, 'rest', now);
+        const quote = mapMassiveMessageToQuote(data, this.config.symbol);
+        if (!quote) {
+          console.debug(
+            `[TransportPolicy] Ignoring non-quote REST message for ${this.config.symbol}:`,
+            data
+          );
+        } else {
+          this.lastDataTimestamp = now;
+          this.callback(quote, 'rest', now);
+        }
       }
     } catch (error) {
       console.error(`[TransportPolicy] REST poll failed for ${this.config.symbol}:`, error);

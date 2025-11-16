@@ -48,6 +48,27 @@ export function useQuotes(symbols: string[]) {
   const [quotes, setQuotes] = useState<Map<string, MassiveQuote & { asOf: number; source: 'websocket' | 'rest' }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const handleUpdate = useCallback(
+    (update?: MassiveQuote | null, source: 'websocket' | 'rest' = 'rest', timestamp = Date.now()) => {
+      if (!update) return;
+      if (!update.symbol) {
+        console.warn('[useQuotes] Received quote without symbol, ignoring', update);
+        return;
+      }
+      setQuotes(prev => {
+        const next = new Map(prev);
+        next.set(update.symbol, {
+          ...update,
+          symbol: update.symbol,
+          asOf: timestamp,
+          source,
+        });
+        return next;
+      });
+      setError(null);
+    },
+    []
+  );
 
   useEffect(() => {
     if (symbols.length === 0) {
@@ -66,24 +87,7 @@ export function useQuotes(symbols: string[]) {
         symbol,
         (data, source, timestamp) => {
           console.log(`[useQuotes] Received ${source} update for ${symbol}:`, data);
-          
-          setQuotes(prev => {
-            const next = new Map(prev);
-            const quote: MassiveQuote & { asOf: number; source: 'websocket' | 'rest' } = {
-              symbol: data.symbol || symbol,
-              last: data.last || data.value || data.price || 0,
-              change: data.change || 0,
-              changePercent: data.changePercent || data.change_percent || 0,
-              volume: data.volume || 0,
-              timestamp,
-              asOf: timestamp,
-              source,
-            };
-            next.set(symbol, quote);
-            return next;
-          });
-          
-          setError(null);
+          handleUpdate(data, source, timestamp);
         },
         { isIndex, pollInterval: 3000 }
       );
