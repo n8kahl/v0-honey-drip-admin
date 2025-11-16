@@ -100,7 +100,7 @@ export async function getQuotes(symbols: string[]) {
 
       if (isIndex) {
         const cleanTicker = symbol.replace('I:', '');
-        const data = await callMassive(`/v3/snapshot/indices/${cleanTicker}`);
+        const data = await callMassive(`/v3/snapshot/indices?tickers=${cleanTicker}`);
         return data;
       }
 

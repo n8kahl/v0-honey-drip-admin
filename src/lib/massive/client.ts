@@ -96,7 +96,7 @@ class MassiveClient {
         
         if (isIndex) {
           const cleanTicker = symbol.replace('I:', '');
-          const data = await this.fetch(`/v3/snapshot/indices/${cleanTicker}`);
+        const data = await this.fetch(`/v3/snapshot/indices?tickers=${cleanTicker}`);
           const indexData = data.results?.[0] || data;
           quotes.push({
             symbol: symbol,
@@ -243,7 +243,7 @@ class MassiveClient {
 
   async getIndex(ticker: string): Promise<MassiveIndex> {
     const cleanTicker = ticker.replace('I:', '');
-    const data = await this.fetch(`/v3/snapshot/indices/${cleanTicker}`);
+    const data = await this.fetch(`/v3/snapshot/indices?tickers=${cleanTicker}`);
     return data.results?.[0] || data;
   }
 
