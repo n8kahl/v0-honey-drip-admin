@@ -19,6 +19,7 @@ export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileL
   const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
   const [showContracts, setShowContracts] = useState(false);
   const [contracts, setContracts] = useState<any[]>([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
   const [currentTrade, setCurrentTrade] = useState<Trade | null>(null);
   const [tradeState, setTradeState] = useState<TradeState>('WATCHING');
   const [showChartModal, setShowChartModal] = useState(false);
@@ -30,6 +31,7 @@ export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileL
     setTradeState('WATCHING');
     setCurrentTrade(null);
     setShowContracts(true);
+    setContractsLoading(true);
     onTickerClick(ticker);
     
     try {
@@ -41,6 +43,8 @@ export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileL
       console.error('[v0] Mobile: Failed to fetch options chain:', error);
       toast.error('Failed to load options chain');
       setContracts([]);
+    } finally {
+      setContractsLoading(false);
     }
   };
   
@@ -91,7 +95,7 @@ export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileL
     setTradeState('WATCHING');
   };
   
-  if (showContracts && contracts.length > 0) {
+  if (showContracts) {
     return (
       <>
         <div className="h-[calc(100vh-4rem-4rem)] flex flex-col">
@@ -116,12 +120,22 @@ export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileL
               />
             </div>
             
-            <HDContractGrid
-              contracts={contracts}
-              currentPrice={activeTicker?.last || 0}
-              ticker={activeTicker?.symbol || ''}
-              onContractSelect={handleContractSelect}
-            />
+            {contractsLoading ? (
+              <div className="flex items-center justify-center py-8 text-[var(--text-muted)] text-sm">
+                Loading contracts…
+              </div>
+            ) : contracts.length > 0 ? (
+              <HDContractGrid
+                contracts={contracts}
+                currentPrice={activeTicker?.last || 0}
+                ticker={activeTicker?.symbol || ''}
+                onContractSelect={handleContractSelect}
+              />
+            ) : (
+              <div className="flex items-center justify-center py-8 text-[var(--text-muted)] text-sm">
+                No contracts available for this ticker.
+              </div>
+            )}
           </div>
         </div>
         
