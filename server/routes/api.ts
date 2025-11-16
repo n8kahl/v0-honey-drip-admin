@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { callMassive, getOptionChain, listOptionContracts, getIndicesSnapshot } from '../massiveClient';
+import { massiveFetch, callMassive, getOptionChain, listOptionContracts, getIndicesSnapshot } from '../massive/client';
 
 const router = Router();
 const MASSIVE_PROXY_TOKEN = process.env.MASSIVE_PROXY_TOKEN || '';
@@ -19,6 +19,35 @@ function requireProxyToken(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function handleMassiveError(res: Response, error: any) {
+  const msg = String(error?.message || error || '');
+  const lower = msg.toLowerCase();
+  const statusCode = error?.status || 502;
+  const status =
+    statusCode === 403 || lower.includes('403') || lower.includes('forbidden') ? 403 : 502;
+  res.status(status).json({
+    error: status === 403 ? 'Massive 403: Forbidden' : 'Massive request failed',
+    message: msg,
+  });
+}
+
+type BarsQuery = {
+  symbol?: string;
+  ticker?: string;
+  multiplier?: string;
+  timespan?: string;
+  from?: string;
+  to?: string;
+  limit?: string;
+  adjusted?: string;
+  sort?: string;
+};
+
+function ensureParams(required: string[], query: Record<string, string | undefined>) {
+  const missing = required.filter((key) => !query[key]);
+  return missing;
+}
+
 router.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
@@ -30,6 +59,66 @@ router.post('/massive/ws-token', requireProxyToken, (_req, res) => {
   const signature = crypto.createHmac('sha256', MASSIVE_API_KEY).update(payload).digest('hex');
   const token = `${Buffer.from(payload).toString('base64')}.${signature}`;
   res.json({ token, expiresAt });
+});
+
+router.get('/massive/stocks/bars', requireProxyToken, async (req, res) => {
+  const { symbol, multiplier, timespan, from, to, limit = '144', adjusted = 'true', sort = 'asc' } =
+    req.query as BarsQuery;
+
+  const missing = ensureParams(['symbol', 'multiplier', 'timespan', 'from', 'to'], req.query as Record<string, string>);
+  if (missing.length) {
+    return res.status(400).json({ error: `Missing query params: ${missing.join(', ')}` });
+  }
+
+  try {
+    const path = `/v2/aggs/ticker/${encodeURIComponent(symbol!)}`
+      + `/range/${multiplier}/${timespan}/${from}/${to}`
+      + `?adjusted=${adjusted}&sort=${sort}&limit=${limit}`;
+    const json = await massiveFetch(path);
+    res.json(json);
+  } catch (error) {
+    handleMassiveError(res, error);
+  }
+});
+
+router.get('/massive/indices/bars', requireProxyToken, async (req, res) => {
+  const { symbol, multiplier, timespan, from, to, limit = '250', adjusted = 'true', sort = 'asc' } =
+    req.query as BarsQuery;
+
+  const missing = ensureParams(['symbol', 'multiplier', 'timespan', 'from', 'to'], req.query as Record<string, string>);
+  if (missing.length) {
+    return res.status(400).json({ error: `Missing query params: ${missing.join(', ')}` });
+  }
+
+  try {
+    const path = `/v2/aggs/ticker/${encodeURIComponent(symbol!)}`
+      + `/range/${multiplier}/${timespan}/${from}/${to}`
+      + `?adjusted=${adjusted}&sort=${sort}&limit=${limit}`;
+    const json = await massiveFetch(path);
+    res.json(json);
+  } catch (error) {
+    handleMassiveError(res, error);
+  }
+});
+
+router.get('/massive/options/bars', requireProxyToken, async (req, res) => {
+  const { ticker, multiplier, timespan, from, to, limit = '5000', adjusted = 'true', sort = 'asc' } =
+    req.query as BarsQuery;
+
+  const missing = ensureParams(['ticker', 'multiplier', 'timespan', 'from', 'to'], req.query as Record<string, string>);
+  if (missing.length) {
+    return res.status(400).json({ error: `Missing query params: ${missing.join(', ')}` });
+  }
+
+  try {
+    const path = `/v2/aggs/ticker/${encodeURIComponent(ticker!)}`
+      + `/range/${multiplier}/${timespan}/${from}/${to}`
+      + `?adjusted=${adjusted}&sort=${sort}&limit=${limit}`;
+    const json = await massiveFetch(path);
+    res.json(json);
+  } catch (error) {
+    handleMassiveError(res, error);
+  }
 });
 
 router.get('/massive/options/chain', requireProxyToken, async (req, res) => {

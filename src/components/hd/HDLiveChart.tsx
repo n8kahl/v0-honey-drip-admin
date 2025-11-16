@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, LineSeriesOptions, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { massiveFetch, MassiveError } from '../../lib/massive/proxy';
+import { MassiveError, getIndexBars, getOptionBars, getStockBars } from '../../lib/massive/proxy';
 import { massiveClient } from '../../lib/massive/client';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
@@ -105,17 +105,27 @@ export function HDLiveChart({
     };
   }, []);
   
-  const fetchHistoricalBars = useCallback(async () => {
+const fetchHistoricalBars = useCallback(async () => {
     if (rateLimited) {
       console.warn('[HDLiveChart] Skipping historical fetch while rate limited:', rateLimitMessage);
       return;
     }
 
+    const indexSymbols = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
     const isOption = ticker.startsWith('O:');
-    const endpoint = isOption
-      ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/${timeframe}/minute`
-      : `/api/massive/v2/aggs/ticker/${ticker}/range/${timeframe}/minute`;
-    const timeframeMinutes = Number(timeframe) || 1;
+    const isIndex =
+      ticker.startsWith('I:') || indexSymbols.has(ticker) || ticker.toUpperCase().startsWith('I:');
+    const symbolParam = isIndex && ticker.startsWith('I:') ? ticker.slice(2) : ticker;
+
+    const multiplier = Number(timeframe) || 1;
+    const timespan = 'minute';
+    const limit = isOption ? 5000 : isIndex ? 250 : 144;
+    const barFetcher = isOption
+      ? getOptionBars
+      : isIndex
+      ? getIndexBars
+      : getStockBars;
+
     const lastTradingDay = getMostRecentTradingDay(new Date(), holidaysSet);
     const toDate = formatIsoDate(lastTradingDay);
     const cacheKey = `${ticker}:${timeframe}:${toDate}`;
@@ -129,11 +139,7 @@ export function HDLiveChart({
     const buildRequest = async (days: number) => {
       const from = new Date(lastTradingDay.getTime() - days * 24 * 60 * 60 * 1000);
       const fromDate = formatIsoDate(from);
-      const estimateBars = Math.ceil((days * 24 * 60) / timeframeMinutes);
-      const limit = Math.min(500, Math.max(50, estimateBars));
-      const url = `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=${limit}`;
-      const response = await massiveFetch(url);
-      return response.json();
+      return barFetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
     };
 
     const fetchPromise = (async () => {

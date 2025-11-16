@@ -1,5 +1,9 @@
-const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
+const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
 const API_KEY = process.env.MASSIVE_API_KEY;
+
+if (!API_KEY) {
+  throw new Error('MASSIVE_API_KEY is not configured');
+}
 
 export interface CallMassiveResult<T> {
   ok: boolean;
@@ -48,6 +52,31 @@ function flattenHeaders(source?: RequestInit['headers']): Record<string, string>
   return headers;
 }
 
+function buildMassiveHeaders(initHeaders?: RequestInit['headers']) {
+  return {
+    Accept: 'application/json',
+    Authorization: `Bearer ${API_KEY}`,
+    'X-API-Key': API_KEY!,
+    ...flattenHeaders(initHeaders),
+  };
+}
+
+export async function massiveFetch(path: string, init: RequestInit = {}) {
+  const url = path.startsWith('http') ? path : `${MASSIVE_BASE}${path}`;
+  const { headers: initHeaders, ...restInit } = init;
+  const headers = buildMassiveHeaders(initHeaders);
+
+  const res = await fetch(url, { ...restInit, headers });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`Massive ${res.status}: ${text || res.statusText}`);
+    (err as any).status = res.status;
+    throw err;
+  }
+
+  return res.json();
+}
+
 function withTimeout(ms: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -68,8 +97,7 @@ export async function callMassive<T>(
   init: RequestInit = {},
   tries = 3
 ): Promise<CallMassiveResult<T>> {
-  if (!API_KEY) throw new Error('MASSIVE_API_KEY is not configured');
-  const url = path.startsWith('http') ? path : `${MASSIVE_BASE_URL}${path}`;
+  const url = path.startsWith('http') ? path : `${MASSIVE_BASE}${path}`;
   const { headers: initHeaders, ...restInit } = init;
   const headers = { ...buildHeaders(), ...flattenHeaders(initHeaders) };
 

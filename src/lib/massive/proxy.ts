@@ -68,3 +68,88 @@ export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit)
 
   return response;
 }
+
+const API_BASE = '/api/massive';
+
+async function fetchJSON(url: string) {
+  const response = await fetch(url, withMassiveProxyInit());
+  if (!response.ok) {
+    throw new Error(`Massive ${response.status}: ${await response.text()}`);
+  }
+  return response.json();
+}
+
+function encodeParams(params: Record<string, string | number>) {
+  return Object.entries(params)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+}
+
+export function getStockBars(
+  symbol: string,
+  multiplier: number,
+  timespan: string,
+  from: string,
+  to: string,
+  limit = 144,
+  adjusted = 'true',
+  sort = 'asc'
+) {
+  const query = encodeParams({
+    symbol,
+    multiplier,
+    timespan,
+    from,
+    to,
+    limit,
+    adjusted,
+    sort,
+  });
+  return fetchJSON(`${API_BASE}/stocks/bars?${query}`);
+}
+
+export function getIndexBars(
+  symbol: string,
+  multiplier: number,
+  timespan: string,
+  from: string,
+  to: string,
+  limit = 250,
+  adjusted = 'true',
+  sort = 'asc'
+) {
+  const query = encodeParams({
+    symbol,
+    multiplier,
+    timespan,
+    from,
+    to,
+    limit,
+    adjusted,
+    sort,
+  });
+  return fetchJSON(`${API_BASE}/indices/bars?${query}`);
+}
+
+export function getOptionBars(
+  ticker: string,
+  multiplier: number,
+  timespan: string,
+  from: string,
+  to: string,
+  limit = 5000,
+  adjusted = 'true',
+  sort = 'asc'
+) {
+  const query = encodeParams({
+    ticker,
+    multiplier,
+    timespan,
+    from,
+    to,
+    limit,
+    adjusted,
+    sort,
+  });
+  return fetchJSON(`${API_BASE}/options/bars?${query}`);
+}

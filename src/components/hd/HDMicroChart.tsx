@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { massiveFetch } from '../../lib/massive/proxy';
+import { getIndexBars, getOptionBars, getStockBars } from '../../lib/massive/proxy';
 
 interface HDMicroChartProps {
   ticker: string;
@@ -26,43 +26,53 @@ interface ChartDataPoint {
 async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
   try {
     const isOptionsContract = ticker.startsWith('O:');
-    const endpoint = isOptionsContract
-      ? `/api/massive/v2/aggs/options/ticker/${ticker}/range/5/minute`
-      : `/api/massive/v2/aggs/ticker/${ticker}/range/5/minute`;
-    
+    const indexSymbols = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
+    const isIndex = ticker.startsWith('I:') || indexSymbols.has(ticker);
+    const normalizedTicker = isIndex && ticker.startsWith('I:') ? ticker.slice(2) : ticker;
+    const fetcher = isOptionsContract
+      ? getOptionBars
+      : isIndex
+      ? getIndexBars
+      : getStockBars;
+
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     const toDate = today.toISOString().split('T')[0];
     const fromDate = yesterday.toISOString().split('T')[0];
-    
-    console.log('[v0] Fetching real 5-minute chart data for:', ticker, fromDate, toDate, 'endpoint:', endpoint);
-    
-    const response = await massiveFetch(
-      `${endpoint}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=120`
+
+    console.log(
+      '[v0] Fetching real 5-minute chart data for:',
+      ticker,
+      fromDate,
+      toDate,
+      'symbol:',
+      normalizedTicker
     );
 
-    if (!response.ok) {
-      console.error('[v0] Failed to fetch chart data:', response.status, response.statusText);
-      return [];
-    }
-
-    const data = await response.json();
+    const data = await fetcher(normalizedTicker, 5, 'minute', fromDate, toDate, 120);
     console.log('[v0] Received chart data:', data);
-    
-    if (!data.results || data.results.length === 0) {
+
+    const results = data.results || data;
+    if (!Array.isArray(results) || results.length === 0) {
       console.log('[v0] No chart data available');
       return [];
     }
 
-    const chartData: ChartDataPoint[] = data.results.map((bar: any, index: number) => {
+    const chartData: ChartDataPoint[] = results.map((bar: any, index: number) => {
       const timestamp = new Date(bar.t);
       const time = timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-      
-      const ema9 = calculateEMA(data.results.slice(Math.max(0, index - 8), index + 1).map((b: any) => b.c), 9);
-      const ema21 = calculateEMA(data.results.slice(Math.max(0, index - 20), index + 1).map((b: any) => b.c), 21);
-      
+
+      const ema9 = calculateEMA(
+        results.slice(Math.max(0, index - 8), index + 1).map((b: any) => b.c),
+        9
+      );
+      const ema21 = calculateEMA(
+        results.slice(Math.max(0, index - 20), index + 1).map((b: any) => b.c),
+        21
+      );
+
       return {
         time,
         price: parseFloat(bar.c.toFixed(2)),
