@@ -184,28 +184,8 @@ class MassiveClient {
     const contractsData = await this.fetch(contractsEndpoint);
     
     if (!contractsData || !contractsData.results || contractsData.results.length === 0) {
-    return contractsData;
-  }
-
-  async getAggregates(symbol: string, timeframe: '1' | '5' | '15' | '60', lookback: number = 200): Promise<MassiveAggregateBar[]> {
-    const minutes = Number(timeframe);
-    const to = new Date();
-    const from = new Date(to.getTime() - minutes * lookback * 60 * 1000);
-    const formatDay = (date: Date) => date.toISOString().split('T')[0];
-    const endpoint = `/v2/aggs/ticker/${symbol}/range/${timeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
-    const data = await this.fetch(endpoint);
-    const results: any[] = data.results || data;
-    if (!Array.isArray(results)) return [];
-    return results.map((bar) => ({
-      t: bar.t,
-      o: bar.o,
-      h: bar.h,
-      l: bar.l,
-      c: bar.c,
-      v: bar.v,
-      vw: bar.vw,
-    }));
-  }
+      return contractsData;
+    }
     
     const allContracts = contractsData.results;
     const contractsByExpiry = new Map<string, any[]>();
@@ -285,6 +265,26 @@ class MassiveClient {
 
   async getHistoricalData(symbol: string, multiplier: number = 1, timespan: string = 'day', from: string, to: string) {
     return this.fetch(`/v3/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
+  }
+
+  async getAggregates(symbol: string, timeframe: '1' | '5' | '15' | '60', lookback: number = 200): Promise<MassiveAggregateBar[]> {
+    const minutes = Number(timeframe);
+    const to = new Date();
+    const from = new Date(to.getTime() - minutes * lookback * 60 * 1000);
+    const formatDay = (date: Date) => date.toISOString().split('T')[0];
+    const endpoint = `/v2/aggs/ticker/${symbol}/range/${timeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+    const data = await this.fetch(endpoint);
+    const results: any[] = data.results || data;
+    if (!Array.isArray(results)) return [];
+    return results.map((bar) => ({
+      t: bar.t,
+      o: bar.o,
+      h: bar.h,
+      l: bar.l,
+      c: bar.c,
+      v: bar.v,
+      vw: bar.vw,
+    }));
   }
 
   isConnected(): boolean {
