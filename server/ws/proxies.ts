@@ -28,29 +28,38 @@ function makeProxy(server: Server, asset: Asset) {
 
   wss.on('connection', (client, req) => {
     try {
-      const url = new URL(req.url ?? '', 'http://localhost');
+      const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'localhost'}`);
       const token = url.searchParams.get('token');
-      if (!MASSIVE_PROXY_TOKEN || token !== MASSIVE_PROXY_TOKEN) {
+      const prefix = `[WS ${asset}]`;
+
+      if (!MASSIVE_PROXY_TOKEN) {
+        console.error(`${prefix} MASSIVE_PROXY_TOKEN not set on server`);
+        client.close(4500, 'Server missing MASSIVE_PROXY_TOKEN');
+        return;
+      }
+      if (token !== MASSIVE_PROXY_TOKEN) {
+        console.warn(`${prefix} Forbidden: bad token`, { token });
         client.close(4403, 'Forbidden');
         return;
       }
       if (!MASSIVE_API_KEY) {
-        client.close(4500, 'Server not configured');
+        console.error(`${prefix} MASSIVE_API_KEY not set`);
+        client.close(4500, 'Server missing MASSIVE_API_KEY');
         return;
       }
 
       const upstreamUrl = `${WS_BASE}/${asset}`;
-      const upstream = new WebSocket(upstreamUrl);
+      const upstream = new WebSocket(upstreamUrl, {
+        headers: {
+          Authorization: `Bearer ${MASSIVE_API_KEY}`,
+          'X-Massive-Client': 'honeydrip-admin',
+        },
+      });
       let subscriptions = new Set<string>();
       let authenticated = false;
       let closed = false;
       let hb: NodeJS.Timeout | null = null;
 
-      const sendClient = (data: any) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(data));
-        }
-      };
       const sendUpstream = (obj: any) => {
         if (upstream.readyState === WebSocket.OPEN) {
           upstream.send(JSON.stringify(obj));
@@ -58,41 +67,50 @@ function makeProxy(server: Server, asset: Asset) {
       };
 
       upstream.on('open', () => {
+        console.log(`${prefix} upstream connected`);
         sendUpstream({ action: 'auth', params: MASSIVE_API_KEY });
         hb = setInterval(() => sendUpstream({ action: 'ping' }), 25_000);
       });
 
-      upstream.on('message', (buf) => {
-        const payload = buf.toString();
+      upstream.on('message', (data) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(data);
+        }
         let arr: any[] = [];
         try {
-          arr = JSON.parse(payload);
+          arr = JSON.parse(data.toString());
         } catch {
-          // ignore parse failures
+          // ignore
         }
         if (Array.isArray(arr)) {
           for (const msg of arr) {
             if (msg?.ev === 'status' && msg?.status === 'auth_success') {
               authenticated = true;
               if (subscriptions.size) {
-                sendUpstream({ action: 'subscribe', params: Array.from(subscriptions).join(',') });
+                sendUpstream({
+                  action: 'subscribe',
+                  params: Array.from(subscriptions).join(','),
+                });
               }
             }
           }
         }
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(payload);
-        }
       });
 
-      upstream.on('close', () => {
+      upstream.on('close', (code, reason) => {
         authenticated = false;
-        if (!closed) client.close(4501, 'Upstream closed');
+        console.log(`${prefix} upstream closed`, { code, reason: reason.toString() });
+        if (!closed && client.readyState === WebSocket.OPEN) {
+          client.close(code, reason?.toString() || 'Upstream closed');
+        }
         if (hb) clearInterval(hb);
       });
 
-      upstream.on('error', () => {
-        if (!closed) client.close(4502, 'Upstream error');
+      upstream.on('error', (err) => {
+        console.error(`${prefix} upstream error`, err);
+        if (!closed && client.readyState === WebSocket.OPEN) {
+          client.close(4502, 'Upstream error');
+        }
       });
 
       client.on('message', (buf) => {
@@ -101,10 +119,13 @@ function makeProxy(server: Server, asset: Asset) {
           if (!authenticated && msg?.action !== 'ping') return;
 
           if (msg?.action === 'subscribe' && typeof msg?.params === 'string') {
-            const incoming = msg.params.split(',').map((s: string) => s.trim()).filter(Boolean);
+            const incoming = msg.params
+              .split(',')
+              .map((s: string) => s.trim())
+              .filter(Boolean);
             for (const s of incoming) subscriptions.add(s);
             if (asset === 'options' && subscriptions.size > 1000) {
-              sendClient({ ev: 'error', message: 'subscription limit exceeded (1000)' });
+              client.send(JSON.stringify({ ev: 'error', message: 'subscription limit exceeded (1000)' }));
               return;
             }
             sendUpstream({ action: 'subscribe', params: Array.from(subscriptions).join(',') });
@@ -128,12 +149,16 @@ function makeProxy(server: Server, asset: Asset) {
         }
       });
 
-      client.on('error', () => {
+      client.on('error', (err) => {
         closed = true;
+        console.error(`${prefix} client error`, err);
         if (hb) clearInterval(hb);
-        try { upstream.close(); } catch {}
+        try {
+          upstream.close(4500, 'Client error');
+        } catch {}
       });
-    } catch {
+    } catch (error) {
+      console.error('[WS] proxy error', error);
       client.close(1011, 'Proxy error');
     }
   });

@@ -39,7 +39,14 @@ router.get('/massive/options/chain', requireProxyToken, async (req, res) => {
     const data = await getOptionChain(underlying, req.query as Record<string, string>);
     res.json(data);
   } catch (e: any) {
-    res.status(502).json({ error: 'Massive request failed', message: e.message });
+    const msg = String(e?.message || e || '');
+    const status =
+      msg.includes('403') || msg.toLowerCase().includes('forbidden') ? 403 : 502;
+
+    res.status(status).json({
+      error: status === 403 ? 'Massive 403: Forbidden' : 'Massive request failed',
+      message: msg,
+    });
   }
 });
 
@@ -48,7 +55,14 @@ router.get('/massive/options/contracts', requireProxyToken, async (req, res) => 
     const data = await listOptionContracts(req.query as Record<string, string>);
     res.json(data);
   } catch (e: any) {
-    res.status(502).json({ error: 'Massive request failed', message: e.message });
+    const msg = String(e?.message || e || '');
+    const status =
+      msg.includes('403') || msg.toLowerCase().includes('forbidden') ? 403 : 502;
+
+    res.status(status).json({
+      error: status === 403 ? 'Massive 403: Forbidden' : 'Massive request failed',
+      message: msg,
+    });
   }
 });
 
@@ -59,7 +73,14 @@ router.get('/massive/indices', requireProxyToken, async (req, res) => {
     const data = await getIndicesSnapshot(tickers.split(','));
     res.json(data);
   } catch (e: any) {
-    res.status(502).json({ error: 'Massive request failed', message: e.message });
+    const msg = String(e?.message || e || '');
+    const status =
+      msg.includes('403') || msg.toLowerCase().includes('forbidden') ? 403 : 502;
+
+    res.status(status).json({
+      error: status === 403 ? 'Massive 403: Forbidden' : 'Massive request failed',
+      message: msg,
+    });
   }
 });
 
@@ -72,7 +93,14 @@ router.all('/massive/*', requireProxyToken, async (req, res) => {
     const data = await callMassive(fullPath, { method: req.method as any, body });
     res.json(data);
   } catch (e: any) {
-    res.status(502).json({ error: 'Massive request failed', message: e.message });
+    const msg = String(e?.message || e || '');
+    const status =
+      msg.includes('403') || msg.toLowerCase().includes('forbidden') ? 403 : 502;
+
+    res.status(status).json({
+      error: status === 403 ? 'Massive 403: Forbidden' : 'Massive request failed',
+      message: msg,
+    });
   }
 });
 

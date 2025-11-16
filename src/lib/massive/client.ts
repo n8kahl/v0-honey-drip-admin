@@ -297,11 +297,36 @@ class MassiveClient {
     return this.lastError;
   }
 
-  hasApiKey(): boolean {
-    return true;
-  }
 }
 
 export const massiveClient = new MassiveClient();
+
+let cachedHasKey: boolean | null = null;
+let lastCheck = 0;
+const HEALTH_TTL = 30_000;
+
+export async function hasApiKey(): Promise<boolean> {
+  const now = Date.now();
+  if (cachedHasKey !== null && now - lastCheck < HEALTH_TTL) {
+    return cachedHasKey;
+  }
+
+  try {
+    const resp = await fetch('/api/health');
+    if (!resp.ok) {
+      cachedHasKey = false;
+      lastCheck = now;
+      return false;
+    }
+    await resp.json().catch(() => null);
+    cachedHasKey = true;
+    lastCheck = now;
+    return true;
+  } catch {
+    cachedHasKey = false;
+    lastCheck = now;
+    return false;
+  }
+}
 
 export type { MassiveQuote, MassiveOption, MassiveOptionsChain, MassiveIndex };

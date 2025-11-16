@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { massiveClient, type MassiveQuote, type MassiveOptionsChain } from '../lib/massive/client';
+import { massiveClient, hasApiKey, type MassiveQuote, type MassiveOptionsChain } from '../lib/massive/client';
 import { createTransport } from '../lib/massive/transport-policy';
 import type { Contract } from '../types';
 
@@ -187,22 +187,32 @@ export function useActiveTradePnL(contractTicker: string | null, entryPrice: num
 // Hook for checking API connection status
 export function useMarketDataConnection() {
   const [isConnected, setIsConnected] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(false);
+  const [hasApiKeyAvailable, setHasApiKeyAvailable] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkConnection = () => {
-      setHasApiKey(massiveClient.hasApiKey());
+    let cancelled = false;
+
+    const refresh = async () => {
+      const hasKey = await hasApiKey();
+      if (cancelled) return;
+      setHasApiKeyAvailable(hasKey);
       setIsConnected(massiveClient.isConnected());
       setLastError(massiveClient.getLastError());
     };
 
-    checkConnection();
-    const interval = setInterval(checkConnection, 2000);
-    return () => clearInterval(interval);
+    refresh();
+    const interval = setInterval(() => {
+      refresh();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
-  return { isConnected, hasApiKey, lastError };
+  return { isConnected, hasApiKey: hasApiKeyAvailable, lastError };
 }
 
 export function useMassiveClient() {

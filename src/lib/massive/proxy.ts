@@ -23,6 +23,27 @@ export function withMassiveProxyInit(init?: RequestInit): RequestInit {
   };
 }
 
-export function massiveFetch(input: RequestInfo | URL, init?: RequestInit) {
-  return fetch(input, withMassiveProxyInit(init));
+export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const response = await fetch(input, withMassiveProxyInit(init));
+
+  if (!response.ok) {
+    const cloned = response.clone();
+    const text = await cloned.text();
+    const method = (init?.method || 'GET').toString().toUpperCase();
+    const path =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+        ? `${input.pathname}${input.search}`
+        : String(input);
+    console.error('[Massive proxy] HTTP error from /api/massive', {
+      method,
+      path,
+      status: response.status,
+      text,
+    });
+    throw new Error(`HTTP ${response.status}: ${text || response.statusText}`);
+  }
+
+  return response;
 }
