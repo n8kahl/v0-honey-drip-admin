@@ -1,5 +1,5 @@
 import http from 'http';
-import express, { type Request } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -40,8 +40,24 @@ app.use('/api', apiRouter);
 
 // ===== Static SPA (vite build) =====
 const distDir = path.resolve(process.cwd(), 'dist');
+const indexFile = path.join(distDir, 'index.html');
 app.use(express.static(distDir));
-app.get('*', (_, res) => res.sendFile(path.join(distDir, 'index.html')));
+app.get('*', (_, res, next) => {
+  res.sendFile(indexFile, (err) => {
+    if (err) {
+      console.error('[Server] Failed to send index.html', err);
+      next(err);
+    }
+  });
+});
+
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  console.error('[Server] Express error handler', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // ===== HTTP server + WS proxies =====
 const server = http.createServer(app);
