@@ -1,15 +1,43 @@
-import fetch, { Headers, type RequestInit } from 'node-fetch';
-
 const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
 const API_KEY = process.env.MASSIVE_API_KEY;
 
-function buildHeaders() {
-  if (!API_KEY) throw new Error('MASSIVE_API_KEY is not set');
-  const headers = new Headers();
-  headers.set('Authorization', `Bearer ${API_KEY}`);
-  headers.set('X-API-Key', API_KEY);
-  headers.set('User-Agent', 'Honeydrip-Admin/1.0');
-  headers.set('Content-Type', 'application/json');
+function buildHeaders(): Record<string, string> {
+  if (!API_KEY) throw new Error('MASSIVE_API_KEY is not configured');
+  return {
+    Authorization: `Bearer ${API_KEY}`,
+    'X-API-Key': API_KEY,
+    'User-Agent': 'Honeydrip-Admin/1.0',
+    'Content-Type': 'application/json',
+  };
+}
+
+function flattenHeaders(source?: RequestInit['headers']): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (!source) return headers;
+
+  if (Array.isArray(source)) {
+    for (const [key, value] of source) {
+      headers[key] = String(value);
+    }
+    return headers;
+  }
+
+  if (typeof source === 'object') {
+    const withForEach = source as { forEach?: (cb: (value: string, key: string) => void) => void };
+    if (withForEach.forEach) {
+      withForEach.forEach((value, key) => {
+        headers[key] = value;
+      });
+      return headers;
+    }
+
+    for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+      if (value !== undefined && value !== null) {
+        headers[key] = String(value);
+      }
+    }
+  }
+
   return headers;
 }
 
@@ -19,21 +47,21 @@ function withTimeout(ms: number) {
   return { signal: controller.signal, done: () => clearTimeout(timer) };
 }
 
-async function callMassive(path: string, init: RequestInit = {}, tries = 3): Promise<Response> {
+export async function callMassive(path: string, init: RequestInit = {}, tries = 3): Promise<Response> {
   if (!API_KEY) throw new Error('MASSIVE_API_KEY is not configured');
   const url = path.startsWith('http') ? path : `${MASSIVE_BASE_URL}${path}`;
-  const headers = buildHeaders();
-  if (init.headers) {
-    for (const [key, value] of Object.entries(init.headers as Record<string, unknown>)) {
-      headers.set(key, String(value));
-    }
-  }
+  const { headers: initHeaders, ...restInit } = init;
+  const headers = { ...buildHeaders(), ...flattenHeaders(initHeaders) };
 
   let lastError: any;
   for (let attempt = 0; attempt < tries; attempt++) {
     const { signal, done } = withTimeout(10_000);
     try {
-      const response = await fetch(url, { ...init, headers, signal });
+      const response = await fetch(url, {
+        ...restInit,
+        headers,
+        signal,
+      });
       done();
 
       if (response.status === 429) {
@@ -75,9 +103,10 @@ export async function getIndexAggregates(
   return res.json();
 }
 
-export async function getOptionChain(underlying: string, limit = 250) {
-  const capped = Math.min(limit, 250);
-  const path = `/v3/snapshot/options/${encodeURIComponent(underlying)}?limit=${capped}`;
+export async function getOptionChain(underlying: string, limit?: number) {
+  const normalizedLimit =
+    typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 250;
+  const path = `/v3/snapshot/options/${encodeURIComponent(underlying)}?limit=${normalizedLimit}`;
   const res = await callMassive(path);
   if (!res.ok) {
     throw new Error(`Massive error ${res.status}`);

@@ -1,10 +1,12 @@
-import WebSocket, { WebSocket as WS } from 'ws';
+import * as WS from 'ws';
 import { setInterval, clearInterval } from 'timers';
+
+const { WebSocket } = WS;
 
 type Asset = 'options' | 'indices';
 
 interface ClientCtx {
-  ws: WS;
+  ws: WS.WebSocket;
   subs: Set<string>;
 }
 
@@ -16,7 +18,7 @@ interface HubOpts {
 }
 
 export class MassiveHub {
-  private upstream?: WS;
+  private upstream?: WS.WebSocket;
   private upstreamOpen = false;
   private upstreamAuthd = false;
   private heartbeat?: NodeJS.Timeout;
@@ -35,7 +37,7 @@ export class MassiveHub {
     clientWs.on('close', () => this.detachClient(ctx));
     clientWs.on('error', () => this.detachClient(ctx));
 
-    if (!this.upstream || this.upstream.readyState >= WS.CLOSING) {
+    if (!this.upstream || this.upstream.readyState >= WebSocket.CLOSING) {
       this.connectUpstream();
     }
   };
@@ -112,7 +114,7 @@ export class MassiveHub {
       clearInterval(this.heartbeat);
       this.heartbeat = undefined;
     }
-    if (this.upstream && this.upstream.readyState === WS.OPEN) {
+      if (this.upstream && this.upstream.readyState === WebSocket.OPEN) {
       try {
         this.upstream.close(1000, 'idle');
       } catch {}
@@ -122,7 +124,7 @@ export class MassiveHub {
   }
 
   private sendUpstream(msg: unknown) {
-    if (!this.upstream || this.upstream.readyState !== WS.OPEN) return;
+    if (!this.upstream || this.upstream.readyState !== WebSocket.OPEN) return;
     this.upstream.send(JSON.stringify(msg));
   }
 

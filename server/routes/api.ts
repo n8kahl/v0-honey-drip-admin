@@ -36,7 +36,14 @@ router.get('/massive/options/chain', requireProxyToken, async (req, res) => {
   try {
     const underlying = String(req.query.underlying || req.query.symbol || '');
     if (!underlying) return res.status(400).json({ error: 'underlying required' });
-    const data = await getOptionChain(underlying, req.query as Record<string, string>);
+    const limitParam = Array.isArray(req.query.limit)
+      ? req.query.limit[0]
+      : String(req.query.limit || '');
+    const parsedLimit = limitParam ? Number(limitParam) : undefined;
+    const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? parsedLimit
+      : undefined;
+    const data = await getOptionChain(underlying, limit);
     res.json(data);
   } catch (e: any) {
     const msg = String(e?.message || e || '');
