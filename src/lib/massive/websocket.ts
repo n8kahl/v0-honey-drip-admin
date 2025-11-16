@@ -8,7 +8,7 @@ const MASSIVE_WS_URL_INDICES = `${WS_BASE}/ws/indices`;
 
 type SubscriptionCallback = (message: WebSocketMessage) => void;
 
-export type MessageType = 'quote' | 'option' | 'index' | 'trade' | 'error';
+export type MessageType = 'quote' | 'option' | 'index' | 'trade' | 'error' | 'aggregate';
 
 export interface WebSocketMessage {
   type: MessageType;
@@ -226,37 +226,106 @@ class MassiveWebSocket {
     }
   }
 
+  private deregisterSubscription(key: string, callback: SubscriptionCallback) {
+    const subs = this.subscribers.get(key);
+    if (!subs) return;
+    subs.delete(callback);
+    if (subs.size === 0) {
+      this.subscribers.delete(key);
+    }
+  }
+
+  private createSubscriberKey(type: MessageType, symbol: string) {
+    return `${type}:${symbol}`;
+  }
+
   subscribeQuotes(symbols: string[], callback: SubscriptionCallback) {
     symbols.forEach((symbol) => {
-      const key = `quote:${symbol}`;
+      const key = this.createSubscriberKey('quote', symbol);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
       this.subscriptions.add(symbol);
     });
     this.resubscribe(symbols[0]);
-    return () => { };
+    return () => {
+      symbols.forEach((symbol) => {
+        this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
+      });
+    };
   }
 
   subscribeOptionQuotes(optionTickers: string[], callback: SubscriptionCallback) {
     optionTickers.forEach((ticker) => {
-      const key = `option:${ticker}`;
+      const key = this.createSubscriberKey('option', ticker);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
       this.subscriptions.add(ticker);
     });
     this.resubscribe(optionTickers[0]);
-    return () => { };
+    return () => {
+      optionTickers.forEach((ticker) => {
+        this.deregisterSubscription(this.createSubscriberKey('option', ticker), callback);
+      });
+    };
   }
 
   subscribeIndices(symbols: string[], callback: SubscriptionCallback) {
     symbols.forEach((symbol) => {
-      const key = `index:${symbol}`;
+      const key = this.createSubscriberKey('index', symbol);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
       this.subscriptions.add(symbol);
     });
     this.resubscribe(symbols[0]);
-    return () => { };
+    return () => {
+      symbols.forEach((symbol) => {
+        this.deregisterSubscription(this.createSubscriberKey('index', symbol), callback);
+      });
+    };
+  }
+
+  private toAggregateMessage(symbol: string, price: number, timestamp: number, volume: number = 0) {
+    return {
+      type: 'aggregate' as MessageType,
+      data: {
+        ticker: symbol,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume,
+        timestamp,
+      },
+      timestamp,
+    };
+  }
+
+  subscribeAggregates(symbols: string[], callback: SubscriptionCallback) {
+    return this.subscribeQuotes(symbols, (message) => {
+      if (message.type !== 'quote') return;
+      const data = message.data as QuoteUpdate;
+      callback(this.toAggregateMessage(data.symbol, data.last, data.timestamp, data.volume));
+    });
+  }
+
+  subscribeOptionAggregates(optionTickers: string[], callback: SubscriptionCallback) {
+    return this.subscribeOptionQuotes(optionTickers, (message) => {
+      if (message.type !== 'option') return;
+      const data = message.data as OptionQuoteUpdate;
+      callback({
+        type: 'aggregate',
+        data: {
+          ticker: data.ticker,
+          open: data.last,
+          high: data.last,
+          low: data.last,
+          close: data.last,
+          volume: 0,
+          timestamp: data.timestamp,
+        },
+        timestamp: data.timestamp,
+      });
+    });
   }
 
   getConnectionState(): 'connecting' | 'open' | 'closed' {
