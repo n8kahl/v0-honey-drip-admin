@@ -67,7 +67,7 @@ export async function fetchTrendMetrics(underlyingTicker: string): Promise<Massi
     for (const tf of timeframes) {
       try {
         const response = await massiveFetch(
-          `${MASSIVE_API_BASE}/v2/aggs/ticker/${symbol}/range/1/${tf}/minute/2024-01-01/2024-12-31?limit=50`
+          `${MASSIVE_API_BASE}/v2/aggs/ticker/${symbol}/range/${tf}/minute/2024-01-01/2024-12-31?limit=50`
         );
         
         if (response.ok) {
