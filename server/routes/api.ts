@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { callMassive, getOptionChain, listOptionContracts, getIndicesSnapshot } from '../massiveClient';
 
 const router = Router();
 const MASSIVE_PROXY_TOKEN = process.env.MASSIVE_PROXY_TOKEN || '';
+const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || '';
+const TOKEN_EXPIRY_MS = 5 * 60 * 1000;
 
 function requireProxyToken(req: Request, res: Response, next: NextFunction) {
   if (!MASSIVE_PROXY_TOKEN) {
@@ -18,6 +21,15 @@ function requireProxyToken(req: Request, res: Response, next: NextFunction) {
 
 router.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
+router.post('/massive/ws-token', requireProxyToken, (_req, res) => {
+  if (!MASSIVE_API_KEY) return res.status(500).json({ error: 'MASSIVE_API_KEY missing' });
+  const expiresAt = Date.now() + TOKEN_EXPIRY_MS;
+  const payload = JSON.stringify({ apiKey: MASSIVE_API_KEY, expiresAt });
+  const signature = crypto.createHmac('sha256', MASSIVE_API_KEY).update(payload).digest('hex');
+  const token = `${Buffer.from(payload).toString('base64')}.${signature}`;
+  res.json({ token, expiresAt });
 });
 
 router.get('/massive/options/chain', requireProxyToken, async (req, res) => {
