@@ -337,7 +337,7 @@ export function HDContractGrid({ contracts, currentPrice, ticker, onContractSele
   );
 }
 
-function ContractRow({ 
+const ContractRow = memo(function ContractRow({ 
   contract, 
   status, 
   selected, 
@@ -385,4 +385,4 @@ function ContractRow({
       )}
     </div>
   );
-}
+});
