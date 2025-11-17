@@ -295,6 +295,11 @@ export async function updateTrade(id: string, updates: {
   pnl?: number;
   pnl_percent?: number;
   notes?: string;
+  target_price?: number;
+  stop_loss?: number;
+  current_price?: number;
+  move_percent?: number;
+  state?: string;
 }) {
   const supabase = createClient();
   

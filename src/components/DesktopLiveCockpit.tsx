@@ -22,6 +22,7 @@ import { useStreamingOptionsChain } from '../hooks/useStreamingOptionsChain';
 import { calculateRisk } from '../lib/riskEngine/calculator';
 import { RISK_PROFILES, inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS } from '../lib/riskEngine/profiles';
 import { adjustProfileByConfluence, getConfluenceAdjustmentReasoning } from '../lib/riskEngine/confluenceAdjustment';
+import { updateTrade } from '../lib/supabase/database';
 import { 
   inferTradeType,
   cn
@@ -510,6 +511,28 @@ export function DesktopLiveCockpit({
       setShowAlert(false);
       
       showAlertToast('enter', currentTrade.ticker, selectedChannels);
+      
+      // Fix #5: Persist updated TP/SL to Supabase database
+      (async () => {
+        try {
+          await updateTrade(finalTrade.id, {
+            state: 'ENTERED',
+            entry_price: entryPrice,
+            entry_time: finalTrade.entryTime?.toISOString(),
+            target_price: targetPrice,
+            stop_loss: stopLoss,
+          });
+          console.log('[v0] Trade entered and saved to database:', {
+            id: finalTrade.id,
+            entryPrice,
+            targetPrice,
+            stopLoss,
+          });
+        } catch (err) {
+          console.error('[v0] Failed to save entered trade to database:', err);
+          toast.error('Warning: Trade updated locally but failed to save to database');
+        }
+      })();
       
       if (onMobileTabChange) {
         setTimeout(() => {
