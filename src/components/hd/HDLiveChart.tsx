@@ -273,25 +273,106 @@ const loadHistoricalBars = useCallback(async () => {
       },
     });
 
-    if (!chart || typeof chart.addCandlestickSeries !== 'function' || typeof chart.addLineSeries !== 'function') {
-      console.error('[HDLiveChart] Chart API not ready, skipping series creation');
-      chart?.remove();
-      return;
-    }
-
+    // Do not abort on missing methods immediately; attempt to recover with retries.
     chartRef.current = chart;
-    setChartReady(true);
-    waitingForChartRef.current = false;
 
     const createLineSeries = (opts: LineSeriesOptions, label?: string) => {
-      if (typeof chart.addLineSeries !== 'function') {
+      if (!chartRef.current || typeof (chartRef.current as any).addLineSeries !== 'function') {
         if (label) {
-          console.warn(`[HDLiveChart] Line series API unavailable, skipping ${label}`);
+          console.warn(`[HDLiveChart] Line series API unavailable, skipping ${label} for now`);
         }
         return null;
       }
-      return chart.addLineSeries(opts);
+      return (chartRef.current as any).addLineSeries(opts);
     };
+
+    const attemptCreateSeries = (() => {
+      let attempts = 0;
+      const maxAttempts = 6;
+
+      const doCreate = () => {
+        attempts++;
+
+        // If required APIs are available, create series and mark chart ready
+        const hasCandle = typeof (chartRef.current as any)?.addCandlestickSeries === 'function';
+        const hasLine = typeof (chartRef.current as any)?.addLineSeries === 'function';
+
+        if (!hasCandle && !hasLine) {
+          if (attempts < maxAttempts) {
+            console.debug(`[HDLiveChart] Chart API not ready yet (attempt ${attempts}), retrying...`);
+            setTimeout(doCreate, 500);
+            return;
+          }
+          console.error('[HDLiveChart] Chart API not available after retries; continuing without indicator series');
+          waitingForChartRef.current = false;
+          return;
+        }
+
+        waitingForChartRef.current = false;
+
+        // Create candlestick series if supported
+        if (hasCandle && !candleSeriesRef.current) {
+          try {
+            candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries({
+              upColor: '#16A34A',
+              downColor: '#EF4444',
+              borderUpColor: '#16A34A',
+              borderDownColor: '#EF4444',
+              wickUpColor: '#16A34A',
+              wickDownColor: '#EF4444',
+            });
+          } catch (err) {
+            console.warn('[HDLiveChart] Failed to create candlestick series:', err);
+          }
+        }
+
+        // Create EMA/VWAP/Bollinger series using createLineSeries helper
+        if (indicators?.ema?.periods) {
+          const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
+          indicators.ema.periods.forEach((period, i) => {
+            const emaSeries = createLineSeries(
+              {
+                color: colors[i % colors.length],
+                lineWidth: 1,
+                title: `EMA${period}`,
+              },
+              `EMA${period}`
+            );
+            if (emaSeries) emaSeriesRefs.current.set(period, emaSeries);
+          });
+        }
+
+        if (indicators?.vwap?.enabled) {
+          const vwapSeries = createLineSeries(
+            {
+              color: '#10B981',
+              lineWidth: 2,
+              lineStyle: 2,
+              title: 'VWAP',
+            },
+            'VWAP'
+          );
+          if (vwapSeries) vwapSeriesRef.current = vwapSeries;
+        }
+
+        if (indicators?.bollinger) {
+          const upperSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Upper' }, 'BB Upper');
+          const middleSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, lineStyle: 2, title: 'BB Middle' }, 'BB Middle');
+          const lowerSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Lower' }, 'BB Lower');
+          if (upperSeries && middleSeries && lowerSeries) {
+            bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+          }
+        }
+
+        setChartReady(true);
+        console.log('[HDLiveChart] Chart and series ready');
+      };
+
+      return doCreate;
+    })();
+
+    waitingForChartRef.current = true;
+    attemptCreateSeries();
 
     // Create EMA series
     if (indicators?.ema?.periods) {
