@@ -1,9 +1,16 @@
-import { useState, useMemo, useEffect, memo } from 'react';
+import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
 import { Contract } from '../../types';
 import { cn } from '../../lib/utils';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from './HDConfluenceChips';
+import { VariableSizeList as List } from 'react-window';
+
+type VirtualRow = 
+  | { type: 'dateHeader'; dateKey: string; daysToExpiry: number; contractCount: number }
+  | { type: 'contract'; contract: Contract; status: 'otm' | 'atm' | 'itm'; dateKey: string }
+  | { type: 'atmIndicator'; ticker: string; currentPrice: number; dateKey: string }
+  | { type: 'itmLabel'; dateKey: string };
 
 interface HDContractGridProps {
   contracts: Contract[];
@@ -61,20 +68,101 @@ export function HDContractGrid({ contracts, currentPrice, ticker, onContractSele
   };
   
   // Determine if a contract is ITM, ATM, or OTM
-  const getContractStatus = (contract: Contract) => {
-    // Determine strike increment based on price level
+  const getContractStatus = useCallback((contract: Contract) => {
     const strikeIncrement = currentPrice > 100 ? 5 : 2.5;
     const diff = Math.abs(contract.strike - currentPrice);
     
-    // ATM is within half a strike increment
-    if (diff < strikeIncrement / 2) return 'atm';
+    if (diff < strikeIncrement / 2) return 'atm' as const;
     
     if (contract.type === 'C') {
-      return contract.strike < currentPrice ? 'itm' : 'otm';
+      return contract.strike < currentPrice ? ('itm' as const) : ('otm' as const);
     } else {
-      return contract.strike > currentPrice ? 'itm' : 'otm';
+      return contract.strike > currentPrice ? ('itm' as const) : ('otm' as const);
     }
-  };
+  }, [currentPrice]);
+  
+  // Build flattened virtualized rows from hierarchical data
+  const virtualRows = useMemo(() => {
+    if (!expandedDate) return [];
+    
+    const rows: VirtualRow[] = [];
+    for (const dateKey of sortedDates) {
+      const contracts = groupedByDate[dateKey];
+      const firstContract = contracts[0];
+      const isExpanded = expandedDate === dateKey;
+      
+      // Add date header
+      rows.push({
+        type: 'dateHeader',
+        dateKey,
+        daysToExpiry: firstContract?.daysToExpiry || 0,
+        contractCount: contracts.length,
+      });
+      
+      if (isExpanded) {
+        // Split contracts
+        const otmContracts: Contract[] = [];
+        const atmContracts: Contract[] = [];
+        const itmContracts: Contract[] = [];
+        
+        contracts.forEach((c: Contract) => {
+          const status = getContractStatus(c);
+          if (status === 'atm') atmContracts.push(c);
+          else if (status === 'itm') itmContracts.push(c);
+          else otmContracts.push(c);
+        });
+        
+        // Add OTM contracts
+        otmContracts.forEach((c) => {
+          rows.push({ type: 'contract', contract: c, status: 'otm', dateKey });
+        });
+        
+        // Add ATM indicator and contracts
+        if (atmContracts.length > 0) {
+          rows.push({ type: 'atmIndicator', ticker, currentPrice, dateKey });
+          atmContracts.forEach((c) => {
+            rows.push({ type: 'contract', contract: c, status: 'atm', dateKey });
+          });
+        }
+        
+        // Add ITM label and contracts
+        if (itmContracts.length > 0) {
+          rows.push({ type: 'itmLabel', dateKey });
+          itmContracts.forEach((c) => {
+            rows.push({ type: 'contract', contract: c, status: 'itm', dateKey });
+          });
+        }
+      }
+    }
+    
+    return rows;
+  }, [sortedDates, groupedByDate, expandedDate, getContractStatus, ticker, currentPrice]);
+  
+  // Row height map for variable-size list
+  const rowHeights = useRef<Record<number, number>>({});
+  const listRef = useRef<List>(null);
+  
+  const getRowHeight = useCallback((index: number) => {
+    const cached = rowHeights.current[index];
+    if (cached !== undefined) return cached;
+    
+    const row = virtualRows[index];
+    if (!row) return 40;
+    if (row.type === 'dateHeader') return 32;
+    if (row.type === 'atmIndicator') return 32;
+    if (row.type === 'itmLabel') return 24;
+    if (row.type === 'contract') return 32;
+    return 32;
+  }, [virtualRows]);
+  
+  const setRowHeight = useCallback((index: number, height: number) => {
+    if (height !== rowHeights.current[index]) {
+      rowHeights.current[index] = height;
+      if (listRef.current) {
+        listRef.current.resetAfterIndex(index);
+      }
+    }
+  }, []);
   
   return (
     <div className={cn('flex flex-col h-full bg-[var(--surface-1)]', className)}>
