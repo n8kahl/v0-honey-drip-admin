@@ -21,6 +21,7 @@ import { massiveClient } from '../lib/massive/client';
 import { useStreamingOptionsChain } from '../hooks/useStreamingOptionsChain';
 import { calculateRisk } from '../lib/riskEngine/calculator';
 import { RISK_PROFILES, inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS } from '../lib/riskEngine/profiles';
+import { adjustProfileByConfluence, getConfluenceAdjustmentReasoning } from '../lib/riskEngine/confluenceAdjustment';
 import { 
   inferTradeType,
   cn
@@ -347,7 +348,26 @@ export function DesktopLiveCockpit({
           yearlyLow: 0,
         };
         
-        // Recalculate TP/SL using confluence data + risk profile
+        // Fix #3: Apply confluence adjustments to risk profile
+        // Get base profile and adjust by confluence metrics
+        let riskProfile = RISK_PROFILES[tradeType];
+        let confluenceReasoning = '';
+        
+        if (confluence.trend || confluence.volatility || confluence.liquidity) {
+          riskProfile = adjustProfileByConfluence(riskProfile, {
+            trend: confluence.trend,
+            volatility: confluence.volatility,
+            liquidity: confluence.liquidity,
+          });
+          confluenceReasoning = getConfluenceAdjustmentReasoning({
+            trend: confluence.trend,
+            volatility: confluence.volatility,
+            liquidity: confluence.liquidity,
+          });
+          console.log('[v0] Confluence adjustments applied:', confluenceReasoning);
+        }
+        
+        // Recalculate TP/SL using confluence-adjusted risk profile + key levels
         riskResult = calculateRisk({
           entryPrice,
           currentUnderlyingPrice: currentTrade.contract.mid,
@@ -368,7 +388,13 @@ export function DesktopLiveCockpit({
         // Use calculated TP/SL if available
         if (riskResult.targetPrice) {
           targetPrice = riskResult.targetPrice;
-          console.log('[v0] Entry: Recalculated TP =', targetPrice.toFixed(2), 'from', tradeType, 'profile');
+          console.log(
+            '[v0] Entry: Recalculated TP =',
+            targetPrice.toFixed(2),
+            'from',
+            tradeType,
+            'profile with confluence adjustments'
+          );
         }
         if (riskResult.stopLoss) {
           stopLoss = riskResult.stopLoss;
