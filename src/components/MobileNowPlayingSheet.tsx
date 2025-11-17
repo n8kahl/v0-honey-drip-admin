@@ -36,19 +36,22 @@ export function MobileNowPlayingSheet({
   onDiscard,
   onAction
 }: MobileNowPlayingSheetProps) {
-  console.log('🚨 MobileNowPlayingSheet FUNCTION CALLED - START');
-  
+  // Only emit noisy logs in development
+  const __DEV__ = typeof window !== 'undefined' && (import.meta as any)?.env?.DEV;
+
   const [expanded, setExpanded] = useState(state === 'LOADED' || state === 'ENTERED');
 
-  console.log('🎭 MobileNowPlayingSheet rendered:', { 
-    state, 
-    expanded, 
-    hasTrade: !!trade, 
-    ticker,
-    hideWhenAlert,
-    onActionExists: !!onAction,
-    tradeState: trade?.state
-  });
+  if (__DEV__) {
+    console.debug('MobileNowPlayingSheet init', {
+      state,
+      expanded,
+      hasTrade: !!trade,
+      ticker,
+      hideWhenAlert,
+      onActionExists: !!onAction,
+      tradeState: trade?.state,
+    });
+  }
 
   // Auto-expand when trade or state changes (e.g., clicking a loaded trade from the list)
   // This ensures clicking a trade always opens the modal, even if it's the same trade
@@ -60,17 +63,17 @@ export function MobileNowPlayingSheet({
 
   // Don't show if no trade and no ticker
   if (!trade && !ticker) {
-    console.log('🚨 Returning NULL: no trade and no ticker');
+    if (__DEV__) console.debug('MobileNowPlayingSheet: no trade and no ticker - skipping render');
     return null;
   }
   
   // Hide when alert composer is showing
   if (hideWhenAlert) {
-    console.log('🚨 Returning NULL: hideWhenAlert is true');
+    if (__DEV__) console.debug('MobileNowPlayingSheet: hideWhenAlert is true - skipping render');
     return null;
   }
   
-  console.log('🚨 MobileNowPlayingSheet WILL RENDER UI');
+  if (__DEV__) console.debug('MobileNowPlayingSheet will render UI');
 
   const isPositive = (trade?.movePercent || 0) >= 0;
   const borderColor = state === 'ENTERED' 
@@ -363,14 +366,13 @@ export function MobileNowPlayingSheet({
               
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onMouseDown={() => console.log('🖱️ TRIM mouseDown')}
-                  onTouchStart={() => console.log('👆 TRIM touchStart')}
+                  onMouseDown={() => { if (__DEV__) console.debug('TRIM mouseDown'); }}
+                  onTouchStart={() => { if (__DEV__) console.debug('TRIM touchStart'); }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('🔥 TRIM button clicked, onAction exists?', !!onAction);
-                    console.log('🔥 onAction type:', typeof onAction);
+                    if (__DEV__) console.debug('TRIM clicked, onAction exists?', !!onAction, 'type:', typeof onAction);
                     onAction?.('trim');
-                    console.log('✅ onAction("trim") called');
+                    if (__DEV__) console.debug('onAction("trim") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -379,13 +381,13 @@ export function MobileNowPlayingSheet({
                 </button>
                 
                 <button
-                  onMouseDown={() => console.log('🖱️ UPDATE SL mouseDown')}
-                  onTouchStart={() => console.log('👆 UPDATE SL touchStart')}
+                  onMouseDown={() => { if (__DEV__) console.debug('UPDATE SL mouseDown'); }}
+                  onTouchStart={() => { if (__DEV__) console.debug('UPDATE SL touchStart'); }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('🔥 UPDATE SL button clicked, onAction exists?', !!onAction);
+                    if (__DEV__) console.debug('UPDATE SL clicked, onAction exists?', !!onAction);
                     onAction?.('update-sl');
-                    console.log('✅ onAction("update-sl") called');
+                    if (__DEV__) console.debug('onAction("update-sl") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -394,13 +396,13 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => console.log('🖱️ UPDATE mouseDown')}
-                  onTouchStart={() => console.log('👆 UPDATE touchStart')}
+                  onMouseDown={() => { if (__DEV__) console.debug('UPDATE mouseDown'); }}
+                  onTouchStart={() => { if (__DEV__) console.debug('UPDATE touchStart'); }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('🔥 UPDATE button clicked, onAction exists?', !!onAction);
+                    if (__DEV__) console.debug('UPDATE clicked, onAction exists?', !!onAction);
                     onAction?.('update');
-                    console.log('✅ onAction("update") called');
+                    if (__DEV__) console.debug('onAction("update") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -409,13 +411,13 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => console.log('🖱️ ADD mouseDown')}
-                  onTouchStart={() => console.log('👆 ADD touchStart')}
+                  onMouseDown={() => { if (__DEV__) console.debug('ADD mouseDown'); }}
+                  onTouchStart={() => { if (__DEV__) console.debug('ADD touchStart'); }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('🔥 ADD button clicked, onAction exists?', !!onAction);
+                    if (__DEV__) console.debug('ADD clicked, onAction exists?', !!onAction);
                     onAction?.('add');
-                    console.log('✅ onAction("add") called');
+                    if (__DEV__) console.debug('onAction("add") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -425,13 +427,13 @@ export function MobileNowPlayingSheet({
               </div>
 
               <button
-                onMouseDown={() => console.log('🖱️ EXIT mouseDown')}
-                onTouchStart={() => console.log('👆 EXIT touchStart')}
+                onMouseDown={() => { if (__DEV__) console.debug('EXIT mouseDown'); }}
+                onTouchStart={() => { if (__DEV__) console.debug('EXIT touchStart'); }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('🔥 EXIT button clicked, onAction exists?', !!onAction);
+                  if (__DEV__) console.debug('EXIT clicked, onAction exists?', !!onAction);
                   onAction?.('exit');
-                  console.log('✅ onAction("exit") called');
+                  if (__DEV__) console.debug('onAction("exit") called');
                 }}
                 className="w-full p-3 bg-[var(--accent-negative)]/10 hover:bg-[var(--accent-negative)]/20 border border-[var(--accent-negative)]/30 rounded-lg transition-colors text-[var(--accent-negative)] font-medium text-center"
               >
