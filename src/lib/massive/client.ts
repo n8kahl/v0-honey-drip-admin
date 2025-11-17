@@ -37,6 +37,7 @@ class MassiveClient {
   private connected: boolean = false;
   private lastError: string | null = null;
   private abortController: AbortController | null = null;
+  private holidaysCache: Map<number, string[]> = new Map();
 
   constructor(baseUrl: string = MASSIVE_API_BASE) {
     this.baseUrl = baseUrl;
@@ -92,6 +93,30 @@ class MassiveClient {
   async getMarketStatus(): Promise<MassiveMarketStatus> {
     const data = await this.fetch('/v1/marketstatus/now');
     return data;
+  }
+
+  /**
+   * Fetch market holidays for a given year. Returns an array of ISO date strings.
+   * Falls back to an empty array on error and caches per-year results.
+   */
+  async getMarketHolidays(year?: number): Promise<string[]> {
+    const targetYear = typeof year === 'number' ? year : new Date().getFullYear();
+    if (this.holidaysCache.has(targetYear)) return this.holidaysCache.get(targetYear)!;
+
+    try {
+      const data = await this.fetch(`/v1/market/holidays?year=${encodeURIComponent(String(targetYear))}`);
+      const items: any[] = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+      const dates = items
+        .map((it: any) => it?.date || it?.holiday_date)
+        .filter(Boolean)
+        .map((d: any) => String(d));
+      this.holidaysCache.set(targetYear, dates);
+      return dates;
+    } catch (err) {
+      // Non-fatal: chart can proceed without holiday gaps. Keep log level low.
+      console.debug('[Massive API] Failed to fetch market holidays, proceeding without gaps', err);
+      return [];
+    }
   }
 
   async getRSI(optionsTicker: string, params?: {
