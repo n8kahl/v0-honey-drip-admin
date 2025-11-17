@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect, memo } from 'react';
 import { Contract } from '../../types';
 import { cn } from '../../lib/utils';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -14,44 +14,46 @@ interface HDContractGridProps {
 }
 
 export function HDContractGrid({ contracts, currentPrice, ticker, onContractSelect, className }: HDContractGridProps) {
-  console.log('[v0] HDContractGrid rendering with', contracts.length, 'contracts');
-  
+  const __DEV__ = typeof window !== 'undefined' && (import.meta as any)?.env?.DEV;
+
+  if (__DEV__) console.debug('[v0] HDContractGrid rendering with', contracts.length, 'contracts');
+
   const [optionType, setOptionType] = useState<'C' | 'P'>('P');
   const [selectedId, setSelectedId] = useState<string>();
-  
-  // Filter by option type
-  const filtered = contracts.filter(c => c.type === optionType);
-  
-  console.log('[v0] Filtered contracts:', filtered.length, 'for type', optionType);
-  
-  if (filtered.length > 0) {
-    console.log('[v0] Sample contract:', filtered[0]);
-  }
-  
-  // Group by expiry date
-  const groupedByDate = filtered.reduce((acc, contract) => {
-    const key = contract.expiry;
-    if (!acc[key]) {
-      acc[key] = [];
+  // Filter by option type (memoized)
+  const filtered = useMemo(() => contracts.filter((c) => c.type === optionType), [contracts, optionType]);
+
+  if (__DEV__) console.debug('[v0] Filtered contracts:', filtered.length, 'for type', optionType);
+
+  // Group by expiry date (memoized)
+  const groupedByDate = useMemo(() => {
+    const acc: Record<string, Contract[]> = {};
+    for (const contract of filtered) {
+      const key = contract.expiry;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(contract);
     }
-    acc[key].push(contract);
+    // Sort each group by strike
+    Object.keys(acc).forEach((k) => acc[k].sort((a, b) => a.strike - b.strike));
     return acc;
-  }, {} as Record<string, Contract[]>);
+  }, [filtered]);
+
+  // Sort expiry dates chronologically (memoized)
+  const sortedDates = useMemo(() => {
+    return Object.keys(groupedByDate).sort((a, b) => {
+      const contractA = groupedByDate[a][0];
+      const contractB = groupedByDate[b][0];
+      return (contractA?.daysToExpiry || 0) - (contractB?.daysToExpiry || 0);
+    });
+  }, [groupedByDate]);
   
-  // Sort each group by strike
-  Object.keys(groupedByDate).forEach(key => {
-    groupedByDate[key].sort((a, b) => a.strike - b.strike);
-  });
-  
-  // Sort expiry dates chronologically
-  const sortedDates = Object.keys(groupedByDate).sort((a, b) => {
-    const contractA = groupedByDate[a][0];
-    const contractB = groupedByDate[b][0];
-    return contractA.daysToExpiry - contractB.daysToExpiry;
-  });
-  
-  // Auto-expand 0DTE (first date) on initial load, but allow collapse
-  const [expandedDate, setExpandedDate] = useState<string | null>(sortedDates[0] || null);
+  // Auto-expand first date on initial load, but allow collapse. Sync when sortedDates changes.
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  useEffect(() => {
+    if (!expandedDate && sortedDates.length > 0) {
+      setExpandedDate(sortedDates[0]);
+    }
+  }, [sortedDates]);
   
   const handleSelect = (contract: Contract) => {
     setSelectedId(contract.id);
