@@ -217,6 +217,91 @@ export function DesktopLiveCockpit({
   const handleContractSelect = (contract: Contract) => {
     if (!activeTicker) return;
     
+    // Fix #4: Calculate initial TP/SL for LOADED state using risk engine
+    let targetPrice = contract.mid * 1.5;  // Default fallback
+    let stopLoss = contract.mid * 0.5;     // Default fallback
+    
+    try {
+      // Infer trade type from DTE
+      const tradeType = inferTradeTypeByDTE(
+        contract.expiry,
+        new Date(),
+        DEFAULT_DTE_THRESHOLDS
+      );
+      
+      // Use key levels if available (they should be fetched by now)
+      const levelsForCalculation = keyLevels || {
+        preMarketHigh: 0,
+        preMarketLow: 0,
+        orbHigh: 0,
+        orbLow: 0,
+        priorDayHigh: 0,
+        priorDayLow: 0,
+        vwap: 0,
+        vwapUpperBand: 0,
+        vwapLowerBand: 0,
+        bollingerUpper: 0,
+        bollingerLower: 0,
+        weeklyHigh: 0,
+        weeklyLow: 0,
+        monthlyHigh: 0,
+        monthlyLow: 0,
+        quarterlyHigh: 0,
+        quarterlyLow: 0,
+        yearlyHigh: 0,
+        yearlyLow: 0,
+      };
+      
+      // Get base profile and adjust by confluence metrics if available
+      let riskProfile = RISK_PROFILES[tradeType];
+      
+      if (confluence.trend || confluence.volatility || confluence.liquidity) {
+        riskProfile = adjustProfileByConfluence(riskProfile, {
+          trend: confluence.trend,
+          volatility: confluence.volatility,
+          liquidity: confluence.liquidity,
+        });
+      }
+      
+      // Calculate TP/SL for preview
+      const riskResult = calculateRisk({
+        entryPrice: contract.mid,
+        currentUnderlyingPrice: contract.mid,
+        currentOptionMid: contract.mid,
+        keyLevels: levelsForCalculation,
+        expirationISO: contract.expiry,
+        tradeType,
+        delta: contract.delta || 0.5,
+        gamma: contract.gamma || 0,
+        defaults: {
+          mode: 'percent' as const,
+          tpPercent: 50,
+          slPercent: 50,
+          dteThresholds: DEFAULT_DTE_THRESHOLDS,
+        },
+      });
+      
+      if (riskResult.targetPrice) {
+        targetPrice = riskResult.targetPrice;
+      }
+      if (riskResult.stopLoss) {
+        stopLoss = riskResult.stopLoss;
+      }
+      
+      console.log(
+        '[v0] LOADED state: Calculated TP =',
+        targetPrice.toFixed(2),
+        ', SL =',
+        stopLoss.toFixed(2),
+        'for',
+        tradeType,
+        'trade'
+      );
+    } catch (err) {
+      console.warn('[v0] Failed to calculate LOAD targets, using defaults:', err);
+      // Fallback to defaults if calculation fails
+    }
+    
     const trade: Trade = {
       id: `trade-${Date.now()}`,
       ticker: activeTicker.symbol,
@@ -224,8 +309,8 @@ export function DesktopLiveCockpit({
       state: 'LOADED',
       entryPrice: contract.mid,
       currentPrice: contract.mid,
-      targetPrice: contract.mid * 1.5,
-      stopLoss: contract.mid * 0.5,
+      targetPrice,
+      stopLoss,
       movePercent: 0,
       movePrice: 0,
       discordChannels: [],
