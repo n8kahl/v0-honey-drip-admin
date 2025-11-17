@@ -76,6 +76,10 @@ export class TransportPolicy {
   private readonly basePollInterval: number;
   private readonly maxPollInterval = 15000;
   private readonly closedMarketPollInterval = 12000;
+  // Health/debounce tuning
+  private consecutiveHealthFailures = 0;
+  private readonly healthFailureThreshold = 2; // require 2 consecutive failures before switching to REST
+  private readonly staleThresholdMs = 15000; // consider data stale after 15s
   private lastMarketStatusCheck = 0;
   private marketOpen = true;
   // Message batching: accumulate updates and flush every 100ms
@@ -359,9 +363,9 @@ export class TransportPolicy {
         return;
       }
 
-      const wsState = massiveWS.getConnectionState();
-      const timeSinceLastData = Date.now() - this.lastDataTimestamp;
-      const isStale = timeSinceLastData > 10000; // No data for 10 seconds
+        const wsState = massiveWS.getConnectionState();
+        const timeSinceLastData = Date.now() - this.lastDataTimestamp;
+        const isStale = timeSinceLastData > this.staleThresholdMs; // No data for configured stale threshold
 
       // Detect state changes
       if (wsState !== this.lastWsState) {
@@ -370,23 +374,31 @@ export class TransportPolicy {
       }
 
       if (wsState === 'closed' || isStale) {
-        // WebSocket is down or stale, ensure polling is active
-        if (!this.pollTimer) {
-          console.log(`[TransportPolicy] WebSocket unhealthy (state: ${wsState}, stale: ${isStale}), activating REST fallback for ${this.config.symbol}`);
-          this.startPolling();
-          
+        // Increment consecutive failure counter and only activate REST after threshold
+        this.consecutiveHealthFailures += 1;
+        console.debug(`[TransportPolicy] Health check failure #${this.consecutiveHealthFailures} for ${this.config.symbol} (state: ${wsState}, stale: ${isStale})`);
+
+        if (this.consecutiveHealthFailures >= this.healthFailureThreshold) {
+          if (!this.pollTimer) {
+            console.log(`[TransportPolicy] WebSocket considered unhealthy after ${this.consecutiveHealthFailures} checks; activating REST fallback for ${this.config.symbol}`);
+            this.startPolling();
+          }
+
           // Try to reconnect WebSocket if it's closed
           if (wsState === 'closed' && !this.reconnectTimer) {
             this.scheduleReconnect();
           }
         }
       } else if (wsState === 'open' && !isStale) {
-        // WebSocket is healthy
+        // WebSocket is healthy: reset failure counter and ensure subscription
+        if (this.consecutiveHealthFailures > 0) this.consecutiveHealthFailures = 0;
         if (!this.wsUnsubscribe) {
-          // Not subscribed yet, try subscribing
           console.log(`[TransportPolicy] WebSocket healthy but not subscribed, resubscribing for ${this.config.symbol}`);
           this.tryWebSocket();
         }
+      } else {
+        // Reset counters for any other healthy-looking state
+        if (this.consecutiveHealthFailures > 0) this.consecutiveHealthFailures = 0;
       }
     }, 2000);
   }
