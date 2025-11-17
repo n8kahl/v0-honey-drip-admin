@@ -1,3 +1,20 @@
+/**
+ * @deprecated StreamingManager is not actively used in production.
+ * 
+ * Use transport-policy.ts via useQuotes() and useMassiveData() hooks instead.
+ * 
+ * Rationale: 
+ * - transport-policy.ts provides better React lifecycle integration
+ * - Creates less memory overhead per subscription
+ * - Already handles all use cases (quotes, indices, options)
+ * 
+ * TODO: Remove this file in v1.0.0 after confirming no external dependencies.
+ * 
+ * Migration path: Replace any StreamingManager usage with:
+ *   import { createTransport } from './transport-policy';
+ *   const unsubscribe = createTransport(symbol, callback, { isIndex, pollInterval });
+ */
+
 // Centralized StreamingManager for live market data
 // Guarantees streaming-first with 3s REST fallback
 // Manages all subscriptions with automatic reconnect and cleanup

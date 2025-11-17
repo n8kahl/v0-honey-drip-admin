@@ -36,6 +36,7 @@ class MassiveClient {
   private baseUrl: string;
   private connected: boolean = false;
   private lastError: string | null = null;
+  private abortController: AbortController | null = null;
 
   constructor(baseUrl: string = MASSIVE_API_BASE) {
     this.baseUrl = baseUrl;
@@ -44,9 +45,13 @@ class MassiveClient {
   private async fetch(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}${endpoint}`;
 
+    // Create fresh AbortController for this request
+    this.abortController = new AbortController();
+
     try {
     const response = await massiveFetch(url, {
       ...options,
+      signal: this.abortController.signal,
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
@@ -67,10 +72,20 @@ class MassiveClient {
       const data = await response.json();
       return data;
     } catch (error: any) {
-      this.connected = false;
-      this.lastError = error.message;
-      console.error('[Massive API] Request failed:', error);
+      // Only log if not an abort
+      if (error.name !== 'AbortError') {
+        this.connected = false;
+        this.lastError = error.message;
+        console.error('[Massive API] Request failed:', error);
+      }
       throw error;
+    }
+  }
+
+  cancel() {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
     }
   }
 

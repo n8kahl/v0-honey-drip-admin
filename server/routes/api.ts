@@ -132,7 +132,11 @@ router.get('/massive/options/chain', requireProxyToken, async (req, res) => {
     const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0
       ? parsedLimit
       : undefined;
-    const data = await getOptionChain(underlying, limit);
+    
+    // Extract filter parameters (e.g., ?strike_price.gte=400&expiration_date.lte=...)
+    const filters = extractFilterParams(req.query);
+    
+    const data = await getOptionChain(underlying, limit, filters);
     res.json(data);
   } catch (e: any) {
     const msg = String(e?.message || e || '');
@@ -145,6 +149,19 @@ router.get('/massive/options/chain', requireProxyToken, async (req, res) => {
     });
   }
 });
+
+// Helper to extract filter parameters (.gte, .lte, etc.)
+function extractFilterParams(query: Record<string, any>): Record<string, any> {
+  const filters: Record<string, any> = {};
+  
+  Object.entries(query).forEach(([key, value]) => {
+    if (key.includes('.') && !['limit', 'underlying', 'symbol'].includes(key.split('.')[0])) {
+      filters[key] = value;  // Preserve .gte, .lte etc.
+    }
+  });
+  
+  return filters;
+}
 
 router.get('/massive/options/contracts', requireProxyToken, async (req, res) => {
   try {

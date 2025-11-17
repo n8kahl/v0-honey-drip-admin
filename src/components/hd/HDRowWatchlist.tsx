@@ -1,7 +1,8 @@
 import { Ticker } from '../../types';
 import { formatPrice, formatPercent, cn } from '../../lib/utils';
-import { X, Wifi, AlertCircle } from 'lucide-react';
+import { X, Wifi, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { useStreamingQuote } from '../../hooks/useOptionsAdvanced';
+import { useTradeFlow } from '../../hooks/useTradeFlow';
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
@@ -14,6 +15,7 @@ interface HDRowWatchlistProps {
 
 export function HDRowWatchlist({ ticker, active, onClick, onRemove, asOf: propAsOf, source: propSource }: HDRowWatchlistProps) {
   const { quote, asOf: hookAsOf, source: hookSource, isStale } = useStreamingQuote(ticker.symbol);
+  const tradeFlow = useTradeFlow(ticker.symbol);
   
   const currentPrice = quote?.price ?? ticker.last;
   const changePercent = quote?.changePercent ?? ticker.changePercent;
@@ -46,7 +48,22 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove, asOf: propAs
         className="flex-1 flex items-center justify-between text-left"
       >
         <div className="flex flex-col gap-0.5">
-          <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
+            {/* Trade flow sentiment indicator */}
+            {tradeFlow && (
+              <div className={cn(
+                'flex items-center gap-0.5 px-1.5 py-0.5 rounded-[var(--radius)] text-[10px] font-medium',
+                tradeFlow.sentiment === 'bullish' && 'bg-green-500/20 text-green-600',
+                tradeFlow.sentiment === 'bearish' && 'bg-red-500/20 text-red-600',
+                tradeFlow.sentiment === 'neutral' && 'bg-gray-500/20 text-gray-600'
+              )}>
+                {tradeFlow.sentiment === 'bullish' && <TrendingUp className="w-3 h-3" />}
+                {tradeFlow.sentiment === 'bearish' && <TrendingDown className="w-3 h-3" />}
+                <span>{tradeFlow.sentiment.charAt(0).toUpperCase() + tradeFlow.sentiment.slice(1)}</span>
+              </div>
+            )}
+          </div>
           {asOfText && (
             <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
               <Wifi className={cn(
@@ -90,3 +107,4 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove, asOf: propAs
     </div>
   );
 }
+

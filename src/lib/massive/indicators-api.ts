@@ -4,6 +4,32 @@
 import { massiveClient } from './client';
 
 const INDEX_TICKERS = ['SPX', 'NDX', 'VIX', 'RUT'];
+const INDICATOR_CACHE_TTL = 60_000; // 60 seconds
+
+// Cache: symbol+indicator_key -> { data, timestamp }
+const indicatorCache = new Map<string, { data: IndicatorResponse; timestamp: number }>();
+
+// Helper to generate cache key
+function getCacheKey(symbol: string, indicators: IndicatorRequest): string {
+  const indicatorStr = JSON.stringify(indicators);
+  return `${symbol}:${indicatorStr}`;
+}
+
+// Helper to check if cache entry is expired
+function isCacheExpired(timestamp: number): boolean {
+  return Date.now() - timestamp > INDICATOR_CACHE_TTL;
+}
+
+// Cleanup expired cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of indicatorCache.entries()) {
+    if (isCacheExpired(value.timestamp)) {
+      indicatorCache.delete(key);
+    }
+  }
+}, INDICATOR_CACHE_TTL);
+
 
 export interface IndicatorRequest {
   ema?: number[]; // Periods for EMA
@@ -26,6 +52,7 @@ export interface IndicatorResponse {
 
 /**
  * Fetch technical indicators for a symbol
+ * Uses 60-second TTL cache to avoid duplicate REST calls
  */
 export async function fetchIndicators(
   symbol: string,
@@ -33,6 +60,15 @@ export async function fetchIndicators(
   timeframe: '1' | '5' | '15' | '60' = '1',
   lookback: number = 200
 ): Promise<IndicatorResponse> {
+  const cacheKey = getCacheKey(symbol, indicators);
+  
+  // Check cache first
+  const cached = indicatorCache.get(cacheKey);
+  if (cached && !isCacheExpired(cached.timestamp)) {
+    console.log(`[IndicatorsAPI] Cache hit for ${cacheKey}`);
+    return cached.data;
+  }
+  
   console.log(`[IndicatorsAPI] Fetching indicators for ${symbol}: ${JSON.stringify(indicators)}`);
   
   // For now, calculate indicators client-side from aggregates
@@ -49,6 +85,8 @@ export async function fetchIndicators(
   const bars = await massiveClient.getAggregates(aggSymbol, timeframe, lookback);
   
   if (bars.length === 0) {
+    // Cache empty response too
+    indicatorCache.set(cacheKey, { data: response, timestamp: Date.now() });
     return response;
   }
   
@@ -108,6 +146,9 @@ export async function fetchIndicators(
       });
     }
   }
+  
+  // Store in cache
+  indicatorCache.set(cacheKey, { data: response, timestamp: Date.now() });
   
   return response;
 }

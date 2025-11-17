@@ -78,6 +78,10 @@ export class TransportPolicy {
   private readonly closedMarketPollInterval = 12000;
   private lastMarketStatusCheck = 0;
   private marketOpen = true;
+  // Message batching: accumulate updates and flush every 100ms
+  private batchBuffer: Array<{ quote: MassiveQuote; source: 'websocket' | 'rest'; timestamp: number }> = [];
+  private batchFlushTimer: any = null;
+  private readonly BATCH_FLUSH_INTERVAL = 100; // ms
 
   constructor(config: TransportConfig, callback: TransportCallback) {
     this.config = {
@@ -86,8 +90,61 @@ export class TransportPolicy {
       ...config,
     };
     this.callback = callback;
-    this.basePollInterval = this.config.pollInterval!;
+    // Use adaptive interval instead of fixed 3s
+    this.basePollInterval = this.getOptimalPollInterval();
     this.currentPollInterval = this.basePollInterval;
+  }
+
+  private getOptimalPollInterval(): number {
+    const { isIndex, isOption, symbol } = this.config;
+    
+    // Check market hours
+    const now = new Date();
+    const hour = now.getHours();
+    const day = now.getDay();
+    const isWeekend = day === 0 || day === 6;
+    const isPreMarket = hour < 9;
+    const isAfterHours = hour >= 16;
+    const isMarketClosed = isWeekend || isPreMarket || isAfterHours;
+    
+    // Base intervals by asset type
+    if (isIndex) {
+      // Indices are less volatile, can use longer intervals
+      return isMarketClosed ? 10000 : 5000;
+    } else if (isOption) {
+      // Options are most volatile, need faster fallback
+      return isMarketClosed ? 6000 : 2000;
+    } else {
+      // Stocks are moderate
+      return isMarketClosed ? 8000 : 4000;
+    }
+  }
+
+  private enqueueMessage(quote: MassiveQuote, source: 'websocket' | 'rest', timestamp: number) {
+    this.batchBuffer.push({ quote, source, timestamp });
+    
+    // Start flush timer if not already running
+    if (!this.batchFlushTimer) {
+      this.batchFlushTimer = setTimeout(() => this.flushBatch(), this.BATCH_FLUSH_INTERVAL);
+    }
+  }
+
+  private flushBatch() {
+    if (this.batchFlushTimer) {
+      clearTimeout(this.batchFlushTimer);
+      this.batchFlushTimer = null;
+    }
+
+    if (this.batchBuffer.length === 0) {
+      return;
+    }
+
+    // Use the most recent message (typically most up-to-date)
+    const { quote, source, timestamp } = this.batchBuffer[this.batchBuffer.length - 1];
+    this.batchBuffer = [];
+
+    // Single callback invocation per batch
+    this.callback(quote, source, timestamp);
   }
 
   start() {
@@ -108,6 +165,20 @@ export class TransportPolicy {
     this.isActive = false;
     
     console.log(`[TransportPolicy] Stopping for ${this.config.symbol}`);
+    
+    // Cancel in-flight requests
+    try {
+      massiveClient.cancel();
+    } catch (e) {
+      console.warn('[TransportPolicy] Error canceling requests:', e);
+    }
+    
+    // Flush any pending batched messages
+    this.flushBatch();
+    if (this.batchFlushTimer) {
+      clearTimeout(this.batchFlushTimer);
+      this.batchFlushTimer = null;
+    }
     
     // Clean up WebSocket
     if (this.wsUnsubscribe) {
@@ -176,7 +247,7 @@ export class TransportPolicy {
       return;
     }
 
-    console.log(
+    console.debug(
       `[TransportPolicy] WebSocket data received for ${this.config.symbol}:`,
       quote
     );
@@ -190,7 +261,8 @@ export class TransportPolicy {
     // Reset reconnect attempts on successful data
     this.reconnectAttempts = 0;
 
-    this.callback(quote, 'websocket', now);
+    // Enqueue for batched processing
+    this.enqueueMessage(quote, 'websocket', now);
   }
 
   private startPolling() {
@@ -262,7 +334,8 @@ export class TransportPolicy {
             previousPrice === null || Math.abs(previousPrice - quote.last) > 1e-6;
           this.lastRestPrice = quote.last;
           this.lastDataTimestamp = now;
-          this.callback(quote, 'rest', now);
+          // Enqueue for batched processing
+          this.enqueueMessage(quote, 'rest', now);
         } else {
           console.debug(
             `[TransportPolicy] Ignoring non-quote REST message for ${this.config.symbol}:`,

@@ -182,10 +182,22 @@ export async function getIndexAggregates(
   }));
 }
 
-export async function getOptionChain(underlying: string, limit?: number) {
+export async function getOptionChain(underlying: string, limit?: number, filters?: Record<string, any>) {
   const normalizedLimit =
     typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 250;
-  const path = `/v3/snapshot/options/${encodeURIComponent(underlying)}?limit=${normalizedLimit}`;
+  
+  // Build query parameters including filters (.gte, .lte, etc.)
+  const params = new URLSearchParams({ limit: String(normalizedLimit) });
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        const v = Array.isArray(value) ? value[0] : value;
+        params.append(key, String(v));
+      }
+    });
+  }
+  
+  const path = `/v3/snapshot/options/${encodeURIComponent(underlying)}?${params.toString()}`;
   const res = await callMassive<any>(path);
   if (!res.ok) {
     throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to fetch option chain'}`);
