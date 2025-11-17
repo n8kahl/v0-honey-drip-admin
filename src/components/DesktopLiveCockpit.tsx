@@ -14,10 +14,13 @@ import { HDMacroPanel } from './hd/HDMacroPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
 import { useConfluenceData } from '../hooks/useConfluenceData';
+import { useKeyLevels } from '../hooks/useKeyLevels';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { toast } from 'sonner';
 import { massiveClient } from '../lib/massive/client';
 import { useStreamingOptionsChain } from '../hooks/useStreamingOptionsChain';
+import { calculateRisk } from '../lib/riskEngine/calculator';
+import { RISK_PROFILES, inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS } from '../lib/riskEngine/profiles';
 import { 
   inferTradeType,
   cn
@@ -111,6 +114,12 @@ export function DesktopLiveCockpit({
   
   // Fetch real-time confluence data from Massive
   const confluence = useConfluenceData(currentTrade, tradeState);
+  
+  // Fetch key technical levels (ORB, VWAP, Bollinger, pivots) from historical bars
+  const { keyLevels, loading: keyLevelsLoading } = useKeyLevels(
+    activeTicker?.symbol || null,
+    { timeframe: '5', lookbackDays: 5, orbWindow: 5, enabled: !!activeTicker?.symbol }
+  );
   
   // New streaming hook for options chain
   const streamingContracts = useStreamingOptionsChain(activeTicker?.symbol || null);
@@ -301,13 +310,84 @@ export function DesktopLiveCockpit({
       const enterUpdate = createUpdate('enter');
       const previousUpdates = currentTrade.updates || [];
       
+      // Fix #1: Recalculate TP/SL on entry with actual entry price + confluence
+      const entryPrice = currentTrade.contract.mid;
+      let targetPrice = currentTrade.targetPrice || entryPrice * 1.5;
+      let stopLoss = currentTrade.stopLoss || entryPrice * 0.5;
+      let riskResult = null;
+      
+      try {
+        // Infer trade type from DTE
+        const tradeType = inferTradeTypeByDTE(
+          currentTrade.contract.expiry,
+          new Date(),
+          DEFAULT_DTE_THRESHOLDS
+        );
+        
+        // Use computed key levels if available, otherwise fallback to zeros
+        const levelsForCalculation = keyLevels || {
+          preMarketHigh: 0,
+          preMarketLow: 0,
+          orbHigh: 0,
+          orbLow: 0,
+          priorDayHigh: 0,
+          priorDayLow: 0,
+          vwap: 0,
+          vwapUpperBand: 0,
+          vwapLowerBand: 0,
+          bollingerUpper: 0,
+          bollingerLower: 0,
+          weeklyHigh: 0,
+          weeklyLow: 0,
+          monthlyHigh: 0,
+          monthlyLow: 0,
+          quarterlyHigh: 0,
+          quarterlyLow: 0,
+          yearlyHigh: 0,
+          yearlyLow: 0,
+        };
+        
+        // Recalculate TP/SL using confluence data + risk profile
+        riskResult = calculateRisk({
+          entryPrice,
+          currentUnderlyingPrice: currentTrade.contract.mid,
+          currentOptionMid: currentTrade.contract.mid,
+          keyLevels: levelsForCalculation,
+          expirationISO: currentTrade.contract.expiry,
+          tradeType,
+          delta: currentTrade.contract.delta || 0.5,
+          gamma: currentTrade.contract.gamma || 0,
+          defaults: {
+            mode: 'percent' as const,
+            tpPercent: 50,
+            slPercent: 50,
+            dteThresholds: DEFAULT_DTE_THRESHOLDS,
+          },
+        });
+        
+        // Use calculated TP/SL if available
+        if (riskResult.targetPrice) {
+          targetPrice = riskResult.targetPrice;
+          console.log('[v0] Entry: Recalculated TP =', targetPrice.toFixed(2), 'from', tradeType, 'profile');
+        }
+        if (riskResult.stopLoss) {
+          stopLoss = riskResult.stopLoss;
+          console.log('[v0] Entry: Recalculated SL =', stopLoss.toFixed(2), 'from', tradeType, 'profile');
+        }
+      } catch (err) {
+        console.warn('[v0] Failed to recalculate TP/SL on entry, using defaults:', err);
+        // Fallback to defaults if calculation fails
+      }
+      
       const finalTrade = {
         ...currentTrade,
         state: 'ENTERED' as TradeState,
         discordChannels: selectedChannels.filter(c => c && c.id).map(c => c.id),
         challenges: challengeIds,
-        entryPrice: currentTrade.contract.mid,
+        entryPrice,
         entryTime: new Date(),
+        targetPrice,  // ← Updated with recalculation
+        stopLoss,     // ← Updated with recalculation
         updates: [...previousUpdates, enterUpdate],
       };
 

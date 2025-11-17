@@ -17,6 +17,7 @@ import { HDConfluenceChips } from './HDConfluenceChips';
 import { useMemo } from 'react';
 import { buildChartLevelsForTrade } from '../../lib/riskEngine/chartLevels';
 import { KeyLevels } from '../../lib/riskEngine/types';
+import { useKeyLevels } from '../../hooks/useKeyLevels';
 
 interface HDEnteredTradeCardProps {
   trade: Trade;
@@ -97,10 +98,14 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
       label: update.type.charAt(0).toUpperCase() + update.type.slice(1),
     })),
   ];
+  const { keyLevels: computedKeyLevels, loading: levelsLoading } = useKeyLevels(
+    trade.ticker,
+    { timeframe: '5', lookbackDays: 5, orbWindow: 5, enabled: true }
+  );
   
   const chartLevels = useMemo(() => {
-    // Mock key levels - in production, get these from risk engine context
-    const keyLevels: KeyLevels = {
+    // Use computed key levels if available, otherwise fallback to zeros
+    const keyLevels: KeyLevels = computedKeyLevels || {
       preMarketHigh: 0,
       preMarketLow: 0,
       orbHigh: 0,
@@ -112,10 +117,18 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
       vwapLowerBand: 0,
       bollingerUpper: 0,
       bollingerLower: 0,
+      weeklyHigh: 0,
+      weeklyLow: 0,
+      monthlyHigh: 0,
+      monthlyLow: 0,
+      quarterlyHigh: 0,
+      quarterlyLow: 0,
+      yearlyHigh: 0,
+      yearlyLow: 0,
     };
     
     return buildChartLevelsForTrade(trade, keyLevels);
-  }, [trade]);
+  }, [trade, computedKeyLevels]);
   
   return (
     <div className="bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-3 lg:p-4 space-y-3">
