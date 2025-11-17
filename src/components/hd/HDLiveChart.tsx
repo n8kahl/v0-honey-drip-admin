@@ -91,16 +91,7 @@ const chartRef = useRef<IChartApi | null>(null);
 
   const ensurePriceSeries = useCallback(() => {
     if (!chartReady || !chartRef.current) return null;
-    if (!candleSeriesRef.current) {
-      candleSeriesRef.current = chartRef.current.addCandlestickSeries({
-        upColor: '#16A34A',
-        downColor: '#EF4444',
-        borderUpColor: '#16A34A',
-        borderDownColor: '#EF4444',
-        wickUpColor: '#16A34A',
-        wickDownColor: '#EF4444',
-      });
-    }
+    // Series is created during chart initialization, just return it
     return candleSeriesRef.current;
   }, [chartReady]);
 
@@ -132,6 +123,7 @@ const loadHistoricalBars = useCallback(async () => {
     if (barsCacheRef.current.has(cacheKey)) {
       setBars(barsCacheRef.current.get(cacheKey)!);
       setDataSource('rest');
+      console.log(`[HDLiveChart] Using cached bars for ${ticker} (${barsCacheRef.current.get(cacheKey)!.length} bars)`);
       return;
     }
 
@@ -150,38 +142,54 @@ const loadHistoricalBars = useCallback(async () => {
     const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
 
     const fetchPromise = (async () => {
-      try {
-        const response = await fetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
-        const results = Array.isArray(response?.results)
-          ? response.results
-          : Array.isArray(response)
-          ? response
-          : [];
+      let retries = 0;
+      const maxRetries = 3;
+      
+      while (retries < maxRetries) {
+        try {
+          const response = await fetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
+          const results = Array.isArray(response?.results)
+            ? response.results
+            : Array.isArray(response)
+            ? response
+            : [];
 
-        if (!Array.isArray(results) || results.length === 0) {
-          throw new Error('No historical data returned');
+          if (!Array.isArray(results) || results.length === 0) {
+            throw new Error('No historical data returned');
+          }
+
+          const parsed: Bar[] = results.map((r: any) => ({
+            time: Math.floor(r.t / 1000) as Time,
+            open: r.o,
+            high: r.h,
+            low: r.l,
+            close: r.c,
+            volume: r.v,
+            vwap: r.vw,
+          }));
+
+          barsCacheRef.current.set(cacheKey, parsed);
+          return parsed;
+        } catch (error: any) {
+          if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
+            retries++;
+            const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000); // 2s, 4s, 8s cap at 10s
+            console.warn(`[HDLiveChart] Rate limited (attempt ${retries}/${maxRetries}), retrying in ${backoffMs}ms...`);
+            
+            if (retries >= maxRetries) {
+              setRateLimited(true);
+              setRateLimitMessage(error.message);
+              console.error('[HDLiveChart] Rate limit exceeded after retries, giving up');
+              throw error;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+          throw error;
         }
-
-        const parsed: Bar[] = results.map((r: any) => ({
-          time: Math.floor(r.t / 1000) as Time,
-          open: r.o,
-          high: r.h,
-          low: r.l,
-          close: r.c,
-          volume: r.v,
-          vwap: r.vw,
-        }));
-
-        barsCacheRef.current.set(cacheKey, parsed);
-        return parsed;
-      } catch (error: any) {
-        if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
-          setRateLimited(true);
-          setRateLimitMessage(error.message);
-          console.warn('[HDLiveChart] Rate limited while fetching historical bars:', error.message);
-        }
-        throw error;
       }
+      throw new Error('Failed after max retries');
     })();
 
     inflightFetchesRef.current.set(cacheKey, fetchPromise);
@@ -250,177 +258,73 @@ const loadHistoricalBars = useCallback(async () => {
       return (chartRef.current as any).addLineSeries(opts);
     };
 
-    const attemptCreateSeries = (() => {
-      let attempts = 0;
-      const maxAttempts = 6;
+    // Create all series immediately - chart is synchronously ready
+    waitingForChartRef.current = false;
 
-      const doCreate = () => {
-        attempts++;
+    // Create candlestick series
+    try {
+      candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries({
+        upColor: '#16A34A',
+        downColor: '#EF4444',
+        borderUpColor: '#16A34A',
+        borderDownColor: '#EF4444',
+        wickUpColor: '#16A34A',
+        wickDownColor: '#EF4444',
+      });
+      console.log('[HDLiveChart] Candlestick series created');
+    } catch (err) {
+      console.error('[HDLiveChart] Failed to create candlestick series:', err);
+    }
 
-        // If required APIs are available, create series and mark chart ready
-        const hasCandle = typeof (chartRef.current as any)?.addCandlestickSeries === 'function';
-        const hasLine = typeof (chartRef.current as any)?.addLineSeries === 'function';
-
-        if (!hasCandle && !hasLine) {
-          if (attempts < maxAttempts) {
-            console.debug(`[HDLiveChart] Chart API not ready yet (attempt ${attempts}), retrying...`);
-            setTimeout(doCreate, 500);
-            return;
-          }
-          console.error('[HDLiveChart] Chart API not available after retries; continuing without indicator series');
-          waitingForChartRef.current = false;
-          return;
-        }
-
-        waitingForChartRef.current = false;
-
-        // Create candlestick series if supported
-        if (hasCandle && !candleSeriesRef.current) {
-          try {
-            candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries({
-              upColor: '#16A34A',
-              downColor: '#EF4444',
-              borderUpColor: '#16A34A',
-              borderDownColor: '#EF4444',
-              wickUpColor: '#16A34A',
-              wickDownColor: '#EF4444',
-            });
-          } catch (err) {
-            console.warn('[HDLiveChart] Failed to create candlestick series:', err);
-          }
-        }
-
-        // Create EMA/VWAP/Bollinger series using createLineSeries helper
-        if (indicators?.ema?.periods) {
-          const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
-          indicators.ema.periods.forEach((period, i) => {
-            const emaSeries = createLineSeries(
-              {
-                color: colors[i % colors.length],
-                lineWidth: 1,
-                title: `EMA${period}`,
-              },
-              `EMA${period}`
-            );
-            if (emaSeries) emaSeriesRefs.current.set(period, emaSeries);
-          });
-        }
-
-        if (indicators?.vwap?.enabled) {
-          const vwapSeries = createLineSeries(
-            {
-              color: '#10B981',
-              lineWidth: 2,
-              lineStyle: 2,
-              title: 'VWAP',
-            },
-            'VWAP'
-          );
-          if (vwapSeries) vwapSeriesRef.current = vwapSeries;
-        }
-
-        if (indicators?.bollinger) {
-          const upperSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Upper' }, 'BB Upper');
-          const middleSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, lineStyle: 2, title: 'BB Middle' }, 'BB Middle');
-          const lowerSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Lower' }, 'BB Lower');
-          if (upperSeries && middleSeries && lowerSeries) {
-            bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
-          }
-        }
-
-        setChartReady(true);
-        console.log('[HDLiveChart] Chart and series ready');
-      };
-
-      return doCreate;
-    })();
-
-    waitingForChartRef.current = true;
-    
-    // Set up indicators to be created after chart is ready
-    const originalDoCreate = attemptCreateSeries;
-    const wrappedAttemptCreate = () => {
-      // Call original attempt
-      originalDoCreate();
-      
-      // Schedule indicator setup for after retry logic completes
-      const checkReady = () => {
-        if (!waitingForChartRef.current && chartRef.current) {
-          createIndicators();
-        } else {
-          requestAnimationFrame(checkReady);
-        }
-      };
-      requestAnimationFrame(checkReady);
-    };
-    
-    wrappedAttemptCreate();
-    
-    const createIndicators = () => {
-      // Create EMA series
-      if (indicators?.ema?.periods) {
-        const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
-        indicators.ema.periods.forEach((period, i) => {
-          const emaSeries = createLineSeries(
-            {
-              color: colors[i % colors.length],
-              lineWidth: 1,
-              title: `EMA${period}`,
-            },
-            `EMA${period}`
-          );
-          if (emaSeries) {
-            emaSeriesRefs.current.set(period, emaSeries);
-          }
-        });
-      }
-
-      // Create VWAP series
-      if (indicators?.vwap?.enabled) {
-        const vwapSeries = createLineSeries(
+    // Create EMA series
+    if (indicators?.ema?.periods) {
+      const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
+      indicators.ema.periods.forEach((period, i) => {
+        const emaSeries = createLineSeries(
           {
-            color: '#10B981',
-            lineWidth: 2,
-            lineStyle: 2, // Dashed
-            title: 'VWAP',
+            color: colors[i % colors.length],
+            lineWidth: 1,
+            title: `EMA${period}`,
           },
-          'VWAP'
+          `EMA${period}`
         );
+        if (emaSeries) {
+          emaSeriesRefs.current.set(period, emaSeries);
+          console.log(`[HDLiveChart] EMA${period} series created`);
+        }
+      });
+    }
+
+    // Create VWAP series
+    if (indicators?.vwap?.enabled) {
+      const vwapSeries = createLineSeries(
+        {
+          color: '#10B981',
+          lineWidth: 2,
+          lineStyle: 2,
+          title: 'VWAP',
+        },
+        'VWAP'
+      );
+      if (vwapSeries) {
         vwapSeriesRef.current = vwapSeries;
+        console.log('[HDLiveChart] VWAP series created');
       }
+    }
 
-      // Create Bollinger Bands
-      if (indicators?.bollinger) {
-        const upperSeries = createLineSeries(
-          {
-            color: '#6366F1',
-            lineWidth: 1,
-            title: 'BB Upper',
-          },
-          'BB Upper'
-        );
-        const middleSeries = createLineSeries(
-          {
-            color: '#6366F1',
-            lineWidth: 1,
-            lineStyle: 2,
-            title: 'BB Middle',
-          },
-          'BB Middle'
-        );
-        const lowerSeries = createLineSeries(
-          {
-            color: '#6366F1',
-            lineWidth: 1,
-            title: 'BB Lower',
-          },
-          'BB Lower'
-        );
-        if (upperSeries && middleSeries && lowerSeries) {
-          bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
-        }
+    // Create Bollinger Bands
+    if (indicators?.bollinger) {
+      const upperSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Upper' }, 'BB Upper');
+      const middleSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, lineStyle: 2, title: 'BB Middle' }, 'BB Middle');
+      const lowerSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Lower' }, 'BB Lower');
+      if (upperSeries && middleSeries && lowerSeries) {
+        bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+        console.log('[HDLiveChart] Bollinger Bands series created');
       }
-    };
+    }
+
+    setChartReady(true);
+    console.log('[HDLiveChart] Chart initialization complete');
     
     // Handle resize
     const handleResize = () => {
