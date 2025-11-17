@@ -336,71 +336,91 @@ const loadHistoricalBars = useCallback(async () => {
     })();
 
     waitingForChartRef.current = true;
-    attemptCreateSeries();
-
-    // Create EMA series
-    if (indicators?.ema?.periods) {
-      const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
-      indicators.ema.periods.forEach((period, i) => {
-        const emaSeries = createLineSeries(
-          {
-            color: colors[i % colors.length],
-            lineWidth: 1,
-            title: `EMA${period}`,
-          },
-          `EMA${period}`
-        );
-        if (emaSeries) {
-          emaSeriesRefs.current.set(period, emaSeries);
+    
+    // Set up indicators to be created after chart is ready
+    const originalDoCreate = attemptCreateSeries;
+    const wrappedAttemptCreate = () => {
+      // Call original attempt
+      originalDoCreate();
+      
+      // Schedule indicator setup for after retry logic completes
+      const checkReady = () => {
+        if (!waitingForChartRef.current && chartRef.current) {
+          createIndicators();
+        } else {
+          requestAnimationFrame(checkReady);
         }
-      });
-    }
-
-    // Create VWAP series
-    if (indicators?.vwap?.enabled) {
-      const vwapSeries = createLineSeries(
-        {
-          color: '#10B981',
-          lineWidth: 2,
-          lineStyle: 2, // Dashed
-          title: 'VWAP',
-        },
-        'VWAP'
-      );
-      vwapSeriesRef.current = vwapSeries;
-    }
-
-    // Create Bollinger Bands
-    if (indicators?.bollinger) {
-      const upperSeries = createLineSeries(
-        {
-          color: '#6366F1',
-          lineWidth: 1,
-          title: 'BB Upper',
-        },
-        'BB Upper'
-      );
-      const middleSeries = createLineSeries(
-        {
-          color: '#6366F1',
-          lineWidth: 1,
-          lineStyle: 2,
-          title: 'BB Middle',
-        },
-        'BB Middle'
-      );
-      const lowerSeries = createLineSeries(
-        {
-          color: '#6366F1',
-          lineWidth: 1,
-          title: 'BB Lower',
-        },
-        'BB Lower'
-      );
-      if (upperSeries && middleSeries && lowerSeries) {
-        bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+      };
+      requestAnimationFrame(checkReady);
+    };
+    
+    wrappedAttemptCreate();
+    
+    const createIndicators = () => {
+      // Create EMA series
+      if (indicators?.ema?.periods) {
+        const colors = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899'];
+        indicators.ema.periods.forEach((period, i) => {
+          const emaSeries = createLineSeries(
+            {
+              color: colors[i % colors.length],
+              lineWidth: 1,
+              title: `EMA${period}`,
+            },
+            `EMA${period}`
+          );
+          if (emaSeries) {
+            emaSeriesRefs.current.set(period, emaSeries);
+          }
+        });
       }
-    }
+
+      // Create VWAP series
+      if (indicators?.vwap?.enabled) {
+        const vwapSeries = createLineSeries(
+          {
+            color: '#10B981',
+            lineWidth: 2,
+            lineStyle: 2, // Dashed
+            title: 'VWAP',
+          },
+          'VWAP'
+        );
+        vwapSeriesRef.current = vwapSeries;
+      }
+
+      // Create Bollinger Bands
+      if (indicators?.bollinger) {
+        const upperSeries = createLineSeries(
+          {
+            color: '#6366F1',
+            lineWidth: 1,
+            title: 'BB Upper',
+          },
+          'BB Upper'
+        );
+        const middleSeries = createLineSeries(
+          {
+            color: '#6366F1',
+            lineWidth: 1,
+            lineStyle: 2,
+            title: 'BB Middle',
+          },
+          'BB Middle'
+        );
+        const lowerSeries = createLineSeries(
+          {
+            color: '#6366F1',
+            lineWidth: 1,
+            title: 'BB Lower',
+          },
+          'BB Lower'
+        );
+        if (upperSeries && middleSeries && lowerSeries) {
+          bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+        }
+      }
+    };
     
     // Handle resize
     const handleResize = () => {
