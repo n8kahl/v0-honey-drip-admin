@@ -105,45 +105,9 @@ const chartRef = useRef<IChartApi | null>(null);
   }, [chartReady]);
 
   useEffect(() => {
-    let canceled = false;
-    const loadHolidays = async () => {
-      const now = new Date();
-      const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1]);
-
-      if (
-        !massiveClient ||
-        typeof (massiveClient as any).getMarketHolidays !== 'function'
-      ) {
-        console.warn(
-          '[HDLiveChart] Holiday API not available on Massive client, rendering without holiday gaps'
-        );
-        setHolidayDates([]);
-        return;
-      }
-
-      const aggregated = new Set<string>();
-      const mc = massiveClient as any;
-
-      try {
-        const results = await Promise.all(
-          Array.from(years).map((year) => mc.getMarketHolidays(year))
-        );
-        results.forEach((dates: string[]) => dates.forEach((date) => aggregated.add(date)));
-      } catch (err) {
-        console.warn('[HDLiveChart] Failed to load Massive holidays for', Array.from(years), err);
-        setHolidayDates([]);
-        return;
-      }
-
-      if (!canceled) {
-        setHolidayDates(Array.from(aggregated));
-      }
-    };
-
-    loadHolidays();
-    return () => {
-      canceled = true;
-    };
+    // Market holidays endpoint is unreliable; skip it entirely. Charts render fine without explicit gaps.
+    console.debug('[HDLiveChart] Skipping market holidays fetch (endpoint unreliable)');
+    setHolidayDates([]);
   }, []);
   
 const loadHistoricalBars = useCallback(async () => {
