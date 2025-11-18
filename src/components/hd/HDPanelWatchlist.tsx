@@ -8,6 +8,7 @@ import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { SymbolSignals } from '../../hooks/useStrategyScanner';
 import { WatchlistRecapCard } from '../WatchlistRecapCard';
+import MobileWatchlist from '../Watchlist/MobileWatchlist';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
 
 interface HDPanelWatchlistProps {
@@ -300,15 +301,23 @@ export function HDPanelWatchlist({
                 ))}
               </div>
             )}
-            {watchlist.map((ticker) => (
-              <HDRowWatchlist
-                key={ticker.id}
-                ticker={ticker}
-                active={ticker.symbol === activeTicker}
-                onClick={() => onTickerClick?.(ticker)}
-                onRemove={() => setConfirmDialog({ isOpen: true, type: 'ticker', item: ticker })}
-              />
-            ))}
+            {/* Mobile: horizontal cards */}
+            <div className="md:hidden">
+              <MobileWatchlist tickers={watchlist} />
+            </div>
+
+            {/* Desktop: original vertical list */}
+            <div className="hidden md:block">
+              {watchlist.map((ticker) => (
+                <HDRowWatchlist
+                  key={ticker.id}
+                  ticker={ticker}
+                  active={ticker.symbol === activeTicker}
+                  onClick={() => onTickerClick?.(ticker)}
+                  onRemove={() => setConfirmDialog({ isOpen: true, type: 'ticker', item: ticker })}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>

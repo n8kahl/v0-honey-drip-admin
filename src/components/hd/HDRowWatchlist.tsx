@@ -4,6 +4,7 @@ import { X, Wifi, Zap } from 'lucide-react';
 import { useSymbolData } from '../../stores/marketDataStore';
 import { HDStrategyBadge } from './HDStrategyBadge';
 import { useUIStore } from '../../stores';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
@@ -34,10 +35,13 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   const activeSignals = strategySignals.filter(s => s.status === 'ACTIVE');
   const activeSignalCount = activeSignals.length;
   
-  // Determine signal bias (bullish vs bearish)
-  const signalBias = activeSignals.length > 0
-    ? (activeSignals[0].payload as any)?.side || 'neutral'
-    : 'neutral';
+  // Prepare tooltip lines with strategy IDs and confluence score
+  const confluenceScore = symbolData?.confluence?.overall;
+  const tooltipText = activeSignals.length
+    ? `${ticker.symbol}: ${activeSignals.map(s => s.strategyId).join(', ')} · conf ${
+        typeof confluenceScore === 'number' ? Math.round(confluenceScore) : '-'
+      }`
+    : undefined;
   
   // Handle badge click - navigate to chart at signal bar
   const handleBadgeClick = (signal: any) => {
@@ -91,14 +95,8 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   
   const lastUpdatedText = getLastUpdatedText();
   
-  // Determine pulse animation class based on signal bias
-  const pulseClass = activeSignalCount > 0
-    ? signalBias === 'LONG' || signalBias === 'bullish'
-      ? 'animate-pulse-green'
-      : signalBias === 'SHORT' || signalBias === 'bearish'
-      ? 'animate-pulse-red'
-      : ''
-    : '';
+  // No animation per request
+  const pulseClass = '';
   
   return (
     <div
@@ -118,38 +116,29 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
       >
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
-            {activeCount > 0 && (
-              <span
-                className={cn(
-                  'px-1.5 py-0.5 text-[10px] font-semibold rounded-full mr-1',
-                  'text-orange-300 bg-orange-500/15 ring-1 ring-orange-500/40',
-                  'shadow-[0_0_12px_rgba(249,115,22,0.35)]'
+            {activeSignalCount > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      'px-1.5 py-0.5 text-xs font-medium rounded mr-1',
+                      'bg-zinc-700 text-zinc-300'
+                    )}
+                    aria-label={`${activeSignalCount} active setups`}
+                  >
+                    {activeSignalCount}
+                  </span>
+                </TooltipTrigger>
+                {tooltipText && (
+                  <TooltipContent side="bottom" className="bg-zinc-800 text-zinc-200 border border-zinc-700">
+                    <div className="max-w-xs whitespace-pre-wrap text-xs">{tooltipText}</div>
+                  </TooltipContent>
                 )}
-                title={`${activeCount} active strategy signal${activeCount === 1 ? '' : 's'}`}
-              >
-                🔥{activeCount}
-              </span>
+              </Tooltip>
             )}
             <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
             
-            {/* Strategy signal badges */}
-            {activeSignals.length > 0 && (
-              <div className="flex items-center gap-1">
-                {activeSignals.slice(0, 3).map((signal) => (
-                  <HDStrategyBadge
-                    key={signal.id}
-                    signal={signal}
-                    onClick={() => handleBadgeClick(signal)}
-                    size="sm"
-                  />
-                ))}
-                {activeSignals.length > 3 && (
-                  <span className="text-[9px] text-[var(--text-faint)] ml-0.5">
-                    +{activeSignals.length - 3}
-                  </span>
-                )}
-              </div>
-            )}
+            {/* Minimal indicator only; no per-strategy badges */}
             
             {confluence && confluence.overall > 70 && (
               <span title={`Confluence: ${confluence.overall}`}>

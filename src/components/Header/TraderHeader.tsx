@@ -3,9 +3,11 @@ import { useTradeStore } from '../../stores/tradeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMarketStore } from '../../stores/marketStore';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
-import { Activity, Zap, Moon, Sun, User, ChevronDown } from 'lucide-react';
+import { Activity, Moon, Sun, User, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
+import { useMarketDataStore } from '../../stores/marketDataStore';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 interface MarketStatusProps {
   session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
@@ -126,18 +128,41 @@ const MarketStatus: React.FC<MarketStatusProps> = ({ session, isWeekend, nextOpe
   );
 };
 
-interface ActiveSetupsProps {
-  count: number;
-}
+const ActiveSetups: React.FC = () => {
+  const { count, details } = useMarketDataStore((s) => {
+    const symbols = Object.values(s.symbols || {});
+    let total = 0;
+    const lines: string[] = [];
+    for (const d of symbols) {
+      const active = (d.strategySignals || []).filter((sig) => sig.status === 'ACTIVE');
+      if (active.length > 0) {
+        total += active.length;
+        const conf = typeof d.confluence?.overall === 'number' ? Math.round(d.confluence.overall) : '-';
+        lines.push(`${d.symbol}: ${active.map((a) => a.strategyId).join(', ')} · conf ${conf}`);
+      }
+    }
+    return { count: total, details: lines };
+  });
 
-const ActiveSetups: React.FC<ActiveSetupsProps> = ({ count }) => {
-  if (count === 0) return null;
-  
+  if (!count) return null;
+
+  const label = `Setups · ${count}`;
+
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--accent-positive)]/10 border border-[var(--accent-positive)]/20">
-      <Zap className="w-3.5 h-3.5 text-[var(--accent-positive)] fill-current" />
-      <span className="text-xs font-semibold text-[var(--accent-positive)]">{count} active setups</span>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="px-2 py-1 rounded bg-zinc-700 text-zinc-300 text-xs font-medium cursor-default">
+          {label}
+        </div>
+      </TooltipTrigger>
+      {details.length > 0 && (
+        <TooltipContent side="bottom" className="bg-zinc-800 text-zinc-200 border border-zinc-700">
+          <div className="max-w-sm whitespace-pre-wrap text-xs">
+            {details.join('\n')}
+          </div>
+        </TooltipContent>
+      )}
+    </Tooltip>
   );
 };
 
@@ -275,8 +300,7 @@ export const TraderHeader: React.FC = () => {
   const winningTrades = completedInChallenge.filter((t) => t.exitPrice && t.entryPrice && t.exitPrice > t.entryPrice);
   const winRate = completedInChallenge.length > 0 ? (winningTrades.length / completedInChallenge.length) * 100 : 0;
   
-  // Count active setups from watchlist (placeholder - would come from strategy signals)
-  const activeSetups = 0;
+  // Active setups shown via ActiveSetups component
   
   useEffect(() => {
     // Mock WebSocket latency (replace with actual WS ping from marketDataStore)
@@ -311,7 +335,7 @@ export const TraderHeader: React.FC = () => {
             nextClose={nextClose}
             latency={wsLatency}
           />
-          <ActiveSetups count={activeSetups} />
+          <ActiveSetups />
         </div>
         
         {/* Center: Challenge Progress Ring */}

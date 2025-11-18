@@ -9,6 +9,7 @@ import { HDContractGrid } from '../hd/HDContractGrid';
 import { HDMacroPanel } from '../hd/HDMacroPanel';
 import { HDCommandRail } from '../hd/HDCommandRail';
 import { ActiveTradesDock } from '../trading/ActiveTradesDock';
+import FlowPanel from './FlowPanel';
 import { QuickOrderBar } from '../trading/QuickOrderBar';
 import { cn } from '../../lib/utils';
 
@@ -134,6 +135,8 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
 
   return (
     <>
+      {/* Collapsible options flow panel (bottom-right) */}
+      <FlowPanel symbol={mainCockpitSymbol} contracts={streamingContracts} />
       {/* Desktop Layout: Grid */}
       <div className="hidden lg:grid lg:grid-cols-[280px_1fr] h-screen">
         {/* Left: Watchlist Rail */}

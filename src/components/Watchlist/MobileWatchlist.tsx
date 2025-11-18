@@ -1,6 +1,6 @@
 import React from 'react';
 import { Ticker } from '../../types';
-import { useSymbolData } from '../../stores/marketDataStore';
+import { useSymbolData, useCandles } from '../../stores/marketDataStore';
 import { useUIStore } from '../../stores/uiStore';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -55,6 +55,7 @@ const MiniSparkline: React.FC<{ data: number[] }> = ({ data }) => {
 
 const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
   const symbolData = useSymbolData(ticker.symbol);
+  const oneMinCandles = useCandles(ticker.symbol, '1m') || [];
   const strategySignals = symbolData?.strategySignals || [];
   const activeSignals = strategySignals.filter((s) => s.status === 'ACTIVE');
   const confluence = symbolData?.confluence;
@@ -64,22 +65,20 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
   const priceChangePercent = ticker.changePercent || 0;
   const isPositive = priceChangePercent >= 0;
 
-  // Mock sparkline data (replace with actual intraday data from marketDataStore)
+  // Sparkline: last 20 minutes of 1m closes, fallback to simple mock if unavailable
   const sparklineData = React.useMemo(() => {
-    // Generate mock 15min data points (placeholder)
-    return Array.from({ length: 15 }, (_, i) => {
-      const variance = Math.sin(i * 0.5) * (currentPrice * 0.02);
-      return currentPrice + variance;
-    });
-  }, [currentPrice]);
+    const closes = oneMinCandles.slice(-20).map(c => c.close).filter(n => typeof n === 'number' && !Number.isNaN(n));
+    if (closes.length >= 2) return closes;
+    return Array.from({ length: 20 }, (_, i) => currentPrice * (1 + Math.sin(i * 0.3) * 0.004));
+  }, [oneMinCandles, currentPrice]);
 
   // Confluence pills
-  const confluencePills = React.useMemo(() => {
-    const pills = [];
-    if (confluence?.components.supportResistance) pills.push({ label: 'ORB', color: 'bg-blue-500' });
-    if (confluence?.components.aboveVWAP) pills.push({ label: 'VWAP', color: 'bg-purple-500' });
-    if (confluence?.components.trendAlignment) pills.push({ label: 'MTF', color: 'bg-green-500' });
-    return pills;
+  const confluenceLabels = React.useMemo(() => {
+    const labels: string[] = [];
+    if (confluence?.components.supportResistance) labels.push('ORB');
+    if (confluence?.components.aboveVWAP) labels.push('VWAP');
+    if (confluence?.components.trendAlignment) labels.push('MTF↑');
+    return labels;
   }, [confluence]);
 
   return (
@@ -87,30 +86,19 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
       onClick={onTap}
       className={cn(
         'flex-shrink-0 w-64 h-80 rounded-2xl p-4 flex flex-col justify-between',
-        'bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface-3)]',
+        'bg-[var(--surface-2)]',
         'border border-[var(--border-hairline)]',
-        'shadow-lg active:scale-95 transition-transform cursor-pointer',
+        'active:scale-95 transition-transform cursor-pointer',
         'relative overflow-hidden'
       )}
     >
-      {/* Glow effect if active signals */}
-      {activeSignals.length > 0 && (
-        <div className="absolute inset-0 bg-gradient-to-br from-[var(--brand-primary)]/10 to-transparent pointer-events-none" />
-      )}
 
       {/* Top: Symbol + Active Badge */}
       <div className="relative z-10">
         <div className="flex items-start justify-between mb-2">
-          <h2 className="text-4xl font-bold text-[var(--text-high)]">{ticker.symbol}</h2>
+          <h2 className="text-5xl font-extrabold text-zinc-100 tracking-tight">{ticker.symbol}</h2>
           {activeSignals.length > 0 && (
-            <div
-              className={cn(
-                'px-2 py-1 rounded-full flex items-center gap-1',
-                'bg-[var(--brand-primary)] text-white text-xs font-medium',
-                'animate-pulse shadow-lg shadow-[var(--brand-primary)]/50'
-              )}
-            >
-              <Zap className="w-3 h-3 fill-current" />
+            <div className="px-2 py-0.5 rounded bg-zinc-700 text-zinc-300 text-xs font-medium">
               {activeSignals.length}
             </div>
           )}
@@ -118,7 +106,7 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
 
         {/* Price + Change */}
         <div className="mb-4">
-          <div className="text-2xl font-semibold text-[var(--text-high)] mb-1">
+          <div className="text-3xl font-semibold text-[var(--text-high)] mb-1">
             ${currentPrice.toFixed(2)}
           </div>
           <div className={cn('flex items-center gap-1 text-sm font-medium', isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]')}>
@@ -136,16 +124,9 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
 
       {/* Bottom: Confluence Pills */}
       <div className="relative z-10">
-        {confluencePills.length > 0 ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            {confluencePills.map((pill) => (
-              <div
-                key={pill.label}
-                className={cn('px-2 py-1 rounded text-[10px] font-medium text-white', pill.color)}
-              >
-                {pill.label}
-              </div>
-            ))}
+        {confluenceLabels.length > 0 ? (
+          <div className="text-xs text-zinc-400">
+            {confluenceLabels.join(' · ')}
           </div>
         ) : (
           <div className="text-xs text-[var(--text-muted)] italic">No active setups</div>
