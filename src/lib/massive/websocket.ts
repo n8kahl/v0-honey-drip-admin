@@ -10,8 +10,9 @@ function getToken(): string {
   const token = (import.meta as any)?.env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
   if (!token) {
     console.warn('[v0] VITE_MASSIVE_PROXY_TOKEN not set, WebSocket auth will fail');
+    return '';
   }
-  return token || '';
+  return token;
 }
 
 function wsUrl(endpoint: WsEndpoint): string {

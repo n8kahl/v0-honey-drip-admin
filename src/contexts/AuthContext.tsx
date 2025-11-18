@@ -39,6 +39,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setInitError(error instanceof Error ? error.message : 'Failed to initialize Supabase');
       setLoading(false);
     }
+  } else {
+    console.log('[v0] AuthProvider: Auto-login enabled, skipping Supabase entirely');
   }
 
   // In test auto-login mode, set a dummy user and skip Supabase
@@ -114,6 +116,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signIn = async (email: string, password: string) => {
+    if (autoLogin) {
+      console.log('[v0] signIn: Auto-login mode, skipping Supabase auth');
+      return { error: null }; // Already logged in
+    }
     if (!supabase) return { error: new Error('Supabase not initialized') };
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -142,6 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (autoLogin) {
+      console.log('[v0] signOut: Auto-login mode, cannot sign out');
+      return;
+    }
     if (!supabase) return;
     await supabase.auth.signOut();
   };
