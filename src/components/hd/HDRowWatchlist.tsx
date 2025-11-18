@@ -18,10 +18,15 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   const setActiveTab = useUIStore((state) => state.setActiveTab);
   const scrollChartToBar = useUIStore((state) => state.scrollChartToBar);
   const setMainCockpitSymbol = useUIStore((state) => state.setMainCockpitSymbol);
+  // Explicit store instance for row click, per request
+  const uiStore = useUIStore();
   
   const currentPrice = ticker.last;
   const lastUpdated = symbolData?.lastUpdated || 0;
   const strategySignals = symbolData?.strategySignals || [];
+  const activeCount = Array.isArray(strategySignals)
+    ? strategySignals.filter((s: any) => s?.active === true || s?.status === 'ACTIVE').length
+    : 0;
   const indicators = symbolData?.indicators;
   const confluence = symbolData?.confluence;
   
@@ -99,24 +104,32 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
     <div
       className={cn(
         'w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[48px]',
-        'hover:bg-[var(--surface-1)] transition-all duration-150 ease-out touch-manipulation',
+        'cursor-pointer hover:bg-zinc-800 transition-colors duration-150 ease-out touch-manipulation',
         active && 'bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm',
         isStale && 'opacity-60',
         pulseClass
       )}
       data-testid={`watchlist-item-${ticker.symbol}`}
+      onClick={() => uiStore.setMainCockpitSymbol(ticker.symbol)}
     >
-      <button
-        onClick={() => {
-          setMainCockpitSymbol(ticker.symbol);
-          onClick?.(); // Still call onClick if provided (for legacy compatibility)
-        }}
+      <div
         className="flex-1 flex items-center justify-between text-left"
-        disabled={isStale}
         title={isStale ? 'Data is stale' : undefined}
       >
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
+            {activeCount > 0 && (
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 text-[10px] font-semibold rounded-full mr-1',
+                  'text-orange-300 bg-orange-500/15 ring-1 ring-orange-500/40',
+                  'shadow-[0_0_12px_rgba(249,115,22,0.35)]'
+                )}
+                title={`${activeCount} active strategy signal${activeCount === 1 ? '' : 's'}`}
+              >
+                🔥{activeCount}
+              </span>
+            )}
             <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
             
             {/* Strategy signal badges */}
@@ -161,7 +174,7 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
             </span>
           )}
         </div>
-      </button>
+      </div>
       
       {onRemove && (
         <button

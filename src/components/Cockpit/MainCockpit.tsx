@@ -67,8 +67,11 @@ const EmptyState: React.FC = () => {
   );
 };
 
-export const MainCockpit: React.FC = () => {
-  const mainCockpitSymbol = useUIStore((s) => s.mainCockpitSymbol);
+type MainCockpitProps = { symbol?: string };
+
+export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
+  const storeSymbol = useUIStore((s) => s.mainCockpitSymbol);
+  const mainCockpitSymbol = symbol ?? storeSymbol;
   const setMainCockpitSymbol = useUIStore((s) => s.setMainCockpitSymbol);
   const watchlist = useMarketStore((s) => s.watchlist);
   const setActiveTrades = useTradeStore((s) => s.setActiveTrades);

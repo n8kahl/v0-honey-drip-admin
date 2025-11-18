@@ -4,7 +4,7 @@ import { DesktopHistory } from './components/DesktopHistory';
 import { DesktopSettings } from './components/DesktopSettings';
 import { MobileActive } from './components/MobileActive';
 import { VoiceCommandDemo } from './components/VoiceCommandDemo';
-import { HDHeader } from './components/hd/HDHeader';
+// Header moved to app/layout via <TraderHeader />
 import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { HDDialogDiscordSettings } from './components/hd/HDDialogDiscordSettings';
@@ -156,13 +156,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 lg:pb-0">
-      <HDHeader
-        sessionStatus="open"
-        voiceState={voiceState}
-        onSettingsClick={() => setActiveTab('settings')}
-        onMicClick={toggleVoice}
-      />
-      
       <LiveStatusBar />
 
       <nav className="hidden lg:flex gap-4 lg:gap-6 px-4 lg:px-6 py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
