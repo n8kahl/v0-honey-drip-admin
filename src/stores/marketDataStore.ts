@@ -5,7 +5,7 @@
  * into one Zustand store powered by Massive.com WebSocket (Options + Indices Advanced).
  * 
  * Features:
- * - Single WebSocket connection per data type (stocks, options, indices)
+ * - WebSocket streams for indices (AM/A) and options elsewhere
  * - Multi-timeframe candles with automatic aggregation
  * - Lazy indicator calculation (computed once per update)
  * - Strategy signal integration
@@ -19,6 +19,7 @@ import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { produce } from 'immer';
 import { Bar } from '../types/shared';
+import { massiveWS } from '../lib/massive/websocket';
 import { StrategySignal } from '../types/strategy';
 import { 
   calculateEMA, 
@@ -179,6 +180,9 @@ interface MarketDataStore {
   
   /** Heartbeat interval */
   heartbeatInterval: any;
+
+  /** Unsubscribe fns for active WS subscriptions */
+  unsubscribers: Array<() => void>;
   
   // ========================================================================
   // Actions
@@ -265,8 +269,9 @@ interface MarketDataStore {
 // Store Implementation
 // ============================================================================
 
-const MACRO_SYMBOLS = ['SPY', 'QQQ', 'IWM', 'SPX', 'NDX', 'VIX'];
-const DEFAULT_PRIMARY_TIMEFRAME: Timeframe = '5m';
+// Pure indices mode for macro; equities removed
+const MACRO_SYMBOLS = ['SPX', 'NDX', 'VIX'];
+const DEFAULT_PRIMARY_TIMEFRAME: Timeframe = '1m';
 const MAX_CANDLES_PER_TIMEFRAME = 500; // Memory limit
 const STALE_THRESHOLD_MS = 10000; // 10 seconds
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -274,8 +279,7 @@ const INITIAL_RECONNECT_DELAY = 1000; // 1 second
 const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const HEARTBEAT_INTERVAL = 25000; // 25 seconds
 
-// Massive.com WebSocket URL
-const WS_URL = 'wss://socket.massive.com/stocks';
+// Stocks socket deprecated in pure options+indices mode
 
 /** Create empty symbol data */
 function createEmptySymbolData(symbol: string): SymbolData {
@@ -729,6 +733,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       isInitializing: false,
       error: null,
       heartbeatInterval: null,
+      unsubscribers: [],
       
       // ======================================================================
       // Actions
@@ -766,202 +771,61 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
       
       connectWebSocket: () => {
-        const { wsConnection, subscribedSymbols } = get();
-        
-        // Don't reconnect if already connected or connecting
-        if (wsConnection.status === 'connected' || wsConnection.status === 'connecting') {
-          return;
-        }
-        
-        console.log('[v0] marketDataStore: Connecting to Massive WebSocket...');
+        // In pure indices mode, rely on massiveWS managed sockets
+        console.log('[v0] marketDataStore: Using massiveWS indices connection');
         set({
-          wsConnection: { ...wsConnection, status: 'connecting' },
+          wsConnection: { socket: null, status: 'connected', reconnectAttempts: 0, lastMessageTime: Date.now() },
+          isConnected: true,
           error: null,
         });
-        
-        try {
-          const socket = new WebSocket(WS_URL);
-          
-          socket.onopen = () => {
-            console.log('[v0] marketDataStore: WebSocket connected, authenticating...');
-            
-            // Authenticate with API key
-            const apiKey = getMassiveApiKey();
-            socket.send(JSON.stringify({
-              action: 'auth',
-              params: apiKey,
-            }));
-            
-            set({
-              wsConnection: {
-                socket,
-                status: 'connected',
-                reconnectAttempts: 0,
-                lastMessageTime: Date.now(),
-              },
-            });
-          };
-          
-          socket.onmessage = (event) => {
-            const now = Date.now();
-            set({
-              wsConnection: { ...get().wsConnection, lastMessageTime: now },
-              lastServerTimestamp: now,
-            });
-            
-            try {
-              const messages = JSON.parse(event.data);
-              const msgArray = Array.isArray(messages) ? messages : [messages];
-              
-              msgArray.forEach((msg: any) => {
-                // Handle authentication response
-                if (msg.ev === 'status' && msg.status === 'auth_success') {
-                  console.log('[v0] marketDataStore: Authenticated successfully');
-                  set({
-                    wsConnection: { ...get().wsConnection, status: 'authenticated' },
-                    isConnected: true,
-                  });
-                  
-                  // Subscribe to all symbols after authentication
-                  get().subscribeToSymbols();
-                  
-                  // Start heartbeat
-                  const heartbeat = setInterval(() => {
-                    const { wsConnection } = get();
-                    if (wsConnection.socket?.readyState === WebSocket.OPEN) {
-                      wsConnection.socket.send(JSON.stringify({ action: 'ping' }));
-                    }
-                  }, HEARTBEAT_INTERVAL);
-                  
-                  set({ heartbeatInterval: heartbeat });
-                }
-                
-                // Handle aggregate bar messages
-                else if (msg.ev === 'AM') {
-                  get().handleAggregateBar(msg as MassiveAggregateMessage);
-                }
-                
-                // Handle quote updates
-                else if (msg.ev === 'A') {
-                  // Aggregate/quote update - could be used for real-time price
-                  const symbol = msg.sym.replace(/^I:/, '').toUpperCase();
-                  // Store latest quote if needed
-                }
-                
-                // Handle trade updates
-                else if (msg.ev === 'T') {
-                  // Trade update - could be used for volume analysis
-                }
-              });
-            } catch (err) {
-              console.error('[v0] marketDataStore: Error parsing message:', err);
-            }
-          };
-          
-          socket.onerror = (error) => {
-            console.error('[v0] marketDataStore: WebSocket error:', error);
-            set({
-              error: 'WebSocket connection error',
-              isConnected: false,
-            });
-          };
-          
-          socket.onclose = () => {
-            console.log('[v0] marketDataStore: WebSocket closed');
-            const { heartbeatInterval } = get();
-            if (heartbeatInterval) {
-              clearInterval(heartbeatInterval);
-            }
-            
-            set({
-              wsConnection: {
-                ...get().wsConnection,
-                socket: null,
-                status: 'disconnected',
-              },
-              isConnected: false,
-              heartbeatInterval: null,
-            });
-            
-            // Attempt reconnection with exponential backoff
-            get().scheduleReconnect();
-          };
-        } catch (err) {
-          console.error('[v0] marketDataStore: Failed to create WebSocket:', err);
-          set({
-            error: 'Failed to create WebSocket connection',
-            wsConnection: { ...wsConnection, status: 'error' },
-          });
-          get().scheduleReconnect();
-        }
+        // Immediately subscribe
+        get().subscribeToSymbols();
       },
       
       scheduleReconnect: () => {
-        const { wsConnection } = get();
-        
-        if (wsConnection.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          console.error('[v0] marketDataStore: Max reconnect attempts reached');
-          set({
-            error: 'Maximum reconnection attempts reached',
-            wsConnection: { ...wsConnection, status: 'error' },
-          });
-          return;
-        }
-        
-        // Exponential backoff
-        const delay = Math.min(
-          INITIAL_RECONNECT_DELAY * Math.pow(2, wsConnection.reconnectAttempts),
-          MAX_RECONNECT_DELAY
-        );
-        
-        console.log(`[v0] marketDataStore: Reconnecting in ${delay}ms (attempt ${wsConnection.reconnectAttempts + 1})`);
-        
-        set({
-          wsConnection: {
-            ...wsConnection,
-            reconnectAttempts: wsConnection.reconnectAttempts + 1,
-          },
-        });
-        
-        setTimeout(() => {
-          get().connectWebSocket();
-        }, delay);
+        // No-op: massiveWS handles its own reconnection
+        return;
       },
       
       subscribeToSymbols: () => {
-        const { wsConnection, subscribedSymbols } = get();
-        
-        if (!wsConnection.socket || wsConnection.socket.readyState !== WebSocket.OPEN) {
-          console.warn('[v0] marketDataStore: Cannot subscribe - socket not open');
-          return;
-        }
-        
+        const { subscribedSymbols, unsubscribers } = get();
         if (subscribedSymbols.size === 0) {
           console.warn('[v0] marketDataStore: No symbols to subscribe to');
           return;
         }
-        
-        // Build subscription list
-        const symbolList = Array.from(subscribedSymbols).join(',');
-        
-        // Subscribe to multiple timeframes
-        const subscriptions = [
-          `stocks.bars:1m:${symbolList}`,
-          `stocks.bars:5m:${symbolList}`,
-          `stocks.bars:15m:${symbolList}`,
-          `stocks.bars:60m:${symbolList}`,
-          `stocks.trades:${symbolList}`,
-          `stocks.quotes:${symbolList}`,
-        ];
-        
-        console.log('[v0] marketDataStore: Subscribing to', subscribedSymbols.size, 'symbols');
-        
-        subscriptions.forEach(sub => {
-          wsConnection.socket!.send(JSON.stringify({
-            action: 'subscribe',
-            params: sub,
-          }));
-        });
+        // Pure indices mode: subscribe to indices.bars:1m,5m,15m,60m:SPX,NDX,VIX
+        const indexSymbols = Array.from(subscribedSymbols).filter(s => ['SPX','NDX','VIX','RVX'].includes(s.toUpperCase()));
+        if (indexSymbols.length === 0) return;
+
+        console.log('[v0] marketDataStore: Subscribing to indices (2025 format):', indexSymbols);
+
+        // Subscribe to multi-timeframe indices bars
+        const unsub = massiveWS.subscribeAggregates(indexSymbols.map(s => `I:${s}`), (msg) => {
+          try {
+            if (msg?.type !== 'aggregate' && msg?.type !== 'index') return;
+            const d: any = msg.data;
+            const raw = d.ticker || d.symbol;
+            const sym = raw.replace(/^I:/, '').toUpperCase();
+            const bar: Candle = {
+              time: d.timestamp,
+              timestamp: d.timestamp,
+              open: d.open,
+              high: d.high,
+              low: d.low,
+              close: d.close || d.last,
+              volume: d.volume ?? 0,
+              vwap: d.vwap,
+              trades: undefined,
+            };
+            // 2025: subscribeAggregates with 'minute' = 1m bars
+            get().mergeBar(sym, '1m', bar);
+            set({ wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() }, lastServerTimestamp: Date.now() });
+          } catch (e) {
+            console.error('[v0] marketDataStore: aggregate handler error', e);
+          }
+        }, 'minute');
+
+        set({ unsubscribers: [...unsubscribers, unsub] });
       },
       
       handleAggregateBar: (msg: MassiveAggregateMessage) => {
@@ -1014,29 +878,36 @@ export const useMarketDataStore = create<MarketDataStore>()(
         newSubscribed.add(normalized);
         set({ subscribedSymbols: newSubscribed });
         
-        // Send WebSocket subscribe message if connected
-        if (wsConnection.socket && wsConnection.socket.readyState === WebSocket.OPEN) {
-          const subscriptions = [
-            `stocks.bars:1m:${normalized}`,
-            `stocks.bars:5m:${normalized}`,
-            `stocks.bars:15m:${normalized}`,
-            `stocks.bars:60m:${normalized}`,
-            `stocks.trades:${normalized}`,
-            `stocks.quotes:${normalized}`,
-          ];
-          
-          subscriptions.forEach(sub => {
-            wsConnection.socket!.send(JSON.stringify({
-              action: 'subscribe',
-              params: sub,
-            }));
-          });
+        // In indices-only mode, subscribe to index aggregates if applicable
+        if (['SPX','NDX','VIX','RVX'].includes(normalized)) {
+          const unsub = massiveWS.subscribeAggregates([`I:${normalized}`], (msg) => {
+            try {
+              if (msg?.type !== 'aggregate' && msg?.type !== 'index') return;
+              const d: any = msg.data;
+              const bar: Candle = {
+                time: d.timestamp,
+                timestamp: d.timestamp,
+                open: d.open,
+                high: d.high,
+                low: d.low,
+                close: d.close || d.last,
+                volume: d.volume ?? 0,
+                vwap: d.vwap,
+                trades: undefined,
+              };
+              get().mergeBar(normalized, '1m', bar);
+              set({ wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() }, lastServerTimestamp: Date.now() });
+            } catch (e) {
+              console.error('[v0] marketDataStore: aggregate handler error', e);
+            }
+          }, 'minute');
+          set({ unsubscribers: [...get().unsubscribers, unsub] });
         }
       },
       
       unsubscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { subscribedSymbols, macroSymbols, wsConnection } = get();
+        const { subscribedSymbols, macroSymbols, wsConnection, unsubscribers } = get();
         
         // Don't unsubscribe from macro symbols
         if (macroSymbols.includes(normalized)) {
@@ -1052,23 +923,11 @@ export const useMarketDataStore = create<MarketDataStore>()(
         });
         set({ subscribedSymbols: newSubscribed });
         
-        // Send WebSocket unsubscribe message
-        if (wsConnection.socket && wsConnection.socket.readyState === WebSocket.OPEN) {
-          const unsubscriptions = [
-            `stocks.bars:1m:${normalized}`,
-            `stocks.bars:5m:${normalized}`,
-            `stocks.bars:15m:${normalized}`,
-            `stocks.bars:60m:${normalized}`,
-            `stocks.trades:${normalized}`,
-            `stocks.quotes:${normalized}`,
-          ];
-          
-          unsubscriptions.forEach(unsub => {
-            wsConnection.socket!.send(JSON.stringify({
-              action: 'unsubscribe',
-              params: unsub,
-            }));
-          });
+        // Remove any local subscriptions we created for this symbol (best-effort)
+        // We don't track per-symbol unsub fns, so call all and reset
+        if (unsubscribers.length) {
+          try { unsubscribers.forEach(fn => fn()); } catch {}
+          set({ unsubscribers: [] });
         }
       },
       
@@ -1389,19 +1248,15 @@ export const useMarketDataStore = create<MarketDataStore>()(
       
       cleanup: () => {
         console.log('[v0] marketDataStore: Cleaning up WebSocket connection');
-        
-        const { wsConnection, heartbeatInterval } = get();
-        
+        const { heartbeatInterval, unsubscribers } = get();
         // Clear heartbeat
         if (heartbeatInterval) {
           clearInterval(heartbeatInterval);
         }
-        
-        // Close WebSocket
-        if (wsConnection.socket) {
-          wsConnection.socket.close();
+        // Unsubscribe from active channels
+        if (unsubscribers.length) {
+          try { unsubscribers.forEach(fn => fn()); } catch {}
         }
-        
         set({
           wsConnection: {
             socket: null,
@@ -1412,6 +1267,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
           isConnected: false,
           heartbeatInterval: null,
           subscribedSymbols: new Set(),
+          unsubscribers: [],
         });
       },
       

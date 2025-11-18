@@ -9,16 +9,16 @@ const MASSIVE_API_BASE = '/api/massive';
 
 // Helper to map ticker to Massive index symbol
 function mapToIndexSymbol(ticker: string): string {
+  const t = ticker.toUpperCase();
   const indexMap: Record<string, string> = {
     'SPX': 'I:SPX',
-    'SPY': 'SPY',
-    'QQQ': 'QQQ',
+    'SPY': 'I:SPX', // route SPY to underlying index
+    'QQQ': 'I:NDX', // route QQQ to underlying index
     'NDX': 'I:NDX',
-    'IWM': 'IWM',
-    'DIA': 'DIA',
+    'IWM': 'I:RUT', // Russell 2000 index
+    'DIA': 'I:DJI', // Dow Jones Industrial Average
   };
-  
-  return indexMap[ticker] || ticker;
+  return indexMap[t] || `I:${t}`;
 }
 
 // Helper to construct option symbol in O:TICKER format

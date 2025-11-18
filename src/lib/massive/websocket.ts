@@ -1,29 +1,21 @@
 type WsEndpoint = 'options' | 'indices';
 
-const WS_BASE = '/ws';
+// Official 2025 Massive WebSocket URLs for Options + Indices Advanced
+const WS_URLS: Record<WsEndpoint, string> = {
+  options: 'wss://socket.massive.com/options',
+  indices: 'wss://socket.massive.com/indices',
+};
 
-async function fetchWsToken(): Promise<string | null> {
-  try {
-    const resp = await fetch('/api/ws-token', { method: 'POST' });
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    return String(json?.token || '') || null;
-  } catch {
-    // Fallback to static proxy token when ephemeral token endpoint is unavailable in local dev
-    try {
-      const fallback = (import.meta as any)?.env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
-      return fallback || null;
-    } catch {
-      return null;
-    }
+function getToken(): string {
+  const token = (import.meta as any)?.env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
+  if (!token) {
+    console.warn('[v0] VITE_MASSIVE_PROXY_TOKEN not set, WebSocket auth will fail');
   }
+  return token || '';
 }
 
-function wsUrl(endpoint: WsEndpoint, token?: string | null) {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-  const tokenSegment = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${proto}//${host}${WS_BASE}/${endpoint}${tokenSegment}`;
+function wsUrl(endpoint: WsEndpoint): string {
+  return WS_URLS[endpoint];
 }
 
 type SubscriptionCallback = (message: WebSocketMessage) => void;
@@ -141,7 +133,8 @@ class MassiveWebSocket {
     void this.connectEndpoint('indices');
   }
 
-  private async connectEndpoint(endpoint: WsEndpoint) {
+  // Public for external wildcard subscriptions
+  connectEndpoint(endpoint: WsEndpoint) {
     if (this.sockets[endpoint]?.readyState === WebSocket.OPEN || this.isConnecting[endpoint]) {
       return;
     }
@@ -151,21 +144,17 @@ class MassiveWebSocket {
     this.isAuthenticated[endpoint] = false;
 
     try {
-      const token = await fetchWsToken();
-      const socket = new WebSocket(wsUrl(endpoint, token));
+      const socket = new WebSocket(wsUrl(endpoint));
       this.sockets[endpoint] = socket;
 
       socket.onopen = () => {
+        console.log(`[Massive WS] Connected to ${endpoint}, authenticating...`);
         this.isConnecting[endpoint] = false;
         this.reconnectAttempts[endpoint] = 0;
-        this.isAuthenticated[endpoint] = true;
-        this.heartbeatIntervals[endpoint] = setInterval(
-          () => this.send(endpoint, { action: 'ping' }),
-          25_000
-        );
-        if (this.subscriptions[endpoint].size) {
-          this.send(endpoint, { action: 'subscribe', params: Array.from(this.subscriptions[endpoint]).join(',') });
-        }
+        
+        // Auth with token field (2025 format)
+        const token = getToken();
+        this.send(endpoint, { action: 'auth', token });
       };
 
       socket.onmessage = (event) => {
@@ -238,6 +227,36 @@ class MassiveWebSocket {
 
   private handleMessage(msg: any) {
     const { ev, sym } = msg;
+    
+    // Handle auth success - check both sockets since we don't know which sent it
+    if (msg.status === 'auth_success' || (ev === 'status' && msg.message?.includes('auth'))) {
+      // Find which endpoint this came from
+      let endpoint: WsEndpoint | null = null;
+      if (this.sockets.options?.readyState === WebSocket.OPEN && !this.isAuthenticated.options) {
+        endpoint = 'options';
+      } else if (this.sockets.indices?.readyState === WebSocket.OPEN && !this.isAuthenticated.indices) {
+        endpoint = 'indices';
+      }
+      
+      if (endpoint) {
+        console.log(`[Massive WS] Authenticated to ${endpoint} successfully`);
+        this.isAuthenticated[endpoint] = true;
+        
+        // Start heartbeat
+        this.heartbeatIntervals[endpoint] = setInterval(
+          () => this.send(endpoint!, { action: 'ping' }),
+          25_000
+        );
+        
+        // Resubscribe if needed
+        if (this.subscriptions[endpoint]?.size) {
+          this.resubscribe(endpoint);
+        }
+      }
+      return;
+    }
+    
+    // 2025: Q = option quotes, A = aggregates, T = trades, AM = minute bars
     if (ev === 'Q') {
       const bid = msg.bp || 0;
       const ask = msg.ap || 0;
@@ -259,7 +278,7 @@ class MassiveWebSocket {
         timestamp: msg.t,
       };
       this.notifySubscribers('option', sym, message);
-    } else if (ev === 'A') {
+    } else if (ev === 'A' || ev === 'AM') {
       // For indices, normalize symbol by removing I: prefix for subscriber lookup
       const isIndex = sym.startsWith('I:');
       const normalizedSym = isIndex ? sym.substring(2) : sym;
@@ -300,10 +319,11 @@ class MassiveWebSocket {
 
   private resubscribe(endpoint: WsEndpoint) {
     const socket = this.sockets[endpoint];
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    const params = Array.from(this.subscriptions[endpoint]).join(',');
-    if (!params) return;
-    this.send(endpoint, { action: 'subscribe', params });
+    if (!socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated[endpoint]) return;
+    const channels = Array.from(this.subscriptions[endpoint]);
+    if (!channels.length) return;
+    console.log(`[Massive WS] Resubscribing to ${endpoint}:`, channels);
+    this.send(endpoint, { action: 'subscribe', channels });
   }
 
   private addChannels(channels: string[], endpoint: WsEndpoint) {
@@ -314,8 +334,13 @@ class MassiveWebSocket {
         added = true;
       }
     }
-    if (added) {
-      this.resubscribe(endpoint);
+    if (added && this.isAuthenticated[endpoint]) {
+      // Send subscribe immediately if already authenticated
+      const socket = this.sockets[endpoint];
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ action: 'subscribe', channels }));
+        console.log(`[Massive WS] Added and subscribed to ${endpoint} channels:`, channels);
+      }
     }
   }
 
@@ -345,7 +370,8 @@ class MassiveWebSocket {
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
     });
-    const channels = symbols.map((symbol) => `A.${symbol}`);
+    // 2025 format: quotes channel for options
+    const channels = symbols.map((symbol) => `quotes:${symbol}`);
     this.addChannels(channels, 'options');
     return () => {
       symbols.forEach((symbol) => {
@@ -360,7 +386,8 @@ class MassiveWebSocket {
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
     });
-    const channels = optionTickers.map((ticker) => `Q.${ticker}`);
+    // 2025 format: options.quotes:TICKER or use wildcard like options.quotes:SPY*
+    const channels = optionTickers.map((ticker) => `options.quotes:${ticker}`);
     this.addChannels(channels, 'options');
     return () => {
       optionTickers.forEach((ticker) => {
@@ -375,7 +402,8 @@ class MassiveWebSocket {
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
     });
-    const channels = optionTickers.map((ticker) => `T.${ticker}`);
+    // 2025 format: options.trades:TICKER or use wildcard like options.trades:SPY*
+    const channels = optionTickers.map((ticker) => `options.trades:${ticker}`);
     this.addChannels(channels, 'options');
     return () => {
       optionTickers.forEach((ticker) => {
@@ -390,12 +418,10 @@ class MassiveWebSocket {
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
     });
+    // 2025 format: indices.bars:1m,5m:SPX,NDX,VIX (no I: prefix needed)
     const channels = symbols.map((symbol) => {
-      const base = `A.${symbol}`;
-      const match = base.match(/^(V|AM|A)\.(.+)$/);
-      if (!match) return base;
-      const [_, ev, sym] = match;
-      return sym.startsWith('I:') ? base : `${ev}.I:${sym}`;
+      const clean = symbol.replace(/^I:/, '');
+      return `indices.bars:1m:${clean}`;
     });
     this.addChannels(channels, 'indices');
     return () => {
@@ -422,27 +448,36 @@ class MassiveWebSocket {
   }
 
   subscribeAggregates(symbols: string[], callback: SubscriptionCallback, timespan: 'second' | 'minute' = 'minute') {
-    // Paid tier: Subscribe to REAL aggregate streams
-    // AM.* = 1-minute aggregates, A.* = second-level aggregates
-    const prefix = timespan === 'minute' ? 'AM' : 'A';
-    const topics = symbols.map(s => `${prefix}.${s}`);
+    // 2025: Route indices to indices socket, everything else to options
+    const isIndices = symbols.some(s => s.startsWith('I:') || ['SPX','NDX','VIX','RVX','RUT','DJI'].includes(s.replace(/^I:/, '')));
+    const endpoint: WsEndpoint = isIndices ? 'indices' : 'options';
+    const tf = timespan === 'minute' ? '1m' : '1s';
+    
+    // Clean symbols (remove I: prefix if present)
+    const cleanSymbols = symbols.map(s => s.replace(/^I:/, ''));
+    
+    // 2025 format: indices.bars:1m:SPX,NDX or options.bars:1m:SPY*,QQQ*
+    const channel = isIndices 
+      ? `indices.bars:${tf}:${cleanSymbols.join(',')}`
+      : `options.bars:${tf}:${cleanSymbols.join(',')}`;
+    
+    console.log(`[MassiveWS] Subscribing to ${endpoint} aggregates:`, channel);
     
     // Ensure connection
-    void this.connectEndpoint('options');
+    void this.connectEndpoint(endpoint);
 
     // Wait for connection and subscribe
     const subscribeWhenReady = () => {
-      const socket = this.sockets.options;
-      if (!socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated.options) {
+      const socket = this.sockets[endpoint];
+      if (!socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated[endpoint]) {
         setTimeout(subscribeWhenReady, 100);
         return;
       }
 
-      const params = topics.join(',');
-      socket.send(JSON.stringify({ action: 'subscribe', params }));
-      console.log(`[MassiveWS] Subscribed to aggregate stream: ${params}`);
+      socket.send(JSON.stringify({ action: 'subscribe', channels: [channel] }));
+      console.log(`[MassiveWS] Subscribed to ${endpoint} aggregate stream`);
       
-      topics.forEach(t => this.subscriptions.options.add(t));
+      this.subscriptions[endpoint].add(channel);
     };
 
     subscribeWhenReady();
@@ -453,8 +488,8 @@ class MassiveWebSocket {
         if (!Array.isArray(messages)) return;
 
         for (const msg of messages) {
-          // Aggregate messages have 'ev' field like 'AM' or 'A'
-          if (msg.ev === prefix && symbols.includes(msg.sym)) {
+          // 2025: Aggregate messages have 'ev' field like 'AM' or 'A'
+          if ((msg.ev === 'AM' || msg.ev === 'A') && cleanSymbols.some(s => msg.sym?.includes(s) || msg.sym === s)) {
             callback({
               type: 'aggregate',
               data: {
@@ -466,6 +501,7 @@ class MassiveWebSocket {
                 volume: msg.v,
                 vwap: msg.vw,
                 timestamp: msg.s, // start timestamp
+                underlying: msg.underlying, // options bars include underlying price
               },
               timestamp: Date.now(),
             });
@@ -476,29 +512,30 @@ class MassiveWebSocket {
       }
     };
 
-    const socket = this.sockets.options;
+    const socket = this.sockets[endpoint];
     if (socket) {
       socket.addEventListener('message', handler);
     }
 
     return () => {
-      const socket = this.sockets.options;
+      const socket = this.sockets[endpoint];
       if (socket) {
         socket.removeEventListener('message', handler);
         if (socket.readyState === WebSocket.OPEN) {
-          const params = topics.join(',');
-          socket.send(JSON.stringify({ action: 'unsubscribe', params }));
-          console.log(`[MassiveWS] Unsubscribed from aggregate stream: ${params}`);
+          socket.send(JSON.stringify({ action: 'unsubscribe', channels: [channel] }));
+          console.log(`[MassiveWS] Unsubscribed from ${endpoint} aggregate stream`);
         }
       }
-      topics.forEach(t => this.subscriptions.options.delete(t));
+      this.subscriptions[endpoint].delete(channel);
     };
   }
 
   subscribeOptionAggregates(optionTickers: string[], callback: SubscriptionCallback, timespan: 'second' | 'minute' = 'minute') {
-    // Paid tier: Subscribe to REAL option aggregate streams
-    const prefix = timespan === 'minute' ? 'AM' : 'A';
-    const topics = optionTickers.map(t => `${prefix}.${t}`);
+    // 2025: options.bars:1m:O:SPY* format
+    const tf = timespan === 'minute' ? '1m' : '1s';
+    const channel = `options.bars:${tf}:${optionTickers.join(',')}`;
+    
+    console.log('[MassiveWS] Subscribing to option aggregates:', channel);
     
     // Ensure connection
     this.connectEndpoint('options');
@@ -511,11 +548,10 @@ class MassiveWebSocket {
         return;
       }
 
-      const params = topics.join(',');
-      socket.send(JSON.stringify({ action: 'subscribe', params }));
-      console.log(`[MassiveWS] Subscribed to option aggregate stream: ${params}`);
+      socket.send(JSON.stringify({ action: 'subscribe', channels: [channel] }));
+      console.log('[MassiveWS] Subscribed to option aggregate stream');
       
-      topics.forEach(t => this.subscriptions.options.add(t));
+      this.subscriptions.options.add(channel);
     };
 
     subscribeWhenReady();
@@ -526,7 +562,7 @@ class MassiveWebSocket {
         if (!Array.isArray(messages)) return;
 
         for (const msg of messages) {
-          if (msg.ev === prefix && optionTickers.includes(msg.sym)) {
+          if ((msg.ev === 'AM' || msg.ev === 'A') && optionTickers.some(t => msg.sym?.includes(t) || msg.sym === t)) {
             callback({
               type: 'aggregate',
               data: {
@@ -538,6 +574,7 @@ class MassiveWebSocket {
                 volume: msg.v,
                 vwap: msg.vw,
                 timestamp: msg.s,
+                underlying: msg.underlying, // 2025: options bars include underlying price!
               },
               timestamp: Date.now(),
             });
@@ -558,22 +595,68 @@ class MassiveWebSocket {
       if (socket) {
         socket.removeEventListener('message', handler);
         if (socket.readyState === WebSocket.OPEN) {
-          const params = topics.join(',');
-          socket.send(JSON.stringify({ action: 'unsubscribe', params }));
-          console.log(`[MassiveWS] Unsubscribed from option aggregate stream: ${params}`);
+          socket.send(JSON.stringify({ action: 'unsubscribe', channels: [channel] }));
+          console.log('[MassiveWS] Unsubscribed from option aggregate stream');
         }
       }
-      topics.forEach(t => this.subscriptions.options.delete(t));
+      this.subscriptions.options.delete(channel);
     };
   }
 
-  getConnectionState(): 'connecting' | 'open' | 'closed' {
-    if (this.isConnecting.options) return 'connecting';
-    const socket = this.sockets.options;
+  getConnectionState(endpoint: WsEndpoint = 'options'): 'connecting' | 'open' | 'closed' {
+    if (this.isConnecting[endpoint]) return 'connecting';
+    const socket = this.sockets[endpoint];
     if (!socket) return 'closed';
-    if (socket.readyState === WebSocket.OPEN) return 'open';
+    if (socket.readyState === WebSocket.OPEN && this.isAuthenticated[endpoint]) return 'open';
     return 'connecting';
+  }
+  
+  isConnected(endpoint: WsEndpoint = 'options'): boolean {
+    return this.getConnectionState(endpoint) === 'open';
   }
 }
 
 export const massiveWS = new MassiveWebSocket();
+
+/**
+ * Subscribe to options data for multiple roots using wildcards (2025 format)
+ * Example: subscribeOptionsForRoots(['SPY','QQQ','NVDA'], callback)
+ */
+export function subscribeOptionsForRoots(roots: string[], callback: SubscriptionCallback) {
+  // Build wildcard patterns: SPY* matches all SPY options
+  const wildcards = roots.map(r => `${r}*`);
+  
+  // Subscribe to multiple feeds at once
+  const channels = [
+    `options.bars:1m,5m,15m,60m:${wildcards.join(',')}`,
+    `options.trades:${wildcards.join(',')}`,
+    `options.quotes:${wildcards.join(',')}`
+  ];
+  
+  console.log('[MassiveWS] Subscribing to options for roots:', roots);
+  
+  massiveWS.connectEndpoint('options');
+  
+  const subscribeWhenReady = () => {
+    const socket = (massiveWS as any).sockets.options;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !(massiveWS as any).isAuthenticated.options) {
+      setTimeout(subscribeWhenReady, 100);
+      return;
+    }
+    
+    socket.send(JSON.stringify({ action: 'subscribe', channels }));
+    console.log('[MassiveWS] Subscribed to options channels');
+    
+    channels.forEach(c => (massiveWS as any).subscriptions.options.add(c));
+  };
+  
+  subscribeWhenReady();
+  
+  return () => {
+    const socket = (massiveWS as any).sockets.options;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ action: 'unsubscribe', channels }));
+    }
+    channels.forEach(c => (massiveWS as any).subscriptions.options.delete(c));
+  };
+}
