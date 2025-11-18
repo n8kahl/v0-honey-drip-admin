@@ -1,6 +1,7 @@
 # TP/SL Fixes - Implementation Complete ✅
 
 ## Summary
+
 All TP/SL (Take Profit / Stop Loss) calculation issues have been fixed and verified with comprehensive tests.
 
 **Test Results**: ✅ **12/12 tests passing**
@@ -8,6 +9,7 @@ All TP/SL (Take Profit / Stop Loss) calculation issues have been fixed and verif
 ## Problems Fixed
 
 ### 1. ✅ Wrong Price Scale (CRITICAL - FIXED)
+
 **Problem**: Calculator was returning underlying stock prices (~$100) instead of option premiums (~$5-7), making TP/SL levels invisible on option charts.
 
 **Root Cause**: The `mapUnderlyingMoveToOptionPremium()` helper calculated premium values but they were only stored in separate fields (`targetPremium`, `stopLossPremium`). The main `targetPrice` and `stopLoss` fields contained underlying prices.
@@ -22,8 +24,8 @@ const riskRewardRatio = riskAmount > 0 ? rewardAmount / riskAmount : 0;
 
 // Return option premium prices for TP/SL (not underlying prices)
 return {
-  targetPrice: targetPremium,  // ← Now uses premium instead of underlying
-  stopLoss: stopLossPremium,   // ← Now uses premium instead of underlying
+  targetPrice: targetPremium, // ← Now uses premium instead of underlying
+  stopLoss: stopLossPremium, // ← Now uses premium instead of underlying
   targetPrice2: targetPremium2,
   // ... rest
 };
@@ -34,11 +36,13 @@ return {
 ---
 
 ### 2. ✅ No Recalculation at Entry (FIXED)
+
 **Problem**: When entering a trade at a different price than `contract.mid`, TP/SL were not recalculated with the actual fill price.
 
 **Location**: `src/hooks/useTradeStateMachine.ts`, `handleEnterTrade()` function (line 330)
 
 **Previous Code** (used simple multipliers):
+
 ```typescript
 const targetPrice = currentTrade.targetPrice || finalEntryPrice * 2;
 const stopLoss = currentTrade.stopLoss || finalEntryPrice * 0.5;
@@ -55,32 +59,34 @@ let stopLoss = finalEntryPrice * 0.5;
 
 try {
   const tradeType = inferTradeTypeByDTE(
-    currentTrade.contract.expiry, 
-    new Date(), 
+    currentTrade.contract.expiry,
+    new Date(),
     DEFAULT_DTE_THRESHOLDS
   );
-  
+
   const risk = calculateRisk({
     entryPrice: finalEntryPrice,
     currentUnderlyingPrice: finalEntryPrice,
     currentOptionMid: finalEntryPrice,
-    keyLevels: { /* ... */ },
+    keyLevels: {
+      /* ... */
+    },
     expirationISO: currentTrade.contract.expiry,
     tradeType,
     delta: currentTrade.contract.delta ?? 0.5,
     gamma: currentTrade.contract.gamma ?? 0,
-    defaults: { 
-      mode: 'percent', 
-      tpPercent: 50, 
-      slPercent: 50, 
-      dteThresholds: DEFAULT_DTE_THRESHOLDS 
+    defaults: {
+      mode: "percent",
+      tpPercent: 50,
+      slPercent: 50,
+      dteThresholds: DEFAULT_DTE_THRESHOLDS,
     },
   });
-  
+
   if (risk.targetPrice) targetPrice = risk.targetPrice;
   if (risk.stopLoss) stopLoss = risk.stopLoss;
 } catch (error) {
-  console.warn('[v0] TP/SL recalculation failed, using fallback:', error);
+  console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
 }
 ```
 
@@ -89,6 +95,7 @@ try {
 ---
 
 ### 3. ✅ Duplicate Logic Removed (FIXED)
+
 **Problem**: `DesktopLiveCockpit.tsx` had 200+ lines of duplicate and corrupted TP/SL calculation logic that conflicted with `useTradeStateMachine` hook.
 
 **Location**: `src/components/DesktopLiveCockpit.tsx`, lines 146-350 (removed)
@@ -107,6 +114,7 @@ const handleContractSelect = (contract: Contract) => {
 ```
 
 **Benefits**:
+
 - Single source of truth for TP/SL calculations
 - Eliminates inconsistencies
 - Reduces code duplication by ~200 lines
@@ -115,30 +123,34 @@ const handleContractSelect = (contract: Contract) => {
 ---
 
 ### 4. ✅ DTE Threshold Alignment (FIXED)
+
 **Problem**: DTE thresholds were misaligned causing incorrect trade type inference (e.g., 1 day expiry was classified as SCALP instead of DAY).
 
 **Location**: `src/lib/riskEngine/profiles.ts`, lines 24-29
 
 **Previous Thresholds**:
+
 ```typescript
 export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
-  scalp: 2,  // 0-2 DTE = SCALP
-  day: 14,   // 3-14 DTE = DAY
+  scalp: 2, // 0-2 DTE = SCALP
+  day: 14, // 3-14 DTE = DAY
   swing: 60, // 15-60 DTE = SWING
 };
 ```
 
 **New Thresholds**:
+
 ```typescript
 export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
-  scalp: 0,  // 0 DTE only (same day expiry)
-  day: 4,    // 1-4 DTE = DAY
+  scalp: 0, // 0 DTE only (same day expiry)
+  day: 4, // 1-4 DTE = DAY
   swing: 29, // 5-29 DTE = SWING
   // >= 30 DTE = LEAP
 };
 ```
 
 **Rationale**:
+
 - **SCALP** (0 DTE): Same-day expiry only, requires fastest execution
 - **DAY** (1-4 DTE): Short-term directional plays
 - **SWING** (5-29 DTE): Multi-day to multi-week holds
@@ -155,21 +167,25 @@ export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
 **All 12 tests passing:**
 
 #### LOADED State - Contract Selection (4 tests)
+
 - ✅ Scalp trade (0 DTE): TP/SL calculated correctly
-- ✅ Day trade (1 DTE): TP/SL calculated correctly  
+- ✅ Day trade (1 DTE): TP/SL calculated correctly
 - ✅ Swing trade (10 DTE): TP/SL calculated correctly
 - ✅ LEAP (60 DTE): TP/SL calculated correctly
 
 #### ENTERED State - Recalculation (2 tests)
+
 - ✅ Recalculates TP/SL when entering at different price
 - ✅ Preserves TP/SL when entering at contract mid
 
 #### Chart Levels Generation (3 tests)
+
 - ✅ Generates chart levels with TP and SL
 - ✅ Includes Entry level for ENTERED trades
 - ✅ Generates key levels (VWAP, ORB, etc.)
 
 #### Edge Cases (3 tests)
+
 - ✅ Handles missing keyLevels gracefully
 - ✅ Handles missing ATR gracefully
 - ✅ Falls back to percent mode when needed
@@ -179,19 +195,23 @@ export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
 ## Files Modified
 
 1. **`src/lib/riskEngine/calculator.ts`**
+
    - Changed return values to use `targetPremium` and `stopLossPremium`
    - Fixed risk/reward calculation to use option premiums
    - ~5 lines changed
 
 2. **`src/lib/riskEngine/profiles.ts`**
+
    - Updated `DEFAULT_DTE_THRESHOLDS`
    - ~3 lines changed
 
 3. **`src/hooks/useTradeStateMachine.ts`**
+
    - Added full recalculation in `handleEnterTrade()`
    - ~35 lines added
 
 4. **`src/components/DesktopLiveCockpit.tsx`**
+
    - Removed 200+ lines of duplicate logic
    - Simplified to delegate to `actions.handleContractSelect()`
    - ~200 lines removed, ~5 lines added
@@ -218,6 +238,7 @@ export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
 ## Expected Behavior Now
 
 ### When Selecting a Contract (LOADED State):
+
 1. User clicks on an option contract in the chain
 2. `handleContractSelect()` is called
 3. Trade type inferred from DTE (SCALP/DAY/SWING/LEAP)
@@ -227,6 +248,7 @@ export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
 7. Chart shows horizontal lines at correct premium levels
 
 ### When Entering a Trade (ENTERED State):
+
 1. User enters position (possibly at different price than mid)
 2. `handleEnterTrade()` called with actual fill price
 3. TP/SL **recalculated** with new entry price
@@ -235,6 +257,7 @@ export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
 6. Chart updates with new entry, TP, and SL lines
 
 ### Chart Display:
+
 - **Entry Level**: Green dashed line at entry premium
 - **TP Level**: Green solid line at target premium
 - **SL Level**: Red solid line at stop premium
@@ -271,6 +294,7 @@ While the core TP/SL functionality is now complete, these could be future improv
 ✅ **Ready for production use**
 
 The TP/SL calculation system now correctly:
+
 - Returns option premium scaled values (not underlying prices)
 - Recalculates on trade entry with actual fill price
 - Has single source of truth (no duplicates)

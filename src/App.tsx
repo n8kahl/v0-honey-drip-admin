@@ -5,6 +5,7 @@ import { DesktopSettings } from './components/DesktopSettings';
 import { MobileActive } from './components/MobileActive';
 import { VoiceCommandDemo } from './components/VoiceCommandDemo';
 import { HDHeader } from './components/hd/HDHeader';
+import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { HDDialogDiscordSettings } from './components/hd/HDDialogDiscordSettings';
 import { HDDialogAddTicker } from './components/hd/HDDialogAddTicker';
@@ -89,35 +90,35 @@ export default function App() {
     loadUserData();
   }, [user, isTestAuto, loadDiscordChannels, loadChallenges, loadWatchlist, loadTrades]);
 
-  // Simulate real-time price updates for entered trades
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const enteredTrades = activeTrades.filter((t) => t.state === 'ENTERED');
-      if (enteredTrades.length === 0) return;
-      
-      enteredTrades.forEach((trade) => {
-        if (!trade.currentPrice || !trade.entryPrice) return;
-        
-        const priceChange = (Math.random() - 0.5) * 0.04;
-        const newCurrentPrice = trade.currentPrice * (1 + priceChange);
-        const newMovePercent = ((newCurrentPrice - trade.entryPrice) / trade.entryPrice) * 100;
-        
-        // Update trade in store
-        useTradeStore.getState().updateTrade(trade.id, {
-          currentPrice: newCurrentPrice,
-          movePercent: newMovePercent,
-        });
-        
-        // Mark as updated for flash effect
-        useTradeStore.getState().markTradeAsUpdated(trade.id);
-      });
-      
-      // Clear flash after brief moment
-      setTimeout(() => useTradeStore.getState().clearUpdatedFlags(), 300);
-    }, 2000);
-    
-    return () => clearInterval(interval);
-  }, [activeTrades]);
+  // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     const enteredTrades = activeTrades.filter((t) => t.state === 'ENTERED');
+  //     if (enteredTrades.length === 0) return;
+  //     
+  //     enteredTrades.forEach((trade) => {
+  //       if (!trade.currentPrice || !trade.entryPrice) return;
+  //       
+  //       const priceChange = (Math.random() - 0.5) * 0.04;
+  //       const newCurrentPrice = trade.currentPrice * (1 + priceChange);
+  //       const newMovePercent = ((newCurrentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+  //       
+  //       // Update trade in store
+  //       useTradeStore.getState().updateTrade(trade.id, {
+  //         currentPrice: newCurrentPrice,
+  //         movePercent: newMovePercent,
+  //       });
+  //       
+  //       // Mark as updated for flash effect
+  //       useTradeStore.getState().markTradeAsUpdated(trade.id);
+  //     });
+  //     
+  //     // Clear flash after brief moment
+  //     setTimeout(() => useTradeStore.getState().clearUpdatedFlags(), 300);
+  //   }, 2000);
+  //   
+  //   return () => clearInterval(interval);
+  // }, [activeTrades]);
 
   if (loading) {
     return (
@@ -144,6 +145,8 @@ export default function App() {
         onSettingsClick={() => setActiveTab('settings')}
         onMicClick={toggleVoice}
       />
+      
+      <LiveStatusBar />
 
       <nav className="hidden lg:flex gap-4 lg:gap-6 px-4 lg:px-6 py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
         <TabButton

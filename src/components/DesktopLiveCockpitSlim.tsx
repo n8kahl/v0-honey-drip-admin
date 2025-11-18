@@ -6,7 +6,7 @@ import { HDDialogChallengeDetail } from './hd/HDDialogChallengeDetail';
 import { HDMacroPanel } from './hd/HDMacroPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
-import { useConfluenceData } from '../hooks/useConfluenceData';
+
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { cn } from '../lib/utils';
 import { streamingManager } from '../lib/massive/streaming-manager';
@@ -82,8 +82,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onMobileTabChange,
     confluence: undefined,
   });
-
-  const confluence = useConfluenceData(currentTrade, tradeState);
 
   // Fetch options chain when activeTicker changes
   const { contracts: streamingContracts, loading: optionsLoading, error: optionsError, isStale: optionsStale, asOf: optionsAsOf } = useStreamingOptionsChain(activeTicker?.symbol || '');
@@ -190,10 +188,10 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               currentTrade={currentTrade}
               tradeState={tradeState}
               showAlert={showAlert}
-              confluence={confluence}
+              confluence={undefined}
               alertType={alertType}
               onContractSelect={(contract, confluenceData) => 
-                actions.handleContractSelect(contract, confluenceData || confluence)
+                actions.handleContractSelect(contract, confluenceData)
               }
               onEnterTrade={actions.handleEnterTrade}
               onDiscard={actions.handleDiscard}
@@ -240,7 +238,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           ticker={activeTicker?.symbol}
           state={tradeState}
           hideWhenAlert={showAlert}
-          confluence={!showAlert && tradeState === 'ENTERED' ? confluence : undefined}
+          confluence={undefined}
           onEnter={actions.handleEnterTrade}
           onDiscard={actions.handleDiscard}
           onAction={(type) => {

@@ -4,6 +4,12 @@ import { Trade } from '../types';
 
 type AppTab = 'live' | 'active' | 'history' | 'settings';
 type VoiceState = 'idle' | 'listening' | 'processing';
+type ChartViewportMode = 'AUTO' | 'MANUAL';
+
+interface LogicalRange {
+  from: number;
+  to: number;
+}
 
 interface UIStore {
   // State
@@ -16,8 +22,18 @@ interface UIStore {
   focusedTrade: Trade | null;
   flashTradeTab: boolean;
   
+  // Chart viewport management
+  chartViewportMode: ChartViewportMode;
+  savedRanges: Record<string, LogicalRange>; // key: "symbol:timeframe"
+  
+  // Chart navigation callbacks
+  chartScrollToBar: ((barTimeKey: string) => void) | null;
+  
   // Actions
   setActiveTab: (tab: AppTab) => void;
+  registerChartScrollCallback: (callback: (barTimeKey: string) => void) => void;
+  unregisterChartScrollCallback: () => void;
+  scrollChartToBar: (barTimeKey: string) => void;
   setShowDiscordDialog: (show: boolean) => void;
   setShowAddTickerDialog: (show: boolean) => void;
   setShowAddChallengeDialog: (show: boolean) => void;
@@ -43,6 +59,12 @@ interface UIStore {
   navigateToSettings: () => void;
   focusTradeInLive: (trade: Trade) => void;
   
+  // Chart viewport management
+  setChartViewportMode: (mode: ChartViewportMode) => void;
+  saveChartRange: (key: string, range: LogicalRange) => void;
+  getChartRange: (key: string) => LogicalRange | undefined;
+  clearChartRange: (key: string) => void;
+  
   // Reset
   reset: () => void;
 }
@@ -59,9 +81,23 @@ export const useUIStore = create<UIStore>()(
       voiceState: 'idle',
       focusedTrade: null,
       flashTradeTab: false,
+      chartViewportMode: 'AUTO',
+      savedRanges: {},
+      chartScrollToBar: null,
 
       // Simple setters
       setActiveTab: (tab) => set({ activeTab: tab }),
+      registerChartScrollCallback: (callback) => set({ chartScrollToBar: callback }),
+      unregisterChartScrollCallback: () => set({ chartScrollToBar: null }),
+      scrollChartToBar: (barTimeKey) => {
+        const { chartScrollToBar } = get();
+        if (chartScrollToBar) {
+          console.log('[v0] uiStore: Scrolling chart to bar:', barTimeKey);
+          chartScrollToBar(barTimeKey);
+        } else {
+          console.warn('[v0] uiStore: No chart scroll callback registered');
+        }
+      },
       setShowDiscordDialog: (show) => set({ showDiscordDialog: show }),
       setShowAddTickerDialog: (show) => set({ showAddTickerDialog: show }),
       setShowAddChallengeDialog: (show) => set({ showAddChallengeDialog: show }),
@@ -114,6 +150,22 @@ export const useUIStore = create<UIStore>()(
         // Clear focus after a brief moment to allow component to react
         setTimeout(() => set({ focusedTrade: null }), 100);
       },
+      
+      // Chart viewport management
+      setChartViewportMode: (mode) => set({ chartViewportMode: mode }),
+      
+      saveChartRange: (key, range) =>
+        set((state) => ({
+          savedRanges: { ...state.savedRanges, [key]: range },
+        })),
+      
+      getChartRange: (key) => get().savedRanges[key],
+      
+      clearChartRange: (key) => {
+        const { savedRanges } = get();
+        const { [key]: _, ...rest } = savedRanges;
+        set({ savedRanges: rest });
+      },
 
       // Reset
       reset: () =>
@@ -126,6 +178,8 @@ export const useUIStore = create<UIStore>()(
           voiceState: 'idle',
           focusedTrade: null,
           flashTradeTab: false,
+          chartViewportMode: 'AUTO',
+          savedRanges: {},
         }),
     }),
     { name: 'UIStore' }

@@ -96,6 +96,7 @@ export interface StrategyDefinition {
   owner: string;
   name: string;
   slug: string;
+  shortName?: string; // Short display name for badges (e.g., ORB, VWR, EMA)
   description?: string;
   category: StrategyCategory;
   underlyingScope: UnderlyingScope;
@@ -135,6 +136,7 @@ interface StrategyDefinitionRow {
   owner: string;
   name: string;
   slug: string;
+  short_name: string | null;
   description: string | null;
   category: string;
   underlying_scope: string;
@@ -172,6 +174,7 @@ export function mapStrategyDefinitionRow(row: StrategyDefinitionRow): StrategyDe
     owner: row.owner,
     name: row.name,
     slug: row.slug,
+    shortName: row.short_name || undefined,
     description: row.description || undefined,
     category: row.category as StrategyCategory,
     underlyingScope: row.underlying_scope as UnderlyingScope,

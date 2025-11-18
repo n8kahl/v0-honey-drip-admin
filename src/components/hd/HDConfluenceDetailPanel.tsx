@@ -1,18 +1,9 @@
 import { cn } from '../../lib/utils';
-import {
-  MassiveTrendMetrics,
-  MassiveVolatilityMetrics,
-  MassiveLiquidityMetrics,
-} from '../../services/massiveClient';
+import { useMarketDataStore } from '../../stores/marketDataStore';
 
 interface HDConfluenceDetailPanelProps {
   ticker: string;
   direction: 'call' | 'put';
-  loading?: boolean;
-  error?: string;
-  trend?: MassiveTrendMetrics;
-  volatility?: MassiveVolatilityMetrics;
-  liquidity?: MassiveLiquidityMetrics;
   className?: string;
   compact?: boolean; // Compact mode for active trades
   tpProgress?: number; // TP proximity (0-1) for coaching context
@@ -22,23 +13,39 @@ interface HDConfluenceDetailPanelProps {
 export function HDConfluenceDetailPanel({
   ticker,
   direction,
-  loading,
-  error,
-  trend,
-  volatility,
-  liquidity,
   className,
   compact = false,
   tpProgress,
   isPositive,
 }: HDConfluenceDetailPanelProps) {
-  // Use real data if available, otherwise fall back to neutral values
-  const trendScore = trend?.trendScore ?? 50;
-  const volPercentile = volatility?.ivPercentile ?? 50;
-  const liqScore = liquidity?.liquidityScore ?? 50;
-  const volume = liquidity?.volume ?? 0;
-  const openInterest = liquidity?.openInterest ?? 0;
-  const spreadPct = liquidity?.spreadPct ?? 0;
+  // Get confluence data from marketDataStore
+  const confluence = useMarketDataStore((state) => state.symbols[ticker]?.confluence);
+  const isStale = useMarketDataStore((state) => {
+    const lastUpdated = state.symbols[ticker]?.lastUpdated;
+    if (!lastUpdated) return true;
+    return Date.now() - lastUpdated > 10000; // 10s stale threshold
+  });
+  
+  const loading = !confluence;
+  const error = isStale ? 'Data stale' : undefined;
+  
+  // Map marketDataStore's ConfluenceScore to UI display values
+  const trendScore = confluence?.trend ?? 50;
+  const volPercentile = confluence?.volatility ?? 50;
+  const liqScore = confluence?.volume ?? 50; // Using volume as liquidity proxy
+  const volume = 0; // Raw volume not available in ConfluenceScore
+  const openInterest = 0; // Not available in ConfluenceScore
+  const spreadPct = 0; // Not available in ConfluenceScore
+  
+  // Generate trend description from ConfluenceScore
+  const trend = confluence ? {
+    trendScore: confluence.trend,
+    description: `Multi-timeframe trend: ${confluence.trend.toFixed(0)}% strength. ${
+      confluence.trend >= 70 ? 'Strong alignment across timeframes.' :
+      confluence.trend >= 40 ? 'Mixed signals across timeframes.' :
+      'Weak trend alignment.'
+    }`
+  } : undefined;
   
   // Trend chip logic
   const getTrendLabel = () => {

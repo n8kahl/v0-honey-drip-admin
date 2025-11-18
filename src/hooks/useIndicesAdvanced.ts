@@ -124,15 +124,16 @@ async function refreshMacroContext() {
   }
 }
 
+// CENTRALIZED - REMOVE: Global refresh replaced by marketDataStore indices subscriptions
 function startGlobalRefresh() {
   if (globalRefreshInterval) return; // Already running
   
-  console.log('[useMacroContext] Starting global 30s refresh interval');
-  globalRefreshInterval = setInterval(() => {
-    refreshMacroContext().catch(err => {
-      console.error('[useMacroContext] Global refresh failed:', err);
-    });
-  }, 30000);
+  console.log('[useMacroContext] DEPRECATED: Global 30s refresh interval (use marketDataStore)');
+  // globalRefreshInterval = setInterval(() => {
+  //   refreshMacroContext().catch(err => {
+  //     console.error('[useMacroContext] Global refresh failed:', err);
+  //   });
+  // }, 30000);
 }
 
 function stopGlobalRefresh() {
@@ -181,20 +182,20 @@ export function useMacroContext(refreshInterval: number = 30000): {
     // Start global interval if this is the first subscriber
     startGlobalRefresh();
 
-    // Poll for changes to shared state
-    const pollInterval = setInterval(() => {
-      if (sharedMacroContext !== macro) {
-        setMacro(sharedMacroContext);
-      }
-      if (sharedMacroError !== error) {
-        setError(sharedMacroError);
-      }
-    }, 1000); // Check every second for updates
+    // CENTRALIZED - REMOVE: Local polling for shared state replaced by marketDataStore
+    // const pollInterval = setInterval(() => {
+    //   if (sharedMacroContext !== macro) {
+    //     setMacro(sharedMacroContext);
+    //   }
+    //   if (sharedMacroError !== error) {
+    //     setError(sharedMacroError);
+    //   }
+    // }, 1000); // Check every second for updates
 
     return () => {
       subscriberCount--;
       console.log(`[useMacroContext] Subscriber count: ${subscriberCount}`);
-      clearInterval(pollInterval);
+      // clearInterval(pollInterval);
       
       // Stop global interval if no more subscribers
       if (subscriberCount === 0) {

@@ -106,11 +106,12 @@ export function useRiskEngine({
 
     fetchData();
     
-    const interval = setInterval(fetchData, 60000);
+    // CENTRALIZED - REMOVE: 60s polling replaced by on-demand calculations from marketDataStore
+    // const interval = setInterval(fetchData, 60000);
     
     return () => {
       mounted = false;
-      clearInterval(interval);
+      // clearInterval(interval);
     };
   }, [enabled, ticker, entryPrice, expirationISO, delta, gamma, vega, theta, massiveClient]);
 

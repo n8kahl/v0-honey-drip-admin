@@ -147,6 +147,9 @@ importers:
       helmet:
         specifier: ^8.1.0
         version: 8.1.0
+      immer:
+        specifier: ^10.2.0
+        version: 10.2.0
       input-otp:
         specifier: 1.4.2
         version: 1.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -242,7 +245,7 @@ importers:
         version: 2.8.1
       zustand:
         specifier: ^4.5.0
-        version: 4.5.7(@types/react@18.3.12)(react@18.3.1)
+        version: 4.5.7(@types/react@18.3.12)(immer@10.2.0)(react@18.3.1)
     devDependencies:
       '@playwright/test':
         specifier: ^1.56.1
@@ -3169,6 +3172,9 @@ packages:
 
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
+
+  immer@10.2.0:
+    resolution: {integrity: sha512-d/+XTN3zfODyjr89gM3mPq1WNX2B8pYsu7eORitdwyA2sBubnTl3laYlBk4sXY5FUa5qTZGBDPJICVbvqzjlbw==}
 
   immutable@5.1.4:
     resolution: {integrity: sha512-p6u1bG3YSnINT5RQmx/yRZBpenIl30kVxkTLDyHLIMk0gict704Q9n+thfDI7lTRm9vXdDYutVzXhzcThxTnXA==}
@@ -7547,6 +7553,8 @@ snapshots:
 
   immediate@3.0.6: {}
 
+  immer@10.2.0: {}
+
   immutable@5.1.4: {}
 
   import-meta-resolve@4.2.0: {}
@@ -9108,9 +9116,10 @@ snapshots:
       compress-commons: 6.0.2
       readable-stream: 4.7.0
 
-  zustand@4.5.7(@types/react@18.3.12)(react@18.3.1):
+  zustand@4.5.7(@types/react@18.3.12)(immer@10.2.0)(react@18.3.1):
     dependencies:
       use-sync-external-store: 1.6.0(react@18.3.1)
     optionalDependencies:
       '@types/react': 18.3.12
+      immer: 10.2.0
       react: 18.3.1

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { getIndexBars, getOptionBars, getStockBars } from '../../lib/massive/proxy';
+import { getIndexBars, getOptionBars, getStockBars, MassiveError } from '../../lib/massive/proxy';
+import { calculateEMA } from '../../lib/indicators';
 
 interface HDMicroChartProps {
   ticker: string;
@@ -58,8 +59,10 @@ async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
     const timestamp = new Date(bar.t);
     const time = timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     const closes = results.slice(Math.max(0, index - 20), index + 1).map((b: any) => b.c);
-    const ema9 = calculateEMA(closes.slice(-9), 9);
-    const ema21 = calculateEMA(closes, 21);
+    const ema9Array = calculateEMA(closes.slice(-9), 9);
+    const ema21Array = calculateEMA(closes, 21);
+    const ema9 = ema9Array.length > 0 ? ema9Array[ema9Array.length - 1] : bar.c;
+    const ema21 = ema21Array.length > 0 ? ema21Array[ema21Array.length - 1] : bar.c;
 
     return {
       time,
@@ -74,23 +77,24 @@ async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
   });
 }
 
+// CENTRALIZED - REMOVE: Duplicate EMA calculation, use src/lib/indicators.ts instead
 // Helper function to calculate simple EMA
-function calculateEMA(prices: number[], period: number): number {
-  if (prices.length === 0) return 0;
-  if (prices.length < period) {
-    // Use simple average if not enough data
-    return prices.reduce((sum, price) => sum + price, 0) / prices.length;
-  }
-  
-  const multiplier = 2 / (period + 1);
-  let ema = prices[0];
-  
-  for (let i = 1; i < prices.length; i++) {
-    ema = (prices[i] - ema) * multiplier + ema;
-  }
-  
-  return ema;
-}
+// function calculateEMA(prices: number[], period: number): number {
+//   if (prices.length === 0) return 0;
+//   if (prices.length < period) {
+//     // Use simple average if not enough data
+//     return prices.reduce((sum, price) => sum + price, 0) / prices.length;
+//   }
+//   
+//   const multiplier = 2 / (period + 1);
+//   let ema = prices[0];
+//   
+//   for (let i = 1; i < prices.length; i++) {
+//     ema = (prices[i] - ema) * multiplier + ema;
+//   }
+//   
+//   return ema;
+// }
 
 export function HDMicroChart({ 
   ticker, 
@@ -160,8 +164,10 @@ export function HDMicroChart({
               const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
               
               const recentPrices = [...prevData.slice(-20).map(d => d.price), newPrice];
-              const ema9 = calculateEMA(recentPrices.slice(-9), 9);
-              const ema21 = calculateEMA(recentPrices, 21);
+              const ema9Array = calculateEMA(recentPrices.slice(-9), 9);
+              const ema21Array = calculateEMA(recentPrices, 21);
+              const ema9 = ema9Array.length > 0 ? ema9Array[ema9Array.length - 1] : newPrice;
+              const ema21 = ema21Array.length > 0 ? ema21Array[ema21Array.length - 1] : newPrice;
               
               const newPoint: ChartDataPoint = {
                 time,
@@ -190,8 +196,10 @@ export function HDMicroChart({
               const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
               
               const recentPrices = [...prevData.slice(-20).map(d => d.price), newPrice];
-              const ema9 = calculateEMA(recentPrices.slice(-9), 9);
-              const ema21 = calculateEMA(recentPrices, 21);
+              const ema9Array = calculateEMA(recentPrices.slice(-9), 9);
+              const ema21Array = calculateEMA(recentPrices, 21);
+              const ema9 = ema9Array.length > 0 ? ema9Array[ema9Array.length - 1] : newPrice;
+              const ema21 = ema21Array.length > 0 ? ema21Array[ema21Array.length - 1] : newPrice;
               
               const newPoint: ChartDataPoint = {
                 time,

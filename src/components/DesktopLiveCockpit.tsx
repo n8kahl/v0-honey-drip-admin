@@ -9,7 +9,7 @@ import { HDDialogChallengeDetail } from './hd/HDDialogChallengeDetail';
 import { HDMacroPanel } from './hd/HDMacroPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
-import { useConfluenceData } from '../hooks/useConfluenceData';
+
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { cn } from '../lib/utils';
 import { streamingManager } from '../lib/massive/streaming-manager';
@@ -79,8 +79,6 @@ export function DesktopLiveCockpit(props: DesktopLiveCockpitProps) {
     onMobileTabChange,
     confluence: undefined,
   });
-
-  const confluence = useConfluenceData(currentTrade, tradeState);
   
   // Fetch key technical levels (ORB, VWAP, Bollinger, pivots) from historical bars
   const { keyLevels, loading: keyLevelsLoading } = useKeyLevels(

@@ -1,45 +1,41 @@
-import { Trade } from '../../types';
 import { HDChip } from './HDChip';
-import { formatPrice, cn } from '../../lib/utils';
-import {
-  MassiveTrendMetrics,
-  MassiveVolatilityMetrics,
-  MassiveLiquidityMetrics,
-} from '../../services/massiveClient';
+import { cn } from '../../lib/utils';
+import { useMarketDataStore } from '../../stores/marketDataStore';
 
 interface HDConfluencePanelProps {
   ticker: string;
   tradeState: 'LOADED' | 'ENTERED' | 'EXITED';
   direction: 'call' | 'put';
-  loading?: boolean;
-  error?: string;
-  trend?: MassiveTrendMetrics;
-  volatility?: MassiveVolatilityMetrics;
-  liquidity?: MassiveLiquidityMetrics;
 }
 
 export function HDConfluencePanel({
   ticker,
   tradeState,
   direction,
-  loading,
-  error,
-  trend,
-  volatility,
-  liquidity,
 }: HDConfluencePanelProps) {
-  // Use real data if available, otherwise fall back to neutral values
-  const trendScore = trend?.trendScore ?? 50;
-  const trendDescription = trend?.description ?? 'Loading...';
+  // Get confluence data from marketDataStore
+  const confluence = useMarketDataStore((state) => state.symbols[ticker]?.confluence);
+  const isStale = useMarketDataStore((state) => {
+    const lastUpdated = state.symbols[ticker]?.lastUpdated;
+    if (!lastUpdated) return true;
+    return Date.now() - lastUpdated > 10000; // 10s stale threshold
+  });
   
-  const volPercentile = volatility?.ivPercentile ?? 50;
-  const volDescription = volatility?.description ?? 'Loading...';
+  const loading = !confluence;
+  const error = isStale ? 'Data stale' : undefined;
   
-  const liqScore = liquidity?.liquidityScore ?? 50;
-  const liqDescription = liquidity?.description ?? 'Loading...';
-  const spreadPct = liquidity?.spreadPct ?? 0;
-  const volume = liquidity?.volume ?? 0;
-  const openInterest = liquidity?.openInterest ?? 0;
+  // Map marketDataStore's ConfluenceScore to UI display values
+  const trendScore = confluence?.trend ?? 50;
+  const trendDescription = confluence ? `${confluence.trend.toFixed(0)}% trend strength` : 'Loading...';
+  
+  const volPercentile = confluence?.volatility ?? 50;
+  const volDescription = confluence ? `${confluence.volatility.toFixed(0)}% volatility` : 'Loading...';
+  
+  const liqScore = confluence?.volume ?? 50; // Using volume as liquidity proxy
+  const liqDescription = confluence ? `${confluence.volume.toFixed(0)}% volume` : 'Loading...';
+  const spreadPct = 0; // Not available in ConfluenceScore
+  const volume = 0; // Raw volume not available
+  const openInterest = 0; // Not available in ConfluenceScore
   
   // Trend chip logic
   const getTrendLabel = () => {

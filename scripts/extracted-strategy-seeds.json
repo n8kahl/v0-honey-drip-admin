@@ -2,6 +2,7 @@
   {
     "name": "Opening Range Breakout + Patient Candle (Long)",
     "slug": "orb-pc-long",
+    "shortName": "ORB",
     "description": "Detects bullish breakout above 15-minute opening range with patient candle confirmation. Requires 5-60 minutes after open, volume above average, and at least 3 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -52,6 +53,7 @@
   {
     "name": "Opening Range Breakdown + Patient Candle (Short)",
     "slug": "orb-pc-short",
+    "shortName": "ORB",
     "description": "Detects bearish breakdown below 15-minute opening range with patient candle confirmation. Requires 5-60 minutes after open, volume above average, and at least 3 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -102,6 +104,7 @@
   {
     "name": "EMA Bounce (Long)",
     "slug": "ema-bounce-long",
+    "shortName": "EMA",
     "description": "Detects bullish EMA21 bounce: previous bar wicked into EMA21, current bar closes above, with 60m bullish trend alignment. Patient candle preferred.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -144,6 +147,7 @@
   {
     "name": "EMA Rejection (Short)",
     "slug": "ema-rejection-short",
+    "shortName": "EMA",
     "description": "Detects bearish EMA21 rejection: previous bar wicked into EMA21, current bar closes below, with 60m bearish trend alignment. Patient candle preferred.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -186,6 +190,7 @@
   {
     "name": "VWAP Reclaim (Long)",
     "slug": "vwap-reclaim-long",
+    "shortName": "VWR",
     "description": "Detects bullish VWAP reclaim: price crosses above VWAP and stays within 0.3% distance. Requires at least 2 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -224,6 +229,7 @@
   {
     "name": "VWAP Rejection (Short)",
     "slug": "vwap-rejection-short",
+    "shortName": "VWR",
     "description": "Detects bearish VWAP rejection: price crosses below VWAP and stays within 0.3% distance. Requires at least 2 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -262,6 +268,7 @@
   {
     "name": "EMA Cloud Strategy (Long)",
     "slug": "cloud-strategy-long",
+    "shortName": "CLD",
     "description": "Detects bullish EMA cloud: price above both EMA9 and EMA21, with EMA9 > EMA21 (cloud stacked bullish). Requires at least 3 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -304,6 +311,7 @@
   {
     "name": "EMA Cloud Strategy (Short)",
     "slug": "cloud-strategy-short",
+    "shortName": "CLD",
     "description": "Detects bearish EMA cloud: price below both EMA9 and EMA21, with EMA9 < EMA21 (cloud stacked bearish). Requires at least 3 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
@@ -346,6 +354,7 @@
   {
     "name": "Fibonacci Pullback (Long)",
     "slug": "fib-pullback-long",
+    "shortName": "FIB",
     "description": "Detects bullish Fibonacci pullback: price retraces to 50% or 61.8% Fib level of recent swing, then resumes. Requires at least 2 confluence factors.",
     "category": "OPTIONS_DAY_TRADE",
     "underlyingScope": "ANY",
