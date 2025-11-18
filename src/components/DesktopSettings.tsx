@@ -6,6 +6,8 @@ import { Settings, Mic, MicOff, Activity, Info, User } from 'lucide-react';
 import { MobileWatermark } from './MobileWatermark';
 import { useAuth } from '../contexts/AuthContext';
 import { createBrowserClient } from '@supabase/ssr';
+import { StrategyLibraryAdmin } from './StrategyLibraryAdmin';
+import { useTPSettings, saveTPSettings } from '../hooks/useTPSettings';
 
 interface DesktopSettingsProps {
   onOpenDiscordSettings?: () => void;
@@ -25,6 +27,9 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
   const [discordWebhook, setDiscordWebhook] = useState('');
   const [defaultChannel, setDefaultChannel] = useState('alerts');
   const [tpStrategy, setTpStrategy] = useState('percent');
+  const { tpNearThreshold, autoOpenTrim } = useTPSettings();
+  const [tpNearPct, setTpNearPct] = useState(Math.round((tpNearThreshold ?? 0.85) * 100));
+  const [tpAutoOpenTrim, setTpAutoOpenTrim] = useState(!!autoOpenTrim);
   const [slStrategy, setSlStrategy] = useState('atr');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
@@ -138,6 +143,13 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
   };
   
   const handleSave = () => {
+    // Persist TP settings
+    if (user?.id) {
+      saveTPSettings(user.id, {
+        tpNearThreshold: Math.min(Math.max(tpNearPct / 100, 0.5), 0.99),
+        autoOpenTrim: tpAutoOpenTrim,
+      });
+    }
     import('sonner').then(({ toast }) => {
       toast.success('Settings saved successfully');
     });
@@ -162,6 +174,48 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
         <h1 className="text-[var(--text-high)] mb-4 lg:mb-6">Settings</h1>
         
         <div className="space-y-6 lg:space-y-8">
+          {/* Take Profit Settings */}
+          <section>
+            <HDCard>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <Info className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h2 className="text-[var(--text-high)] mb-1">Take Profit</h2>
+                    <p className="text-[var(--text-muted)] text-xs">
+                      Control TP-near alerts and auto-open Trim behavior.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[var(--text-muted)] text-sm mb-2">TP Near Threshold (%)</label>
+                    <input
+                      type="number"
+                      min={50}
+                      max={99}
+                      value={tpNearPct}
+                      onChange={(e) => setTpNearPct(Math.max(50, Math.min(99, Number(e.target.value))))}
+                      className="w-full px-3 py-2 text-sm bg-[var(--surface-2)] border border-[var(--border-hairline)] rounded-[var(--radius)] text-[var(--text-high)]"
+                    />
+                    <p className="text-[var(--text-muted)] text-xs mt-1">When option premium progress reaches this percent of target, show a TP-near alert.</p>
+                  </div>
+
+                  <div className="flex items-center gap-3 mt-6">
+                    <input
+                      id="autoOpenTrim"
+                      type="checkbox"
+                      checked={tpAutoOpenTrim}
+                      onChange={(e) => setTpAutoOpenTrim(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="autoOpenTrim" className="text-sm text-[var(--text-high)]">Auto-open Trim composer on TP-near</label>
+                  </div>
+                </div>
+              </div>
+            </HDCard>
+          </section>
           {/* Profile Section */}
           <section>
             <HDCard>
@@ -477,8 +531,7 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
                   </div>
                   {onOpenDiscordSettings && (
                     <HDButton
-                      variant="outline"
-                      size="sm"
+                      variant="secondary"
                       onClick={onOpenDiscordSettings}
                       className="w-full sm:w-auto flex-shrink-0"
                     >
@@ -820,6 +873,11 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
               Save Settings
             </HDButton>
           </div>
+
+          {/* Strategy Library Admin (Super Admin) */}
+          <section>
+            <StrategyLibraryAdmin />
+          </section>
         </div>
       </div>
     </div>

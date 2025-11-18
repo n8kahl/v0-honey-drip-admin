@@ -46,6 +46,21 @@ export interface MacroContext {
     level: 'low' | 'mid' | 'high'; // <15, 15-22, >22
     signal: string; // "VIX: Elevated (23) — tighten SL"
   };
+  // Optional upgrades
+  putCall?: {
+    ratio: number; // puts/calls using OI (fallback volume)
+    level: 'calls' | 'balanced' | 'puts';
+    signal: string;
+    sample: number; // number of contracts considered
+    stale: boolean; // grey out when sample too small or zero
+  };
+  breadth?: {
+    status: 'positive' | 'neutral' | 'negative';
+  };
+  tick?: {
+    value: number | null;
+    bias: 'up' | 'flat' | 'down';
+  };
   marketRegime: 'trending' | 'choppy' | 'volatile';
   riskBias: 'bullish' | 'bearish' | 'neutral';
   timestamp: number;
@@ -60,13 +75,14 @@ export async function fetchIndexQuote(symbol: string): Promise<IndexQuote> {
   try {
     const data = await massiveClient.getIndex(symbol);
     
+    const updated = (data as any)?.updated ?? (data as any)?.timestamp ?? Date.now();
     return {
       symbol,
       value: data.value || 0,
       change: data.change || 0,
       changePercent: data.change_percent || 0,
-      timestamp: data.updated || Date.now(),
-      asOf: new Date(data.updated || Date.now()).toLocaleTimeString(),
+      timestamp: updated,
+      asOf: new Date(updated).toLocaleTimeString(),
     };
   } catch (error) {
     console.error(`[IndicesAdvanced] Failed to fetch ${symbol}:`, error);
@@ -170,6 +186,58 @@ export async function gatherMacroContext(): Promise<MacroContext> {
   const riskBias = spxTrend === 'bullish' && ndxTrend === 'bullish' && vixLevel !== 'high' ? 'bullish' :
                    spxTrend === 'bearish' && ndxTrend === 'bearish' && vixLevel === 'high' ? 'bearish' : 'neutral';
   
+  // Optional: Put/Call from options chain (SPX)
+  let putCall: MacroContext['putCall'] | undefined = undefined;
+  try {
+    const chain = await massiveClient.getOptionsChain('SPX');
+    const contracts: any[] = (chain as any)?.results || [];
+    if (contracts.length > 0) {
+      // Aggregate OI by type (fallback to volume)
+      let callSum = 0;
+      let putSum = 0;
+      for (const c of contracts) {
+        const oi = c.open_interest ?? c.day?.open_interest ?? 0;
+        const vol = c.volume ?? c.day?.volume ?? 0;
+        const weight = oi || vol || 0;
+        if ((c.contract_type || c.type || '').toLowerCase().startsWith('call')) callSum += weight;
+        else if ((c.contract_type || c.type || '').toLowerCase().startsWith('put')) putSum += weight;
+      }
+      const ratio = callSum > 0 ? putSum / callSum : 0;
+      const level: 'calls' | 'balanced' | 'puts' = ratio < 0.8 ? 'calls' : ratio > 1.2 ? 'puts' : 'balanced';
+      const signal = level === 'puts'
+        ? `Put/Call ${ratio.toFixed(2)} — risk-off`
+        : level === 'calls'
+        ? `Put/Call ${ratio.toFixed(2)} — risk-on`
+        : `Put/Call ${ratio.toFixed(2)} — balanced`;
+      const sample = contracts.length;
+      const stale = (callSum + putSum) === 0 || sample < 50; // heuristic: not enough sample/weights
+      putCall = { ratio, level, signal, sample, stale };
+    }
+  } catch (err) {
+    console.warn('[IndicesAdvanced] Put/Call computation failed:', err);
+  }
+
+  // Optional: Breadth (heuristic using SPX/NDX moves + VIX trend)
+  let breadth: MacroContext['breadth'] | undefined = undefined;
+  try {
+    const pos = spxQuote.changePercent > 0.3 && ndxQuote.changePercent > 0.3 && vixTrend !== 'rising';
+    const neg = spxQuote.changePercent < -0.3 && ndxQuote.changePercent < -0.3 && vixTrend === 'rising';
+    breadth = { status: pos ? 'positive' : neg ? 'negative' : 'neutral' };
+  } catch {}
+
+  // Optional: TICK index (best effort)
+  let tick: MacroContext['tick'] | undefined = undefined;
+  try {
+    const tickQuote = await fetchIndexQuote('TICK');
+    if (tickQuote && typeof tickQuote.value === 'number') {
+      const val = tickQuote.value;
+      const bias: 'up' | 'flat' | 'down' = val > 200 ? 'up' : val < -200 ? 'down' : 'flat';
+      tick = { value: val, bias };
+    }
+  } catch {
+    // If not available on provider, silently ignore
+  }
+  
   return {
     spx: {
       value: spxQuote.value,
@@ -190,6 +258,9 @@ export async function gatherMacroContext(): Promise<MacroContext> {
       level: vixLevel,
       signal: vixSignal,
     },
+    putCall,
+    breadth,
+    tick,
     marketRegime,
     riskBias,
     timestamp: Date.now(),
@@ -250,24 +321,30 @@ export function formatMacroContextPills(macro: MacroContext): Array<{
   } else if (macro.spx.vwapRelation === 'below') {
     pills.push({ label: 'SPX: Below VWAP', variant: 'negative' });
   }
-  
-  // SPX Trend
-  if (macro.spx.emaAlignment) {
-    pills.push({ 
-      label: `SPX Trend: ${macro.spx.trend === 'bullish' ? 'Bullish' : 'Bearish'} (8>21>50)`, 
-      variant: macro.spx.trend === 'bullish' ? 'positive' : 'negative' 
-    });
+
+  // Note: We intentionally omit VIX and overall trend strength pills here to avoid duplicating
+  // information already displayed in the top SPX/VIX/Regime headers.
+
+  // Put/Call
+  if (macro.putCall) {
+    // grey out when stale by using neutral variant
+    const v = macro.putCall.stale
+      ? 'neutral'
+      : macro.putCall.level === 'puts' ? 'negative' : macro.putCall.level === 'calls' ? 'positive' : 'neutral';
+    pills.push({ label: macro.putCall.signal, variant: v });
   }
-  
-  // VIX
-  pills.push({ 
-    label: macro.vix.signal, 
-    variant: macro.vix.level === 'high' ? 'warning' : 'neutral' 
-  });
-  
-  // Macro Trend Strength
-  if (macro.spx.trendStrength === 'strong') {
-    pills.push({ label: 'Macro: High Trend Strength', variant: 'positive' });
+
+  // Breadth
+  if (macro.breadth) {
+    const map = { positive: 'positive', neutral: 'neutral', negative: 'negative' } as const;
+    pills.push({ label: `Breadth: ${macro.breadth.status}`, variant: map[macro.breadth.status] });
+  }
+
+  // TICK
+  // Only show TICK when signal is meaningful
+  if (macro.tick && typeof macro.tick.value === 'number' && Math.abs(macro.tick.value) >= 100) {
+    const v = macro.tick.bias === 'up' ? 'positive' : macro.tick.bias === 'down' ? 'negative' : 'neutral';
+    pills.push({ label: `TICK ${macro.tick.value}`, variant: v });
   }
   
   return pills;

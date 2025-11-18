@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { gatherMacroContext, MacroContext, fetchIndexQuote, IndexQuote } from '../lib/massive/indices-advanced';
 import { streamingManager } from '../lib/massive/streaming-manager';
 
@@ -82,8 +82,70 @@ export function useStreamingIndex(symbol: string): {
   return { quote, isLoading, error, dataSource, isStale };
 }
 
+// Shared state to prevent duplicate fetches across multiple hook instances
+let sharedMacroContext: MacroContext | null = null;
+let sharedMacroTimestamp: number = 0;
+let sharedMacroError: string | null = null;
+let pendingMacroFetch: Promise<MacroContext> | null = null;
+const MACRO_CACHE_TTL = 30_000; // 30 seconds
+
+// Global refresh interval - shared across ALL hook instances
+let globalRefreshInterval: any = null;
+let subscriberCount = 0;
+
+async function refreshMacroContext() {
+  // Use cached data if fresh
+  if (sharedMacroContext && Date.now() - sharedMacroTimestamp < MACRO_CACHE_TTL) {
+    return sharedMacroContext;
+  }
+
+  // If already fetching, wait for that fetch
+  if (pendingMacroFetch) {
+    return await pendingMacroFetch;
+  }
+
+  try {
+    // Start new fetch and share it
+    pendingMacroFetch = gatherMacroContext();
+    const data = await pendingMacroFetch;
+    
+    sharedMacroContext = data;
+    sharedMacroTimestamp = Date.now();
+    sharedMacroError = null;
+    
+    return data;
+  } catch (err) {
+    console.error('[refreshMacroContext] Failed:', err);
+    const errorMsg = err instanceof Error ? err.message : 'Failed to gather macro context';
+    sharedMacroError = errorMsg;
+    throw err;
+  } finally {
+    pendingMacroFetch = null;
+  }
+}
+
+function startGlobalRefresh() {
+  if (globalRefreshInterval) return; // Already running
+  
+  console.log('[useMacroContext] Starting global 30s refresh interval');
+  globalRefreshInterval = setInterval(() => {
+    refreshMacroContext().catch(err => {
+      console.error('[useMacroContext] Global refresh failed:', err);
+    });
+  }, 30000);
+}
+
+function stopGlobalRefresh() {
+  if (globalRefreshInterval) {
+    console.log('[useMacroContext] Stopping global refresh interval');
+    clearInterval(globalRefreshInterval);
+    globalRefreshInterval = null;
+  }
+}
+
 /**
  * Hook for macro context with auto-refresh
+ * Uses GLOBAL shared interval to prevent duplicate fetches when multiple components use this hook
  */
 export function useMacroContext(refreshInterval: number = 30000): {
   macro: MacroContext | null;
@@ -91,31 +153,69 @@ export function useMacroContext(refreshInterval: number = 30000): {
   error: string | null;
   refresh: () => Promise<void>;
 } {
-  const [macro, setMacro] = useState<MacroContext | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [macro, setMacro] = useState<MacroContext | null>(sharedMacroContext);
+  const [isLoading, setIsLoading] = useState(sharedMacroContext ? false : true);
+  const [error, setError] = useState<string | null>(sharedMacroError);
 
-  const refresh = async () => {
+  useEffect(() => {
+    // Subscribe to global refresh
+    subscriberCount++;
+    console.log(`[useMacroContext] Subscriber count: ${subscriberCount}`);
+    
+    // Initial fetch
+    if (!sharedMacroContext) {
+      setIsLoading(true);
+      refreshMacroContext()
+        .then(data => {
+          setMacro(data);
+          setError(null);
+        })
+        .catch(err => {
+          setError(err.message);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+
+    // Start global interval if this is the first subscriber
+    startGlobalRefresh();
+
+    // Poll for changes to shared state
+    const pollInterval = setInterval(() => {
+      if (sharedMacroContext !== macro) {
+        setMacro(sharedMacroContext);
+      }
+      if (sharedMacroError !== error) {
+        setError(sharedMacroError);
+      }
+    }, 1000); // Check every second for updates
+
+    return () => {
+      subscriberCount--;
+      console.log(`[useMacroContext] Subscriber count: ${subscriberCount}`);
+      clearInterval(pollInterval);
+      
+      // Stop global interval if no more subscribers
+      if (subscriberCount === 0) {
+        stopGlobalRefresh();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount/unmount
+
+  const manualRefresh = useCallback(async () => {
+    setIsLoading(true);
     try {
-      console.log('[useMacroContext] Gathering macro context');
-      const data = await gatherMacroContext();
+      const data = await refreshMacroContext();
       setMacro(data);
       setError(null);
-    } catch (err) {
-      console.error('[useMacroContext] Failed to gather macro context:', err);
-      setError(err instanceof Error ? err.message : 'Failed to gather macro context');
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => {
-    refresh();
-
-    const interval = setInterval(refresh, refreshInterval);
-
-    return () => clearInterval(interval);
-  }, [refreshInterval]);
-
-  return { macro, isLoading, error, refresh };
+  return { macro, isLoading, error, refresh: manualRefresh };
 }

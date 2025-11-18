@@ -68,14 +68,17 @@ export class MassiveHub {
     });
 
     this.upstream.on('message', (data) => {
+      // Convert Buffer/Blob to string for JSON parsing
+      const textData = data.toString('utf-8');
+      
       for (const client of this.clients) {
         try {
-          client.ws.send(data);
+          client.ws.send(textData);
         } catch {}
       }
 
       try {
-        const arr = JSON.parse(String(data));
+        const arr = JSON.parse(textData);
         const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === 'status') : undefined;
         if (statusMsg?.status === 'auth_success') {
           this.upstreamAuthd = true;

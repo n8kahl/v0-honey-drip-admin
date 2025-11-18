@@ -20,24 +20,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const autoLogin = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true')
+    || (typeof navigator !== 'undefined' && (navigator as any)?.webdriver === true);
   
   let supabase;
-  try {
-    console.log('[v0] AuthProvider: Calling createClient()...');
-    supabase = createClient();
-    console.log('[v0] AuthProvider: createClient() succeeded');
-    console.log('[v0] AuthProvider: supabase object:', {
-      hasAuth: !!supabase?.auth,
-      hasFrom: !!supabase?.from,
-      authKeys: supabase?.auth ? Object.keys(supabase.auth) : [],
-    });
-  } catch (error) {
-    console.error('[v0] AuthProvider: createClient() failed:', error);
-    setInitError(error instanceof Error ? error.message : 'Failed to initialize Supabase');
-    setLoading(false);
+  if (!autoLogin) {
+    try {
+      console.log('[v0] AuthProvider: Calling createClient()...');
+      supabase = createClient();
+      console.log('[v0] AuthProvider: createClient() succeeded');
+      console.log('[v0] AuthProvider: supabase object:', {
+        hasAuth: !!supabase?.auth,
+        hasFrom: !!supabase?.from,
+        authKeys: supabase?.auth ? Object.keys(supabase.auth) : [],
+      });
+    } catch (error) {
+      console.error('[v0] AuthProvider: createClient() failed:', error);
+      setInitError(error instanceof Error ? error.message : 'Failed to initialize Supabase');
+      setLoading(false);
+    }
   }
 
+  // In test auto-login mode, set a dummy user and skip Supabase
   useEffect(() => {
+    if (autoLogin) {
+      console.log('[v0] AuthProvider: VITE_TEST_AUTO_LOGIN enabled - using dummy user');
+      setUser({ id: 'test-user', email: 'test@example.com' } as any);
+      setSession(null);
+      setLoading(false);
+    }
+  }, [autoLogin]);
+
+  useEffect(() => {
+    if (autoLogin) return; // skip supabase wiring in test mode
     if (!supabase) {
       console.log('[v0] AuthProvider useEffect: No supabase client, skipping');
       return;

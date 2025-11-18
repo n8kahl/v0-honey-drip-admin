@@ -1,6 +1,4 @@
 import { useMacroContext } from '../../hooks/useIndicesAdvanced';
-import { formatMacroContextPills } from '../../lib/massive/indices-advanced';
-import { HDPill } from './HDPill';
 import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -22,8 +20,6 @@ export function HDMacroPanel() {
       </div>
     );
   }
-
-  const pills = formatMacroContextPills(macro);
 
   return (
     <div className="px-4 py-3 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] space-y-3">
@@ -97,16 +93,6 @@ export function HDMacroPanel() {
             {macro.riskBias} bias
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 pt-2 border-t border-[var(--border-hairline)]">
-        {pills.map((pill, i) => (
-          <HDPill
-            key={i}
-            label={pill.label}
-            variant={pill.variant}
-          />
-        ))}
       </div>
     </div>
   );

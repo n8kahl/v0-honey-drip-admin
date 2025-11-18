@@ -42,15 +42,19 @@ A production-ready options trading platform with real-time market data, Discord 
 
 3. Create `.env` file (copy from `.env.example`):
    \`\`\`env
+
    # Client-side (exposed to browser)
+
    VITE_SUPABASE_URL=your-supabase-url
    VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-   
+
    # Server-side ONLY (not exposed to browser)
+
    MASSIVE_API_KEY=your-massive-api-key
    \`\`\`
 
 4. Run the SQL scripts in Supabase:
+
    - Execute `scripts/001_create_schema.sql` in Supabase SQL editor
 
 5. Start the development server:
@@ -92,29 +96,34 @@ All tables are protected with RLS policies ensuring users can only access their 
 ## Usage
 
 ### Watchlist
+
 - Add tickers to your watchlist
 - View live streaming quotes with real-time price movements
 - Confluence chips show technical signals and trade flow
 - Click a ticker to view options chain
 
 ### Loading Trades
+
 - Select a contract from the options chain (filtered by liquidity)
 - Risk engine auto-calculates TP/SL based on DTE and ATR
 - Load the idea with Discord alert (optional)
 
 ### Entering Trades
+
 - Click "Enter Trade" on a loaded idea
 - Confirm entry price and parameters
 - Send entry alert to Discord channels
 - Real-time PnL tracking begins
 
 ### Managing Trades
+
 - Trim positions with automatic Discord notifications
 - Update stop loss with trailing stops
 - Add to positions
 - Exit with P/L tracking and performance analytics
 
 ### Trade History
+
 - Review all past trades with filters
 - Analyze performance metrics
 - Re-share alerts to Discord
@@ -123,10 +132,11 @@ All tables are protected with RLS policies ensuring users can only access their 
 ## Testing
 
 ### Run Tests
+
 \`\`\`bash
-npm test                 # Run all tests
-npm run test:ui         # Run tests with UI
-npm run test:coverage   # Generate coverage report
+npm test # Run all tests
+npm run test:ui # Run tests with UI
+npm run test:coverage # Generate coverage report
 \`\`\`
 
 ### Test Coverage
@@ -135,6 +145,12 @@ npm run test:coverage   # Generate coverage report
 - Integration tests for StreamingManager
 - Component tests for key UI elements
 - End-to-end tests for trade lifecycle (coming soon)
+
+### Options Chain Docs
+
+For details on the Webull-like options chain (more expirations, staleness handling) and hooks:
+
+- `src/docs/options-chain.md` — unified chain, `useOptionsChain(symbol, window)`, and `useStreamingOptionsChain(symbol)`
 
 ## Deployment
 
@@ -147,16 +163,16 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
 3. Set environment variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `MASSIVE_API_KEY` (server-side only, no VITE_ prefix)
+   - `MASSIVE_API_KEY` (server-side only, no VITE\_ prefix)
 4. Deploy
 
 ## Environment Variables
 
-| Variable | Description | Required | Exposed to Client |
-|----------|-------------|----------|-------------------|
-| `VITE_SUPABASE_URL` | Supabase project URL | Yes | Yes |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key | Yes | Yes |
-| `MASSIVE_API_KEY` | Massive.com API key | Yes | **No** (server-only) |
+| Variable                 | Description              | Required | Exposed to Client    |
+| ------------------------ | ------------------------ | -------- | -------------------- |
+| `VITE_SUPABASE_URL`      | Supabase project URL     | Yes      | Yes                  |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key | Yes      | Yes                  |
+| `MASSIVE_API_KEY`        | Massive.com API key      | Yes      | **No** (server-only) |
 
 **Security Note**: The `MASSIVE_API_KEY` must NOT have the `VITE_` prefix. It's only used in server-side API routes and never exposed to the browser.
 
@@ -166,25 +182,25 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
 
 \`\`\`
 honey-drip-admin/
-├── app/                          # Next.js API routes (server-side)
-│   ├── api/massive/[...path]/    # REST API proxy
-│   └── api/massive/ws-token/     # WebSocket token generator
+├── app/ # Next.js API routes (server-side)
+│ ├── api/massive/[...path]/ # REST API proxy
+│ └── api/massive/ws-token/ # WebSocket token generator
 ├── src/
-│   ├── components/               # React components
-│   │   ├── hd/                   # Core trading UI components
-│   │   └── ui/                   # Reusable UI components
-│   ├── hooks/                    # Custom React hooks
-│   ├── lib/
-│   │   ├── massive/              # Massive.com integration
-│   │   │   ├── streaming-manager.ts
-│   │   │   ├── options-advanced.ts
-│   │   │   └── websocket.ts
-│   │   ├── riskEngine/           # TP/SL calculations
-│   │   └── supabase/             # Database & auth
-│   ├── types/                    # TypeScript definitions
-│   └── utils/                    # Helper functions
-├── scripts/                      # Database migrations
-└── tests/                        # Test files
+│ ├── components/ # React components
+│ │ ├── hd/ # Core trading UI components
+│ │ └── ui/ # Reusable UI components
+│ ├── hooks/ # Custom React hooks
+│ ├── lib/
+│ │ ├── massive/ # Massive.com integration
+│ │ │ ├── streaming-manager.ts
+│ │ │ ├── options-advanced.ts
+│ │ │ └── websocket.ts
+│ │ ├── riskEngine/ # TP/SL calculations
+│ │ └── supabase/ # Database & auth
+│ ├── types/ # TypeScript definitions
+│ └── utils/ # Helper functions
+├── scripts/ # Database migrations
+└── tests/ # Test files
 \`\`\`
 
 ### Key Concepts
@@ -197,11 +213,11 @@ Centralized manager for all real-time data subscriptions:
 import { streamingManager } from '@/lib/massive/streaming-manager';
 
 const handle = streamingManager.subscribe(
-  'AAPL',
-  ['quotes', 'agg1s'],
-  (data) => {
-    console.log('Live quote:', data);
-  }
+'AAPL',
+['quotes', 'agg1s'],
+(data) => {
+console.log('Live quote:', data);
+}
 );
 
 // Cleanup
@@ -216,9 +232,9 @@ DTE-aware TP/SL calculations:
 import { useRiskEngine } from '@/hooks/useRiskEngine';
 
 const { calculation, loading } = useRiskEngine({
-  ticker: 'AAPL',
-  optionTicker: 'O:AAPL251220C00175000',
-  mode: 'calculated',
+ticker: 'AAPL',
+optionTicker: 'O:AAPL251220C00175000',
+mode: 'calculated',
 });
 
 // calculation.tp1, calculation.sl, calculation.levels
@@ -250,6 +266,7 @@ MIT
 ## Support
 
 For issues and questions:
+
 1. Check [DEPLOYMENT.md](./DEPLOYMENT.md) for deployment issues
 2. Review browser console for client-side errors
 3. Check server logs for API proxy errors

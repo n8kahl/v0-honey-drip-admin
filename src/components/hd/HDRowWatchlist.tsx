@@ -1,8 +1,9 @@
 import { Ticker } from '../../types';
 import { formatPrice, formatPercent, cn } from '../../lib/utils';
-import { X, Wifi, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { X, Wifi, AlertCircle } from 'lucide-react';
 import { useStreamingQuote } from '../../hooks/useOptionsAdvanced';
-import { useTradeFlow } from '../../hooks/useTradeFlow';
+import { StrategySignalBadge } from './StrategySignalBadge';
+import type { SymbolSignals } from '../../hooks/useStrategyScanner';
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
@@ -11,19 +12,34 @@ interface HDRowWatchlistProps {
   onRemove?: () => void;
   asOf?: number; // Timestamp of last update
   source?: 'websocket' | 'rest'; // Data source indicator
+  signals?: SymbolSignals; // Strategy signals for this symbol
 }
 
-export function HDRowWatchlist({ ticker, active, onClick, onRemove, asOf: propAsOf, source: propSource }: HDRowWatchlistProps) {
-  const { quote, asOf: hookAsOf, source: hookSource, isStale } = useStreamingQuote(ticker.symbol);
-  const tradeFlow = useTradeFlow(ticker.symbol);
+export function HDRowWatchlist({ ticker, active, onClick, onRemove, asOf: propAsOf, source: propSource, signals }: HDRowWatchlistProps) {
+  // Use ticker data directly (already updated by App.tsx from useQuotes)
+  // Note: Trade flow removed - it requires option contract IDs, not underlying tickers
   
-  const currentPrice = quote?.price ?? ticker.last;
-  const changePercent = quote?.changePercent ?? ticker.changePercent;
-  const asOf = hookAsOf ?? propAsOf;
-  const source = hookSource ?? propSource;
-  
-  const isPositive = changePercent >= 0;
-  
+  const currentPrice = ticker.last;
+  const asOf = propAsOf ?? Date.now();
+  const source = propSource ?? 'rest';
+  // Staleness check: stale if asOf > 5s ago
+  const isStale = asOf ? (Date.now() - asOf > 5000) : true;
+
+  // Defensive: fallback for missing price
+  const priceDisplay = typeof currentPrice === 'number' && !isNaN(currentPrice)
+    ? formatPrice(currentPrice)
+    : <span className="text-[var(--text-muted)] italic">N/A</span>;
+
+  // Loading skeleton
+  if (!ticker || !ticker.symbol) {
+    return (
+      <div className="w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] animate-pulse">
+        <div className="h-4 w-16 bg-[var(--surface-2)] rounded" />
+        <div className="h-4 w-10 bg-[var(--surface-2)] rounded" />
+      </div>
+    );
+  }
+
   const getAsOfText = () => {
     if (!asOf) return null;
     const secondsAgo = Math.floor((Date.now() - asOf) / 1000);
@@ -40,55 +56,33 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove, asOf: propAs
       className={cn(
         'w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group',
         'hover:bg-[var(--surface-1)] transition-colors',
-        active && 'bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)]'
+        active && 'bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)]',
+        isStale && 'opacity-60'
       )}
+      data-testid={`watchlist-item-${ticker.symbol}`}
     >
       <button
         onClick={onClick}
         className="flex-1 flex items-center justify-between text-left"
+        disabled={isStale}
+        title={isStale ? 'Quote is stale' : undefined}
       >
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-2">
             <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
-            {/* Trade flow sentiment indicator */}
-            {tradeFlow && (
-              <div className={cn(
-                'flex items-center gap-0.5 px-1.5 py-0.5 rounded-[var(--radius)] text-[10px] font-medium',
-                tradeFlow.sentiment === 'bullish' && 'bg-green-500/20 text-green-600',
-                tradeFlow.sentiment === 'bearish' && 'bg-red-500/20 text-red-600',
-                tradeFlow.sentiment === 'neutral' && 'bg-gray-500/20 text-gray-600'
-              )}>
-                {tradeFlow.sentiment === 'bullish' && <TrendingUp className="w-3 h-3" />}
-                {tradeFlow.sentiment === 'bearish' && <TrendingDown className="w-3 h-3" />}
-                <span>{tradeFlow.sentiment.charAt(0).toUpperCase() + tradeFlow.sentiment.slice(1)}</span>
-              </div>
-            )}
+            <StrategySignalBadge symbolSignals={signals} compact />
           </div>
-          {asOfText && (
-            <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-              <Wifi className={cn(
-                "w-2.5 h-2.5",
-                source === 'websocket' ? "text-green-500" : "text-yellow-500"
-              )} />
-              <span>{asOfText}</span>
-              {isStale && (
-                <AlertCircle className="w-2.5 h-2.5 text-orange-500" title="Data may be stale" />
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+            <Wifi className={cn(
+              "w-2.5 h-2.5",
+              source === 'websocket' ? "text-green-500" : "text-yellow-500"
+            )} />
+            {asOfText}
+            {isStale && <span className="ml-1 text-red-500">stale</span>}
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[var(--text-high)] tabular-nums">
-            ${formatPrice(currentPrice)}
-          </span>
-          <span
-            className={cn(
-              'tabular-nums min-w-[60px] text-right',
-              isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
-            )}
-          >
-            {formatPercent(changePercent)}
-          </span>
+        <div className="flex flex-col items-end">
+          <span className="text-[var(--text-high)] font-mono text-sm">{priceDisplay}</span>
         </div>
       </button>
       

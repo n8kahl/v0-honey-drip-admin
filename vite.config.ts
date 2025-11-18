@@ -5,7 +5,8 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
+    // Prefer TypeScript over JavaScript when both exist to avoid stale CJS files in src
+    extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
     alias: {
       'vaul@1.1.2': 'vaul',
       'sonner@2.0.3': 'sonner',
@@ -61,11 +62,11 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: 'ws://localhost:8080',
         ws: true,
       },
     },

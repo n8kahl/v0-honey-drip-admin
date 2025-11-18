@@ -16,5 +16,10 @@
     "resolveJsonModule": true
   },
   "include": ["server/**/*"],
-  "exclude": ["node_modules", "dist", "build"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "server/dist"
+  ]
 }

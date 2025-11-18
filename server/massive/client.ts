@@ -1,8 +1,11 @@
 const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
-const API_KEY = process.env.MASSIVE_API_KEY;
 
-if (!API_KEY) {
-  throw new Error('MASSIVE_API_KEY is not configured');
+function getApiKey(): string {
+  const key = process.env.MASSIVE_API_KEY;
+  if (!key) {
+    throw new Error('MASSIVE_API_KEY is not configured');
+  }
+  return key;
 }
 
 export interface CallMassiveResult<T> {
@@ -13,7 +16,7 @@ export interface CallMassiveResult<T> {
 }
 
 function buildHeaders(): Record<string, string> {
-  if (!API_KEY) throw new Error('MASSIVE_API_KEY is not configured');
+  const API_KEY = getApiKey();
   return {
     Authorization: `Bearer ${API_KEY}`,
     'X-API-Key': API_KEY,
@@ -53,10 +56,11 @@ function flattenHeaders(source?: RequestInit['headers']): Record<string, string>
 }
 
 function buildMassiveHeaders(initHeaders?: RequestInit['headers']) {
+  const API_KEY = getApiKey();
   return {
     Accept: 'application/json',
     Authorization: `Bearer ${API_KEY}`,
-    'X-API-Key': API_KEY!,
+    'X-API-Key': API_KEY,
     ...flattenHeaders(initHeaders),
   };
 }

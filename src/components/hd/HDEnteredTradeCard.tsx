@@ -10,14 +10,22 @@ import {
   MassiveLiquidityMetrics,
 } from '../../services/massiveClient';
 import { useActiveTradePnL } from '../../hooks/useMassiveData';
+import { useTPProximity } from '../../hooks/useTPProximity';
+import { useTPSettings } from '../../hooks/useTPSettings';
+import { toast } from 'sonner@2.0.3';
 import { HDLiveChart } from './HDLiveChart';
 import { TradeEvent } from '../../types';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from './HDConfluenceChips';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { buildChartLevelsForTrade } from '../../lib/riskEngine/chartLevels';
 import { KeyLevels } from '../../lib/riskEngine/types';
 import { useKeyLevels } from '../../hooks/useKeyLevels';
+import { useAuth } from '../../contexts/AuthContext';
+import { addTradeUpdate } from '../../lib/supabase/database';
+import { StrategySignalBadge } from './StrategySignalBadge';
+import type { SymbolSignals } from '../../hooks/useStrategyScanner';
+import { useMacroContext } from '../../hooks/useIndicesAdvanced';
 
 interface HDEnteredTradeCardProps {
   trade: Trade;
@@ -29,26 +37,78 @@ interface HDEnteredTradeCardProps {
     volatility?: MassiveVolatilityMetrics;
     liquidity?: MassiveLiquidityMetrics;
   };
+  onAutoTrim?: () => void;
+  signals?: SymbolSignals;
 }
 
-export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTradeCardProps) {
+export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, signals }: HDEnteredTradeCardProps) {
   const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
     trade.contract.id,
     trade.entryPrice || trade.contract.mid
   );
+  const { tpNearThreshold, autoOpenTrim } = useTPSettings();
+  const tp = useTPProximity(trade, currentPrice, { threshold: tpNearThreshold });
+  const { user } = useAuth();
+  const { macro } = useMacroContext(30000);
+  // One-shot toast when crossing the TP-near threshold
+  useEffect(() => {
+    if (tp.justCrossed && trade) {
+      const pct = Math.min(99, Math.round(tp.progress * 100));
+  const dte = trade.contract.daysToExpiry ?? Math.max(0, Math.ceil((new Date(trade.contract.expiry).getTime() - Date.now()) / (1000*60*60*24)));
+      const confidence = signals?.latestConfidence ?? undefined;
+      const macroSummary = macro
+        ? `${macro.marketRegime} • ${macro.riskBias} bias • VIX ${macro.vix.level}`
+        : undefined;
+      const base = `${trade.ticker} ${trade.contract.strike}${trade.contract.type} is ${pct}% toward TP`;
+      const pieces = [
+        `DTE ${dte}`,
+        confidence != null ? `setup ${Math.round(confidence)}%` : undefined,
+        macroSummary,
+      ].filter(Boolean);
+      const description = pieces.join(' • ');
+      toast(`Take Profit approaching`, {
+        description: `${base}${description ? ` — ${description}` : ''}`,
+        action: onAutoTrim && !autoOpenTrim ? {
+          label: 'Open Trim',
+          onClick: () => onAutoTrim?.(),
+        } : undefined,
+      } as any);
+      if (onAutoTrim && autoOpenTrim) {
+        // Auto-open trim composer
+        onAutoTrim();
+      }
+      // Persist audit update if authenticated (non-blocking)
+      if (user?.id) {
+        addTradeUpdate(trade.id, user.id, {
+          action: 'tp_near',
+          price: currentPrice ?? trade.contract.mid,
+          notes: `TP near ${pct}%`,
+        }).catch((e) => {
+          console.warn('[v0] Failed to persist tp_near update:', e?.message || e);
+        });
+      }
+    }
+  }, [tp.justCrossed]);
   
   const { tradeTape } = useOptionTrades(trade.contract.id);
   const { quote, liquidity } = useOptionQuote(trade.contract.id, {
     ticker: trade.contract.id,
-    bid: trade.contract.bid,
-    bidSize: 0,
-    ask: trade.contract.ask,
-    askSize: 0,
-    last: trade.contract.mid,
-    openInterest: trade.contract.openInterest,
-    volume: 0,
-    implied_volatility: trade.contract.iv || 0,
-    underlying_price: trade.underlyingPrice || 0,
+    strike_price: trade.contract.strike,
+    expiration_date: trade.contract.expiry,
+    contract_type: trade.contract.type === 'C' ? 'call' : 'put',
+    implied_volatility: trade.contract.iv,
+    greeks: {
+      delta: trade.contract.delta,
+      gamma: trade.contract.gamma,
+      theta: trade.contract.theta,
+      vega: trade.contract.vega,
+    },
+    open_interest: trade.contract.openInterest,
+    volume: trade.contract.volume,
+    last_quote: {
+      bid: trade.contract.bid,
+      ask: trade.contract.ask,
+    },
   });
   
   const isPositive = pnlPercent >= 0;
@@ -75,18 +135,10 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
   };
   
   const tradeEvents: TradeEvent[] = [
-    ...(trade.loadedAt
-      ? [{
-          type: 'load' as const,
-          timestamp: new Date(trade.loadedAt).getTime(),
-          price: trade.contract.mid,
-          label: 'Load',
-        }]
-      : []),
-    ...(trade.enteredAt
+    ...(trade.entryTime
       ? [{
           type: 'enter' as const,
-          timestamp: new Date(trade.enteredAt).getTime(),
+          timestamp: new Date(trade.entryTime).getTime(),
           price: trade.entryPrice || trade.contract.mid,
           label: 'Enter',
         }]
@@ -146,8 +198,10 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
           </div>
         </div>
         
-        {/* P&L Badge - Compact with streaming indicator */}
+        {/* Right-side badges: P&L and TP proximity */}
         <div className="flex flex-col items-end gap-1">
+          {/* Strategy Signals badge (if any) */}
+          <StrategySignalBadge symbolSignals={signals} compact className="self-end" />
           <div className={cn(
             'flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] flex-shrink-0',
             isPositive ? 'bg-[var(--accent-positive)]/10' : 'bg-[var(--accent-negative)]/10'
@@ -164,6 +218,13 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
               {formatPercent(pnlPercent)}
             </span>
           </div>
+          {/* TP Nearing badge */}
+          {tp.nearing && (
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius)] bg-[var(--brand-primary)]/10 border border-[var(--brand-primary)]/30 text-[var(--brand-primary)] animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-primary)]" />
+              <span className="text-[10px] font-medium">TP near {Math.min(99, Math.round(tp.progress * 100))}%</span>
+            </div>
+          )}
           <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
             <Wifi className={cn(
               "w-2.5 h-2.5",
@@ -283,6 +344,7 @@ export function HDEnteredTradeCard({ trade, direction, confluence }: HDEnteredTr
                   'add': 'Added',
                   'update-sl': 'Updated SL',
                   'trail-stop': 'Trail stop',
+                  'tp_near': 'TP near',
                   'update': 'Update'
                 }[update.type] || update.type;
                 

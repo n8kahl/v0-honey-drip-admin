@@ -1,9 +1,11 @@
 import type { MassiveQuote, MassiveOption, MassiveOptionsChain, MassiveIndex } from './types';
-import { massiveFetch } from './proxy';
+import { massiveFetch, withMassiveProxyInit } from './proxy';
 
 const MASSIVE_API_BASE = '/api/massive';
 const CONTRACT_TTL_MS = 15 * 60 * 1000;
+const AGGREGATES_TTL_MS = 60 * 1000; // 60 seconds for aggregates cache
 const contractCache = new Map<string, { t: number; data: any }>();
+const aggregatesCache = new Map<string, { t: number; data: MassiveAggregateBar[] }>();
 
 export interface MassiveRSI {
   timestamp: number;
@@ -140,58 +142,75 @@ class MassiveClient {
   }
 
   async getQuotes(symbols: string[]): Promise<MassiveQuote[]> {
+    // Prefer unified server endpoint (batch + normalized + cached)
+    try {
+      const tickers = symbols.join(',');
+      const resp = await fetch(`/api/quotes?tickers=${encodeURIComponent(tickers)}`, {
+        // Reuse proxy headers (x-massive-proxy-token)
+        headers: withMassiveProxyInit().headers as any,
+      } as RequestInit);
+
+      if (resp.ok) {
+        const json = await resp.json();
+        const items: any[] = Array.isArray(json?.results) ? json.results : [];
+        console.log('[MassiveClient] getQuotes response:', items);
+        // Map to MassiveQuote shape
+        return items.map((it) => {
+          const quote = {
+            symbol: String(it.symbol ?? ''),
+            last: Number(it.last ?? 0),
+            change: Number(it.change ?? 0),
+            changePercent: Number(it.changePercent ?? 0),
+            volume: Number(it.volume ?? 0),
+            timestamp: Number(it.asOf ?? Date.now()),
+          };
+          console.log(`[MassiveClient] Mapped ${it.symbol}: it.last=${it.last} -> quote.last=${quote.last}`);
+          return quote;
+        }) as MassiveQuote[];
+      }
+      // If unified endpoint fails, fall through to legacy per-symbol logic
+      console.warn('[MassiveClient] /api/quotes returned non-OK, falling back per-symbol');
+    } catch (e) {
+      console.warn('[MassiveClient] /api/quotes failed, falling back per-symbol', e);
+    }
+
+    // Fallback: per-symbol logic (kept for resiliency)
     const quotes: MassiveQuote[] = [];
-    
     for (const symbol of symbols) {
       try {
         const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
-        
         if (isIndex) {
-          const cleanTicker = symbol.replace('I:', '');
-        const data = await this.fetch(`/v3/snapshot/indices?tickers=${cleanTicker}`);
-          const indexData = data.results?.[0] || data;
+          // Use dedicated index snapshot (single) to avoid shape inconsistencies
+          const index = await this.getIndex(symbol);
           quotes.push({
-            symbol: symbol,
-            last: indexData.value || 0,
-            change: indexData.session?.change || 0,
-            changePercent: indexData.session?.change_percent || 0,
+            symbol: (index as any)?.ticker ?? symbol,
+            last: Number((index as any)?.value ?? (index as any)?.last ?? 0),
+            change: Number((index as any)?.session?.change ?? 0),
+            changePercent: Number((index as any)?.session?.change_percent ?? 0),
             volume: 0,
             timestamp: Date.now(),
           } as MassiveQuote);
         } else {
+          // Use options snapshot as a last resort to infer underlying price
           const data = await this.fetch(`/v3/snapshot/options/${symbol}?limit=1`);
-          const results = data.results || [];
-          
-          if (results.length > 0) {
-            const underlying = results[0]?.underlying_asset || results[0]?.details?.underlying;
-            const underlyingPrice = underlying?.price || underlying?.last_quote?.price || 0;
-            const underlyingChange = underlying?.change || underlying?.change_today || 0;
-            const underlyingChangePercent = underlying?.change_percent || 0;
-            
-            quotes.push({
-              symbol: symbol,
-              last: underlyingPrice,
-              change: underlyingChange,
-              changePercent: underlyingChangePercent,
-              volume: 0,
-              timestamp: Date.now(),
-            } as MassiveQuote);
-          } else {
-            console.warn(`[v0] No options data found for ${symbol}, using zero values`);
-            quotes.push({
-              symbol: symbol,
-              last: 0,
-              change: 0,
-              changePercent: 0,
-              volume: 0,
-              timestamp: Date.now(),
-            } as MassiveQuote);
-          }
+          const r = (data?.results || [])[0] || {};
+          const underlying = r?.underlying_asset || r?.details?.underlying || {};
+          const last = Number(
+            underlying?.price ?? r?.last_trade?.p ?? r?.last_quote?.ap ?? r?.last_quote?.bp ?? 0
+          );
+          quotes.push({
+            symbol,
+            last,
+            change: Number(underlying?.change ?? 0),
+            changePercent: Number(underlying?.change_percent ?? 0),
+            volume: 0,
+            timestamp: Date.now(),
+          } as MassiveQuote);
         }
       } catch (error) {
         console.error(`[v0] Failed to fetch quote for ${symbol}:`, error);
         quotes.push({
-          symbol: symbol,
+          symbol,
           last: 0,
           change: 0,
           changePercent: 0,
@@ -200,7 +219,6 @@ class MassiveClient {
         } as MassiveQuote);
       }
     }
-    
     return quotes;
   }
 
@@ -209,45 +227,59 @@ class MassiveClient {
     return data.results?.[0] || data;
   }
 
-  async getOptionsChain(underlyingTicker: string, expirationDate?: string): Promise<MassiveOptionsChain> {
-    let currentPrice = 0;
-    try {
-      const quotes = await this.getQuotes([underlyingTicker]);
-      currentPrice = quotes[0]?.last || 0;
-    } catch (error) {
-      console.error('[v0] Failed to get current price, using fallback');
+  async getOptionsChain(underlyingTicker: string, expirationDate?: string, underlyingPrice?: number): Promise<MassiveOptionsChain> {
+    console.log('[MassiveClient] getOptionsChain called for', underlyingTicker, 'with price:', underlyingPrice);
+    
+    // If underlying price not provided or is 0, fetch it
+    let price = underlyingPrice || 0;
+    
+    if (price === 0) {
+      console.log('[MassiveClient] Price is 0, fetching from API...');
+      try {
+        // For indices like SPX, NDX - use I: prefix
+        const isIndex = ['SPX', 'NDX', 'VIX', 'RUT'].includes(underlyingTicker);
+        if (isIndex) {
+          const indexTicker = `I:${underlyingTicker}`;
+          const indexData = await this.fetch(`/v3/snapshot/indices?ticker=${encodeURIComponent(indexTicker)}`);
+          console.log('[MassiveClient] Index snapshot result:', indexData);
+          if (indexData.value) {
+            price = indexData.value;
+          }
+        } else {
+          // For stocks like SPY - try options snapshot first for speed
+          const stockData = await this.fetch(`/v3/snapshot/options/${underlyingTicker}?limit=1`);
+          console.log('[MassiveClient] Stock snapshot result:', stockData);
+          if (stockData.results?.[0]?.underlying_asset?.price) {
+            price = stockData.results[0].underlying_asset.price;
+          }
+        }
+      } catch (err) {
+        console.warn('[MassiveClient] Could not fetch price:', err);
+      }
     }
     
-    const contractsData = await getOptionContracts(underlyingTicker, 1000, expirationDate);
+    console.log('[MassiveClient] Final price for', underlyingTicker, ':', price);
+    
+    // Calculate strike range: ±15% for reasonable ATM range
+    const strikeRange = 0.15; // 15%
+    const minStrike = price > 0 ? Math.floor(price * (1 - strikeRange)) : undefined;
+    const maxStrike = price > 0 ? Math.ceil(price * (1 + strikeRange)) : undefined;
+    
+    console.log('[MassiveClient] Strike range:', { minStrike, maxStrike });
+    
+    const contractsData = await getOptionContracts(underlyingTicker, 1000, expirationDate, minStrike, maxStrike);
     
     if (!contractsData || !contractsData.results || contractsData.results.length === 0) {
       return contractsData;
     }
     
-    const allContracts = contractsData.results;
-    const contractsByExpiry = new Map<string, any[]>();
+    console.log('[MassiveClient] Got contracts:', {
+      count: contractsData.results.length,
+      sampleStrikes: contractsData.results.slice(0, 10).map((c: any) => c.strike_price),
+      sampleDates: [...new Set(contractsData.results.slice(0, 20).map((c: any) => c.expiration_date))],
+    });
     
-    for (const contract of allContracts) {
-      const expiry = contract.expiration_date;
-      if (!contractsByExpiry.has(expiry)) {
-        contractsByExpiry.set(expiry, []);
-      }
-      contractsByExpiry.get(expiry)!.push(contract);
-    }
-    
-    const filteredContracts: any[] = [];
-    for (const [expiry, contracts] of contractsByExpiry.entries()) {
-      const calls = contracts.filter(c => c.contract_type === 'call').sort((a, b) => a.strike_price - b.strike_price);
-      const puts = contracts.filter(c => c.contract_type === 'put').sort((a, b) => a.strike_price - b.strike_price);
-      
-      const itmCalls = calls.filter(c => c.strike_price < currentPrice).slice(-10);
-      const otmCalls = calls.filter(c => c.strike_price >= currentPrice).slice(0, 10);
-      
-      const itmPuts = puts.filter(c => c.strike_price > currentPrice).slice(0, 10);
-      const otmPuts = puts.filter(c => c.strike_price <= currentPrice).slice(-10);
-      
-      filteredContracts.push(...itmCalls, ...otmCalls, ...itmPuts, ...otmPuts);
-    }
+    const filteredContracts = contractsData.results;
     
     const snapshotData = await this.fetch(`/v3/snapshot/options/${underlyingTicker}?limit=250`);
     
@@ -318,10 +350,20 @@ class MassiveClient {
     const from = new Date(to.getTime() - normalizedTimeframe * lookback * 60 * 1000);
     const formatDay = (date: Date) => date.toISOString().split('T')[0];
     const endpoint = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+    
+    // Check cache first
+    const cacheKey = `${symbol}:${timeframe}:${lookback}`;
+    const cached = aggregatesCache.get(cacheKey);
+    if (cached && Date.now() - cached.t < AGGREGATES_TTL_MS) {
+      console.log(`[MassiveClient] ✅ Aggregates cache hit for ${cacheKey}`);
+      return cached.data;
+    }
+    
+    console.log(`[MassiveClient] 🔄 Fetching aggregates for ${cacheKey}`);
     const data = await this.fetch(endpoint);
     const results: any[] = data.results || data;
     if (!Array.isArray(results)) return [];
-    return results.map((bar) => ({
+    const bars = results.map((bar) => ({
       t: bar.t,
       o: bar.o,
       h: bar.h,
@@ -330,6 +372,12 @@ class MassiveClient {
       v: bar.v,
       vw: bar.vw,
     }));
+    
+    // Cache the result
+    aggregatesCache.set(cacheKey, { t: Date.now(), data: bars });
+    console.log(`[MassiveClient] ✅ Cached aggregates for ${cacheKey} (${bars.length} bars)`);
+    
+    return bars;
   }
 
   async getOptionTrades(
@@ -363,31 +411,44 @@ class MassiveClient {
 
 }
 
-const buildContractsUrl = (underlying: string, limit: number, expiration?: string) => {
+const buildContractsUrl = (underlying: string, limit: number, expiration?: string, minStrike?: number, maxStrike?: number) => {
   const params = new URLSearchParams({
     underlying_ticker: underlying,
     limit: `${Math.min(limit, 1000)}`,
   });
   if (expiration) {
     params.set('expiration_date', expiration);
+  } else {
+    // Filter for contracts expiring today or later (includes 0DTE options)
+    const today = new Date();
+    params.set('expiration_date.gte', today.toISOString().split('T')[0]);
   }
+  
+  // Add strike price filtering to avoid legacy contracts
+  if (minStrike !== undefined) {
+    params.set('strike_price.gte', minStrike.toString());
+  }
+  if (maxStrike !== undefined) {
+    params.set('strike_price.lte', maxStrike.toString());
+  }
+  
   return `/v3/reference/options/contracts?${params.toString()}`;
 };
 
-async function fetchContractsRaw(underlying: string, limit: number, expiration?: string) {
-  const path = buildContractsUrl(underlying, limit, expiration);
+async function fetchContractsRaw(underlying: string, limit: number, expiration?: string, minStrike?: number, maxStrike?: number) {
+  const path = buildContractsUrl(underlying, limit, expiration, minStrike, maxStrike);
   const response = await massiveFetch(`${MASSIVE_API_BASE}${path}`);
   return response.json();
 }
 
-export async function getOptionContracts(underlying: string, limit = 1000, expiration?: string) {
-  const key = `${underlying}:${Math.min(limit, 1000)}:${expiration || ''}`;
+export async function getOptionContracts(underlying: string, limit = 1000, expiration?: string, minStrike?: number, maxStrike?: number) {
+  const key = `${underlying}:${Math.min(limit, 1000)}:${expiration || ''}:${minStrike || ''}:${maxStrike || ''}`;
   const now = Date.now();
   const cached = contractCache.get(key);
   if (cached && now - cached.t < CONTRACT_TTL_MS) {
     return cached.data;
   }
-  const data = await fetchContractsRaw(underlying, limit, expiration);
+  const data = await fetchContractsRaw(underlying, limit, expiration, minStrike, maxStrike);
   contractCache.set(key, { t: now, data });
   return data;
 }

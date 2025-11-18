@@ -1,151 +1,51 @@
 # Copilot Instructions for Honey Drip Admin
 
-## Architecture Overview
+## TL;DR for AI Agents
 
-This is a **real-time options trading dashboard** with a secure proxy architecture separating client and server concerns.
+- Frontend: React 18 + TypeScript + Vite. Backend: Express proxy + WS bridges. DB: Supabase with strict RLS. Market data: Massive.com OPTIONS/INDICES.
+- Real-time first: WebSocket streaming per symbol with automatic REST fallback + staleness tracking.
+- Secrets never in browser: `MASSIVE_API_KEY` and `MASSIVE_PROXY_TOKEN` are server-only.
 
-### Core Stack
+## Run / Build / Test
 
-- **Frontend**: React 18 + TypeScript + Vite (SPA served from Next.js middleware)
-- **Backend**: Express.js server proxying Massive.com API + WebSocket bridges
-- **Database**: Supabase (PostgreSQL with Row Level Security on all tables)
-- **Real-time**: Streaming-first WebSocket with automatic REST fallback
-- **Market Data**: Massive.com OPTIONS ADVANCED + INDICES ADVANCED subscriptions
+- Dev: `pnpm install` then `pnpm run dev` (concurrently runs `vite` and `tsx watch server/index.ts`).
+- Build: `pnpm run build` (Vite build + `tsc -p tsconfig.server.json` to `server/dist`). Start: `pnpm run start`.
+- Tests: `pnpm test` (Vitest), E2E: `pnpm run test:e2e` (Playwright). UI/headed/debug variants available.
 
-### Architecture Pattern: Streaming-First with REST Fallback
+## Security & Proxies
 
-The application prioritizes **real-time data delivery** over consistency:
+- REST proxy: `/api/massive/*` authenticates with server `MASSIVE_API_KEY`.
+- WS proxies: `/ws/options` and `/ws/indices` require `token={MASSIVE_PROXY_TOKEN}`; server mirrors client subscriptions.
+- Ephemeral token route available in `server/massive-proxy.ts`: `POST /api/massive/ws-token` (5-minute tokens), but primary WS auth uses `MASSIVE_PROXY_TOKEN`.
 
-1. **WebSocket First**: Each symbol (`useMassiveData.ts` + `transport-policy.ts`) maintains a persistent WebSocket connection
-2. **Smart Fallback**: If WebSocket disconnects, automatically polls REST `/api/massive/*` every 3 seconds
-3. **Source Tracking**: Quotes include `source` ('websocket' or 'rest') and `asOf` timestamp for stale detection (>5s WebSocket, >6s REST)
-4. **Cleanup**: Subscriptions unsubscribe on component unmount and tab switch to avoid duplicate streams
+## Real-Time Data Pattern
 
-**Key Files**: `src/lib/massive/transport-policy.ts`, `src/hooks/useMassiveData.ts`, `src/lib/massive/websocket.ts`
+- Use `createTransport(symbol, cb, { isOption?, isIndex? })` from `src/lib/massive/transport-policy.ts`.
+- Behavior: WebSocket first; fallback to REST polling (adaptive, ~2–10s) when WS unhealthy; switch back on recovery.
+- Staleness windows: WebSocket > 5s, REST > 6s. Batching flush: 100ms.
+- Example (quotes): `useQuotes(['AAPL','SPY'])` sets per-symbol transports and updates `asOf` + `source`.
 
-## Security Model
+## Database & RLS
 
-**Critical**: API keys never reach the browser. All Massive.com authentication happens server-side.
+- Run `scripts/001_create_schema.sql` in Supabase; all core tables enforce `user_id` RLS (`profiles`, `discord_channels`, `challenges`, `watchlist`, `trades`, `trade_updates`).
+- Always filter by `user_id`; use helpers in `src/lib/supabase/` where available.
 
-### Server Proxy (`server/index.ts` + `server/massive-proxy.ts`)
+## Key Patterns
 
-- `/api/massive/[...path]` — REST proxy authenticated with `MASSIVE_API_KEY` header
-- `/api/massive/ws-token` — Generates 5-minute ephemeral tokens (WebSocket auth)
-- `/ws/options` and `/ws/indices` — WebSocket proxies that authenticate server-side, mirror subscriptions client-side
+- Risk engine (`src/lib/riskEngine/`): DTE → Trade type mapping (<1 Scalp, <5 Day, <30 Swing, ≥30 LEAP). Use `calculator.ts` via hooks.
+- Options chain: `useMassiveData().fetchOptionsChain(symbol)` uses unified normalized chain; legacy Massive chain is fallback.
+- Logging: prefix verbose traces with `[v0]`; errors with `console.error('[v0] ...')`.
+- Cleanup: transports unsubscribe on unmount/tab switch; hooks use `AbortController` and interval guards.
 
-### Environment Variables
+## Debugging
 
-- **Server-side only** (never in browser):
-  - `MASSIVE_API_KEY` — Massive.com API key
-  - `MASSIVE_PROXY_TOKEN` — Shared secret for REST + WebSocket proxies
-- **Client-side** (exposed to browser):
-  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-  - `VITE_MASSIVE_PROXY_TOKEN` — Matches server's `MASSIVE_PROXY_TOKEN`
+- Verify proxy headers and routes in Network tab (`/api/massive/*`), and WS URLs `/ws/options` or `/ws/indices` with `token`.
+- Server health: `server/index.ts` logs port + missing env warnings; WS hub in `server/ws/*` shows auth/subscribe activity.
+- Staleness UI relies on `asOf` + `source` from quote updates; expect visual stale indicators beyond thresholds.
 
-## Development Workflow
+## Pointers (files)
 
-### Build & Run
-
-```bash
-pnpm install
-pnpm run dev              # Vite SPA + tsx-watched Express server (http://localhost:5173 + :3000)
-pnpm run build            # Vite dist + tsc server (outputs to server/dist)
-pnpm run start            # Production (Node server/dist/index.js)
-```
-
-### Database Setup
-
-1. Execute `scripts/001_create_schema.sql` in Supabase SQL editor (creates tables + RLS policies)
-2. Row Level Security enforces `user_id` filtering on: `profiles`, `discord_channels`, `challenges`, `watchlist`, `trades`, `trade_updates`
-
-### Logging Convention
-
-Use `console.log('[v0] ...')` prefix for verbose trace logs (production ignores these). Errors use `console.error('[v0] ...')`.
-
-## Data Flow Patterns
-
-### Quote Streaming (Watchlist Symbol Updates)
-
-```
-App.tsx
-  → useQuotes(['AAPL', 'SPY'])  // useMassiveData.ts
-    → createTransport() per symbol  // transport-policy.ts
-      → massiveWS.subscribe()  // WebSocket streaming
-      → massiveClient.quotes()  // 3s REST fallback on disconnect
-      → callback(quote, source, timestamp)
-    → setWatchlist() with updated quote data
-```
-
-### Options Chain Loading (per ticker)
-
-```
-DesktopLiveCockpit.tsx (user clicks ticker)
-  → useMassiveData().fetchOptionsChain(symbol)
-    → massiveClient.getOptionsChain()  // REST call via proxy
-      → map to Contract[] type
-    → Display in options grid
-```
-
-### Trade Lifecycle (Supabase)
-
-1. **WATCHING** → Create trade in `trades` table, open options chain modal
-2. **LOADED** → Select contract, calculate TP/SL via `riskEngine/calculator.ts`
-3. **ENTERED** → Insert `trade_updates` record, emit Discord alert
-4. **EXITED** → Update `trade_updates` with exit price/time, archive
-
-**Key Files**: `src/lib/supabase/database.ts`, `src/lib/riskEngine/calculator.ts`
-
-## Critical Component Patterns
-
-### Risk Engine (DTE-Aware TP/SL)
-
-Located in `src/lib/riskEngine/`:
-
-- **calculator.ts**: Calculates TP/SL using percent mode or confluence levels (ATR, VWAP, support/resistance)
-- **profiles.ts**: Defines `RISK_PROFILES` keyed by trade type (Scalp, Day, Swing, LEAP) + inferTradeTypeByDTE()
-- **chartLevels.ts**: Computes key technical levels (ORB, VWAP, weekly/monthly pivots)
-
-Trade type is inferred from **DTE** (Days To Expiration): <1 DTE = Scalp, <5 = Day, <30 = Swing, ≥30 = LEAP.
-
-### Discord Integration
-
-- User adds webhook URLs in Settings, saved to `discord_channels` table
-- On trade action (enter, exit, update), format message via `lib/discordFormatter.ts`
-- Call Supabase function or server endpoint to send webhook
-- Channels can have flags: `is_default_load`, `is_default_enter`, `is_default_exit`, `is_default_update`
-
-### Mobile-First Responsive
-
-- `src/components/MobileBottomNav.tsx` — Bottom tabs (Live/Active/History/Settings)
-- `src/components/DesktopLiveCockpit.tsx` — Desktop sidebar + charts
-- Components use `use-mobile` hook to detect viewport, conditional render
-- Tailwind breakpoints: `sm`, `md`, `lg` (Radix UI components adapt)
-
-## Key File Reference
-
-| File                                  | Purpose                                                                    |
-| ------------------------------------- | -------------------------------------------------------------------------- |
-| `src/App.tsx`                         | App shell, tab routing, global state (watchlist, trades, discord channels) |
-| `src/contexts/AuthContext.tsx`        | Supabase session + user management                                         |
-| `src/hooks/useMassiveData.ts`         | Streaming quotes + options chain fetching                                  |
-| `src/hooks/useRiskEngine.ts`          | Wraps risk calculator, fetches market context (ATR, levels)                |
-| `src/lib/supabase/database.ts`        | All CRUD operations (RLS-protected queries)                                |
-| `src/lib/massive/transport-policy.ts` | Streaming-first data acquisition logic                                     |
-| `src/lib/riskEngine/calculator.ts`    | TP/SL calculation engine (percent + confluence modes)                      |
-| `server/index.ts`                     | Express app, security headers, CORS, rate limiting                         |
-| `server/ws/index.ts`                  | WebSocket proxy server (mirrors subscriptions, server-side auth)           |
-
-## Common Patterns to Follow
-
-1. **Component State**: Lift shared state to App.tsx or custom hook (e.g., `useQuotes`, `useRiskEngine`)
-2. **Error Handling**: Catch, log with `[v0]` prefix, throw or use `toast()` for user feedback
-3. **Supabase Queries**: Always use `eq('user_id', userId)` for RLS enforcement
-4. **Async/Await**: Prefer async/await; use AbortController for cancellation in useEffect cleanup
-5. **Types**: Define in `src/types/index.ts`; trade data uses discriminated unions (`TradeState`)
-
-## When Debugging
-
-- Check browser DevTools Network tab for proxy requests to `/api/massive/*` (should include `x-massive-proxy-token` header)
-- Verify WebSocket connects to `/ws/options?token=...` or `/ws/indices?token=...`
-- Supabase RLS errors appear as "row-level security violation" in logs
-- Stale quotes show visual indicator if data is older than threshold
+- `src/lib/massive/transport-policy.ts`, `src/lib/massive/websocket.ts` — streaming logic (WS-first + REST fallback). Legacy `streaming-manager.ts` is now a thin adapter delegating to transport policy.
+- `src/hooks/useMassiveData.ts` — quotes/options hooks and unified chain fetch.
+- `src/lib/riskEngine/*` — TP/SL logic; `calculator.ts`, `profiles.ts`, `chartLevels.ts`.
+- `server/index.ts`, `server/ws/index.ts` — Express app + WS proxy hubs; `server/massive-proxy.ts` for REST/ephemeral WS token demo.

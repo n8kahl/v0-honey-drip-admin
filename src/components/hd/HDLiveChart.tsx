@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { createChart, IChartApi, ISeriesApi, LineSeriesOptions, Time, CandlestickData, LineData } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
 import { MassiveError, getIndexBars, getOptionBars, getStockBars } from '../../lib/massive/proxy';
 import { massiveClient } from '../../lib/massive/client';
@@ -77,11 +77,11 @@ const chartRef = useRef<IChartApi | null>(null);
   const [holidayDates, setHolidayDates] = useState<string[]>([]);
   const holidaysSet = useMemo(() => new Set(holidayDates), [holidayDates]);
   
-  const rafRef = useRef<number | null>(null);
-  const pendingUpdatesRef = useRef<Bar[]>([]);
   const lastRenderTimeRef = useRef<number>(0);
   const barsCacheRef = useRef<Map<string, Bar[]>>(new Map());
   const inflightFetchesRef = useRef<Map<string, Promise<Bar[]>>>(new Map());
+  const hasAutoFitRef = useRef<boolean>(false);
+  const failedFetchesRef = useRef<Map<string, number>>(new Map()); // Track failed fetches to prevent infinite retries
 
   useEffect(() => {
     if (bars.length > 0 && !ready) {
@@ -120,6 +120,13 @@ const loadHistoricalBars = useCallback(async () => {
     );
     const cacheKey = `${symbolParam}:${timeframe}:${fromDate}:${toDate}`;
 
+    // Check if this fetch has failed recently (within 5 minutes)
+    const lastFailedTime = failedFetchesRef.current.get(cacheKey);
+    if (lastFailedTime && Date.now() - lastFailedTime < 300000) {
+      console.warn(`[HDLiveChart] Skipping fetch for ${ticker} - failed recently (${Math.floor((Date.now() - lastFailedTime) / 1000)}s ago)`);
+      return;
+    }
+
     if (barsCacheRef.current.has(cacheKey)) {
       setBars(barsCacheRef.current.get(cacheKey)!);
       setDataSource('rest');
@@ -155,6 +162,9 @@ const loadHistoricalBars = useCallback(async () => {
             : [];
 
           if (!Array.isArray(results) || results.length === 0) {
+            // Mark as failed to prevent infinite retries
+            failedFetchesRef.current.set(cacheKey, Date.now());
+            console.warn(`[HDLiveChart] No historical data returned for ${ticker}, marking as failed`);
             throw new Error('No historical data returned');
           }
 
@@ -169,6 +179,8 @@ const loadHistoricalBars = useCallback(async () => {
           }));
 
           barsCacheRef.current.set(cacheKey, parsed);
+          // Clear failed fetch marker on success
+          failedFetchesRef.current.delete(cacheKey);
           return parsed;
         } catch (error: any) {
           if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
@@ -201,6 +213,8 @@ const loadHistoricalBars = useCallback(async () => {
       setDataSource('rest');
       console.log(`[HDLiveChart] Loaded ${parsedBars.length} historical bars for ${ticker}`);
     } catch (error) {
+      // Mark as failed to prevent immediate retry
+      failedFetchesRef.current.set(cacheKey, Date.now());
       if (!(error instanceof MassiveError && error.code === 'RATE_LIMIT')) {
         console.error('[HDLiveChart] Failed to load historical bars:', error);
       }
@@ -248,7 +262,7 @@ const loadHistoricalBars = useCallback(async () => {
     // Do not abort on missing methods immediately; attempt to recover with retries.
     chartRef.current = chart;
 
-    const createLineSeries = (opts: LineSeriesOptions, label?: string) => {
+    const createLineSeries = (opts: any, label?: string) => {
       if (!chartRef.current || typeof (chartRef.current as any).addLineSeries !== 'function') {
         if (label) {
           console.warn(`[HDLiveChart] Line series API unavailable, skipping ${label} for now`);
@@ -261,16 +275,17 @@ const loadHistoricalBars = useCallback(async () => {
     // Create all series immediately - chart is synchronously ready
     waitingForChartRef.current = false;
 
-    // Create candlestick series
+    // Create candlestick series using v4-style API (v5 uses different API but v4 still works)
     try {
-      candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries({
+      const candleOptions = {
         upColor: '#16A34A',
         downColor: '#EF4444',
         borderUpColor: '#16A34A',
         borderDownColor: '#EF4444',
         wickUpColor: '#16A34A',
         wickDownColor: '#EF4444',
-      });
+      };
+      candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries(candleOptions);
       console.log('[HDLiveChart] Candlestick series created');
     } catch (err) {
       console.error('[HDLiveChart] Failed to create candlestick series:', err);
@@ -358,8 +373,10 @@ const loadHistoricalBars = useCallback(async () => {
   }, [height, indicators]);
   
   useEffect(() => {
+    // Reset auto-fit flag when ticker changes so new chart gets fitted
+    hasAutoFitRef.current = false;
     loadHistoricalBars();
-  }, [loadHistoricalBars]);
+  }, [ticker, timeframe]); // Only reload when ticker or timeframe changes, not on every loadHistoricalBars update
   
   useEffect(() => {
     const priceSeries = ensurePriceSeries();
@@ -455,18 +472,27 @@ const loadHistoricalBars = useCallback(async () => {
         priceSeries.setMarkers(markers);
       }
       
-      chartRef.current?.timeScale().fitContent();
+      // Only auto-fit on initial load, not on every update (allows user to pan/zoom)
+      if (!hasAutoFitRef.current && chartRef.current) {
+        chartRef.current.timeScale().fitContent();
+        hasAutoFitRef.current = true;
+      }
+      
       lastRenderTimeRef.current = now;
     };
     
     renderUpdate();
   }, [bars, indicators, events, fps, ensurePriceSeries]);
   
+  // Real-time WebSocket subscription for live aggregate updates (paid tier)
   useEffect(() => {
     const isOption = ticker.startsWith('O:');
     
     const unsubscribe = isOption
       ? massiveWS.subscribeOptionAggregates([ticker], (message) => {
+          // Skip updates when tab is hidden for battery efficiency
+          if (document.hidden) return;
+          
           if (message.type === 'aggregate' && message.data.ticker === ticker) {
             const agg = message.data;
             const newBar: Bar = {
@@ -479,33 +505,28 @@ const loadHistoricalBars = useCallback(async () => {
               vwap: agg.vwap,
             };
             
-            pendingUpdatesRef.current.push(newBar);
+            setBars(prev => {
+              const updated = [...prev];
+              const existingIndex = updated.findIndex(b => b.time === newBar.time);
+              if (existingIndex >= 0) {
+                // Update existing bar
+                updated[existingIndex] = newBar;
+              } else {
+                // Add new bar
+                updated.push(newBar);
+              }
+              return updated.sort((a, b) => (a.time as number) - (b.time as number));
+            });
+            
             setIsConnected(true);
             setDataSource('websocket');
             setLastUpdate(Date.now());
-            
-            // Batch update with RAF
-            if (!rafRef.current) {
-              rafRef.current = requestAnimationFrame(() => {
-                setBars(prev => {
-                  const updated = [...prev];
-                  pendingUpdatesRef.current.forEach(bar => {
-                    const existingIndex = updated.findIndex(b => b.time === bar.time);
-                    if (existingIndex >= 0) {
-                      updated[existingIndex] = bar;
-                    } else {
-                      updated.push(bar);
-                    }
-                  });
-                  pendingUpdatesRef.current = [];
-                  return updated.sort((a, b) => (a.time as number) - (b.time as number));
-                });
-                rafRef.current = null;
-              });
-            }
           }
         })
       : massiveWS.subscribeAggregates([ticker], (message) => {
+          // Skip updates when tab is hidden for battery efficiency
+          if (document.hidden) return;
+          
           if (message.type === 'aggregate') {
             const agg = message.data;
             const newBar: Bar = {
@@ -517,45 +538,37 @@ const loadHistoricalBars = useCallback(async () => {
               volume: agg.volume,
             };
             
-            pendingUpdatesRef.current.push(newBar);
+            setBars(prev => {
+              const updated = [...prev];
+              const existingIndex = updated.findIndex(b => b.time === newBar.time);
+              if (existingIndex >= 0) {
+                updated[existingIndex] = newBar;
+              } else {
+                updated.push(newBar);
+              }
+              return updated.sort((a, b) => (a.time as number) - (b.time as number));
+            });
+            
             setIsConnected(true);
             setDataSource('websocket');
             setLastUpdate(Date.now());
-            
-            if (!rafRef.current) {
-              rafRef.current = requestAnimationFrame(() => {
-                setBars(prev => {
-                  const updated = [...prev];
-                  pendingUpdatesRef.current.forEach(bar => {
-                    const existingIndex = updated.findIndex(b => b.time === bar.time);
-                    if (existingIndex >= 0) {
-                      updated[existingIndex] = bar;
-                    } else {
-                      updated.push(bar);
-                    }
-                  });
-                  pendingUpdatesRef.current = [];
-                  return updated.sort((a, b) => (a.time as number) - (b.time as number));
-                });
-                rafRef.current = null;
-              });
-            }
           }
         });
     
-    // REST fallback polling every 3 seconds
+    // REST fallback: if no data for 30 seconds, fetch historical
+    // Only check once per minute to avoid excessive polling
     const fallbackInterval = setInterval(() => {
-      if (Date.now() - lastUpdate > 3000) {
+      if (Date.now() - lastUpdate > 30000 && !document.hidden && bars.length === 0) {
+        console.log('[HDLiveChart] No WebSocket data for 30s and no bars, falling back to REST');
         setIsConnected(false);
         setDataSource('rest');
         loadHistoricalBars();
       }
-    }, 3000);
+    }, 60000); // Changed from 30s to 60s and only runs if no bars exist
     
     return () => {
       unsubscribe();
       clearInterval(fallbackInterval);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [ticker, lastUpdate, loadHistoricalBars]);
   

@@ -5,9 +5,12 @@ import { massiveClient } from './client';
 
 const INDEX_TICKERS = ['SPX', 'NDX', 'VIX', 'RUT'];
 const INDICATOR_CACHE_TTL = 60_000; // 60 seconds
+const FAILURE_COOLDOWN = 300_000; // 5 minutes cooldown for failed fetches
 
 // Cache: symbol+indicator_key -> { data, timestamp }
 const indicatorCache = new Map<string, { data: IndicatorResponse; timestamp: number }>();
+// Track failed fetches to prevent infinite retries
+const failedFetches = new Map<string, number>();
 
 // Helper to generate cache key
 function getCacheKey(symbol: string, indicators: IndicatorRequest): string {
@@ -65,94 +68,108 @@ export async function fetchIndicators(
   // Check cache first
   const cached = indicatorCache.get(cacheKey);
   if (cached && !isCacheExpired(cached.timestamp)) {
-    console.log(`[IndicatorsAPI] Cache hit for ${cacheKey}`);
+    console.log(`[IndicatorsAPI] ✅ Cache hit for ${cacheKey}`);
     return cached.data;
   }
   
-  console.log(`[IndicatorsAPI] Fetching indicators for ${symbol}: ${JSON.stringify(indicators)}`);
+  // Check if this fetch recently failed - use cooldown
+  const lastFailure = failedFetches.get(cacheKey);
+  if (lastFailure && Date.now() - lastFailure < FAILURE_COOLDOWN) {
+    console.warn(`[IndicatorsAPI] ⏰ Cooldown active for ${cacheKey}, returning cached/empty`);
+    return cached?.data || { timestamp: Date.now() };
+  }
   
-  // For now, calculate indicators client-side from aggregates
-  // TODO: Use Massive.com's pre-computed indicator endpoints when available
+  console.log(`[IndicatorsAPI] 🔄 Fetching indicators for ${symbol}: ${JSON.stringify(indicators)}`);
   
   const response: IndicatorResponse = {
     timestamp: Date.now(),
   };
   
-  const isIndex = symbol.startsWith('I:') || INDEX_TICKERS.includes(symbol);
-  const aggSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
-
-  // Fetch historical aggregates
-  const bars = await massiveClient.getAggregates(aggSymbol, timeframe, lookback);
-  
-  if (bars.length === 0) {
-    // Cache empty response too
+  try {
+    // Determine if symbol is an index
+    const isIndex = symbol.startsWith('I:') || INDEX_TICKERS.includes(symbol);
+    const aggSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
+    
+    // Fetch aggregates
+    const bars = await massiveClient.getAggregates(aggSymbol, timeframe, lookback);
+    
+    if (bars.length === 0) {
+      console.warn(`[IndicatorsAPI] No bars returned for ${symbol}`);
+      indicatorCache.set(cacheKey, { data: response, timestamp: Date.now() });
+      return response;
+    }
+    
+    // Extract price data
+    const closes = bars.map(b => b.c);
+    const highs = bars.map(b => b.h);
+    const lows = bars.map(b => b.l);
+    
+    // Calculate requested indicators
+    if (indicators.ema) {
+      response.ema = {};
+      for (const period of indicators.ema) {
+        response.ema[period] = calculateEMA(closes, period);
+      }
+    }
+    
+    if (indicators.sma) {
+      response.sma = {};
+      for (const period of indicators.sma) {
+        response.sma[period] = calculateSMA(closes, period);
+      }
+    }
+    
+    if (indicators.rsi) {
+      response.rsi = {};
+      for (const period of indicators.rsi) {
+        response.rsi[period] = calculateRSI(closes, period);
+      }
+    }
+    
+    if (indicators.atr) {
+      response.atr = {};
+      for (const period of indicators.atr) {
+        response.atr[period] = calculateATR(highs, lows, closes, period);
+      }
+    }
+    
+    if (indicators.bollinger) {
+      response.bollinger = [];
+      for (const config of indicators.bollinger) {
+        const { length, stddev } = config;
+        const sma = calculateSMA(closes, length);
+        const std = calculateStdDev(closes, length);
+        const upper = sma.map((s, i) => s + (stddev * std[i]));
+        const lower = sma.map((s, i) => s - (stddev * std[i]));
+        
+        response.bollinger.push({
+          length,
+          stddev,
+          upper,
+          middle: sma,
+          lower,
+        });
+      }
+    }
+    
+    // Cache the successful response
     indicatorCache.set(cacheKey, { data: response, timestamp: Date.now() });
+    // Clear any failure tracking
+    failedFetches.delete(cacheKey);
+    
+    console.log(`[IndicatorsAPI] ✅ Successfully fetched and cached indicators for ${symbol}`);
     return response;
+    
+  } catch (error) {
+    console.error(`[IndicatorsAPI] ❌ Failed to fetch indicators for ${symbol}:`, error);
+    // Track the failure
+    failedFetches.set(cacheKey, Date.now());
+    // Return cached data if available, otherwise empty response
+    return cached?.data || response;
   }
-  
-  const closes = bars.map(b => b.c);
-  const highs = bars.map(b => b.h);
-  const lows = bars.map(b => b.l);
-  
-  // Calculate EMAs
-  if (indicators.ema) {
-    response.ema = {};
-    for (const period of indicators.ema) {
-      response.ema[period] = calculateEMA(closes, period);
-    }
-  }
-  
-  // Calculate SMAs
-  if (indicators.sma) {
-    response.sma = {};
-    for (const period of indicators.sma) {
-      response.sma[period] = calculateSMA(closes, period);
-    }
-  }
-  
-  // Calculate RSI
-  if (indicators.rsi) {
-    response.rsi = {};
-    for (const period of indicators.rsi) {
-      response.rsi[period] = calculateRSI(closes, period);
-    }
-  }
-  
-  // Calculate ATR
-  if (indicators.atr) {
-    response.atr = {};
-    for (const period of indicators.atr) {
-      response.atr[period] = calculateATR(highs, lows, closes, period);
-    }
-  }
-  
-  // Calculate Bollinger Bands
-  if (indicators.bollinger) {
-    response.bollinger = [];
-    for (const config of indicators.bollinger) {
-      const { length, stddev } = config;
-      const sma = calculateSMA(closes, length);
-      const std = calculateStdDev(closes, length);
-      
-      const upper = sma.map((s, i) => s + stddev * std[i]);
-      const lower = sma.map((s, i) => s - stddev * std[i]);
-      
-      response.bollinger.push({
-        length,
-        stddev,
-        upper,
-        middle: sma,
-        lower,
-      });
-    }
-  }
-  
-  // Store in cache
-  indicatorCache.set(cacheKey, { data: response, timestamp: Date.now() });
-  
-  return response;
 }
 
+// Original function temporarily disabled - ALL CODE REMOVED to stop flood
 // Helper indicator calculations
 function calculateEMA(data: number[], period: number): number[] {
   const result: number[] = [];

@@ -1,0 +1,469 @@
+[
+  {
+    "name": "Opening Range Breakout + Patient Candle (Long)",
+    "slug": "orb-pc-long",
+    "description": "Detects bullish breakout above 15-minute opening range with patient candle confirmation. Requires 5-60 minutes after open, volume above average, and at least 3 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": ">=", "value": 5 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": "<=", "value": 60 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "pattern.orbHigh" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.isPatientCandle", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.volumeSpike", "op": "==", "value": true }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Opening Range Breakdown + Patient Candle (Short)",
+    "slug": "orb-pc-short",
+    "description": "Detects bearish breakdown below 15-minute opening range with patient candle confirmation. Requires 5-60 minutes after open, volume above average, and at least 3 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": ">=", "value": 5 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": "<=", "value": 60 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "pattern.orbLow" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.isPatientCandle", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.volumeSpike", "op": "==", "value": true }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Bounce (Long)",
+    "slug": "ema-bounce-long",
+    "description": "Detects bullish EMA21 bounce: previous bar wicked into EMA21, current bar closes above, with 60m bullish trend alignment. Patient candle preferred.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.prev", "op": "<=", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "mtf.60m.ema.9", "op": ">", "value": "mtf.60m.ema.21" }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Rejection (Short)",
+    "slug": "ema-rejection-short",
+    "description": "Detects bearish EMA21 rejection: previous bar wicked into EMA21, current bar closes below, with 60m bearish trend alignment. Patient candle preferred.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.prev", "op": ">=", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "mtf.60m.ema.9", "op": "<", "value": "mtf.60m.ema.21" }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Reclaim (Long)",
+    "slug": "vwap-reclaim-long",
+    "description": "Detects bullish VWAP reclaim: price crosses above VWAP and stays within 0.3% distance. Requires at least 2 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "vwap.value" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "vwap.distancePct", "op": "<", "value": 0.3 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Rejection (Short)",
+    "slug": "vwap-rejection-short",
+    "description": "Detects bearish VWAP rejection: price crosses below VWAP and stays within 0.3% distance. Requires at least 2 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "vwap.value" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "vwap.distancePct", "op": "<", "value": 0.3 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Cloud Strategy (Long)",
+    "slug": "cloud-strategy-long",
+    "description": "Detects bullish EMA cloud: price above both EMA9 and EMA21, with EMA9 > EMA21 (cloud stacked bullish). Requires at least 3 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "ema.9" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "ema.9", "op": ">", "value": "ema.21" }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Cloud Strategy (Short)",
+    "slug": "cloud-strategy-short",
+    "description": "Detects bearish EMA cloud: price below both EMA9 and EMA21, with EMA9 < EMA21 (cloud stacked bearish). Requires at least 3 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "ema.9" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "ema.9", "op": "<", "value": "ema.21" }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Fibonacci Pullback (Long)",
+    "slug": "fib-pullback-long",
+    "description": "Detects bullish Fibonacci pullback: price retraces to 50% or 61.8% Fib level of recent swing, then resumes. Requires at least 2 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": { "field": "pattern.nearFib618", "op": "==", "value": true }
+            },
+            {
+              "type": "RULE",
+              "rule": { "field": "pattern.nearFib500", "op": "==", "value": true }
+            }
+          ]
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "pattern.fib618" }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Range Breakout (Long)",
+    "slug": "breakout-long",
+    "description": "Detects bullish breakout from 20-bar consolidation range with volume confirmation. Requires volume spike and at least 2 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.breakoutBullish", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.volumeSpike", "op": "==", "value": true }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Range Breakdown (Short)",
+    "slug": "breakdown-short",
+    "description": "Detects bearish breakdown from 20-bar consolidation range with volume confirmation. Requires volume spike and at least 2 confluence factors.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.breakoutBearish", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.volumeSpike", "op": "==", "value": true }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  }
+]

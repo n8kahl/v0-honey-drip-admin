@@ -3,45 +3,88 @@ import { massiveClient, hasApiKey, type MassiveQuote, type MassiveOptionsChain }
 import { MassiveError } from '../lib/massive/proxy';
 import { createTransport } from '../lib/massive/transport-policy';
 import type { Contract } from '../types';
+import { fetchNormalizedChain } from '../services/options';
+import { fetchQuotes as fetchUnifiedQuotes } from '../services/quotes';
 
-export function useMassiveData() {
-  const fetchOptionsChain = async (symbol: string, expiry?: string): Promise<Contract[]> => {
-    console.log(`[v0] Fetching real options chain for ${symbol}`);
-    
-    try {
-      const data = await massiveClient.getOptionsChain(symbol, expiry);
-      console.log(`[v0] Received options chain data:`, data);
-      
-      const contracts: Contract[] = data.results.map((opt: any) => ({
-        id: opt.ticker || `${symbol}-${opt.strike}-${opt.expiration}`,
-        strike: parseFloat(opt.strike),
-        expiry: opt.expiration_date || opt.expiration,
-        expiryDate: new Date(opt.expiration_date || opt.expiration),
-        daysToExpiry: opt.days_to_expiration || Math.ceil((new Date(opt.expiration_date || opt.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-        type: opt.contract_type === 'call' ? 'C' as const : 'P' as const,
-        mid: (opt.bid + opt.ask) / 2 || opt.last_quote?.midpoint || 0,
-        bid: opt.bid || opt.last_quote?.bid || 0,
-        ask: opt.ask || opt.last_quote?.ask || 0,
-        volume: opt.day_volume || 0,
-        openInterest: opt.open_interest || 0,
-        delta: opt.greeks?.delta,
-        gamma: opt.greeks?.gamma,
-        theta: opt.greeks?.theta,
-        vega: opt.greeks?.vega,
-        iv: opt.implied_volatility,
-      }));
-      
-      console.log(`[v0] Transformed contracts:`, contracts.length, 'contracts');
-      return contracts;
-    } catch (error: any) {
-      console.error('[v0] Failed to fetch options chain:', error);
-      throw error;
+// Group contracts by expiration for backwards compatibility with old MassiveOptionsChain format
+function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain {
+  const expiryMap = new Map<string, any[]>();
+  
+  for (const contract of contracts) {
+    if (!expiryMap.has(contract.expiry)) {
+      expiryMap.set(contract.expiry, []);
     }
-  };
-
+    expiryMap.get(contract.expiry)!.push({
+      ticker: contract.id,
+      strike_price: contract.strike,
+      expiration_date: contract.expiry,
+      contract_type: contract.type,
+      last_price: contract.mid, // Use mid as last price approximation
+      bid: contract.bid,
+      ask: contract.ask,
+      mid: contract.mid,
+      volume: contract.volume,
+      open_interest: contract.openInterest,
+      implied_volatility: contract.iv,
+      delta: contract.delta,
+      gamma: contract.gamma,
+      theta: contract.theta,
+      vega: contract.vega,
+    });
+  }
+  
   return {
-    fetchOptionsChain,
-  };
+    results: Array.from(expiryMap.values()).flat(),
+  } as MassiveOptionsChain;
+}
+
+export function useOptionsChain(symbol: string | null, window: number = 8) {
+  const [optionsChain, setOptionsChain] = useState<MassiveOptionsChain | null>(null);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [asOf, setAsOf] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!symbol) {
+      setOptionsChain(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const fetch = async () => {
+      try {
+        const USE_UNIFIED = ((import.meta as any)?.env?.VITE_USE_UNIFIED_CHAIN ?? 'true') === 'true';
+        let contracts: Contract[] = [];
+        if (USE_UNIFIED) {
+          const normalized = await fetchNormalizedChain(symbol, window);
+          contracts = normalized;
+        } else {
+          const data = await massiveClient.getOptionsChain(symbol);
+          contracts = data.results.map((opt: any) => ({
+            id: opt.ticker || `${symbol}-${opt.strike}-${opt.expiration}`,
+            strike: opt.strike,
+            expiry: opt.expiration,
+            type: opt.type,
+            underlying: symbol,
+            ...opt,
+          }));
+        }
+        setContracts(contracts);
+        setOptionsChain(groupContractsByExpiration(contracts));
+        setAsOf(Date.now());
+        setLoading(false);
+      } catch (err: any) {
+        setError(err?.message || 'Failed to fetch options chain');
+        setLoading(false);
+      }
+    };
+    fetch();
+  }, [symbol, window]);
+
+  return { optionsChain, contracts, loading, error, asOf };
 }
 
 export function useQuotes(symbols: string[]) {
@@ -80,6 +123,36 @@ export function useQuotes(symbols: string[]) {
 
     const unsubscribes: Array<() => void> = [];
 
+    // 1) Immediate batched REST fill for all symbols
+    (async () => {
+      try {
+        const unified = await fetchUnifiedQuotes(symbols);
+        const now = Date.now();
+        unified.forEach((q) =>
+          handleUpdate(
+            {
+              symbol: q.symbol,
+              last: q.last,
+              change: q.change,
+              changePercent: q.changePercent,
+              bid: 0,
+              ask: 0,
+              volume: 0,
+              high: q.last,
+              low: q.last,
+              open: q.last,
+              previousClose: q.last,
+              timestamp: q.asOf || now,
+            } as any,
+            'rest',
+            q.asOf || now
+          )
+        );
+      } catch (e) {
+        console.warn('[useQuotes] Initial batch fill failed', e);
+      }
+    })();
+
     symbols.forEach(symbol => {
       const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
       
@@ -106,61 +179,6 @@ export function useQuotes(symbols: string[]) {
   return { quotes, loading, error };
 }
 
-export function useOptionsChain(symbol: string | null, expiry?: string) {
-  const [optionsChain, setOptionsChain] = useState<MassiveOptionsChain & { asOf?: number } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const rateLimitedRef = useRef(false);
-
-  const fetchOptionsChain = useCallback(async () => {
-    if (!symbol) return;
-
-    try {
-      setLoading(true);
-      console.log('[useOptionsChain] Fetching options chain snapshot for', symbol);
-      const data = await massiveClient.getOptionsChain(symbol, expiry);
-      setOptionsChain({
-        ...data,
-        asOf: Date.now(),
-      });
-      setError(null);
-      rateLimitedRef.current = false;
-    } catch (err: any) {
-      if (err instanceof MassiveError && err.code === 'RATE_LIMIT') {
-        setError('Rate limited by Massive — pausing refresh');
-        rateLimitedRef.current = true;
-      } else {
-        setError(err.message || 'Failed to fetch options chain');
-      }
-      console.error('[useOptionsChain] Failed to fetch options chain:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [symbol, expiry]);
-
-  useEffect(() => {
-    if (!symbol) return;
-
-    // Fetch immediately
-    fetchOptionsChain();
-
-    // Refresh every 3 seconds while panel is open
-    const refreshInterval = setInterval(() => {
-      if (rateLimitedRef.current) {
-        console.warn('[useOptionsChain] Skipping refresh while rate limited');
-        return;
-      }
-      console.log('[useOptionsChain] Auto-refreshing options chain for', symbol);
-      fetchOptionsChain();
-    }, 3000);
-
-    return () => {
-      clearInterval(refreshInterval);
-    };
-  }, [fetchOptionsChain, symbol]);
-
-  return { optionsChain, loading, error, refetch: fetchOptionsChain };
-}
 
 export function useActiveTradePnL(contractTicker: string | null, entryPrice: number) {
   const [currentPrice, setCurrentPrice] = useState(entryPrice);
@@ -176,7 +194,7 @@ export function useActiveTradePnL(contractTicker: string | null, entryPrice: num
     const unsubscribe = createTransport(
       contractTicker,
       (data, transportSource, timestamp) => {
-        const price = data.last || data.mid || ((data.bid || 0) + (data.ask || 0)) / 2;
+        const price = data.last || ((data.bid || 0) + (data.ask || 0)) / 2;
         
         if (price > 0) {
           setCurrentPrice(price);

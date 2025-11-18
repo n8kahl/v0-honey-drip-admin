@@ -11,11 +11,37 @@ function toNumber(value: unknown): number {
 }
 
 function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuote | null {
-  if (!data) return null;
+  if (!data) {
+    console.log('[mapMassiveMessageToQuote] No data received');
+    return null;
+  }
 
-  const symbol =
+  // If data is already a properly formatted MassiveQuote (has symbol, last, and all numeric fields), return it directly
+  if (
+    data.symbol &&
+    typeof data.last === 'number' &&
+    typeof data.change === 'number' &&
+    typeof data.changePercent === 'number'
+  ) {
+    console.log(`[mapMassiveMessageToQuote] Data already formatted for ${data.symbol}:`, {
+      last: data.last,
+      change: data.change,
+      changePercent: data.changePercent
+    });
+    return data as MassiveQuote;
+  }
+
+  let symbol =
     data.symbol || data.ticker || data.sym || data.underlying_ticker || fallbackSymbol;
-  if (!symbol) return null;
+  if (!symbol) {
+    console.log('[mapMassiveMessageToQuote] No symbol found in data:', data);
+    return null;
+  }
+
+  // Remove I: prefix from indices (I:SPX → SPX) to match watchlist symbols
+  if (symbol.startsWith('I:')) {
+    symbol = symbol.substring(2);
+  }
 
   const last = toNumber(data.last ?? data.value ?? data.price ?? data.c ?? 0);
   const change = toNumber(data.change ?? data.delta ?? 0);
@@ -32,6 +58,8 @@ function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuo
     data.previousClose ?? data.close ?? data.c ?? data.lastClose ?? last
   );
   const timestamp = toNumber(data.timestamp ?? data.t ?? Date.now());
+
+  console.log(`[mapMassiveMessageToQuote] Mapped ${symbol}:`, { last, change, changePercent });
 
   return {
     symbol,
@@ -79,13 +107,16 @@ export class TransportPolicy {
   // Health/debounce tuning
   private consecutiveHealthFailures = 0;
   private readonly healthFailureThreshold = 2; // require 2 consecutive failures before switching to REST
-  private readonly staleThresholdMs = 15000; // consider data stale after 15s
+  // Staleness thresholds per architecture: >5s WebSocket, >6s REST
+  private readonly wsStaleThresholdMs = 5000;  // consider WS data stale after 5s
+  private readonly restStaleThresholdMs = 6000; // consider REST data stale after 6s
   private lastMarketStatusCheck = 0;
   private marketOpen = true;
   // Message batching: accumulate updates and flush every 100ms
   private batchBuffer: Array<{ quote: MassiveQuote; source: 'websocket' | 'rest'; timestamp: number }> = [];
   private batchFlushTimer: any = null;
   private readonly BATCH_FLUSH_INTERVAL = 100; // ms
+  private isPaused = false;
 
   constructor(config: TransportConfig, callback: TransportCallback) {
     this.config = {
@@ -97,6 +128,42 @@ export class TransportPolicy {
     // Use adaptive interval instead of fixed 3s
     this.basePollInterval = this.getOptimalPollInterval();
     this.currentPollInterval = this.basePollInterval;
+    
+    // Add visibility change listener
+    this.setupVisibilityListener();
+  }
+
+  private setupVisibilityListener() {
+    // Check initial state - if page loads hidden, start paused
+    if (document.hidden) {
+      console.log(`[TransportPolicy] Page loaded hidden, starting paused for ${this.config.symbol}`);
+      this.isPaused = true;
+    }
+    
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log(`[TransportPolicy] Tab hidden, pausing updates for ${this.config.symbol}`);
+        this.pause();
+      } else {
+        console.log(`[TransportPolicy] Tab visible, resuming updates for ${this.config.symbol}`);
+        this.resume();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
+  private pause() {
+    this.isPaused = true;
+    this.clearPollTimer();
+  }
+
+  private resume() {
+    this.isPaused = false;
+    if (this.isActive) {
+      // Fetch immediately on resume
+      void this.pollData();
+    }
   }
 
   private getOptimalPollInterval(): number {
@@ -237,7 +304,7 @@ export class TransportPolicy {
   }
 
   private handleWsMessage(message: WebSocketMessage) {
-    if (!this.isActive) return;
+    if (!this.isActive || this.isPaused) return;
 
     const now = Date.now();
     this.lastDataTimestamp = now;
@@ -289,7 +356,7 @@ export class TransportPolicy {
   }
 
   private scheduleNextPoll(delay?: number) {
-    if (!this.isActive) return;
+    if (!this.isActive || this.isPaused) return;
     const wait = typeof delay === 'number' ? delay : this.currentPollInterval;
     this.clearPollTimer();
     this.pollTimer = setTimeout(() => {
@@ -299,7 +366,7 @@ export class TransportPolicy {
   }
 
   private async pollData() {
-    if (!this.isActive) return;
+    if (!this.isActive || this.isPaused) return;
 
     if (this.fetchingBars) {
       console.debug(
@@ -365,7 +432,9 @@ export class TransportPolicy {
 
         const wsState = massiveWS.getConnectionState();
         const timeSinceLastData = Date.now() - this.lastDataTimestamp;
-        const isStale = timeSinceLastData > this.staleThresholdMs; // No data for configured stale threshold
+        const usingRest = !!this.pollTimer;
+        const threshold = usingRest ? this.restStaleThresholdMs : this.wsStaleThresholdMs;
+        const isStale = timeSinceLastData > threshold; // No data within allowed freshness window
 
       // Detect state changes
       if (wsState !== this.lastWsState) {

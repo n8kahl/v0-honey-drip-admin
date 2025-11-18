@@ -1,18 +1,22 @@
 type WsEndpoint = 'options' | 'indices';
 
 const WS_BASE = '/ws';
-const TOKEN = import.meta.env.VITE_MASSIVE_PROXY_TOKEN;
 
-if (!TOKEN) {
-  console.warn('[Massive WS] VITE_MASSIVE_PROXY_TOKEN missing; WS proxy will reject connections');
+async function fetchWsToken(): Promise<string | null> {
+  try {
+    const resp = await fetch('/api/ws-token', { method: 'POST' });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    return String(json?.token || '') || null;
+  } catch {
+    return null;
+  }
 }
 
-function wsUrl(endpoint: WsEndpoint) {
+function wsUrl(endpoint: WsEndpoint, token?: string | null) {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
-  const tokenSegment = TOKEN
-    ? `?token=${encodeURIComponent(TOKEN)}`
-    : '';
+  const tokenSegment = token ? `?token=${encodeURIComponent(token)}` : '';
   return `${proto}//${host}${WS_BASE}/${endpoint}${tokenSegment}`;
 }
 
@@ -127,11 +131,11 @@ class MassiveWebSocket {
   }
 
   async connect() {
-    this.connectEndpoint('options');
-    this.connectEndpoint('indices');
+    void this.connectEndpoint('options');
+    void this.connectEndpoint('indices');
   }
 
-  private connectEndpoint(endpoint: WsEndpoint) {
+  private async connectEndpoint(endpoint: WsEndpoint) {
     if (this.sockets[endpoint]?.readyState === WebSocket.OPEN || this.isConnecting[endpoint]) {
       return;
     }
@@ -141,7 +145,8 @@ class MassiveWebSocket {
     this.isAuthenticated[endpoint] = false;
 
     try {
-      const socket = new WebSocket(wsUrl(endpoint));
+      const token = await fetchWsToken();
+      const socket = new WebSocket(wsUrl(endpoint, token));
       this.sockets[endpoint] = socket;
 
       socket.onopen = () => {
@@ -249,10 +254,15 @@ class MassiveWebSocket {
       };
       this.notifySubscribers('option', sym, message);
     } else if (ev === 'A') {
+      // For indices, normalize symbol by removing I: prefix for subscriber lookup
+      const isIndex = sym.startsWith('I:');
+      const normalizedSym = isIndex ? sym.substring(2) : sym;
+      const messageType = isIndex ? 'index' : 'quote';
+      
       const message: WebSocketMessage = {
-        type: 'quote',
+        type: messageType,
         data: {
-          symbol: sym,
+          symbol: normalizedSym,
           last: msg.c,
           open: msg.o,
           high: msg.h,
@@ -263,7 +273,7 @@ class MassiveWebSocket {
         },
         timestamp: msg.e,
       };
-      this.notifySubscribers('quote', sym, message);
+      this.notifySubscribers(messageType, normalizedSym, message);
     } else if (ev === 'T') {
       const message: WebSocketMessage = {
         type: 'trade',
@@ -405,33 +415,150 @@ class MassiveWebSocket {
     };
   }
 
-  subscribeAggregates(symbols: string[], callback: SubscriptionCallback) {
-    return this.subscribeQuotes(symbols, (message) => {
-      if (message.type !== 'quote') return;
-      const data = message.data as QuoteUpdate;
-      callback(this.toAggregateMessage(data.symbol, data.last, data.timestamp, data.volume));
-    });
+  subscribeAggregates(symbols: string[], callback: SubscriptionCallback, timespan: 'second' | 'minute' = 'minute') {
+    // Paid tier: Subscribe to REAL aggregate streams
+    // AM.* = 1-minute aggregates, A.* = second-level aggregates
+    const prefix = timespan === 'minute' ? 'AM' : 'A';
+    const topics = symbols.map(s => `${prefix}.${s}`);
+    
+    // Ensure connection
+    void this.connectEndpoint('options');
+
+    // Wait for connection and subscribe
+    const subscribeWhenReady = () => {
+      const socket = this.sockets.options;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated.options) {
+        setTimeout(subscribeWhenReady, 100);
+        return;
+      }
+
+      const params = topics.join(',');
+      socket.send(JSON.stringify({ action: 'subscribe', params }));
+      console.log(`[MassiveWS] Subscribed to aggregate stream: ${params}`);
+      
+      topics.forEach(t => this.subscriptions.options.add(t));
+    };
+
+    subscribeWhenReady();
+
+    const handler = (event: MessageEvent) => {
+      try {
+        const messages = JSON.parse(event.data);
+        if (!Array.isArray(messages)) return;
+
+        for (const msg of messages) {
+          // Aggregate messages have 'ev' field like 'AM' or 'A'
+          if (msg.ev === prefix && symbols.includes(msg.sym)) {
+            callback({
+              type: 'aggregate',
+              data: {
+                ticker: msg.sym,
+                open: msg.o,
+                high: msg.h,
+                low: msg.l,
+                close: msg.c,
+                volume: msg.v,
+                vwap: msg.vw,
+                timestamp: msg.s, // start timestamp
+              },
+              timestamp: Date.now(),
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[MassiveWS] Error parsing aggregate message:', error);
+      }
+    };
+
+    const socket = this.sockets.options;
+    if (socket) {
+      socket.addEventListener('message', handler);
+    }
+
+    return () => {
+      const socket = this.sockets.options;
+      if (socket) {
+        socket.removeEventListener('message', handler);
+        if (socket.readyState === WebSocket.OPEN) {
+          const params = topics.join(',');
+          socket.send(JSON.stringify({ action: 'unsubscribe', params }));
+          console.log(`[MassiveWS] Unsubscribed from aggregate stream: ${params}`);
+        }
+      }
+      topics.forEach(t => this.subscriptions.options.delete(t));
+    };
   }
 
-  subscribeOptionAggregates(optionTickers: string[], callback: SubscriptionCallback) {
-    return this.subscribeOptionQuotes(optionTickers, (message) => {
-      if (message.type !== 'option') return;
-      const data = message.data as OptionQuoteUpdate;
-      const price = data.mid ?? ((data.bid + data.ask) / 2) ?? data.bid ?? data.ask ?? 0;
-      callback({
-        type: 'aggregate',
-        data: {
-          ticker: data.ticker,
-          open: price,
-          high: price,
-          low: price,
-          close: price,
-          volume: data.volume ?? 0,
-          timestamp: data.timestamp,
-        },
-        timestamp: data.timestamp,
-      });
-    });
+  subscribeOptionAggregates(optionTickers: string[], callback: SubscriptionCallback, timespan: 'second' | 'minute' = 'minute') {
+    // Paid tier: Subscribe to REAL option aggregate streams
+    const prefix = timespan === 'minute' ? 'AM' : 'A';
+    const topics = optionTickers.map(t => `${prefix}.${t}`);
+    
+    // Ensure connection
+    this.connectEndpoint('options');
+
+    // Wait for connection and subscribe
+    const subscribeWhenReady = () => {
+      const socket = this.sockets.options;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated.options) {
+        setTimeout(subscribeWhenReady, 100);
+        return;
+      }
+
+      const params = topics.join(',');
+      socket.send(JSON.stringify({ action: 'subscribe', params }));
+      console.log(`[MassiveWS] Subscribed to option aggregate stream: ${params}`);
+      
+      topics.forEach(t => this.subscriptions.options.add(t));
+    };
+
+    subscribeWhenReady();
+
+    const handler = (event: MessageEvent) => {
+      try {
+        const messages = JSON.parse(event.data);
+        if (!Array.isArray(messages)) return;
+
+        for (const msg of messages) {
+          if (msg.ev === prefix && optionTickers.includes(msg.sym)) {
+            callback({
+              type: 'aggregate',
+              data: {
+                ticker: msg.sym,
+                open: msg.o,
+                high: msg.h,
+                low: msg.l,
+                close: msg.c,
+                volume: msg.v,
+                vwap: msg.vw,
+                timestamp: msg.s,
+              },
+              timestamp: Date.now(),
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[MassiveWS] Error parsing option aggregate message:', error);
+      }
+    };
+
+    const socket = this.sockets.options;
+    if (socket) {
+      socket.addEventListener('message', handler);
+    }
+
+    return () => {
+      const socket = this.sockets.options;
+      if (socket) {
+        socket.removeEventListener('message', handler);
+        if (socket.readyState === WebSocket.OPEN) {
+          const params = topics.join(',');
+          socket.send(JSON.stringify({ action: 'unsubscribe', params }));
+          console.log(`[MassiveWS] Unsubscribed from option aggregate stream: ${params}`);
+        }
+      }
+      topics.forEach(t => this.subscriptions.options.delete(t));
+    };
   }
 
   getConnectionState(): 'connecting' | 'open' | 'closed' {

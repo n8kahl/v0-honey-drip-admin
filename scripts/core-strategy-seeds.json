@@ -1,0 +1,225 @@
+[
+  {
+    "name": "Opening Range Breakout (5m)",
+    "slug": "opening-range-breakout-5m",
+    "description": "Detects 5-minute opening range breakout with volume confirmation. Triggers when price breaks above first 5m candle high and volume is above average.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "session.minutesSinceOpen",
+            "op": ">=",
+            "value": 5
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "session.minutesSinceOpen",
+            "op": "<=",
+            "value": 60
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": "crossesAbove",
+            "value": 0
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.current",
+                "op": ">",
+                "value": 0
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "pattern.volumeSpike",
+                "op": "==",
+                "value": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Break + Retest (Multi-Timeframe)",
+    "slug": "vwap-break-retest-mtf",
+    "description": "Price breaks above VWAP on 5m, pulls back but holds above on 15m, then continues. Confluence across timeframes required.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.5m.price.current",
+            "op": ">",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.5m.vwap.distancePct",
+            "op": "insideRange",
+            "value": [0.1, 1.5]
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.15m.price.current",
+            "op": ">",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.15m.vwap.distancePct",
+            "op": ">=",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.15m.ema.21",
+            "op": ">",
+            "value": 0
+          }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Bull Flag Breakout",
+    "slug": "bull-flag-breakout",
+    "description": "Detects a consolidation (flag) after a strong move with EMA support, then breaks out. Requires 5m and 15m alignment.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "14:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.5m.price.current",
+            "op": ">",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.5m.ema.8",
+            "op": ">",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.5m.price.current",
+            "op": "above",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.15m.ema.21",
+            "op": ">",
+            "value": 0
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.15m.rsi.14",
+            "op": "insideRange",
+            "value": [40, 70]
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "pattern.consolidation",
+            "op": "==",
+            "value": true
+          }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false
+    },
+    "cooldownMinutes": 20,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  }
+]

@@ -6,7 +6,7 @@ import { HDConfirmDialog } from './HDConfirmDialog';
 import { formatPercent, cn } from '../../lib/utils';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { useQuotes } from '../../hooks/useMassiveData';
+import type { SymbolSignals } from '../../hooks/useStrategyScanner';
 
 interface HDPanelWatchlistProps {
   watchlist: Ticker[];
@@ -26,6 +26,7 @@ interface HDPanelWatchlistProps {
   onRemoveChallenge?: (challenge: Challenge) => void;
   onOpenActiveTrade?: (tradeId: string) => void; // Navigate to active trade
   onOpenReviewTrade?: (tradeId: string) => void; // Navigate to review trade
+  signalsBySymbol?: Map<string, SymbolSignals>; // Strategy signals
   className?: string;
 }
 
@@ -39,6 +40,7 @@ export function HDPanelWatchlist({
   expandLoadedList,
   onTickerClick,
   onHotTradeClick,
+  signalsBySymbol,
   onChallengeClick,
   onAddTicker,
   onRemoveTicker,
@@ -49,8 +51,8 @@ export function HDPanelWatchlist({
   onOpenReviewTrade,
   className
 }: HDPanelWatchlistProps) {
-  const symbols = watchlist.map(t => t.symbol);
-  const { quotes } = useQuotes(symbols);
+  // watchlist prop is already updated by App.tsx useQuotes with real-time data
+  // No need to fetch quotes again here
   
   // Calculate P&L for a challenge
   const calculateChallengePnL = (challengeId: string): number => {
@@ -68,10 +70,10 @@ export function HDPanelWatchlist({
     return totalPnL / challengeTrades.length;
   };
 
-  const [loadedExpanded, setLoadedExpanded] = useState(expandLoadedList || true);
-  const [activeExpanded, setActiveExpanded] = useState(true);
-  const [watchlistExpanded, setWatchlistExpanded] = useState(true);
-  const [challengesExpanded, setChallengesExpanded] = useState(true);
+  const [loadedExpanded, setLoadedExpanded] = useState<boolean>(expandLoadedList ?? true);
+  const [activeExpanded, setActiveExpanded] = useState<boolean>(true);
+  const [watchlistExpanded, setWatchlistExpanded] = useState<boolean>(true);
+  const [challengesExpanded, setChallengesExpanded] = useState<boolean>(true);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -133,7 +135,50 @@ export function HDPanelWatchlist({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--surface-1)] overflow-y-auto">
+    <div className="flex flex-col h-full bg-[var(--surface-1)] overflow-y-auto" data-testid="watchlist-panel">
+      {/* Active Trades Section (DESKTOP only) */}
+      <div className="hidden lg:block border-b border-[var(--border-hairline)] flex-shrink-0" data-testid="active-trades-section">
+        <div className="flex items-center justify-between px-4 py-3 bg-[var(--brand-primary)]">
+          <button
+            onClick={() => setActiveExpanded(!activeExpanded)}
+            className="flex items-center gap-2 hover:text-black/80 transition-colors flex-1"
+            aria-label="Toggle Active Trades"
+            data-testid="active-trades-header"
+          >
+            <h2 className="text-black uppercase tracking-wide text-xs font-semibold">
+              Active Trades ({activeTrades.length})
+            </h2>
+            {activeExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5 text-black/70" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-black/70" />
+            )}
+          </button>
+          <div className="w-7 h-7 flex-shrink-0" />
+        </div>
+        {activeExpanded && activeTrades.length > 0 && (
+          <div className="flex-shrink-0">
+            {activeTrades.map((trade) => (
+              <HDRowTrade
+                key={trade.id}
+                trade={trade}
+                active={false}
+                onClick={() => {
+                  // Prefer explicit desktop navigation if provided
+                  if (onOpenActiveTrade) onOpenActiveTrade(trade.id);
+                  else onHotTradeClick?.(trade);
+                }}
+              />
+            ))}
+          </div>
+        )}
+        {activeExpanded && activeTrades.length === 0 && (
+          <div className="px-4 py-6 text-center text-[var(--text-muted)] text-xs">
+            No active trades
+          </div>
+        )}
+      </div>
+
       {/* Hot Trades / Active Loaded Trades Section */}
       <div className="border-b border-[var(--border-hairline)] flex-shrink-0">
         <div className="flex items-center justify-between px-4 py-3 bg-[var(--brand-primary)]">
@@ -193,29 +238,37 @@ export function HDPanelWatchlist({
         </div>
         {watchlistExpanded && (
           <div className="flex-shrink-0">
-            {watchlist.map((ticker) => {
-              const quoteData = quotes.get(ticker.symbol);
-              return (
-                <HDRowWatchlist
-                  key={ticker.id}
-                  ticker={{
-                    ...ticker,
-                    // Update with real-time data if available
-                    last: quoteData?.last ?? ticker.last,
-                    change: quoteData?.change ?? ticker.change,
-                    changePercent: quoteData?.changePercent ?? ticker.changePercent,
-                  }}
-                  active={ticker.symbol === activeTicker}
-                  onClick={() => {
-                    console.log('[v0] Ticker clicked in watchlist:', ticker.symbol);
-                    onTickerClick?.(ticker);
-                  }}
-                  onRemove={() => setConfirmDialog({ isOpen: true, type: 'ticker', item: ticker })}
-                  asOf={quoteData?.asOf}
-                  source={quoteData?.source}
-                />
-              );
-            })}
+            {/* Quick symbol switcher (mobile-friendly) */}
+            {watchlist.length > 0 && (
+              <div className="px-3 py-2 overflow-x-auto flex gap-2 border-b border-[var(--border-hairline)] bg-[var(--surface-2)] sticky top-0 z-10">
+                {watchlist.slice(0, 12).map((t) => (
+                  <button
+                    key={`quick-${t.id}`}
+                    onClick={() => onTickerClick?.(t)}
+                    className={cn(
+                      'px-2 py-1 rounded-[var(--radius)] text-xs whitespace-nowrap border',
+                      t.symbol === activeTicker
+                        ? 'bg-[var(--brand-primary)] text-[var(--bg-base)] border-transparent'
+                        : 'bg-[var(--surface-1)] text-[var(--text-muted)] hover:text-[var(--text-high)] border-[var(--border-hairline)]'
+                    )}
+                    aria-label={`Switch to ${t.symbol}`}
+                    data-testid={`watchlist-item-${t.symbol}`}
+                  >
+                    {t.symbol}
+                  </button>
+                ))}
+              </div>
+            )}
+            {watchlist.map((ticker) => (
+              <HDRowWatchlist
+                key={ticker.id}
+                ticker={ticker}
+                active={ticker.symbol === activeTicker}
+                onClick={() => onTickerClick?.(ticker)}
+                onRemove={() => setConfirmDialog({ isOpen: true, type: 'ticker', item: ticker })}
+                signals={signalsBySymbol?.get(ticker.symbol)}
+              />
+            ))}
           </div>
         )}
       </div>

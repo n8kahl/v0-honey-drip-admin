@@ -46,14 +46,13 @@ CREATE TABLE IF NOT EXISTS challenges (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Watchlist Table
+-- Watchlist Table (unified schema: symbol column)
 CREATE TABLE IF NOT EXISTS watchlist (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  ticker TEXT NOT NULL,
-  notes TEXT,
+  symbol TEXT NOT NULL,
   added_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, ticker)
+  UNIQUE(user_id, symbol)
 );
 
 -- Trades Table

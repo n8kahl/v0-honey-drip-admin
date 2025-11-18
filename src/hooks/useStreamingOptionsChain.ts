@@ -1,11 +1,18 @@
-// Streaming options chain hook with 3-second refresh
-// Returns raw options data from Massive API that auto-refreshes while active
-
+// Streaming options chain hook returning normalized contracts and state
 import { useOptionsChain } from './useMassiveData';
 
 export function useStreamingOptionsChain(symbol: string | null) {
-  const { optionsChain } = useOptionsChain(symbol);
-  
-  // Return the results array directly for use in components
-  return optionsChain?.results || null;
+  // Request all expirations by default; strike window controlled server-side
+  const { contracts, loading, error, asOf } = useOptionsChain(symbol);
+
+  // Calculate staleness (stale if asOf is more than 5s ago)
+  const isStale = asOf ? Date.now() - asOf > 5000 : false;
+
+  return {
+    contracts,
+    loading,
+    error,
+    isStale,
+    asOf,
+  };
 }

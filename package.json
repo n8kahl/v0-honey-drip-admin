@@ -1,12 +1,20 @@
 {
-  "name": "HoneyDrip Admin Trading Dashboard",
+  "name": "honeydrip-admin-trading-dashboard",
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "pnpm run clean:strategy-js",
     "build": "vite build && tsc -p tsconfig.server.json",
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "preview": "vite preview",
-    "start": "node server/dist/index.js"
+    "start": "node server/dist/index.js",
+    "clean:strategy-js": "rm -f src/lib/strategy/*.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
     "@edge-runtime/vm": "latest",
@@ -49,6 +57,7 @@
     "cmdk": "1.1.1",
     "compression": "^1.8.1",
     "crypto": "latest",
+    "dotenv": "^17.2.3",
     "embla-carousel-react": "8.6.0",
     "express-rate-limit": "^8.2.1",
     "happy-dom": "latest",
@@ -58,7 +67,8 @@
     "jsdom": "latest",
     "less": "latest",
     "lightningcss": "latest",
-    "lightweight-charts": "latest",
+    "lightweight-charts": "^4.2.0",
+    "lru-cache": "^11.2.2",
     "lucide-react": "^0.454.0",
     "morgan": "^1.10.1",
     "next": "16.0.3",
@@ -82,12 +92,17 @@
     "vaul": "1.1.2",
     "vitest": "latest",
     "ws": "^8.18.3",
-    "yaml": "latest"
+    "yaml": "latest",
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@testing-library/dom": "^10.0.0",
+    "@testing-library/react": "^16.0.0",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/lru-cache": "^7.10.10",
     "@types/morgan": "^1.9.10",
     "@types/node": "^22",
     "@types/react": "18.3.12",

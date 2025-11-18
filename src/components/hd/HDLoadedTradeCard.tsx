@@ -5,6 +5,8 @@ import { HDMicroChart } from './HDMicroChart';
 import { HDCard } from './HDCard';
 import { HDButton } from './HDButton';
 import { formatPrice } from '../../lib/utils';
+import { StrategySignalBadge } from './StrategySignalBadge';
+import type { SymbolSignals } from '../../hooks/useStrategyScanner';
 
 interface HDLoadedTradeCardProps {
   trade: Trade;
@@ -19,9 +21,10 @@ interface HDLoadedTradeCardProps {
     volatility?: any;
     liquidity?: any;
   };
+  signals?: SymbolSignals;
 }
 
-export function HDLoadedTradeCard({ trade, onEnter, onDiscard, underlyingPrice, underlyingChange, confluence }: HDLoadedTradeCardProps) {
+export function HDLoadedTradeCard({ trade, onEnter, onDiscard, underlyingPrice, underlyingChange, confluence, signals }: HDLoadedTradeCardProps) {
   return (
     <div className="space-y-4">
       {/* Micro Chart at the top - shows underlying ticker price action */}
@@ -42,6 +45,9 @@ export function HDLoadedTradeCard({ trade, onEnter, onDiscard, underlyingPrice, 
                 {trade.ticker}
               </h2>
               <HDTagTradeType type={trade.tradeType} />
+              <div className="ml-auto">
+                <StrategySignalBadge symbolSignals={signals} compact />
+              </div>
             </div>
             <div className="text-[var(--text-muted)] text-xs mb-2">
               {trade.contract.strike}{trade.contract.type} • {trade.contract.expiry} • {trade.contract.daysToExpiry}DTE

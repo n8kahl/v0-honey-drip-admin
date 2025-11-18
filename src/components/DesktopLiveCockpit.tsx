@@ -1,33 +1,21 @@
-import { useState, useEffect } from 'react';
-import { Trade, Ticker, Challenge, DiscordChannel, Contract, TradeState, AlertType, TradeUpdate, OptionType } from '../types';
+/* DEPRECATED: Legacy DesktopLiveCockpit retained for reference.
+  Use DesktopLiveCockpitSlim instead. Original code commented out below. */
+/*
+import React, { useEffect } from 'react';
+import { Trade, Ticker, Challenge, DiscordChannel } from '../types';
 import { HDPanelWatchlist } from './hd/HDPanelWatchlist';
-import { HDContractGrid } from './hd/HDContractGrid';
-import { HDAlertComposer } from './hd/HDAlertComposer';
-import { HDQuickActions } from './hd/HDQuickActions';
-import { HDLoadedTradeCard } from './hd/HDLoadedTradeCard';
-import { HDEnteredTradeCard } from './hd/HDEnteredTradeCard';
-import { HDPanelFocusedTrade } from './hd/HDPanelFocusedTrade';
-import { HDLiveChart } from './hd/HDLiveChart';
 import { HDVoiceHUD } from './hd/HDVoiceHUD';
 import { HDDialogChallengeDetail } from './hd/HDDialogChallengeDetail';
 import { HDMacroPanel } from './hd/HDMacroPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
 import { useConfluenceData } from '../hooks/useConfluenceData';
-import { useKeyLevels } from '../hooks/useKeyLevels';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
-import { toast } from 'sonner';
-import { massiveClient } from '../lib/massive/client';
-import { useStreamingOptionsChain } from '../hooks/useStreamingOptionsChain';
-import { calculateRisk } from '../lib/riskEngine/calculator';
-import { RISK_PROFILES, inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS } from '../lib/riskEngine/profiles';
-import { adjustProfileByConfluence, getConfluenceAdjustmentReasoning } from '../lib/riskEngine/confluenceAdjustment';
-import { updateTrade } from '../lib/supabase/database';
-import { 
-  inferTradeType,
-  cn
-} from '../lib/utils';
+import { cn } from '../lib/utils';
 import { streamingManager } from '../lib/massive/streaming-manager';
+import { useTradeStateMachine } from '../hooks/useTradeStateMachine';
+import { TradingWorkspace } from './trading/TradingWorkspace';
+import { ActiveTradesPanel } from './trading/ActiveTradesPanel';
 
 interface DesktopLiveCockpitProps {
   watchlist: Ticker[];
@@ -52,85 +40,68 @@ interface DesktopLiveCockpitProps {
   activeTab?: 'live' | 'active' | 'history' | 'settings'; // Current active tab for closing modals
 }
 
-export function DesktopLiveCockpit({
-  watchlist,
-  hotTrades,
-  challenges,
-  onTickerClick,
-  onHotTradeClick,
-  onAddTicker,
-  onRemoveTicker,
-  onAddChallenge,
-  onRemoveChallenge,
-  onTradesChange,
-  onExitedTrade,
-  channels,
-  focusedTrade,
-  onMobileTabChange,
-  hideDesktopPanels,
-  hideMobilePanelsOnActiveTab,
-  updatedTradeIds,
-  onOpenActiveTrade,
-  onOpenReviewTrade,
-  activeTab,
-}: DesktopLiveCockpitProps) {
-  const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
-  const [contracts, setContracts] = useState<Contract[]>([]);
-  const [currentTrade, setCurrentTrade] = useState<Trade | null>(null);
-  const [tradeState, setTradeState] = useState<TradeState>('WATCHING');
-  const [alertType, setAlertType] = useState<AlertType>('load');
-  const [alertOptions, setAlertOptions] = useState<{ updateKind?: 'trim' | 'generic' | 'sl' }>({});
-  const [showAlert, setShowAlert] = useState(false);
-  const [activeTrades, setActiveTrades] = useState<Trade[]>(hotTrades);
-  const [expandedLoadedList, setExpandedLoadedList] = useState(false); // Track loaded trades expansion
-  const [showChallengeDetail, setShowChallengeDetail] = useState(false);
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
-  
-  // Detect mobile viewport
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
-  
-  // Close all modals when tab changes on mobile
-  useEffect(() => {
-    if (isMobile && activeTab) {
-      setShowAlert(false);
-      setShowChallengeDetail(false);
-    }
-  }, [activeTab, isMobile]);
-  
-  // Sync active trades back to parent
-  useEffect(() => {
-    if (onTradesChange) {
-      onTradesChange(activeTrades);
-    }
-  }, [activeTrades, onTradesChange]);
-  
-  // Handle focused trade from external navigation (e.g., clicking from Active tab)
-  useEffect(() => {
-    if (focusedTrade) {
-      setCurrentTrade(focusedTrade);
-      setTradeState(focusedTrade.state);
-      setActiveTicker(watchlist.find(t => t.symbol === focusedTrade.ticker) || null);
-      setShowAlert(false);
-    }
-  }, [focusedTrade, watchlist]);
-  
-  // Fetch real-time confluence data from Massive
+export function DesktopLiveCockpit(props: DesktopLiveCockpitProps) {
+  const {
+    watchlist,
+    hotTrades,
+    challenges,
+    onTickerClick,
+    onAddTicker,
+    onRemoveTicker,
+    onAddChallenge,
+    onRemoveChallenge,
+    onTradesChange,
+    onExitedTrade,
+    channels,
+    focusedTrade,
+    onMobileTabChange,
+    hideDesktopPanels,
+    hideMobilePanelsOnActiveTab,
+    onOpenActiveTrade,
+    onOpenReviewTrade,
+  } = props;
+
+  const {
+    activeTicker,
+    contracts,
+    currentTrade,
+    tradeState,
+    alertType,
+    alertOptions,
+    showAlert,
+    activeTrades,
+    actions,
+  } = useTradeStateMachine({
+    hotTrades,
+    onTradesChange,
+    onExitedTrade,
+    focusedTrade,
+    onMobileTabChange,
+    confluence: undefined,
+  });
+
   const confluence = useConfluenceData(currentTrade, tradeState);
   
   // Fetch key technical levels (ORB, VWAP, Bollinger, pivots) from historical bars
   const { keyLevels, loading: keyLevelsLoading } = useKeyLevels(
-    activeTicker?.symbol || null,
+    activeTicker?.symbol || '',
     { timeframe: '5', lookbackDays: 5, orbWindow: 5, enabled: !!activeTicker?.symbol }
   );
   
   // New streaming hook for options chain
-  const streamingContracts = useStreamingOptionsChain(activeTicker?.symbol || null);
+  const streamingContracts = useStreamingOptionsChain(activeTicker?.symbol || '');
   
   useEffect(() => {
     if (streamingContracts && activeTicker) {
+      console.log(`[DesktopLiveCockpit] Received ${streamingContracts.length} contracts for ${activeTicker.symbol}`);
+      if (streamingContracts.length > 0) {
+        console.log('[DesktopLiveCockpit] Sample contract strikes:', streamingContracts.slice(0, 5).map((c: any) => c.strike_price));
+        console.log('[DesktopLiveCockpit] Sample expiration dates:', streamingContracts.slice(0, 3).map((c: any) => c.expiration_date));
+      }
       const realContracts: Contract[] = streamingContracts.map((opt: any) => {
         const expiryDate = new Date(opt.expiration_date);
         const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize to start of day
         const daysToExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         
         return {
@@ -164,55 +135,12 @@ export function DesktopLiveCockpit({
     setShowAlert(true);
   };
   
-  const handleTickerClick = async (ticker: Ticker) => {
-    setActiveTicker(ticker);
-    setTradeState('WATCHING');
-    setCurrentTrade(null);
-    setShowAlert(false);
+  // Default to unified chain unless explicitly disabled
+  const USE_UNIFIED_CHAIN = ((import.meta as any)?.env?.VITE_USE_UNIFIED_CHAIN ?? 'true') === 'true';
+
+  const handleTickerClick = (ticker: Ticker) => {
+    actions.handleTickerClick(ticker);
     onTickerClick(ticker);
-    
-    try {
-      const optionsData = await massiveClient.getOptionsChain(ticker.symbol);
-      
-      if (!optionsData || !optionsData.results || optionsData.results.length === 0) {
-        toast.error(`No options contracts found for ${ticker.symbol}`);
-        setContracts([]);
-        return;
-      }
-      
-      const realContracts: Contract[] = (optionsData.results || []).map((opt: any) => {
-        const expiryDate = new Date(opt.expiration_date);
-        const today = new Date();
-        const daysToExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
-        return {
-          id: opt.ticker || `${ticker.symbol}-${opt.strike_price}-${opt.expiration_date}-${opt.contract_type}`,
-          ticker: ticker.symbol,
-          strike: opt.strike_price,
-          expiry: opt.expiration_date,
-          expiryDate,
-          daysToExpiry,
-          type: opt.contract_type === 'call' ? 'C' as OptionType : 'P' as OptionType,
-          bid: opt.last_quote?.bid || 0,
-          ask: opt.last_quote?.ask || 0,
-          mid: opt.last_quote?.midpoint || ((opt.last_quote?.bid || 0) + (opt.last_quote?.ask || 0)) / 2,
-          iv: opt.implied_volatility || 0,
-          delta: opt.greeks?.delta || 0,
-          gamma: opt.greeks?.gamma || 0,
-          theta: opt.greeks?.theta || 0,
-          vega: opt.greeks?.vega || 0,
-          volume: opt.day?.volume || 0,
-          openInterest: opt.open_interest || 0,
-        };
-      });
-      
-      setContracts(realContracts);
-      
-    } catch (error: any) {
-      console.error('Failed to fetch options chain:', error);
-      toast.error(`Failed to load options for ${ticker.symbol}: ${error.message}`);
-      setContracts([]);
-    }
   };
   
   const handleContractSelect = (contract: Contract) => {
@@ -303,186 +231,22 @@ export function DesktopLiveCockpit({
       // Fallback to defaults if calculation fails
     }
     
-    const trade: Trade = {
-      id: `trade-${Date.now()}`,
-      ticker: activeTicker.symbol,
-      contract,
-      state: 'LOADED',
-      entryPrice: contract.mid,
-      currentPrice: contract.mid,
-      targetPrice,
-      stopLoss,
-      movePercent: 0,
-      movePrice: 0,
-      discordChannels: [],
-      challenges: [],
-      updates: [],
-      timestamp: new Date(),
-    };
-    
-    setCurrentTrade(trade);
-    setTradeState('LOADED');
-    setAlertType('load');
-    setShowAlert(true);
-  };
-  
-  const handleSendAlert = (
-    channelIds: string[],
-    challengeIds: string[],
-    comment?: string
-  ) => {
-    if (!currentTrade) return;
-    
-    const selectedChannels = channels.filter(c => channelIds.includes(c.id));
-    
-    const createUpdate = (type: TradeUpdate['type']): TradeUpdate => {
-      let message = comment || '';
-      
-      if (!message) {
-        switch (type) {
-          case 'enter':
-            message = 'Entered position';
-            break;
-          case 'exit':
-            message = 'Exited position';
-            break;
-          case 'trim':
-            message = 'Trimmed position';
-            break;
-          case 'add':
-            message = 'Added to position';
-            break;
-          case 'update-sl':
-            message = 'Updated stop loss';
-            break;
-          case 'trail-stop':
-            message = 'Enabled trailing stop';
-            break;
-          case 'update':
-            message = 'Updated position';
-            break;
-        }
-      }
-      
-      return {
-        id: `update-${Date.now()}`,
-        type,
-        timestamp: new Date(),
-        message,
-        price: currentTrade.currentPrice || currentTrade.entryPrice || 0,
-        pnlPercent: currentTrade.movePercent,
-      };
-    };
-    
-    const updatedTrade = {
-      ...currentTrade,
-      discordChannels: selectedChannels.filter(c => c && c.id).map(c => c.id),
-      challenges: challengeIds,
-    };
-    
-    if (alertType === 'load') {
-      setActiveTrades(prev => [...prev, updatedTrade]);
-      setCurrentTrade(updatedTrade);
-      setTradeState('LOADED');
-      setShowAlert(false);
-      setExpandedLoadedList(true);
-      setContracts([]);
-      setActiveTicker(null);
-      
-      showAlertToast('load', currentTrade.ticker, selectedChannels);
-      return;
-    }
-
-    if (alertType === 'enter') {
-      const enterUpdate = createUpdate('enter');
-      const previousUpdates = currentTrade.updates || [];
-      
-      // Fix #1: Recalculate TP/SL on entry with actual entry price + confluence
-      const entryPrice = currentTrade.contract.mid;
-      let targetPrice = currentTrade.targetPrice || entryPrice * 1.5;
-      let stopLoss = currentTrade.stopLoss || entryPrice * 0.5;
-      let riskResult = null;
-      
-      try {
-        // Infer trade type from DTE
-        const tradeType = inferTradeTypeByDTE(
-          currentTrade.contract.expiry,
-          new Date(),
-          DEFAULT_DTE_THRESHOLDS
-        );
-        
-        // Use computed key levels if available, otherwise fallback to zeros
+    const handleContractSelect = (contract: any) => actions.handleContractSelect(contract);
         const levelsForCalculation = keyLevels || {
           preMarketHigh: 0,
           preMarketLow: 0,
-          orbHigh: 0,
-          orbLow: 0,
-          priorDayHigh: 0,
-          priorDayLow: 0,
-          vwap: 0,
-          vwapUpperBand: 0,
-          vwapLowerBand: 0,
-          bollingerUpper: 0,
-          bollingerLower: 0,
-          weeklyHigh: 0,
-          weeklyLow: 0,
-          monthlyHigh: 0,
-          monthlyLow: 0,
-          quarterlyHigh: 0,
-          quarterlyLow: 0,
-          yearlyHigh: 0,
-          yearlyLow: 0,
-        };
-        
-        // Fix #3: Apply confluence adjustments to risk profile
-        // Get base profile and adjust by confluence metrics
-        let riskProfile = RISK_PROFILES[tradeType];
-        let confluenceReasoning = '';
-        
-        if (confluence.trend || confluence.volatility || confluence.liquidity) {
-          riskProfile = adjustProfileByConfluence(riskProfile, {
-            trend: confluence.trend,
-            volatility: confluence.volatility,
-            liquidity: confluence.liquidity,
-          });
-          confluenceReasoning = getConfluenceAdjustmentReasoning({
-            trend: confluence.trend,
-            volatility: confluence.volatility,
-            liquidity: confluence.liquidity,
-          });
-          console.log('[v0] Confluence adjustments applied:', confluenceReasoning);
-        }
-        
-        // Recalculate TP/SL using confluence-adjusted risk profile + key levels
-        riskResult = calculateRisk({
-          entryPrice,
-          currentUnderlyingPrice: currentTrade.contract.mid,
-          currentOptionMid: currentTrade.contract.mid,
-          keyLevels: levelsForCalculation,
-          expirationISO: currentTrade.contract.expiry,
-          tradeType,
-          delta: currentTrade.contract.delta || 0.5,
-          gamma: currentTrade.contract.gamma || 0,
-          defaults: {
-            mode: 'percent' as const,
-            tpPercent: 50,
-            slPercent: 50,
-            dteThresholds: DEFAULT_DTE_THRESHOLDS,
-          },
-        });
-        
-        // Use calculated TP/SL if available
-        if (riskResult.targetPrice) {
-          targetPrice = riskResult.targetPrice;
-          console.log(
-            '[v0] Entry: Recalculated TP =',
-            targetPrice.toFixed(2),
-            'from',
-            tradeType,
-            'profile with confluence adjustments'
-          );
-        }
-        if (riskResult.stopLoss) {
+          const handleSendAlert = actions.handleSendAlert;
+          const handleEnterTrade = () => actions.handleEnterTrade();
+          const handleEnterAndAlert = actions.handleEnterAndAlert;
+          const handleDiscard = actions.handleDiscard;
+          const handleCancelAlert = actions.handleCancelAlert;
+          const handleUnloadTrade = actions.handleUnloadTrade;
+          const handleTrim = actions.handleTrim;
+          const handleUpdate = actions.handleUpdate;
+          const handleUpdateSL = actions.handleUpdateSL;
+          const handleTrailStop = actions.handleTrailStop;
+          const handleAdd = actions.handleAdd;
+          const handleExit = actions.handleExit;
           stopLoss = riskResult.stopLoss;
           console.log('[v0] Entry: Recalculated SL =', stopLoss.toFixed(2), 'from', tradeType, 'profile');
         }
@@ -568,7 +332,7 @@ export function DesktopLiveCockpit({
       return;
     }
 
-    if (alertType === 'trail_stop') {
+    if (alertType === 'trail-stop') {
       const trailStopUpdate = createUpdate('trail-stop');
       const previousUpdates = currentTrade.updates || [];
       
@@ -721,15 +485,16 @@ export function DesktopLiveCockpit({
       targetPrice,
       stopLoss,
       movePercent: 0,
-      movePrice: 0,
       discordChannels: channelIds,
       challenges: challengeIds,
       updates: [
         ...(currentTrade.updates || []),
         {
+          id: `${currentTrade.id}-enter-${Date.now()}`,
           type: 'enter',
           timestamp: new Date(),
           message: comment || 'Entered position',
+          price: entryPrice || currentTrade.contract.mid,
         },
       ],
     };
@@ -771,7 +536,7 @@ export function DesktopLiveCockpit({
 
   const handleTrailStop = () => {
     if (!currentTrade) return;
-    openAlertComposer('trail_stop');
+    openAlertComposer('trail-stop');
   };
 
   const handleAdd = () => {
@@ -788,9 +553,7 @@ export function DesktopLiveCockpit({
     watchlist,
     activeTrades,
     currentTrade,
-    onAddTicker: (symbol) => {
-      toast.success(`Added ${symbol} to watchlist`);
-    },
+    onAddTicker: () => {},
     onRemoveTicker,
     onEnterTrade: handleEnterTrade,
     onTrimTrade: handleTrim,
@@ -834,7 +597,7 @@ export function DesktopLiveCockpit({
   
   return (
     <>
-      <div className={`relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden ${hideMobilePanelsOnActiveTab ? 'hidden lg:flex' : ''}`}>
+      <div className={cn('relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden', hideMobilePanelsOnActiveTab ? 'hidden lg:flex' : '')}>
         {voice.hudState && (
           <div className="hidden lg:block">
             <HDVoiceHUD
@@ -898,12 +661,12 @@ export function DesktopLiveCockpit({
           flex-1 overflow-y-auto bg-[#0a0a0a] relative
           ${hideDesktopPanels ? 'hidden' : ''}
           ${!hideDesktopPanels && (tradeState === 'LOADED' || tradeState === 'ENTERED') ? 'hidden lg:block' : ''}
-          ${!hideDesktopPanels && (tradeState === 'WATCHING' && contracts.length === 0) ? 'hidden lg:flex lg:flex-1' : ''}
-          ${!hideDesktopPanels && (tradeState === 'WATCHING' && contracts.length > 0) ? 'flex-1' : ''}
+          ${!hideDesktopPanels && (tradeState === 'WATCHING' && !activeTicker) ? 'hidden lg:flex lg:flex-1' : ''}
+          ${!hideDesktopPanels && (tradeState === 'WATCHING' && activeTicker) ? 'flex-1' : ''}
         `}>
           <MobileWatermark />
           
-          {tradeState === 'WATCHING' && contracts.length > 0 && activeTicker ? (
+          {tradeState === 'WATCHING' && activeTicker ? (
             <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
               <HDLiveChart
                 ticker={activeTicker.symbol}
@@ -916,12 +679,18 @@ export function DesktopLiveCockpit({
                 height={280}
               />
               
-              <HDContractGrid
-                contracts={contracts}
-                currentPrice={activeTicker.last}
-                ticker={activeTicker.symbol}
-                onContractSelect={handleContractSelect}
-              />
+              {contracts.length > 0 ? (
+                <HDContractGrid
+                  contracts={contracts}
+                  currentPrice={watchlist.find(t => t.symbol === activeTicker.symbol)?.last || activeTicker.last}
+                  ticker={activeTicker.symbol}
+                  onContractSelect={handleContractSelect}
+                />
+              ) : (
+                <div className="flex items-center justify-center p-8 text-gray-400 text-sm">
+                  Loading contracts for {activeTicker.symbol}...
+                </div>
+              )}
             </div>
           ) : tradeState === 'LOADED' && currentTrade && !showAlert ? (
             <div className="p-4 lg:p-6 pointer-events-auto">
@@ -992,62 +761,26 @@ export function DesktopLiveCockpit({
           )}
         </div>
         
-        <div className={cn(
-          "w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-[var(--border-hairline)] flex flex-col h-full",
-          !showAlert && tradeState === 'LOADED' && "hidden lg:flex",
-          !showAlert && tradeState === 'WATCHING' && "hidden lg:flex",
-          !showAlert && tradeState === 'ENTERED' && "hidden lg:flex"
-        )}>
-          {showAlert && currentTrade ? (
-            <div className="hidden lg:flex lg:flex-col lg:h-full">
-              <HDAlertComposer
-                trade={currentTrade}
-                alertType={alertType}
-                alertOptions={alertOptions}
-                availableChannels={channels}
-                challenges={challenges}
-                onSend={handleSendAlert}
-                onEnterAndAlert={handleEnterAndAlert}
-                onCancel={handleCancelAlert}
-                onUnload={handleUnloadTrade}
-              />
-            </div>
-          ) : tradeState === 'LOADED' && currentTrade ? (
-            <div className="flex flex-col h-auto lg:h-full bg-[var(--surface-2)] p-6">
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <div className="text-center space-y-3 max-w-[200px]">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-[var(--radius)] bg-[var(--brand-primary)]/10">
-                    <span className="text-2xl">📋</span>
-                  </div>
-                  <p className="text-[var(--text-high)] font-medium">
-                    Idea Loaded
-                  </p>
-                  <p className="text-[var(--text-muted)] text-xs leading-relaxed">
-                    Use the <span className="text-[var(--brand-primary)] font-medium">Enter Trade</span> button below to proceed when ready.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : tradeState === 'ENTERED' && currentTrade ? (
-            <div className="h-auto lg:h-full bg-[var(--surface-2)] p-4 lg:p-6">
-              <HDQuickActions
-                state={tradeState}
-                onTrim={handleTrim}
-                onUpdate={handleUpdate}
-                onUpdateSL={handleUpdateSL}
-                onTrailStop={handleTrailStop}
-                onAdd={handleAdd}
-                onExit={handleExit}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-auto lg:h-full bg-[var(--surface-2)] p-4 lg:p-6 min-h-[200px]">
-              <p className="text-[var(--text-muted)] text-sm text-center">
-                Select a contract to load a trade
-              </p>
-            </div>
-          )}
-        </div>
+        <ActiveTradesPanel
+          tradeState={tradeState}
+          currentTrade={currentTrade}
+          showAlert={showAlert}
+          alertType={alertType}
+          alertOptions={alertOptions}
+          channels={channels}
+          challenges={challenges}
+          onSendAlert={handleSendAlert}
+          onEnterAndAlert={handleEnterAndAlert}
+          onCancelAlert={handleCancelAlert}
+          onUnload={handleUnloadTrade}
+          onEnter={handleEnterTrade}
+          onTrim={handleTrim}
+          onUpdate={handleUpdate}
+          onUpdateSL={handleUpdateSL}
+          onTrailStop={handleTrailStop}
+          onAdd={handleAdd}
+          onExit={handleExit}
+        />
         
         <HDDialogChallengeDetail
           open={showChallengeDetail}
@@ -1104,16 +837,25 @@ export function DesktopLiveCockpit({
       
       {showAlert && currentTrade && (
         <div className="lg:hidden fixed inset-0 z-[100] bg-[var(--bg-base)] flex flex-col">
-          <HDAlertComposer
-            trade={currentTrade}
+          <ActiveTradesPanel
+            tradeState={tradeState}
+            currentTrade={currentTrade}
+            showAlert={showAlert}
             alertType={alertType}
             alertOptions={alertOptions}
-            availableChannels={channels}
+            channels={channels}
             challenges={challenges}
-            onSend={handleSendAlert}
+            onSendAlert={handleSendAlert}
             onEnterAndAlert={handleEnterAndAlert}
-            onCancel={handleCancelAlert}
+            onCancelAlert={handleCancelAlert}
             onUnload={handleUnloadTrade}
+            onEnter={handleEnterTrade}
+            onTrim={handleTrim}
+            onUpdate={handleUpdate}
+            onUpdateSL={handleUpdateSL}
+            onTrailStop={handleTrailStop}
+            onAdd={handleAdd}
+            onExit={handleExit}
           />
         </div>
       )}
@@ -1125,10 +867,6 @@ export function DesktopLiveCockpit({
   );
 }
 
-function showAlertToast(type: AlertType, ticker: string, channels: DiscordChannel[], movePercent?: number) {
-  const channelNames = channels.map(c => c.name).join(', ');
-  const message = movePercent !== undefined
-    ? `${ticker} ${type.charAt(0).toUpperCase() + type.slice(1)}: ${movePercent.toFixed(1)}%`
-    : `${ticker} ${type.charAt(0).toUpperCase() + type.slice(1)} sent`;
-  toast.success(message);
-}
+// Legacy toast helper removed (logic now in hook)
+*/
+export {};

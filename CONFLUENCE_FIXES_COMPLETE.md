@@ -1,11 +1,13 @@
 # Confluence Calculation Fixes - Complete Implementation Summary
 
 ## Overview
+
 Fixed critical gaps in the options trading platform's risk calculation engine. The system now computes intelligent TP/SL targets using real technical context (key levels, confluence metrics) instead of static defaults.
 
 **Commits:** 4 new commits implementing comprehensive fixes
+
 - Commit c7c15191: Fix #2 - Fetch key technical levels
-- Commit 362c0633: Fix #3 - Pass confluence metrics to calculator  
+- Commit 362c0633: Fix #3 - Pass confluence metrics to calculator
 - Commit ada306e5: Fix #4 - Apply calculateRisk to LOAD state
 - Commit ef422e0f: Fix #5 - Persist updated TP/SL to database
 
@@ -14,6 +16,7 @@ Fixed critical gaps in the options trading platform's risk calculation engine. T
 ## The Problem (Before)
 
 When a user entered a trade, the system:
+
 - ❌ Used static defaults: TP = entry × 1.5, SL = entry × 0.5
 - ❌ Ignored technical levels (ORB, VWAP, Bollinger, pivots)
 - ❌ Didn't factor in market conditions (trend, IV, liquidity)
@@ -27,9 +30,11 @@ When a user entered a trade, the system:
 ## The Solution (After)
 
 ### Fix #1: Recalculate TP/SL on Entry ✅
+
 **File:** `src/components/DesktopLiveCockpit.tsx`
 
 When trade state transitions to ENTERED:
+
 1. Extract actual entry price from contract.mid
 2. Infer trade type from DTE (Days To Expiration)
 3. Call `calculateRisk()` with risk profile for that DTE
@@ -41,11 +46,14 @@ When trade state transitions to ENTERED:
 ---
 
 ### Fix #2: Fetch Key Technical Levels ✅
+
 **Files Created:**
+
 - `src/lib/riskEngine/computeKeyLevelsFromBars.ts`
 - `src/hooks/useKeyLevels.ts`
 
 **What it does:**
+
 - Fetches historical OHLC bars for any ticker/option
 - Computes technical levels from bars:
   - **ORB** (Open Range Breakout): First N bars' high/low
@@ -61,6 +69,7 @@ When trade state transitions to ENTERED:
 ---
 
 ### Fix #3: Pass Confluence Metrics to Calculator ✅
+
 **File Created:** `src/lib/riskEngine/confluenceAdjustment.ts`
 
 **Adjustment Logic:**
@@ -72,10 +81,12 @@ adjustProfileByConfluence(profile, { trend, volatility, liquidity })
 Modifies RiskProfile level weights based on:
 
 1. **Trend Score** (0-100):
+
    - Bullish (>70): Boost TP weights by 15-20% → more aggressive targets
    - Weak (<30): Reduce TP weights by 15% → conservative targets
 
 2. **IV Percentile** (0-100):
+
    - High IV (>75th): Favor ATR targets, reduce key level weights
    - Low IV (<25th): Favor technical levels, boost key level weights
 
@@ -88,9 +99,11 @@ Modifies RiskProfile level weights based on:
 ---
 
 ### Fix #4: Apply calculateRisk to LOAD State ✅
+
 **File:** `src/components/DesktopLiveCockpit.tsx`
 
 Updated `handleContractSelect()` to:
+
 1. Call `calculateRisk()` when transitioning to LOADED state
 2. Use same logic as entry (confluence adjustments + key levels)
 3. Display calculated targets in `HDLoadedTradeCard` preview
@@ -101,22 +114,26 @@ Updated `handleContractSelect()` to:
 ---
 
 ### Fix #5: Persist Updated TP/SL to Database ✅
+
 **Files:**
+
 - `src/lib/supabase/database.ts` - Enhanced `updateTrade()`
 - `src/components/DesktopLiveCockpit.tsx` - Save logic in entry handler
 
 **What it saves:**
+
 ```typescript
 await updateTrade(trade.id, {
-  state: 'ENTERED',
+  state: "ENTERED",
   entry_price: entryPrice,
   entry_time: timestamp,
-  target_price: calculated_tp,    // ← NEW
-  stop_loss: calculated_sl,        // ← NEW
-})
+  target_price: calculated_tp, // ← NEW
+  stop_loss: calculated_sl, // ← NEW
+});
 ```
 
 **Error Handling:**
+
 - Gracefully catches DB errors
 - Shows user toast if save fails
 - Logs for debugging
@@ -158,11 +175,13 @@ Historical data ready for:
 ## Files Changed
 
 ### New Files (3)
+
 1. `src/lib/riskEngine/computeKeyLevelsFromBars.ts` - Level extraction utility
 2. `src/lib/riskEngine/confluenceAdjustment.ts` - Confluence-based profile adjustment
 3. `src/hooks/useKeyLevels.ts` - React hook for bar fetching + level computation
 
 ### Modified Files (2)
+
 1. `src/components/DesktopLiveCockpit.tsx` - Entry/LOAD logic + DB persistence
 2. `src/lib/supabase/database.ts` - Enhanced updateTrade() signature
 
@@ -171,6 +190,7 @@ Historical data ready for:
 ## Impact Analysis
 
 ### Before Fixes
+
 ```
 Entry Flow (BROKEN):
   Contract selected → LOADED (TP: 0.92, SL: 0.30 - DEFAULTS)
@@ -183,6 +203,7 @@ Entry Flow (BROKEN):
 ```
 
 ### After Fixes
+
 ```
 Entry Flow (FIXED):
   Contract selected → LOADED
@@ -245,6 +266,7 @@ When entering a trade, look for logs:
 ## Architecture Notes
 
 ### Separation of Concerns
+
 - **Risk Profiles** (`profiles.ts`) - Static DTE-based strategies
 - **Confluence Adjustment** (`confluenceAdjustment.ts`) - Dynamic market condition weighting
 - **Level Computation** (`computeKeyLevelsFromBars.ts`) - Technical analysis
@@ -253,7 +275,9 @@ When entering a trade, look for logs:
 - **Database** (`database.ts`) - Persistence layer
 
 ### Data Types
+
 All calculations use TypeScript interfaces for type safety:
+
 - `KeyLevels` - Technical levels object
 - `RiskProfile` - DTE-based strategy definition
 - `ConfluenceContext` - Market condition metrics
@@ -269,7 +293,8 @@ All calculations use TypeScript interfaces for type safety:
 ✅ **Documented:** This summary + code comments
 ✅ **Error Handling:** Graceful fallbacks and user notifications
 
-**Ready for:** 
+**Ready for:**
+
 - Live trading with intelligent targets
 - Historical data analysis
 - Future ML model training

@@ -1,3 +1,7 @@
+// Load environment variables from .env file (for local development)
+import { config } from 'dotenv';
+config();
+
 import http from 'http';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -55,8 +59,16 @@ app.use(
 );
 
 // Rate limit API paths
-const limiter = rateLimit({ windowMs: 60_000, max: 1200 });
-app.use('/api', limiter);
+// Skip rate limiting entirely for /api/massive since it has its own upstream limits
+const generalLimiter = rateLimit({ windowMs: 60_000, max: 1200 });
+
+app.use('/api', (req, res, next) => {
+  // Skip rate limiting for Massive proxy to avoid false 429s; upstream Massive has its own limits
+  if (req.path.startsWith('/massive')) {
+    return next();
+  }
+  return generalLimiter(req, res, next);
+});
 
 // ===== API routes =====
 app.use('/api', apiRouter);

@@ -4,7 +4,7 @@ export type TradeState = 'WATCHING' | 'LOADED' | 'ENTERED' | 'EXITED';
 export type SessionStatus = 'premarket' | 'open' | 'afterhours' | 'closed';
 export type OptionType = 'C' | 'P';
 export type TradeType = 'Scalp' | 'Day' | 'Swing' | 'LEAP';
-export type AlertType = 'load' | 'enter' | 'update' | 'trail_stop' | 'add' | 'exit';
+export type AlertType = 'load' | 'enter' | 'update' | 'trail-stop' | 'update-sl' | 'trim' | 'add' | 'exit';
 export type StopMode = 'fixed' | 'trailing';
 
 export interface DiscordChannel {
@@ -81,7 +81,7 @@ export interface Trade {
 
 export interface TradeUpdate {
   id: string;
-  type: 'enter' | 'trim' | 'update' | 'update-sl' | 'trail-stop' | 'add' | 'exit';
+  type: 'enter' | 'trim' | 'update' | 'update-sl' | 'trail-stop' | 'add' | 'exit' | 'tp_near';
   timestamp: Date;
   message: string;
   price: number;
