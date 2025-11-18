@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+// Replay & session imports removed (feature deferred)
 import { createChart, IChartApi, ISeriesApi, Time, LineData } from 'lightweight-charts';
 import { useMarketDataStore, Timeframe as MarketTimeframe } from '../../stores/marketDataStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -106,6 +107,8 @@ export function HDLiveChartNew({
   const indicators = useMarketDataStore((state) => 
     state.symbols[normalizedTicker]?.indicators
   );
+
+  // Replay / market-closed mode deferred
   
   const isConnected = useMarketDataStore((state) => state.isConnected);
   const lastUpdated = useMarketDataStore((state) => 
@@ -609,10 +612,10 @@ export function HDLiveChartNew({
             </div>
             {/* Indicators */}
             <div className="flex items-center gap-1 text-micro">
-              <button onClick={() => handleToggle('ema9')} className={`px-2 py-0.5 rounded border ${indState.ema9 ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>EMA9</button>
-              <button onClick={() => handleToggle('ema21')} className={`px-2 py-0.5 rounded border ${indState.ema21 ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>EMA21</button>
-              <button onClick={() => handleToggle('vwap')} className={`px-2 py-0.5 rounded border ${indState.vwap ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>VWAP</button>
-              <button onClick={() => handleToggle('bb')} className={`px-2 py-0.5 rounded border ${indState.bb ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>BB</button>
+              <button onClick={() => handleToggle('ema9')} className={`min-h-[32px] px-3 py-1 rounded border transition-all duration-150 ease-out touch-manipulation active:scale-95 ${indState.ema9 ? 'text-[var(--text-high)] border-[var(--border-strong)] bg-[var(--surface-2)] shadow-sm' : 'text-zinc-400 border-[var(--border-hairline)] hover:border-[var(--border-strong)] hover:text-zinc-300'}`}>EMA9</button>
+              <button onClick={() => handleToggle('ema21')} className={`min-h-[32px] px-3 py-1 rounded border transition-all duration-150 ease-out touch-manipulation active:scale-95 ${indState.ema21 ? 'text-[var(--text-high)] border-[var(--border-strong)] bg-[var(--surface-2)] shadow-sm' : 'text-zinc-400 border-[var(--border-hairline)] hover:border-[var(--border-strong)] hover:text-zinc-300'}`}>EMA21</button>
+              <button onClick={() => handleToggle('vwap')} className={`min-h-[32px] px-3 py-1 rounded border transition-all duration-150 ease-out touch-manipulation active:scale-95 ${indState.vwap ? 'text-[var(--text-high)] border-[var(--border-strong)] bg-[var(--surface-2)] shadow-sm' : 'text-zinc-400 border-[var(--border-hairline)] hover:border-[var(--border-strong)] hover:text-zinc-300'}`}>VWAP</button>
+              <button onClick={() => handleToggle('bb')} className={`min-h-[32px] px-3 py-1 rounded border transition-all duration-150 ease-out touch-manipulation active:scale-95 ${indState.bb ? 'text-[var(--text-high)] border-[var(--border-strong)] bg-[var(--surface-2)] shadow-sm' : 'text-zinc-400 border-[var(--border-hairline)] hover:border-[var(--border-strong)] hover:text-zinc-300'}`}>BB</button>
             </div>
           </div>
         )}

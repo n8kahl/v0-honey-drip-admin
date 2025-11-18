@@ -14,6 +14,7 @@ interface LogicalRange {
 interface UIStore {
   // State
   activeTab: AppTab;
+  mainCockpitSymbol: string | null; // When set, shows full cockpit for this symbol
   showDiscordDialog: boolean;
   showAddTickerDialog: boolean;
   showAddChallengeDialog: boolean;
@@ -31,6 +32,7 @@ interface UIStore {
   
   // Actions
   setActiveTab: (tab: AppTab) => void;
+  setMainCockpitSymbol: (symbol: string | null) => void;
   registerChartScrollCallback: (callback: (barTimeKey: string) => void) => void;
   unregisterChartScrollCallback: () => void;
   scrollChartToBar: (barTimeKey: string) => void;
@@ -74,6 +76,7 @@ export const useUIStore = create<UIStore>()(
     (set, get) => ({
       // Initial state
       activeTab: 'live',
+      mainCockpitSymbol: null,
       showDiscordDialog: false,
       showAddTickerDialog: false,
       showAddChallengeDialog: false,
@@ -87,6 +90,7 @@ export const useUIStore = create<UIStore>()(
 
       // Simple setters
       setActiveTab: (tab) => set({ activeTab: tab }),
+      setMainCockpitSymbol: (symbol) => set({ mainCockpitSymbol: symbol }),
       registerChartScrollCallback: (callback) => set({ chartScrollToBar: callback }),
       unregisterChartScrollCallback: () => set({ chartScrollToBar: null }),
       scrollChartToBar: (barTimeKey) => {
@@ -171,6 +175,7 @@ export const useUIStore = create<UIStore>()(
       reset: () =>
         set({
           activeTab: 'live',
+          mainCockpitSymbol: null,
           showDiscordDialog: false,
           showAddTickerDialog: false,
           showAddChallengeDialog: false,

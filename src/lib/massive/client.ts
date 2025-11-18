@@ -24,6 +24,17 @@ export interface MassiveMarketStatus {
   earlyHours: boolean;
 }
 
+// Enriched market status with session + timing data
+export interface EnrichedMarketStatus {
+  session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
+  isOpen: boolean;
+  tradingDay: string; // ISO date
+  nextOpen: number; // Unix timestamp ms
+  nextClose: number; // Unix timestamp ms
+  serverTime: string; // ISO timestamp
+  label: string; // Display label
+}
+
 export interface MassiveAggregateBar {
   t: number;
   o: number;

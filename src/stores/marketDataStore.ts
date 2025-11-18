@@ -36,6 +36,18 @@ export type Timeframe = '1m' | '5m' | '15m' | '60m' | '1D';
 export type MTFTrend = 'bull' | 'bear' | 'neutral';
 export type MarketStatus = 'premarket' | 'open' | 'afterhours' | 'closed';
 
+// Enriched market session with timing data (for TraderHeader, etc.)
+export interface EnrichedMarketSession {
+  session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
+  isOpen: boolean;
+  isWeekend: boolean;
+  nextOpen: number;    // Unix timestamp ms
+  nextClose: number;   // Unix timestamp ms
+  serverTime: string;  // ISO timestamp
+  label: string;       // Display label
+  asOf: string;        // ISO timestamp of last update
+}
+
 export interface Candle {
   time: number;        // Epoch ms - matches Bar interface from indicators.ts
   timestamp?: number;  // Alias for compatibility
@@ -147,8 +159,11 @@ interface MarketDataStore {
   isConnected: boolean;
   lastServerTimestamp: number;
   
-  /** Market status */
+  /** Market status (legacy simple enum) */
   marketStatus: MarketStatus;
+  
+  /** Enriched market session with timing data */
+  enrichedSession: EnrichedMarketSession | null;
   
   /** Subscribed symbols */
   subscribedSymbols: Set<string>;
@@ -208,8 +223,14 @@ interface MarketDataStore {
   /** Add strategy signal */
   addStrategySignal: (symbol: string, signal: StrategySignal) => void;
   
-  /** Update market status */
+  /** Update market status (legacy) */
   setMarketStatus: (status: MarketStatus) => void;
+  
+  /** Update enriched market session */
+  updateMarketSession: (session: EnrichedMarketSession) => void;
+  
+  /** Fetch and update market session from Massive API */
+  fetchMarketSession: () => Promise<void>;
   
   /** Cleanup connections */
   cleanup: () => void;
@@ -702,6 +723,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       isConnected: false,
       lastServerTimestamp: 0,
       marketStatus: 'closed',
+      enrichedSession: null,
       subscribedSymbols: new Set(),
       macroSymbols: MACRO_SYMBOLS,
       isInitializing: false,
@@ -1303,6 +1325,68 @@ export const useMarketDataStore = create<MarketDataStore>()(
         set({ marketStatus: status });
       },
       
+      updateMarketSession: (session: EnrichedMarketSession) => {
+        set({ enrichedSession: session });
+        
+        // Also update legacy marketStatus for backward compatibility
+        const legacyStatus: MarketStatus = 
+          session.session === 'PRE' ? 'premarket' :
+          session.session === 'OPEN' ? 'open' :
+          session.session === 'POST' ? 'afterhours' :
+          'closed';
+        
+        set({ marketStatus: legacyStatus });
+      },
+      
+      fetchMarketSession: async () => {
+        try {
+          const { massiveClient } = await import('../lib/massive/client');
+          const { enrichMarketStatus } = await import('../lib/marketSession');
+          
+          const data = await massiveClient.getMarketStatus();
+          const enriched = enrichMarketStatus(data as any);
+          
+          const session: EnrichedMarketSession = {
+            session: enriched.session,
+            isOpen: enriched.isLive,
+            isWeekend: enriched.isWeekend,
+            nextOpen: enriched.nextOpen,
+            nextClose: enriched.nextClose,
+            serverTime: enriched.asOf,
+            label: enriched.label,
+            asOf: enriched.asOf,
+          };
+          
+          get().updateMarketSession(session);
+          console.log('[v0] Market session updated:', session);
+        } catch (error) {
+          console.error('[v0] Failed to fetch market session:', error);
+          
+          // Use fallback session based on current time
+          const { getFallbackSession, getNextMarketTimes } = await import('../lib/marketSession');
+          const fallback = getFallbackSession();
+          const { nextOpen, nextClose } = getNextMarketTimes(fallback.session);
+          
+          const now = new Date();
+          const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const isWeekend = etTime.getDay() === 0 || etTime.getDay() === 6;
+          
+          const session: EnrichedMarketSession = {
+            session: fallback.session,
+            isOpen: fallback.isLive,
+            isWeekend,
+            nextOpen,
+            nextClose,
+            serverTime: fallback.asOf,
+            label: fallback.label,
+            asOf: fallback.asOf,
+          };
+          
+          get().updateMarketSession(session);
+          console.log('[v0] Using fallback market session:', session);
+        }
+      },
+      
       cleanup: () => {
         console.log('[v0] marketDataStore: Cleaning up WebSocket connection');
         
@@ -1423,9 +1507,22 @@ export function useMTFTrend(symbol: string) {
   return useMarketDataStore(state => state.getMTFTrend(symbol));
 }
 
-/** Get market status */
+/** Get market status (legacy) */
 export function useMarketStatus() {
   return useMarketDataStore(state => state.marketStatus);
+}
+
+/** Get enriched market session with timing data */
+export function useEnrichedMarketSession() {
+  return useMarketDataStore(state => state.enrichedSession);
+}
+
+/** Get market session actions */
+export function useMarketSessionActions() {
+  return useMarketDataStore(state => ({
+    fetchMarketSession: state.fetchMarketSession,
+    updateMarketSession: state.updateMarketSession,
+  }));
 }
 
 /** Check if symbol data is stale */

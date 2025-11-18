@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
+import { AppSheet } from '../ui/AppSheet';
 import { Challenge, Trade, DiscordChannel } from '../../types';
 import { formatPrice, formatPercent, cn } from '../../lib/utils';
-import { X, Download, Share2, TrendingUp, TrendingDown } from 'lucide-react';
+import { Download, Share2, TrendingUp, TrendingDown } from 'lucide-react';
 import { HDButton } from './HDButton';
 import { formatChallengeDiscordExport } from '../../lib/discordFormatter';
 import { toast } from 'sonner@2.0.3';
@@ -74,29 +74,21 @@ export function HDDialogChallengeDetail({
   };
   
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[var(--surface-1)] border-[var(--border-hairline)] border-t-2 border-t-[var(--brand-primary)] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-        {/* Close X button */}
-        <button
-          onClick={() => onOpenChange(false)}
-          className="absolute top-4 right-4 w-6 h-6 flex items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-3)] transition-colors z-10"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        <DialogHeader>
-          <DialogTitle className="text-[var(--text-high)] flex items-center gap-2">
-            🏆 {challenge.name}
-            {challenge.scope === 'honeydrip-wide' && (
-              <span className="text-micro px-2 py-1 rounded bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] uppercase tracking-wide">
-                HD Wide
-              </span>
-            )}
-          </DialogTitle>
-          <DialogDescription className="text-[var(--text-muted)]">
-            View trade performance and statistics for this challenge
-          </DialogDescription>
-        </DialogHeader>
+    <AppSheet 
+      open={open} 
+      onOpenChange={onOpenChange}
+      title={`🏆 ${challenge.name}`}
+      snapPoint="full"
+    >
+      <div className="p-4 space-y-4">
+        {challenge.scope === 'honeydrip-wide' && (
+          <div className="text-xs px-2 py-1 rounded bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] uppercase tracking-wide inline-block">
+            HD Wide
+          </div>
+        )}
+        <div className="text-sm text-[var(--text-muted)]">
+          View trade performance and statistics for this challenge
+        </div>
 
         <div className="flex-1 overflow-y-auto space-y-6 pr-2">
           {/* Stats Grid */}
@@ -353,8 +345,8 @@ export function HDDialogChallengeDetail({
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </AppSheet>
   );
 }
 

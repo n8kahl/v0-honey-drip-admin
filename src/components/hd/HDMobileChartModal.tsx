@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { X } from 'lucide-react';
-import { Dialog, DialogContent } from '@radix-ui/react-dialog';
+import { AppSheet } from '../ui/AppSheet';
 import { cn } from '@/lib/utils';
 
 interface HDMobileChartModalProps {
@@ -68,21 +67,21 @@ export function HDMobileChartModal({
   if (!isOpen) return null;
   
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-full w-full h-[80vh] p-0 bg-[var(--surface-1)] border-[var(--border-hairline)] rounded-t-[var(--radius-lg)] rounded-b-none">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex items-center justify-between bg-[var(--surface-2)]">
+    <AppSheet 
+      open={isOpen} 
+      onOpenChange={onClose}
+      title={`${ticker} - 5-Minute Chart`}
+      snapPoint="full"
+    >
+      <div className="p-4 space-y-4">
+        {/* Price Header */}
+        <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-[var(--text-high)] font-medium">{ticker}</h2>
-            <div className="text-[var(--text-muted)] text-xs">5-Minute Chart</div>
-          </div>
-          
-          <div className="text-right">
-            <div className="text-[var(--text-high)] tabular-nums font-medium">
+            <div className="text-[var(--text-high)] tabular-nums font-medium text-2xl">
               ${currentPrice.toFixed(2)}
             </div>
             <div className={cn(
-              'text-xs tabular-nums',
+              'text-sm tabular-nums',
               isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
             )}>
               {isPositive ? '+' : ''}{dailyChange.toFixed(2)}%
@@ -91,7 +90,7 @@ export function HDMobileChartModal({
         </div>
         
         {/* Chart */}
-        <div className="p-4" style={{ height: '320px' }}>
+        <div style={{ height: '320px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 10, right: 5, left: -15, bottom: 0 }}>
               <defs>
@@ -165,11 +164,11 @@ export function HDMobileChartModal({
         
         {/* Footer hint */}
         <div className="px-4 py-3 border-t border-[var(--border-hairline)] bg-[var(--surface-2)] text-center">
-          <p className="text-[var(--text-faint)] text-micro">
+          <p className="text-[var(--text-faint)] text-xs">
             Showing last ~3 hours of 5-minute candles
           </p>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </AppSheet>
   );
 }

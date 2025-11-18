@@ -553,7 +553,7 @@ export function DesktopLiveCockpit(props: DesktopLiveCockpitProps) {
                 <h3 className="text-xl lg:text-2xl font-semibold text-white">
                   Honey Drip Admin
                 </h3>
-                <p className="text-gray-400 text-sm lg:text-base leading-relaxed">
+                <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">
                   Select a Ticker from the Watchlist or Loaded Trades to begin
                 </p>
               </div>

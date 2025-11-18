@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Challenge } from '../../types';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { AppSheet } from '../ui/AppSheet';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { HDButton } from './HDButton';
@@ -60,12 +60,13 @@ export function HDDialogAddChallenge({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-[var(--surface-2)] border border-[var(--border-hairline)] border-t-2 border-t-[var(--brand-primary)]">
-        <DialogHeader>
-          <DialogTitle className="text-[var(--text-high)]">Create New Challenge</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <AppSheet 
+      open={open} 
+      onOpenChange={onOpenChange}
+      title="Create New Challenge"
+      snapPoint="full"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4 p-4">
           <div className="space-y-2">
             <Label htmlFor="name" className="text-[var(--text-high)] text-sm">
               Challenge Name
@@ -167,8 +168,7 @@ export function HDDialogAddChallenge({
               Create Challenge
             </HDButton>
           </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+      </form>
+    </AppSheet>
   );
 }

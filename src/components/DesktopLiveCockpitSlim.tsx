@@ -4,6 +4,8 @@ import { HDPanelWatchlist } from './hd/HDPanelWatchlist';
 import { HDVoiceHUD } from './hd/HDVoiceHUD';
 import { HDDialogChallengeDetail } from './hd/HDDialogChallengeDetail';
 import { HDMacroPanel } from './hd/HDMacroPanel';
+import { HDCommandRail } from './hd/HDCommandRail';
+import { HDActiveTradesPanel } from './hd/HDActiveTradesPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
 
@@ -136,7 +138,18 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             />
           </div>
         )}
-        <div className={cn('w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-[var(--border-hairline)] overflow-y-auto', hideDesktopPanels && 'hidden', hideMobilePanelsOnActiveTab && 'hidden lg:block')}>
+        {/* Command Center: Left Rail */}
+        <div className={cn('hidden lg:flex', hideDesktopPanels && 'lg:hidden', hideMobilePanelsOnActiveTab && 'lg:hidden')}>
+          <HDCommandRail
+            onTickerClick={handleTickerClick}
+            onAddTicker={onAddTicker}
+            onRemoveTicker={onRemoveTicker}
+            activeTicker={activeTicker?.symbol}
+          />
+        </div>
+
+        {/* Legacy Mobile: Show full panel on mobile only */}
+        <div className={cn('w-full lg:hidden border-b border-[var(--border-hairline)] overflow-y-auto', hideMobilePanelsOnActiveTab && 'hidden')}>
           <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]"><HDMacroPanel /></div>
           <HDPanelWatchlist
             watchlist={watchlist}
@@ -252,26 +265,28 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
       </div>
       {showAlert && currentTrade && (
         <div className="lg:hidden fixed inset-0 z-[100] bg-[var(--bg-base)] flex flex-col">
-          <ActiveTradesPanel
-            tradeState={tradeState}
-            currentTrade={currentTrade}
-            showAlert={showAlert}
-            alertType={alertType}
-            alertOptions={alertOptions}
-            channels={channels}
-            challenges={challenges}
-            onSendAlert={actions.handleSendAlert}
-            onEnterAndAlert={actions.handleEnterAndAlert}
-            onCancelAlert={actions.handleCancelAlert}
-            onUnload={actions.handleUnloadTrade}
-            onEnter={actions.handleEnterTrade}
-            onTrim={actions.handleTrim}
-            onUpdate={actions.handleUpdate}
-            onUpdateSL={actions.handleUpdateSL}
-            onTrailStop={actions.handleTrailStop}
-            onAdd={actions.handleAdd}
-            onExit={actions.handleExit}
-          />
+          {/* Command Center: Right Panel (Desktop only) */}
+          <div className={cn('hidden lg:flex', hideDesktopPanels && 'lg:hidden')}>
+            <HDActiveTradesPanel
+              onTradeClick={(trade) => {
+                actions.setCurrentTrade(trade);
+                actions.setTradeState(trade.state);
+                actions.setActiveTicker(watchlist.find(w => w.symbol === trade.ticker) || null);
+              }}
+              onTrimClick={(trade) => {
+                actions.setCurrentTrade(trade);
+                actions.handleTrim();
+              }}
+              onMoveSLClick={(trade) => {
+                actions.setCurrentTrade(trade);
+                actions.handleUpdateSL();
+              }}
+              onExitClick={(trade) => {
+                actions.setCurrentTrade(trade);
+                actions.handleExit();
+              }}
+            />
+          </div>
         </div>
       )}
       <div className="lg:hidden"><MobileWatermark /></div>

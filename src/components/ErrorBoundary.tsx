@@ -42,21 +42,21 @@ export class ErrorBoundary extends Component<Props, State> {
             
             {isEnvError ? (
               <>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-zinc-400">
                   Missing required environment variables. Please configure the following in your Railway dashboard:
                 </p>
                 <div className="bg-[#0A0A0B] border border-[#27272A] rounded p-3 font-mono text-xs space-y-1">
-                  <div className="text-gray-300">VITE_SUPABASE_URL</div>
-                  <div className="text-gray-300">VITE_SUPABASE_ANON_KEY</div>
-                  <div className="text-gray-300">MASSIVE_API_KEY</div>
+                  <div className="text-zinc-300">VITE_SUPABASE_URL</div>
+                  <div className="text-zinc-300">VITE_SUPABASE_ANON_KEY</div>
+                  <div className="text-zinc-300">MASSIVE_API_KEY</div>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-zinc-500">
                   After adding these variables, redeploy your application.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-zinc-400">
                   An unexpected error occurred while loading the application.
                 </p>
                 <div className="bg-[#0A0A0B] border border-[#27272A] rounded p-3 font-mono text-xs text-red-400">

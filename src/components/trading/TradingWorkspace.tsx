@@ -220,7 +220,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           </div>
           <div className="relative z-10 text-center space-y-4 max-w-md">
             <h3 className="text-xl lg:text-2xl font-semibold text-white">Honey Drip Admin</h3>
-            <p className="text-gray-400 text-sm lg:text-base leading-relaxed">Select a Ticker from the Watchlist or Loaded Trades to begin</p>
+            <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">Select a Ticker from the Watchlist or Loaded Trades to begin</p>
           </div>
         </div>
       )}

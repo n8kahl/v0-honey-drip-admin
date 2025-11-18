@@ -116,10 +116,10 @@ export function HDStrategyBadge({
   // Determine badge color based on signal side
   const side = (signal.payload as any)?.side || 'LONG';
   const colorClass = side === 'LONG' || side === 'bullish'
-    ? 'bg-green-500/20 text-green-400 border-green-500/50 hover:bg-green-500/30'
+    ? 'bg-green-500/20 text-green-400 border-green-500/50 hover:bg-green-500/30 hover:shadow-lg hover:shadow-green-500/30 hover:scale-105'
     : side === 'SHORT' || side === 'bearish'
-    ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30'
-    : 'bg-blue-500/20 text-blue-400 border-blue-500/50 hover:bg-blue-500/30';
+    ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30 hover:shadow-lg hover:shadow-red-500/30 hover:scale-105'
+    : 'bg-blue-500/20 text-blue-400 border-blue-500/50 hover:bg-blue-500/30 hover:shadow-lg hover:shadow-blue-500/30 hover:scale-105';
   
   const sizeClasses = size === 'sm' 
     ? 'px-1.5 py-0.5 text-[9px]'
@@ -135,8 +135,10 @@ export function HDStrategyBadge({
               onClick?.();
             }}
             className={cn(
-              'inline-flex items-center justify-center rounded-full font-bold border transition-all',
-              'cursor-pointer active:scale-95',
+              'inline-flex items-center justify-center rounded-full font-bold border',
+              'transition-all duration-150 ease-out',
+              'cursor-pointer active:scale-95 touch-manipulation',
+              'min-h-[24px] min-w-[24px]',
               colorClass,
               sizeClasses
             )}

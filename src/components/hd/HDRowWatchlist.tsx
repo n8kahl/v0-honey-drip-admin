@@ -17,6 +17,7 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   const symbolData = useSymbolData(ticker.symbol);
   const setActiveTab = useUIStore((state) => state.setActiveTab);
   const scrollChartToBar = useUIStore((state) => state.scrollChartToBar);
+  const setMainCockpitSymbol = useUIStore((state) => state.setMainCockpitSymbol);
   
   const currentPrice = ticker.last;
   const lastUpdated = symbolData?.lastUpdated || 0;
@@ -97,16 +98,19 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   return (
     <div
       className={cn(
-        'w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group',
-        'hover:bg-[var(--surface-1)] transition-colors',
-        active && 'bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)]',
+        'w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[48px]',
+        'hover:bg-[var(--surface-1)] transition-all duration-150 ease-out touch-manipulation',
+        active && 'bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm',
         isStale && 'opacity-60',
         pulseClass
       )}
       data-testid={`watchlist-item-${ticker.symbol}`}
     >
       <button
-        onClick={onClick}
+        onClick={() => {
+          setMainCockpitSymbol(ticker.symbol);
+          onClick?.(); // Still call onClick if provided (for legacy compatibility)
+        }}
         className="flex-1 flex items-center justify-between text-left"
         disabled={isStale}
         title={isStale ? 'Data is stale' : undefined}
@@ -165,7 +169,7 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
             e.stopPropagation();
             onRemove();
           }}
-          className="ml-2 w-6 h-6 flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all"
+          className="ml-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
           title="Remove from watchlist"
         >
           <X className="w-3.5 h-3.5" />

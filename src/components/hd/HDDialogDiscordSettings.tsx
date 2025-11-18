@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { AppSheet } from '../ui/AppSheet';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { HDButton } from './HDButton';
 import { DiscordChannel } from '../../types';
-import { Trash2, Plus, Check, AlertCircle, X } from 'lucide-react';
+import { Trash2, Plus, Check, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface HDDialogDiscordSettingsProps {
@@ -66,21 +66,13 @@ export function HDDialogDiscordSettings({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[var(--surface-1)] border-[var(--border-hairline)] border-t-2 border-t-[var(--brand-primary)] max-w-2xl max-h-[80vh] overflow-y-auto">
-        {/* Close X button */}
-        <button
-          onClick={handleClose}
-          className="absolute top-4 right-4 w-6 h-6 flex items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-3)] transition-colors z-10"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        <DialogHeader>
-          <DialogTitle className="text-[var(--text-high)]">Discord Integration Settings</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-6">
+    <AppSheet 
+      open={open} 
+      onOpenChange={onOpenChange}
+      title="Discord Integration Settings"
+      snapPoint="full"
+    >
+      <div className="space-y-6 p-4">
           {/* Add New Channel Section */}
           <div className="space-y-4 p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
             <h3 className="text-[var(--text-high)] text-sm uppercase tracking-wide">Add New Channel</h3>
@@ -220,8 +212,7 @@ export function HDDialogDiscordSettings({
               <li>Paste it above to add the channel</li>
             </ol>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </AppSheet>
   );
 }

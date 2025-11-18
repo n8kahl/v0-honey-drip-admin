@@ -42,14 +42,14 @@ export function HDMacroPanel() {
             ) : macro.spx.trend === 'bearish' ? (
               <TrendingDown className="w-3 h-3 text-red-500" />
             ) : (
-              <Activity className="w-3 h-3 text-gray-500" />
+              <Activity className="w-3 h-3 text-zinc-500" />
             )}
           </div>
           <div className={cn(
             "text-[10px]",
             macro.spx.trend === 'bullish' && "text-green-500",
             macro.spx.trend === 'bearish' && "text-red-500",
-            macro.spx.trend === 'neutral' && "text-gray-500"
+            macro.spx.trend === 'neutral' && "text-zinc-500"
           )}>
             {macro.spx.trendStrength} {macro.spx.trend}
           </div>
@@ -66,7 +66,7 @@ export function HDMacroPanel() {
             ) : macro.vix.trend === 'falling' ? (
               <TrendingDown className="w-3 h-3 text-green-500" />
             ) : (
-              <Activity className="w-3 h-3 text-gray-500" />
+              <Activity className="w-3 h-3 text-zinc-500" />
             )}
           </div>
           <div className={cn(
@@ -88,7 +88,7 @@ export function HDMacroPanel() {
             "text-[10px] capitalize",
             macro.riskBias === 'bullish' && "text-green-500",
             macro.riskBias === 'bearish' && "text-red-500",
-            macro.riskBias === 'neutral' && "text-gray-500"
+            macro.riskBias === 'neutral' && "text-zinc-500"
           )}>
             {macro.riskBias} bias
           </div>

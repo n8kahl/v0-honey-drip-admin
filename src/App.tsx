@@ -17,6 +17,7 @@ import { useQuotes } from './hooks/useMassiveData';
 import { useDiscord } from './hooks/useDiscord';
 import { useStrategyScanner } from './hooks/useStrategyScanner';
 import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './stores';
+import { useMarketSessionActions } from './stores/marketDataStore';
 import './styles/globals.css';
 
 export default function App() {
@@ -47,6 +48,9 @@ export default function App() {
     loadDiscordChannels, 
     loadChallenges 
   } = useSettingsStore();
+  
+  // Market session actions
+  const { fetchMarketSession } = useMarketSessionActions();
 
   // Discord hook - MUST be called before any early returns
   const discord = useDiscord();
@@ -89,6 +93,19 @@ export default function App() {
 
     loadUserData();
   }, [user, isTestAuto, loadDiscordChannels, loadChallenges, loadWatchlist, loadTrades]);
+  
+  // Initialize market session and poll every minute
+  useEffect(() => {
+    // Fetch immediately
+    fetchMarketSession();
+    
+    // Poll every 60 seconds to keep session data fresh
+    const interval = setInterval(() => {
+      fetchMarketSession();
+    }, 60_000);
+    
+    return () => clearInterval(interval);
+  }, [fetchMarketSession]);
 
   // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
   // useEffect(() => {

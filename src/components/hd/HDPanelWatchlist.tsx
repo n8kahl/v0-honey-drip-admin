@@ -7,6 +7,8 @@ import { formatPercent, cn } from '../../lib/utils';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { SymbolSignals } from '../../hooks/useStrategyScanner';
+import { WatchlistRecapCard } from '../WatchlistRecapCard';
+import { useEnrichedMarketSession } from '../../stores/marketDataStore';
 
 interface HDPanelWatchlistProps {
   watchlist: Ticker[];
@@ -51,6 +53,32 @@ export function HDPanelWatchlist({
   onOpenReviewTrade,
   className
 }: HDPanelWatchlistProps) {
+  const enrichedSession = useEnrichedMarketSession();
+  const isWeekend = enrichedSession?.isWeekend;
+  const session = enrichedSession?.session;
+  
+  // Compute Friday recap if weekend
+  const recap = (() => {
+    if (!isWeekend) return null;
+    // Filter trades exited on last trading day (Friday) - simplistic: trades with EXITED state
+    const exited = allTrades.filter(t => t.state === 'EXITED');
+    if (exited.length === 0) return null;
+    
+    const totalR = exited.reduce((sum, trade) => {
+      if (!trade.entryPrice || !trade.exitPrice || !trade.stopLoss) return sum;
+      const risk = trade.entryPrice - trade.stopLoss;
+      if (risk === 0) return sum;
+      const gain = trade.exitPrice - trade.entryPrice;
+      return sum + gain / risk;
+    }, 0);
+    const winners = exited.filter(t => t.entryPrice && t.exitPrice && t.exitPrice > t.entryPrice);
+    const winRate = exited.length > 0 ? (winners.length / exited.length) * 100 : 0;
+    return {
+      totalR,
+      winRate,
+      tradeCount: exited.length,
+    };
+  })();
   // watchlist prop is already updated by App.tsx useQuotes with real-time data
   // No need to fetch quotes again here
   
@@ -241,6 +269,19 @@ export function HDPanelWatchlist({
             {/* Quick symbol switcher (mobile-friendly) */}
             {watchlist.length > 0 && (
               <div className="px-3 py-2 overflow-x-auto flex gap-2 border-b border-[var(--border-hairline)] bg-[var(--surface-2)] sticky top-0 z-10">
+                {/* Weekend Recap Card */}
+                {isWeekend && recap && (
+                  <div className="mb-3 px-3">
+                    <WatchlistRecapCard
+                      date={new Date().toLocaleDateString('en-US')}
+                      dayName="Friday"
+                      totalR={recap.totalR}
+                      winRate={recap.winRate}
+                      tradeCount={recap.tradeCount}
+                      onClick={() => console.log('[v0] Review setups clicked')}
+                    />
+                  </div>
+                )}
                 {watchlist.slice(0, 12).map((t) => (
                   <button
                     key={`quick-${t.id}`}
@@ -266,7 +307,6 @@ export function HDPanelWatchlist({
                 active={ticker.symbol === activeTicker}
                 onClick={() => onTickerClick?.(ticker)}
                 onRemove={() => setConfirmDialog({ isOpen: true, type: 'ticker', item: ticker })}
-                signals={signalsBySymbol?.get(ticker.symbol)}
               />
             ))}
           </div>
