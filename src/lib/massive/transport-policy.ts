@@ -87,6 +87,10 @@ export interface TransportConfig {
 
 export type TransportCallback = (data: MassiveQuote, source: 'websocket' | 'rest', timestamp: number) => void;
 
+// Global REST data cache to prevent redundant API calls across multiple transports
+const restDataCache = new Map<string, { data: MassiveQuote; timestamp: number }>();
+const REST_CACHE_TTL_MS = 2000; // 2 seconds - still fresh but reduces duplicate calls
+
 export class TransportPolicy {
   private config: TransportConfig;
   private callback: TransportCallback;
@@ -376,6 +380,19 @@ export class TransportPolicy {
       return;
     }
 
+    // Check cache first to avoid redundant API calls
+    const cached = restDataCache.get(this.config.symbol);
+    if (cached && Date.now() - cached.timestamp < REST_CACHE_TTL_MS) {
+      console.debug(`[TransportPolicy] Using cached REST data for ${this.config.symbol} (${Date.now() - cached.timestamp}ms old)`);
+      const quote = mapMassiveMessageToQuote(cached.data, this.config.symbol);
+      if (quote) {
+        this.enqueueMessage(quote, 'rest', cached.timestamp);
+        this.lastDataTimestamp = cached.timestamp;
+      }
+      this.scheduleNextPoll();
+      return;
+    }
+
     const marketOpen = await this.isMarketOpen();
     if (!marketOpen) {
       this.currentPollInterval = Math.max(this.currentPollInterval, this.closedMarketPollInterval);
@@ -405,6 +422,10 @@ export class TransportPolicy {
             previousPrice === null || Math.abs(previousPrice - quote.last) > 1e-6;
           this.lastRestPrice = quote.last;
           this.lastDataTimestamp = now;
+          
+          // Store in cache to prevent redundant API calls
+          restDataCache.set(this.config.symbol, { data: quote, timestamp: now });
+          
           // Enqueue for batched processing
           this.enqueueMessage(quote, 'rest', now);
         } else {

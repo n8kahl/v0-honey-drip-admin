@@ -16,16 +16,16 @@ export interface RiskProfile {
 
 // Default DTE thresholds (configurable in settings)
 export interface DTEThresholds {
-  scalp: number; // 0-2 DTE
-  day: number; // 3-14 DTE
-  swing: number; // 15-60 DTE
-  // >60 DTE = LEAP
+  scalp: number; // 0 DTE (same day expiry)
+  day: number; // 1-4 DTE
+  swing: number; // 5-29 DTE
+  // >=30 DTE = LEAP
 }
 
 export const DEFAULT_DTE_THRESHOLDS: DTEThresholds = {
-  scalp: 2,
-  day: 14,
-  swing: 60,
+  scalp: 0,
+  day: 4,
+  swing: 29,
 };
 
 export const RISK_PROFILES: Record<TradeType, RiskProfile> = {

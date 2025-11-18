@@ -22,6 +22,8 @@ interface ActiveTradesPanelProps {
   onTrailStop: () => void;
   onAdd: () => void;
   onExit: () => void;
+  underlyingPrice?: number;
+  underlyingChange?: number;
 }
 
 export const ActiveTradesPanel: React.FC<ActiveTradesPanelProps> = ({
@@ -43,6 +45,8 @@ export const ActiveTradesPanel: React.FC<ActiveTradesPanelProps> = ({
   onTrailStop,
   onAdd,
   onExit,
+  underlyingPrice,
+  underlyingChange,
 }) => {
   return (
     <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-[var(--border-hairline)] flex flex-col h-full">
@@ -58,6 +62,8 @@ export const ActiveTradesPanel: React.FC<ActiveTradesPanelProps> = ({
             onEnterAndAlert={onEnterAndAlert}
             onCancel={onCancelAlert}
             onUnload={onUnload}
+            underlyingPrice={underlyingPrice}
+            underlyingChange={underlyingChange}
           />
         </div>
       ) : tradeState === 'LOADED' && currentTrade ? (

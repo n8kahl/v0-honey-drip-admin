@@ -14,6 +14,9 @@ interface HDConfluenceDetailPanelProps {
   volatility?: MassiveVolatilityMetrics;
   liquidity?: MassiveLiquidityMetrics;
   className?: string;
+  compact?: boolean; // Compact mode for active trades
+  tpProgress?: number; // TP proximity (0-1) for coaching context
+  isPositive?: boolean; // Current P&L status
 }
 
 export function HDConfluenceDetailPanel({
@@ -24,7 +27,10 @@ export function HDConfluenceDetailPanel({
   trend,
   volatility,
   liquidity,
-  className
+  className,
+  compact = false,
+  tpProgress,
+  isPositive,
 }: HDConfluenceDetailPanelProps) {
   // Use real data if available, otherwise fall back to neutral values
   const trendScore = trend?.trendScore ?? 50;
@@ -53,7 +59,7 @@ export function HDConfluenceDetailPanel({
     return 'text-[var(--accent-negative)]';
   };
   
-  // Volatility chip logic
+  // Volatility chip logic - use warning semantics
   const getVolatilityLabel = () => {
     if (volPercentile >= 70) return 'Elevated';
     if (volPercentile >= 30) return 'Normal';
@@ -61,16 +67,18 @@ export function HDConfluenceDetailPanel({
   };
   
   const getVolatilityBg = () => {
-    if (volPercentile >= 70) return 'bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/20';
+    if (volPercentile >= 70) return 'bg-amber-500/10 border-amber-500/30';
+    if (volPercentile <= 30) return 'bg-blue-500/10 border-blue-500/20';
     return 'bg-[var(--surface-3)] border-[var(--border-hairline)]';
   };
   
   const getVolatilityText = () => {
-    if (volPercentile >= 70) return 'text-[var(--brand-primary)]';
+    if (volPercentile >= 70) return 'text-amber-400';
+    if (volPercentile <= 30) return 'text-blue-400';
     return 'text-[var(--text-med)]';
   };
   
-  // Liquidity chip logic
+  // Liquidity chip logic - use proper warning semantics
   const getLiquidityLabel = () => {
     if (liqScore >= 70) return 'Good';
     if (liqScore >= 40) return 'Fair';
@@ -79,20 +87,66 @@ export function HDConfluenceDetailPanel({
   
   const getLiquidityBg = () => {
     if (liqScore >= 70) return 'bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/20';
-    if (liqScore >= 40) return 'bg-[var(--surface-3)] border-[var(--border-hairline)]';
-    return 'bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/20';
+    if (liqScore >= 40) return 'bg-amber-500/10 border-amber-500/30';
+    return 'bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/30';
   };
   
   const getLiquidityText = () => {
     if (liqScore >= 70) return 'text-[var(--accent-positive)]';
-    if (liqScore >= 40) return 'text-[var(--text-med)]';
-    return 'text-[var(--brand-primary)]';
+    if (liqScore >= 40) return 'text-amber-400';
+    return 'text-[var(--accent-negative)]';
   };
   
   const isAligned = direction === 'call' ? trendScore >= 60 : trendScore <= 40;
   
+  // Coaching logic
+  const getCoachingMessage = () => {
+    if (loading) return null;
+    if (error) return null;
+    
+    if (tpProgress && tpProgress > 0.7) {
+      // Near TP - evaluate if conditions support holding vs taking profit
+      if (isAligned && liqScore >= 60) {
+        return '✓ Strong momentum + liquidity support holding for full TP';
+      } else if (!isAligned || liqScore < 40) {
+        return '⚠ Consider trimming: momentum fading or liquidity concerns';
+      }
+      return '→ Conditions mixed near TP - watch closely';
+    }
+    
+    if (isPositive && !isAligned) {
+      return '⚠ Profitable but momentum not aligned - consider taking gains';
+    }
+    
+    if (!isPositive && !isAligned) {
+      return '⚠ Risk elevated: momentum and P&L both unfavorable';
+    }
+    
+    if (isAligned && liqScore >= 60) {
+      return '✓ Strong setup: momentum aligned with good liquidity';
+    }
+    
+    return null;
+  };
+  
+  const coachingMessage = getCoachingMessage();
+  
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn('space-y-2.5', compact && 'space-y-2', className)}>
+      {/* Coaching Header - Only in compact/active mode */}
+      {compact && coachingMessage && (
+        <div className={cn(
+          'px-3 py-2 rounded-[var(--radius)] border text-xs font-medium',
+          coachingMessage.startsWith('✓') 
+            ? 'bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/30 text-[var(--accent-positive)]'
+            : coachingMessage.startsWith('⚠')
+            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+            : 'bg-[var(--surface-3)] border-[var(--border-hairline)] text-[var(--text-med)]'
+        )}>
+          {coachingMessage}
+        </div>
+      )}
+      
       {/* Summary Chips */}
       <div className="grid grid-cols-3 gap-2">
         {/* Trend chip */}
@@ -135,97 +189,138 @@ export function HDConfluenceDetailPanel({
         </div>
       </div>
       
-      {/* Detailed Metrics */}
-      {!loading && !error && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {/* Index Momentum Card */}
+      {/* Detailed Metrics - MTF Analysis + Contract Health */}
+      {!loading && !error && !compact && (
+        <div className="space-y-2.5">
+          {/* MTF Analysis Card - Clearer Presentation */}
           <div className="p-3 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)]">
-            <div className="flex items-center justify-between mb-2.5">
-              <h3 className="text-xs text-[var(--text-high)] font-semibold">Index Momentum – {ticker}</h3>
-              <span className="px-2 py-0.5 rounded text-[9px] uppercase tracking-wide bg-[var(--surface-2)] text-[var(--text-faint)] border border-[var(--border-hairline)]">
-                Last 30min
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs text-[var(--text-high)] font-semibold uppercase tracking-wide">Multi-Timeframe Analysis</h3>
+              <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-[var(--surface-2)] text-[var(--text-faint)] border border-[var(--border-hairline)]">
+                {ticker}
               </span>
             </div>
             
-              <div className="space-y-1.5 text-[11px] text-[var(--text-muted)]">
-                <p>
-                  {trend
-                    ? trend.description
-                    : 'Trend metrics are loading from Massive…'}
-                </p>
-              </div>
+            <div className="text-[11px] text-[var(--text-muted)] leading-relaxed mb-2.5">
+              {trend?.description || 'Analyzing trend across 5m, 15m, 1h timeframes…'}
+            </div>
             
-            <div className="mt-2.5 pt-2.5 border-t border-[var(--border-hairline)]">
-              <p className={cn('text-[11px]', isAligned ? 'text-[var(--accent-positive)]' : 'text-[var(--brand-primary)]')}>
-                {isAligned 
-                  ? `✓ Momentum aligned with ${direction} direction`
-                  : `⚠ Momentum may not support ${direction} direction`
-                }
-              </p>
+            <div className="pt-2 border-t border-[var(--border-hairline)]">
+              <div className={cn(
+                'inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium',
+                isAligned 
+                  ? 'bg-[var(--accent-positive)]/10 text-[var(--accent-positive)]'
+                  : 'bg-amber-500/10 text-amber-400'
+              )}>
+                <span>{isAligned ? '✓' : '⚠'}</span>
+                <span>
+                  {isAligned 
+                    ? `Momentum aligned with ${direction === 'call' ? 'calls' : 'puts'}`
+                    : `Momentum not aligned with ${direction === 'call' ? 'calls' : 'puts'}`
+                  }
+                </span>
+              </div>
             </div>
           </div>
           
           {/* Contract Health Card */}
           <div className="p-3 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)]">
-            <div className="flex items-center justify-between mb-2.5">
-              <h3 className="text-xs text-[var(--text-high)] font-semibold">Contract Health</h3>
-            </div>
+            <h3 className="text-xs text-[var(--text-high)] font-semibold mb-2.5 uppercase tracking-wide">Contract Health</h3>
             
-            {/* Pricing & Volatility */}
-            <div className="mb-2.5 pb-2.5 border-b border-[var(--border-hairline)]">
-              <div className="text-[10px] text-[var(--text-faint)] uppercase tracking-wide mb-1.5">Pricing & Volatility</div>
-              <div className="space-y-1">
-                {volatility && (
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-[var(--text-muted)]">IV Percentile</span>
+            <div className="space-y-2 text-[11px]">
+              {volatility && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-[var(--text-muted)]">IV Rank</span>
+                  <div className="flex items-center gap-2">
                     <span className="text-[var(--text-high)] font-medium tabular-nums">
-                      {volatility.ivPercentile.toFixed(0)} ·{' '}
-                      <span className={volatility.ivPercentile >= 70 ? 'text-[var(--brand-primary)]' : 'text-[var(--text-muted)]'}>
-                        {getVolatilityLabel()}
-                      </span>
+                      {volatility.ivPercentile.toFixed(0)}%
+                    </span>
+                    <span className={cn('text-[10px] font-medium', getVolatilityText())}>
+                      {getVolatilityLabel()}
                     </span>
                   </div>
-                )}
+                </div>
+              )}
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[var(--text-muted)]">Volume</span>
+                <span className="text-[var(--text-high)] tabular-nums font-medium">
+                  {volume > 0 ? volume.toLocaleString() : '—'}
+                </span>
               </div>
-            </div>
-            
-            {/* Liquidity */}
-            <div>
-              <div className="text-[10px] text-[var(--text-faint)] uppercase tracking-wide mb-1.5">Liquidity</div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-muted)]">Volume</span>
-                  <span className="text-[var(--text-high)] font-medium tabular-nums">{volume.toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-muted)]">Open Interest</span>
-                  <span className="text-[var(--text-high)] tabular-nums">{openInterest.toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[var(--text-muted)]">Spread</span>
-                  <span className={cn(
-                    'font-medium tabular-nums',
-                    spreadPct < 1 ? 'text-[var(--accent-positive)]' : spreadPct < 3 ? 'text-[var(--brand-primary)]' : 'text-[var(--accent-negative)]'
-                  )}>
-                    {spreadPct.toFixed(1)}% <span className="text-[var(--text-muted)] font-normal">({getLiquidityLabel()})</span>
-                  </span>
-                </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[var(--text-muted)]">Open Interest</span>
+                <span className="text-[var(--text-high)] tabular-nums font-medium">
+                  {openInterest > 0 ? openInterest.toLocaleString() : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[var(--text-muted)]">Bid/Ask Spread</span>
+                <span className={cn(
+                  'font-medium tabular-nums',
+                  spreadPct === 0 ? 'text-[var(--text-muted)]' :
+                  spreadPct < 1 ? 'text-[var(--accent-positive)]' : 
+                  spreadPct < 3 ? 'text-amber-400' : 
+                  'text-[var(--accent-negative)]'
+                )}>
+                  {spreadPct > 0 ? `${spreadPct.toFixed(2)}%` : '—'}
+                </span>
               </div>
             </div>
           </div>
         </div>
       )}
       
-      {/* Footer */}
-      <div className="text-[var(--text-faint)] text-[10px]">
-        {error ? (
-          <span className="text-[var(--accent-negative)]">Confluence unavailable</span>
-        ) : loading ? (
-          'Loading confluence data...'
-        ) : (
-          'Powered by Massive'
-        )}
-      </div>
+      {/* Compact Metrics Row - Active trade mode */}
+      {!loading && !error && compact && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] px-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[var(--text-faint)]">IV</span>
+            <span className={cn('font-medium tabular-nums', getVolatilityText())}>
+              {volatility?.ivPercentile.toFixed(0) || '—'}%
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[var(--text-faint)]">Vol</span>
+            <span className="text-[var(--text-med)] tabular-nums">{volume.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[var(--text-faint)]">OI</span>
+            <span className="text-[var(--text-med)] tabular-nums">{openInterest.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[var(--text-faint)]">Spread</span>
+            <span className={cn(
+              'font-medium tabular-nums',
+              spreadPct < 1 ? 'text-[var(--accent-positive)]' : spreadPct < 3 ? 'text-amber-400' : 'text-[var(--accent-negative)]'
+            )}>
+              {spreadPct.toFixed(2)}%
+            </span>
+          </div>
+          {isAligned ? (
+            <div className="flex items-center gap-1 text-[var(--accent-positive)]">
+              <span>✓</span>
+              <span>Aligned</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-amber-400">
+              <span>⚠</span>
+              <span>Not aligned</span>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Error/Loading States */}
+      {error && (
+        <div className="text-xs text-[var(--accent-negative)] px-2">
+          ⚠ Confluence data unavailable
+        </div>
+      )}
+      {loading && (
+        <div className="text-xs text-[var(--text-muted)] px-2 animate-pulse">
+          Loading market conditions...
+        </div>
+      )}
     </div>
   );
 }

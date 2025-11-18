@@ -21,6 +21,22 @@ function mapToIndexSymbol(ticker: string): string {
   return indexMap[ticker] || ticker;
 }
 
+// Helper to construct option symbol in O:TICKER format
+function constructOptionSymbol(ticker: string, expiry: string, strike: number, type: 'C' | 'P'): string {
+  // Convert expiry from ISO format (YYYY-MM-DD) to YYMMDD
+  const expiryDate = new Date(expiry);
+  const year = expiryDate.getFullYear().toString().slice(-2);
+  const month = (expiryDate.getMonth() + 1).toString().padStart(2, '0');
+  const day = expiryDate.getDate().toString().padStart(2, '0');
+  const expiryStr = `${year}${month}${day}`;
+  
+  // Strike with 5 digits after decimal (e.g., 150.5 → 00150500)
+  const strikeStr = (strike * 1000).toString().padStart(8, '0');
+  
+  // Format: O:TICKER240101C00150500
+  return `O:${ticker}${expiryStr}${type}${strikeStr}`;
+}
+
 export interface MassiveTrendMetrics {
   trendScore: number;        // 0..100
   description: string;       // e.g. "Bullish · 3/3 timeframes aligned"
@@ -37,6 +53,13 @@ export interface MassiveLiquidityMetrics {
   volume: number;
   openInterest: number;
   description: string;       // e.g. "Good · Tight spread · High volume"
+}
+
+interface ContractData {
+  bid: number;
+  ask: number;
+  volume: number;
+  openInterest: number;
 }
 
 // Fetch trend metrics based on technical indicators across multiple timeframes
@@ -154,28 +177,42 @@ export async function fetchLiquidityMetrics(
   ticker: string,
   expiry: string,
   strike: number,
-  type: 'C' | 'P'
+  type: 'C' | 'P',
+  contractData?: ContractData
 ): Promise<MassiveLiquidityMetrics> {
-  console.log('[v0] Fetching real liquidity metrics for:', { ticker, expiry, strike, type });
+  console.log('[v0] Fetching real liquidity metrics for:', { ticker, expiry, strike, type, hasContractData: !!contractData });
 
   try {
+    // Use the snapshot endpoint which is working (instead of quotes endpoint which returns 502)
     const optionSymbol = constructOptionSymbol(ticker, expiry, strike, type);
     
+    // Try snapshot endpoint first
     const response = await massiveFetch(
-      `${MASSIVE_API_BASE}/v3/quotes/${ticker}/${optionSymbol}`
+      `${MASSIVE_API_BASE}/v3/snapshot/options/${encodeURIComponent(optionSymbol)}`
     );
     
     if (!response.ok) {
+      console.warn('[v0] Snapshot endpoint failed, returning fallback liquidity data');
       throw new Error('Failed to fetch liquidity data');
     }
     
     const data = await response.json();
-    const quote = data.results;
+    const quote = data.results || data;
     
-    const bid = quote?.bid || 0;
-    const ask = quote?.ask || 0;
-    const volume = quote?.volume || 0;
+    console.log('[v0] Liquidity snapshot response:', {
+      hasResults: !!data.results,
+      hasDayData: !!quote?.day,
+      hasLastQuote: !!quote?.day?.last_quote,
+      keys: Object.keys(quote || {}),
+    });
+    
+    // Extract metrics from snapshot response - try multiple paths
+    const bid = quote?.day?.last_quote?.bid || quote?.last_quote?.bid || quote?.bid || 0;
+    const ask = quote?.day?.last_quote?.ask || quote?.last_quote?.ask || quote?.ask || 0;
+    const volume = quote?.day?.volume || quote?.volume || 0;
     const openInterest = quote?.open_interest || 0;
+    
+    console.log('[v0] Extracted liquidity values:', { bid, ask, volume, openInterest });
     
     // Calculate spread percentage
     const mid = (bid + ask) / 2;
@@ -210,7 +247,45 @@ export async function fetchLiquidityMetrics(
       description,
     };
   } catch (error) {
-    // Silently return neutral fallback
+    console.warn('[v0] Liquidity API failed, using contract data fallback');
+    
+    // Use contract data if available
+    if (contractData && (contractData.volume > 0 || contractData.openInterest > 0)) {
+      const mid = (contractData.bid + contractData.ask) / 2;
+      const spreadPct = mid > 0 ? ((contractData.ask - contractData.bid) / mid) * 100 : 0;
+      
+      let liquidityScore: number;
+      let description: string;
+      
+      if (spreadPct < 2 && contractData.volume > 1000 && contractData.openInterest > 5000) {
+        liquidityScore = 88;
+        description = 'Excellent · Tight spread · High volume';
+      } else if (spreadPct < 3 && contractData.volume > 500) {
+        liquidityScore = 75;
+        description = 'Good · Tight spread · Decent volume';
+      } else if (spreadPct < 5) {
+        liquidityScore = 60;
+        description = 'Fair · Moderate spread';
+      } else if (spreadPct < 10) {
+        liquidityScore = 40;
+        description = 'Thin · Wide spread';
+      } else {
+        liquidityScore = 20;
+        description = 'Poor · Very wide spread';
+      }
+      
+      console.log('[v0] Using contract data:', { volume: contractData.volume, oi: contractData.openInterest, spreadPct });
+      
+      return {
+        liquidityScore,
+        spreadPct,
+        volume: contractData.volume,
+        openInterest: contractData.openInterest,
+        description,
+      };
+    }
+    
+    // Final fallback to neutral values
     return {
       liquidityScore: 50,
       spreadPct: 0,

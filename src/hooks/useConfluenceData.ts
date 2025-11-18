@@ -26,6 +26,13 @@ export function useConfluenceData(
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    console.log('[v0] useConfluenceData: useEffect triggered with', {
+      hasTrade: Boolean(trade),
+      tradeState,
+      ticker: trade?.ticker,
+      contractId: trade?.contract?.id,
+    });
+
     // Clear any pending fetch timeout
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current);
@@ -34,6 +41,7 @@ export function useConfluenceData(
 
     // Only fetch for LOADED or ENTERED trades
     if (!trade || !tradeState || (tradeState !== 'LOADED' && tradeState !== 'ENTERED')) {
+      console.log('[v0] useConfluenceData: Skipping fetch - invalid state or no trade');
       setData({ loading: false });
       lastTradeIdRef.current = null;
       return;
@@ -46,10 +54,10 @@ export function useConfluenceData(
       return;
     }
 
-    // Debounce: wait 300ms before fetching to avoid rapid API calls
+    // Debounce: wait 1000ms before fetching to avoid rapid API calls
     fetchTimeoutRef.current = setTimeout(() => {
       fetchConfluenceData(trade, tradeKey);
-    }, 300);
+    }, 1000);
 
     return () => {
       if (fetchTimeoutRef.current) {
@@ -59,6 +67,14 @@ export function useConfluenceData(
   }, [trade?.id, trade?.contract.expiry, trade?.contract.strike, trade?.contract.type, tradeState]);
 
   const fetchConfluenceData = async (trade: Trade, tradeKey: string) => {
+    console.log('[v0] useConfluenceData: Starting fetch for', {
+      ticker: trade.ticker,
+      contractId: trade.contract.id,
+      expiry: trade.contract.expiry,
+      strike: trade.contract.strike,
+      type: trade.contract.type,
+    });
+
     setData({ loading: true });
     lastTradeIdRef.current = tradeKey;
 
@@ -67,8 +83,21 @@ export function useConfluenceData(
       const [trend, volatility, liquidity] = await Promise.all([
         fetchTrendMetrics(trade.ticker),
         fetchVolatilityMetrics(trade.contract.id),
-        fetchLiquidityMetrics(trade.contract.id),
+        fetchLiquidityMetrics(
+          trade.ticker,
+          trade.contract.expiry,
+          trade.contract.strike,
+          trade.contract.type,
+          {
+            bid: trade.contract.bid,
+            ask: trade.contract.ask,
+            volume: trade.contract.volume,
+            openInterest: trade.contract.openInterest,
+          }
+        ),
       ]);
+
+      console.log('[v0] useConfluenceData: Fetched metrics', { trend, volatility, liquidity });
 
       setData({
         loading: false,
@@ -77,6 +106,7 @@ export function useConfluenceData(
         liquidity,
       });
     } catch (error) {
+      console.error('[v0] useConfluenceData: Error fetching confluence', error);
       // Silently fail - the individual fetch functions already return fallback data
       setData({
         loading: false,

@@ -340,8 +340,9 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
     );
   }
 
-  const riskAmount = currentUnderlyingPrice - stopLoss;
-  const rewardAmount = targetPrice - currentUnderlyingPrice;
+  // Calculate risk/reward based on option premiums
+  const riskAmount = currentOptionMid - stopLossPremium;
+  const rewardAmount = targetPremium - currentOptionMid;
   const riskRewardRatio = riskAmount > 0 ? rewardAmount / riskAmount : 0;
 
   // Determine confidence
@@ -353,10 +354,11 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
     confidence = 'low';
   }
 
+  // Return option premium prices for TP/SL (not underlying prices)
   return {
-    targetPrice,
-    stopLoss,
-    targetPrice2,
+    targetPrice: targetPremium,
+    stopLoss: stopLossPremium,
+    targetPrice2: targetPremium2,
     targetPremium,
     targetPremium2,
     stopLossPremium,

@@ -38,6 +38,10 @@ function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain 
   } as MassiveOptionsChain;
 }
 
+// Cache for options chain data with symbol+window as key
+const optionsChainCache = new Map<string, { data: { contracts: Contract[], chain: MassiveOptionsChain }, timestamp: number }>();
+const CACHE_TTL_MS = 10000; // 10 seconds
+
 export function useOptionsChain(symbol: string | null, window: number = 8) {
   const [optionsChain, setOptionsChain] = useState<MassiveOptionsChain | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -52,6 +56,19 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
       setLoading(false);
       return;
     }
+
+    // Check cache first
+    const cacheKey = `${symbol}-${window}`;
+    const cached = optionsChainCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      console.log(`[v0] useOptionsChain: Using cached data for ${symbol} (${Math.round((Date.now() - cached.timestamp) / 1000)}s old)`);
+      setContracts(cached.data.contracts);
+      setOptionsChain(cached.data.chain);
+      setAsOf(cached.timestamp);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     const fetch = async () => {
@@ -72,9 +89,20 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
             ...opt,
           }));
         }
+        const chain = groupContractsByExpiration(contracts);
+        const now = Date.now();
+        
+        // Store in cache
+        const cacheKey = `${symbol}-${window}`;
+        optionsChainCache.set(cacheKey, {
+          data: { contracts, chain },
+          timestamp: now,
+        });
+        console.log(`[v0] useOptionsChain: Cached fresh data for ${symbol}`);
+        
         setContracts(contracts);
-        setOptionsChain(groupContractsByExpiration(contracts));
-        setAsOf(Date.now());
+        setOptionsChain(chain);
+        setAsOf(now);
         setLoading(false);
       } catch (err: any) {
         setError(err?.message || 'Failed to fetch options chain');

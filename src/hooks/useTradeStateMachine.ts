@@ -344,8 +344,37 @@ export function useTradeStateMachine({
     if (!currentTrade) return;
 
     const finalEntryPrice = entryPrice || currentTrade.contract.mid;
-    const targetPrice = currentTrade.targetPrice || finalEntryPrice * 2;
-    const stopLoss = currentTrade.stopLoss || finalEntryPrice * 0.5;
+    
+    // Recalculate TP/SL with actual entry price
+    let targetPrice = finalEntryPrice * 1.5;
+    let stopLoss = finalEntryPrice * 0.5;
+
+    try {
+      const tradeType = inferTradeTypeByDTE(currentTrade.contract.expiry, new Date(), DEFAULT_DTE_THRESHOLDS);
+      
+      const risk = calculateRisk({
+        entryPrice: finalEntryPrice,
+        currentUnderlyingPrice: finalEntryPrice,
+        currentOptionMid: finalEntryPrice,
+        keyLevels: {
+          preMarketHigh: 0, preMarketLow: 0, orbHigh: 0, orbLow: 0,
+          priorDayHigh: 0, priorDayLow: 0, vwap: 0, vwapUpperBand: 0, vwapLowerBand: 0,
+          bollingerUpper: 0, bollingerLower: 0, weeklyHigh: 0, weeklyLow: 0,
+          monthlyHigh: 0, monthlyLow: 0, quarterlyHigh: 0, quarterlyLow: 0,
+          yearlyHigh: 0, yearlyLow: 0,
+        },
+        expirationISO: currentTrade.contract.expiry,
+        tradeType,
+        delta: currentTrade.contract.delta ?? 0.5,
+        gamma: currentTrade.contract.gamma ?? 0,
+        defaults: { mode: 'percent', tpPercent: 50, slPercent: 50, dteThresholds: DEFAULT_DTE_THRESHOLDS },
+      });
+      
+      if (risk.targetPrice) targetPrice = risk.targetPrice;
+      if (risk.stopLoss) stopLoss = risk.stopLoss;
+    } catch (error) {
+      console.warn('[v0] TP/SL recalculation failed, using fallback:', error);
+    }
 
     const enteredTrade: Trade = {
       ...currentTrade,

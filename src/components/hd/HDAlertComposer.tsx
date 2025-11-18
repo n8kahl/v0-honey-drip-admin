@@ -20,6 +20,8 @@ interface HDAlertComposerProps {
   onCancel?: () => void; // Cancel without removing trade (mobile only)
   onUnload?: () => void; // Unload trade from loaded list
   className?: string;
+  underlyingPrice?: number;
+  underlyingChange?: number;
 }
 
 export function HDAlertComposer({
@@ -32,7 +34,9 @@ export function HDAlertComposer({
   onEnterAndAlert,
   onCancel,
   onUnload,
-  className
+  className,
+  underlyingPrice,
+  underlyingChange,
 }: HDAlertComposerProps) {
   console.log('📝 HDAlertComposer rendered:', { alertType, alertOptions, trade: trade.ticker });
   
@@ -79,9 +83,9 @@ export function HDAlertComposer({
     // Set default comment with auto-populated info
     let defaultComment = '';
     if (alertType === 'load') {
-      defaultComment = `Watching this ${trade.tradeType} setup. Entry around $${formatPrice(trade.contract.mid)}.`;
+      defaultComment = `Watching this ${trade.tradeType} setup. Entry around $${formatPrice(trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ''}.`;
     } else if (alertType === 'enter') {
-      defaultComment = `Entering at $${formatPrice(trade.entryPrice || trade.contract.mid)}. Targeting $${formatPrice(trade.targetPrice || trade.contract.mid * 1.5)} with stop at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}.`;
+      defaultComment = `Entering at $${formatPrice(trade.entryPrice || trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ''}. Targeting $${formatPrice(trade.targetPrice || trade.contract.mid * 1.5)} with stop at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}.`;
     } else if (alertType === 'update' && alertOptions?.updateKind === 'trim') {
       defaultComment = `Trimming here at $${formatPrice(trade.currentPrice || trade.contract.mid)} to lock in profit. ${trade.movePercent ? `Up ${trade.movePercent > 0 ? '+' : ''}${trade.movePercent.toFixed(1)}%.` : ''}`;
     } else if (alertType === 'update' && alertOptions?.updateKind === 'sl') {

@@ -19,8 +19,7 @@ export default defineConfig({
       '**/dist/**',
       // Exclude Massive integration-heavy tests by default; run them separately when needed
       'src/lib/massive/**/__tests__/**',
-      // Temporarily exclude riskEngine tests that require numeric tuning
-      'src/lib/riskEngine/**/__tests__/**'
+      // Re-enabled for TP/SL flow verification: 'src/lib/riskEngine/**/__tests__/**'
     ],
   },
 });

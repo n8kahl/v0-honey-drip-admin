@@ -13,14 +13,10 @@ import { useActiveTradePnL } from '../../hooks/useMassiveData';
 import { useTPProximity } from '../../hooks/useTPProximity';
 import { useTPSettings } from '../../hooks/useTPSettings';
 import { toast } from 'sonner@2.0.3';
-import { HDLiveChart } from './HDLiveChart';
-import { TradeEvent } from '../../types';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from './HDConfluenceChips';
-import { useEffect, useMemo } from 'react';
-import { buildChartLevelsForTrade } from '../../lib/riskEngine/chartLevels';
-import { KeyLevels } from '../../lib/riskEngine/types';
-import { useKeyLevels } from '../../hooks/useKeyLevels';
+import { HDConfluenceDetailPanel } from './HDConfluenceDetailPanel';
+import { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { addTradeUpdate } from '../../lib/supabase/database';
 import { StrategySignalBadge } from './StrategySignalBadge';
@@ -134,53 +130,7 @@ export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, s
     return 'bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/30 text-[var(--accent-negative)]';
   };
   
-  const tradeEvents: TradeEvent[] = [
-    ...(trade.entryTime
-      ? [{
-          type: 'enter' as const,
-          timestamp: new Date(trade.entryTime).getTime(),
-          price: trade.entryPrice || trade.contract.mid,
-          label: 'Enter',
-        }]
-      : []),
-    ...(trade.updates || []).map(update => ({
-      type: update.type as TradeEvent['type'],
-      timestamp: new Date(update.timestamp).getTime(),
-      price: update.price || trade.contract.mid,
-      label: update.type.charAt(0).toUpperCase() + update.type.slice(1),
-    })),
-  ];
-  const { keyLevels: computedKeyLevels, loading: levelsLoading } = useKeyLevels(
-    trade.ticker,
-    { timeframe: '5', lookbackDays: 5, orbWindow: 5, enabled: true }
-  );
-  
-  const chartLevels = useMemo(() => {
-    // Use computed key levels if available, otherwise fallback to zeros
-    const keyLevels: KeyLevels = computedKeyLevels || {
-      preMarketHigh: 0,
-      preMarketLow: 0,
-      orbHigh: 0,
-      orbLow: 0,
-      priorDayHigh: 0,
-      priorDayLow: 0,
-      vwap: 0,
-      vwapUpperBand: 0,
-      vwapLowerBand: 0,
-      bollingerUpper: 0,
-      bollingerLower: 0,
-      weeklyHigh: 0,
-      weeklyLow: 0,
-      monthlyHigh: 0,
-      monthlyLow: 0,
-      quarterlyHigh: 0,
-      quarterlyLow: 0,
-      yearlyHigh: 0,
-      yearlyLow: 0,
-    };
-    
-    return buildChartLevelsForTrade(trade, keyLevels);
-  }, [trade, computedKeyLevels]);
+  // Chart is now rendered globally in the middle pane.
   
   return (
     <div className="bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-3 lg:p-4 space-y-3">
@@ -245,6 +195,19 @@ export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, s
         />
       )}
       
+      {/* Confluence Detail Panel - Prioritized coaching data */}
+      {confluence && (
+        <HDConfluenceDetailPanel
+          ticker={trade.ticker}
+          direction={trade.contract.type === 'C' ? 'call' : 'put'}
+          loading={confluence.loading}
+          error={confluence.error}
+          trend={confluence.trend}
+          volatility={confluence.volatility}
+          liquidity={confluence.liquidity}
+        />
+      )}
+      
       {/* Tight 2×2 Levels Grid */}
       <div className="grid grid-cols-2 gap-2">
         {trade.entryPrice && (
@@ -283,47 +246,6 @@ export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, s
           </div>
         )}
       </div>
-      
-      {/* HDLiveChart with levels */}
-      <HDLiveChart
-        ticker={trade.ticker}
-        timeframe="1"
-        indicators={{
-          ema: { periods: [8, 21, 50, 200] },
-          vwap: { enabled: true, bands: false },
-          bollinger: { period: 20, stdDev: 2 },
-        }}
-        events={tradeEvents}
-        levels={chartLevels} // Pass chart levels
-        height={350}
-        className="my-3"
-      />
-      
-      {/* Confluence - Inline Compact Chips */}
-      {!confluence?.loading && !confluence?.error && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[var(--text-muted)] text-micro uppercase tracking-wide">
-            Confluence:
-          </span>
-          <div className={cn(
-            'inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius)] border text-micro',
-            getTrendBg()
-          )}>
-            <span className="font-medium">Trend</span>
-            <span className="opacity-80">{trendDescription}</span>
-          </div>
-          
-          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius)] border bg-[var(--surface-3)] border-[var(--border-hairline)] text-[var(--text-med)] text-micro">
-            <span className="font-medium">Vol</span>
-            <span className="opacity-80">{volDescription}</span>
-          </div>
-          
-          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius)] border bg-[var(--surface-3)] border-[var(--border-hairline)] text-[var(--text-med)] text-micro">
-            <span className="font-medium">Liq</span>
-            <span className="opacity-80">{liqDescription}</span>
-          </div>
-        </div>
-      )}
       
       {/* Activity Timeline - Ultra Compact */}
       {trade.updates && trade.updates.length > 0 && (

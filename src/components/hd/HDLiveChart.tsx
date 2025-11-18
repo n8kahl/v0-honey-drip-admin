@@ -18,11 +18,28 @@ const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
 };
 
 const INDEX_TICKERS = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
-const TIMEFRAME_LOOKBACK_DAYS: Record<string, number> = {
+type TfKey = '1' | '5' | '15' | '60' | '1D';
+
+const TIMEFRAME_LOOKBACK_DAYS: Record<TfKey, number> = {
   '1': 2,
   '5': 5,
   '15': 10,
   '60': 30,
+  '1D': 365,
+};
+
+type ChartViewport = {
+  mode: 'AUTO' | 'MANUAL';
+  fromTime?: number; // epoch seconds
+  toTime?: number;   // epoch seconds
+};
+
+type IndicatorState = {
+  ema9: boolean;
+  ema21: boolean;
+  vwap: boolean;
+  // TODO: rsi: boolean; // Requires secondary pane; defer for focused follow-up
+  bb: boolean;
 };
 
 export interface TradeEvent {
@@ -35,7 +52,8 @@ export interface TradeEvent {
 
 interface HDLiveChartProps {
   ticker: string;
-  timeframe?: '1' | '5' | '15' | '60'; // minutes
+  timeframe?: '1' | '5' | '15' | '60'; // minutes (legacy prop)
+  initialTimeframe?: TfKey; // preferred; supports '1D'
   indicators?: IndicatorConfig;
   events?: TradeEvent[];
   levels?: ChartLevel[]; // Added levels prop
@@ -43,11 +61,15 @@ interface HDLiveChartProps {
   orbWindow?: number;
   height?: number;
   className?: string;
+  showControls?: boolean; // timeframe + indicators toggles
+  onTimeframeChange?: (tf: TfKey) => void;
+  stickyHeader?: boolean;
 }
 
 export function HDLiveChart({
   ticker,
   timeframe = '1',
+  initialTimeframe,
   indicators = { ema: { periods: [8, 21, 50, 200] }, vwap: { enabled: true, bands: false } },
   events = [],
   levels = [], // Added default empty array for levels
@@ -55,6 +77,9 @@ export function HDLiveChart({
   orbWindow = 5,
   height = 400,
   className = '',
+  showControls = true,
+  onTimeframeChange,
+  stickyHeader = false,
 }: HDLiveChartProps) {
 const chartContainerRef = useRef<HTMLDivElement>(null);
 const chartRef = useRef<IChartApi | null>(null);
@@ -76,6 +101,45 @@ const chartRef = useRef<IChartApi | null>(null);
   const waitingForChartRef = useRef(false);
   const [holidayDates, setHolidayDates] = useState<string[]>([]);
   const holidaysSet = useMemo(() => new Set(holidayDates), [holidayDates]);
+  const [currentTf, setCurrentTf] = useState<TfKey>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? window.localStorage.getItem('hdchart.timeframe') : null;
+      if (stored === '1' || stored === '5' || stored === '15' || stored === '60' || stored === '1D') return stored;
+    } catch {}
+    return initialTimeframe || (['1','5','15','60'].includes(timeframe) ? (timeframe as TfKey) : '1');
+  });
+  const timeframeRef = useRef<TfKey>(currentTf);
+  const tickerRef = useRef<string>(ticker);
+  const [viewport, setViewport] = useState<ChartViewport>({ mode: 'AUTO' });
+  const applyingViewportRef = useRef(false);
+  const lastNBarsAuto = 100;
+  const [opacity, setOpacity] = useState<number>(1);
+
+  const viewportStorageKey = useMemo(
+    () => `hdchart.viewport:${ticker}:${currentTf}`,
+    [ticker, currentTf]
+  );
+
+  const [indState, setIndState] = useState<IndicatorState>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('hdchart.indicators') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          ema9: Boolean(parsed.ema9),
+          ema21: Boolean(parsed.ema21),
+          vwap: Boolean(parsed.vwap),
+          bb: Boolean(parsed.bb),
+        } as IndicatorState;
+      }
+    } catch {}
+    return {
+      ema9: indicators?.ema?.periods?.includes(9) ?? true,
+      ema21: indicators?.ema?.periods?.includes(21) ?? true,
+      vwap: Boolean(indicators?.vwap?.enabled ?? true),
+      bb: Boolean(!!indicators?.bollinger),
+    } as IndicatorState;
+  });
   
   const lastRenderTimeRef = useRef<number>(0);
   const barsCacheRef = useRef<Map<string, Bar[]>>(new Map());
@@ -100,6 +164,44 @@ const chartRef = useRef<IChartApi | null>(null);
     console.debug('[HDLiveChart] Skipping market holidays fetch (endpoint unreliable)');
     setHolidayDates([]);
   }, []);
+
+  // Subtle fade transition on ticker/timeframe changes
+  useEffect(() => {
+    setOpacity(0);
+    const id = setTimeout(() => setOpacity(1), 160);
+    return () => clearTimeout(id);
+  }, [ticker, currentTf]);
+
+  // Restore persisted viewport per ticker/timeframe
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const raw = window.localStorage.getItem(viewportStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.mode === 'AUTO' || parsed.mode === 'MANUAL')) {
+          setViewport(parsed);
+        } else {
+          setViewport({ mode: 'AUTO' });
+        }
+      } else {
+        setViewport({ mode: 'AUTO' });
+      }
+      hasAutoFitRef.current = false;
+    } catch {
+      setViewport({ mode: 'AUTO' });
+      hasAutoFitRef.current = false;
+    }
+  }, [viewportStorageKey]);
+
+  // Persist viewport whenever it changes
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(viewportStorageKey, JSON.stringify(viewport));
+      }
+    } catch {}
+  }, [viewport, viewportStorageKey]);
   
 const loadHistoricalBars = useCallback(async () => {
     if (rateLimited) {
@@ -110,15 +212,16 @@ const loadHistoricalBars = useCallback(async () => {
     const isOption = ticker.startsWith('O:');
     const isIndex = ticker.startsWith('I:') || INDEX_TICKERS.has(ticker);
     const symbolParam = isIndex ? (ticker.startsWith('I:') ? ticker : `I:${ticker}`) : ticker;
-    const multiplier = Number(timeframe) || 1;
-    const timespan = 'minute';
-    const lookbackDays = TIMEFRAME_LOOKBACK_DAYS[timeframe] ?? 5;
+    const useDay = currentTf === '1D';
+    const multiplier = useDay ? 1 : Number(currentTf) || 1;
+    const timespan = useDay ? 'day' : 'minute';
+    const lookbackDays = TIMEFRAME_LOOKBACK_DAYS[currentTf] ?? 5;
     const lastTradingDay = getMostRecentTradingDay(new Date(), holidaysSet);
     const toDate = formatIsoDate(lastTradingDay);
     const fromDate = formatIsoDate(
       new Date(lastTradingDay.getTime() - lookbackDays * 24 * 60 * 60 * 1000)
     );
-    const cacheKey = `${symbolParam}:${timeframe}:${fromDate}:${toDate}`;
+    const cacheKey = `${symbolParam}:${currentTf}:${fromDate}:${toDate}`;
 
     // Check if this fetch has failed recently (within 5 minutes)
     const lastFailedTime = failedFetchesRef.current.get(cacheKey);
@@ -169,7 +272,7 @@ const loadHistoricalBars = useCallback(async () => {
           }
 
           const parsed: Bar[] = results.map((r: any) => ({
-            time: Math.floor(r.t / 1000) as Time,
+            time: Math.floor(r.t / 1000),
             open: r.o,
             high: r.h,
             low: r.l,
@@ -207,6 +310,8 @@ const loadHistoricalBars = useCallback(async () => {
     inflightFetchesRef.current.set(cacheKey, fetchPromise);
     try {
       const parsedBars = await fetchPromise;
+      // Ignore stale responses if inputs changed
+      if (tickerRef.current !== ticker || timeframeRef.current !== currentTf) return;
       setBars(parsedBars);
       setRateLimited(false);
       setRateLimitMessage(null);
@@ -221,7 +326,7 @@ const loadHistoricalBars = useCallback(async () => {
     } finally {
       inflightFetchesRef.current.delete(cacheKey);
     }
-  }, [ticker, timeframe, rateLimited, rateLimitMessage, holidaysSet]);
+  }, [ticker, currentTf, rateLimited, rateLimitMessage, holidaysSet]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -256,6 +361,8 @@ const loadHistoricalBars = useCallback(async () => {
         borderColor: '#374151',
         timeVisible: true,
         secondsVisible: false,
+        // Enable natural interactions
+        rightOffset: 0,
       },
     });
 
@@ -338,6 +445,21 @@ const loadHistoricalBars = useCallback(async () => {
       }
     }
 
+    // Subscribe to viewport changes to toggle AUTO/MANUAL and persist range
+    const timeScale = chart.timeScale();
+    const handleVisibleRange = (range: { from: Time; to: Time } | null) => {
+      if (applyingViewportRef.current) return;
+      if (!range) return;
+      const from = typeof range.from === 'number' ? range.from : undefined;
+      const to = typeof range.to === 'number' ? range.to : undefined;
+      if (from && to) {
+        setViewport({ mode: 'MANUAL', fromTime: from * 1000, toTime: to * 1000 });
+      } else {
+        setViewport((prev) => ({ ...prev, mode: 'MANUAL' }));
+      }
+    };
+    timeScale.subscribeVisibleTimeRangeChange(handleVisibleRange);
+
     setChartReady(true);
     console.log('[HDLiveChart] Chart initialization complete');
     
@@ -354,6 +476,9 @@ const loadHistoricalBars = useCallback(async () => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      try {
+        timeScale.unsubscribeVisibleTimeRangeChange(handleVisibleRange);
+      } catch {}
       levelSeriesRefs.current.forEach(series => {
         try {
           chart.removeSeries(series);
@@ -375,8 +500,9 @@ const loadHistoricalBars = useCallback(async () => {
   useEffect(() => {
     // Reset auto-fit flag when ticker changes so new chart gets fitted
     hasAutoFitRef.current = false;
+    tickerRef.current = ticker;
     loadHistoricalBars();
-  }, [ticker, timeframe]); // Only reload when ticker or timeframe changes, not on every loadHistoricalBars update
+  }, [ticker, currentTf]); // Only reload when ticker or timeframe changes
   
   useEffect(() => {
     const priceSeries = ensurePriceSeries();
@@ -395,14 +521,17 @@ const loadHistoricalBars = useCallback(async () => {
       const now = performance.now();
       const delta = now - lastRenderTimeRef.current;
       
-      // Calculate FPS
+      // Calculate FPS (stored in ref to avoid re-render loop)
       if (delta > 0) {
-        const currentFps = 1000 / delta;
-        setFps(Math.round(currentFps));
+        const currentFps = Math.round(1000 / delta);
+        // Only update FPS state if it changed significantly (>5 fps difference)
+        if (Math.abs(currentFps - fps) > 5) {
+          setTimeout(() => setFps(currentFps), 0);
+        }
       }
       
-      // Downsample if FPS drops below 30
-      const barsToRender = fps < 30 ? downsampleBars(bars, 200) : bars;
+      // Always render all bars (remove FPS-based downsampling to avoid dependency)
+      const barsToRender = bars;
       
       // Update candlestick data
       const candleData: CandlestickData[] = barsToRender.map(bar => ({
@@ -426,20 +555,27 @@ const loadHistoricalBars = useCallback(async () => {
             }))
             .filter(d => d.value !== null) as LineData[];
           
-          emaSeriesRefs.current.get(period)?.setData(emaData);
+          // Respect indicator visibility
+          const s = emaSeriesRefs.current.get(period);
+          if (s) {
+            const isOn = (period === 9 ? indState.ema9 : period === 21 ? indState.ema21 : true);
+            s.applyOptions({ visible: isOn });
+            s.setData(emaData);
+          }
         });
       }
       
-      if (indicators?.vwap?.enabled && vwapSeriesRef.current) {
+      if (indState.vwap && vwapSeriesRef.current) {
         const vwapValues = calculateVWAP(barsToRender);
         const vwapData: LineData[] = vwapValues.map((value, i) => ({
           time: barsToRender[i].time as Time,
           value,
         }));
         vwapSeriesRef.current.setData(vwapData);
+        vwapSeriesRef.current.applyOptions({ visible: indState.vwap });
       }
       
-      if (indicators?.bollinger && bollingerRefs.current) {
+      if (indState.bb && indicators?.bollinger && bollingerRefs.current) {
         const closes = barsToRender.map(b => b.close);
         const { upper, middle, lower } = calculateBollingerBands(
           closes,
@@ -458,6 +594,9 @@ const loadHistoricalBars = useCallback(async () => {
         bollingerRefs.current.upper.setData(createBBData(upper));
         bollingerRefs.current.middle.setData(createBBData(middle));
         bollingerRefs.current.lower.setData(createBBData(lower));
+        bollingerRefs.current.upper.applyOptions({ visible: indState.bb });
+        bollingerRefs.current.middle.applyOptions({ visible: indState.bb });
+        bollingerRefs.current.lower.applyOptions({ visible: indState.bb });
       }
       
       // Add trade event markers
@@ -472,22 +611,55 @@ const loadHistoricalBars = useCallback(async () => {
         priceSeries.setMarkers(markers);
       }
       
-      // Only auto-fit on initial load, not on every update (allows user to pan/zoom)
-      if (!hasAutoFitRef.current && chartRef.current) {
-        chartRef.current.timeScale().fitContent();
-        hasAutoFitRef.current = true;
+      // Apply viewport policy
+      if (chartRef.current) {
+        const ts = chartRef.current.timeScale();
+        if (!hasAutoFitRef.current) {
+          // Initial view: auto to lastN bars
+          const barsToUse = bars.length;
+          if (barsToUse > 1) {
+            const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
+            const from = bars[fromIdx].time as number;
+            const to = bars[barsToUse - 1].time as number;
+            applyingViewportRef.current = true;
+            ts.setVisibleRange({ from: from as any, to: to as any });
+            applyingViewportRef.current = false;
+            hasAutoFitRef.current = true;
+          }
+        } else if (viewport.mode === 'AUTO') {
+          // Follow latest
+          const barsToUse = bars.length;
+          if (barsToUse > 1) {
+            const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
+            const from = bars[fromIdx].time as number;
+            const to = bars[barsToUse - 1].time as number;
+            applyingViewportRef.current = true;
+            ts.setVisibleRange({ from: from as any, to: to as any });
+            applyingViewportRef.current = false;
+          }
+        } else if (viewport.mode === 'MANUAL' && viewport.fromTime && viewport.toTime) {
+          // Re-apply stored range
+          applyingViewportRef.current = true;
+          ts.setVisibleRange({ from: (viewport.fromTime / 1000) as any, to: (viewport.toTime / 1000) as any });
+          applyingViewportRef.current = false;
+        }
       }
       
       lastRenderTimeRef.current = now;
     };
     
     renderUpdate();
-  }, [bars, indicators, events, fps, ensurePriceSeries]);
+  }, [bars, indicators, events, ensurePriceSeries, viewport.mode, indState]);
   
   // Real-time WebSocket subscription for live aggregate updates (paid tier)
   useEffect(() => {
     const isOption = ticker.startsWith('O:');
     
+    // Stream only for 1m; other timeframes use REST
+    if (currentTf !== '1') {
+      return () => {};
+    }
+
     const unsubscribe = isOption
       ? massiveWS.subscribeOptionAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
@@ -496,7 +668,7 @@ const loadHistoricalBars = useCallback(async () => {
           if (message.type === 'aggregate' && message.data.ticker === ticker) {
             const agg = message.data;
             const newBar: Bar = {
-              time: Math.floor(agg.timestamp / 1000) as Time,
+              time: Math.floor(agg.timestamp / 1000),
               open: agg.open,
               high: agg.high,
               low: agg.low,
@@ -530,7 +702,7 @@ const loadHistoricalBars = useCallback(async () => {
           if (message.type === 'aggregate') {
             const agg = message.data;
             const newBar: Bar = {
-              time: Math.floor(agg.timestamp / 1000) as Time,
+              time: Math.floor(agg.timestamp / 1000),
               open: agg.open,
               high: agg.high,
               low: agg.low,
@@ -570,7 +742,7 @@ const loadHistoricalBars = useCallback(async () => {
       unsubscribe();
       clearInterval(fallbackInterval);
     };
-  }, [ticker, lastUpdate, loadHistoricalBars]);
+  }, [ticker, lastUpdate, loadHistoricalBars, currentTf]);
   
   useEffect(() => {
     if (!chartRef.current || levels.length === 0) return;
@@ -616,9 +788,9 @@ const loadHistoricalBars = useCallback(async () => {
     
     // Sort levels by importance (entry/TP/SL first, then key levels)
     const sortedLevels = [...levels].sort((a, b) => {
-      const importance = { ENTRY: 0, TP: 1, SL: 2 };
-      const aImportance = importance[a.type] ?? 10;
-      const bImportance = importance[b.type] ?? 10;
+      const importance: Record<string, number> = { ENTRY: 0, TP: 1, SL: 2 };
+      const aImportance = importance[String(a.type)] ?? 10;
+      const bImportance = importance[String(b.type)] ?? 10;
       return aImportance - bImportance;
     });
     
@@ -630,7 +802,7 @@ const loadHistoricalBars = useCallback(async () => {
       try {
         const lineSeries = chartRef.current!.addLineSeries({
           color: style.color,
-          lineWidth: style.width,
+          lineWidth: style.width as any,
           lineStyle: style.style as any,
           title: `${level.label}`,
           priceLineVisible: false,
@@ -642,7 +814,7 @@ const loadHistoricalBars = useCallback(async () => {
         const priceLineOptions = {
           price: level.price,
           color: style.color,
-          lineWidth: style.width,
+          lineWidth: style.width as any,
           lineStyle: style.style as any,
           axisLabelVisible: true,
           title: level.label,
@@ -665,6 +837,37 @@ const loadHistoricalBars = useCallback(async () => {
     if (secondsAgo < 60) return `${secondsAgo}s ago`;
     return `${Math.floor(secondsAgo / 60)}m ago`;
   };
+
+  const handleBackToLive = () => {
+    setViewport({ mode: 'AUTO' });
+    // After next update, AUTO branch will snap to latest window
+  };
+
+  const handleToggle = (key: keyof IndicatorState) => {
+    // Preserve viewport before updating series visibility
+    setViewport((prev) => ({ ...prev }));
+    setIndState((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const tfOptions: { key: TfKey; label: string }[] = [
+    { key: '1', label: '1m' },
+    { key: '5', label: '5m' },
+    { key: '15', label: '15m' },
+    { key: '60', label: '60m' },
+    { key: '1D', label: '1D' },
+  ];
+
+  const selectTimeframe = (tf: TfKey) => {
+    if (tf === currentTf) return;
+    setViewport({ mode: 'AUTO' });
+    setBars([]);
+    setIsConnected(false);
+    setDataSource('rest');
+    setCurrentTf(tf);
+    try { if (typeof window !== 'undefined') window.localStorage.setItem('hdchart.timeframe', tf); } catch {}
+    timeframeRef.current = tf;
+    onTimeframeChange?.(tf);
+  };
   
   if (!ready) {
     return (
@@ -675,12 +878,13 @@ const loadHistoricalBars = useCallback(async () => {
   }
 
   return (
-    <div className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className}`}>
+    <div className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className}`}
+         style={{ opacity, transition: 'opacity 160ms ease' }}>
       {/* Header */}
-      <div className="px-3 py-2 border-b border-[var(--border-hairline)] flex items-center justify-between">
+      <div className={`${stickyHeader ? 'sticky top-0 z-10 bg-[var(--surface-2)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface-2)]/80' : ''} px-3 py-2 border-b border-[var(--border-hairline)] flex items-center justify-between`}>
         <div className="flex items-center gap-3">
           <h3 className="text-[var(--text-high)] text-xs font-medium uppercase tracking-wide">
-            Live Chart ({timeframe}m)
+            Live Chart ({currentTf})
           </h3>
           <div className="flex items-center gap-1.5">
             {isConnected ? (
@@ -691,6 +895,19 @@ const loadHistoricalBars = useCallback(async () => {
             <span className="text-micro text-[var(--text-muted)]">
               {dataSource === 'websocket' ? 'Streaming' : 'REST'} • {getAsOfText()}
             </span>
+            {rateLimited && (
+              <span className="text-micro text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
+                Limited
+              </span>
+            )}
+            <span className={`text-micro px-1.5 py-0.5 rounded border ${viewport.mode === 'AUTO' ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-blue-400 border-blue-400/30 bg-blue-400/10'}`}>
+              {viewport.mode === 'AUTO' ? 'LIVE' : 'HISTORICAL'}
+            </span>
+            {viewport.mode === 'MANUAL' && (
+              <button className="text-micro px-2 py-0.5 rounded border border-[var(--border-hairline)] hover:bg-[var(--surface-3)]" onClick={handleBackToLive} title="Back to Live">
+                Back to Live
+              </button>
+            )}
           </div>
           {fps < 30 && (
             <span className="text-micro text-yellow-500 flex items-center gap-1">
@@ -699,17 +916,40 @@ const loadHistoricalBars = useCallback(async () => {
             </span>
           )}
         </div>
-        
-        <div className="flex items-center gap-2 text-micro text-[var(--text-muted)]">
-          {indicators?.ema?.periods.map(p => (
-            <span key={p}>EMA{p}</span>
-          ))}
-          {indicators?.vwap?.enabled && <span>VWAP</span>}
-          {indicators?.bollinger && <span>BB(20,2)</span>}
-          {levels.map(level => (
-            <span key={level.label}>{level.label}</span>
-          ))}
-        </div>
+        {showControls ? (
+          <div className="flex items-center gap-3">
+            {/* Timeframe */}
+            <div className="flex items-center gap-1 text-micro">
+              {tfOptions.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => selectTimeframe(opt.key)}
+                  className={`px-2 py-0.5 rounded border ${currentTf === opt.key ? 'bg-[var(--surface-3)] border-[var(--border-strong)] text-[var(--text-high)]' : 'border-[var(--border-hairline)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {/* Indicators */}
+            <div className="flex items-center gap-1 text-micro">
+              <button onClick={() => { handleToggle('ema9'); try { if (typeof window !== 'undefined') window.localStorage.setItem('hdchart.indicators', JSON.stringify({ ...indState, ema9: !indState.ema9 })); } catch {} }} className={`px-2 py-0.5 rounded border ${indState.ema9 ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>EMA9</button>
+              <button onClick={() => { handleToggle('ema21'); try { if (typeof window !== 'undefined') window.localStorage.setItem('hdchart.indicators', JSON.stringify({ ...indState, ema21: !indState.ema21 })); } catch {} }} className={`px-2 py-0.5 rounded border ${indState.ema21 ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>EMA21</button>
+              <button onClick={() => { handleToggle('vwap'); try { if (typeof window !== 'undefined') window.localStorage.setItem('hdchart.indicators', JSON.stringify({ ...indState, vwap: !indState.vwap })); } catch {} }} className={`px-2 py-0.5 rounded border ${indState.vwap ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>VWAP</button>
+              <button onClick={() => { handleToggle('bb'); try { if (typeof window !== 'undefined') window.localStorage.setItem('hdchart.indicators', JSON.stringify({ ...indState, bb: !indState.bb })); } catch {} }} className={`px-2 py-0.5 rounded border ${indState.bb ? 'text-[var(--text-high)] border-[var(--border-strong)]' : 'text-[var(--text-muted)] border-[var(--border-hairline)]'}`}>BB</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-micro text-[var(--text-muted)]">
+            {indicators?.ema?.periods.map(p => (
+              <span key={p}>EMA{p}</span>
+            ))}
+            {indicators?.vwap?.enabled && <span>VWAP</span>}
+            {indicators?.bollinger && <span>BB(20,2)</span>}
+            {levels.map(level => (
+              <span key={level.label}>{level.label}</span>
+            ))}
+          </div>
+        )}
       </div>
       
       {/* Chart Canvas */}
