@@ -1,5 +1,6 @@
-// Load environment variables from .env file (for local development)
+// Load env: prefer .env.local in dev, then .env (production defaults)
 import { config } from 'dotenv';
+config({ path: '.env.local', override: true });
 config();
 
 import http from 'http';
