@@ -9,7 +9,13 @@ async function fetchWsToken(): Promise<string | null> {
     const json = await resp.json();
     return String(json?.token || '') || null;
   } catch {
-    return null;
+    // Fallback to static proxy token when ephemeral token endpoint is unavailable in local dev
+    try {
+      const fallback = (import.meta as any)?.env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
+      return fallback || null;
+    } catch {
+      return null;
+    }
   }
 }
 
