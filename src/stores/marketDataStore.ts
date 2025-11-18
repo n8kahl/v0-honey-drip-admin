@@ -281,6 +281,55 @@ const HEARTBEAT_INTERVAL = 25000; // 25 seconds
 
 // Stocks socket deprecated in pure options+indices mode
 
+/** Roll up 1m bars into higher timeframes (5m, 15m, 60m) */
+function rollupBars(bars1m: Candle[], targetTF: Timeframe): Candle[] {
+  if (bars1m.length === 0) return [];
+  
+  const minutesPerBar = targetTF === '5m' ? 5 : targetTF === '15m' ? 15 : targetTF === '60m' ? 60 : 1;
+  if (minutesPerBar === 1) return bars1m;
+  
+  const rolled: Candle[] = [];
+  let currentBar: Candle | null = null;
+  
+  for (const bar of bars1m) {
+    const barTime = bar.time || bar.timestamp || 0;
+    const barMinute = Math.floor(barTime / 60000) * 60000;
+    const bucketStart = Math.floor(barMinute / (minutesPerBar * 60000)) * (minutesPerBar * 60000);
+    
+    if (!currentBar || (currentBar.time !== bucketStart)) {
+      // Start new bucket
+      if (currentBar) rolled.push(currentBar);
+      currentBar = {
+        time: bucketStart,
+        timestamp: bucketStart,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+        volume: bar.volume,
+        vwap: bar.vwap,
+        trades: bar.trades || 0,
+      };
+    } else {
+      // Update existing bucket
+      currentBar.high = Math.max(currentBar.high, bar.high);
+      currentBar.low = Math.min(currentBar.low, bar.low);
+      currentBar.close = bar.close;
+      currentBar.volume += bar.volume;
+      if (bar.trades) currentBar.trades = (currentBar.trades || 0) + bar.trades;
+      // VWAP: weighted average (simplified)
+      if (bar.vwap && currentBar.vwap) {
+        currentBar.vwap = (currentBar.vwap + bar.vwap) / 2;
+      } else if (bar.vwap) {
+        currentBar.vwap = bar.vwap;
+      }
+    }
+  }
+  
+  if (currentBar) rolled.push(currentBar);
+  return rolled;
+}
+
 /** Create empty symbol data */
 function createEmptySymbolData(symbol: string): SymbolData {
   return {
@@ -995,14 +1044,29 @@ export const useMarketDataStore = create<MarketDataStore>()(
           }
         }
         
+        // Auto-rollup higher timeframes from 1m bars
+        let candles5m = symbolData.candles['5m'];
+        let candles15m = symbolData.candles['15m'];
+        let candles60m = symbolData.candles['60m'];
+        
+        if (timeframe === '1m') {
+          // Roll up to 5m, 15m, 60m automatically
+          candles5m = rollupBars(updatedCandles, '5m');
+          candles15m = rollupBars(updatedCandles, '15m');
+          candles60m = rollupBars(updatedCandles, '60m');
+        }
+        
         set({
           symbols: {
             ...symbols,
             [normalized]: {
               ...symbolData,
               candles: {
-                ...symbolData.candles,
-                [timeframe]: updatedCandles,
+                '1m': timeframe === '1m' ? updatedCandles : symbolData.candles['1m'],
+                '5m': timeframe === '1m' ? candles5m : timeframe === '5m' ? updatedCandles : symbolData.candles['5m'],
+                '15m': timeframe === '1m' ? candles15m : timeframe === '15m' ? updatedCandles : symbolData.candles['15m'],
+                '60m': timeframe === '1m' ? candles60m : timeframe === '60m' ? updatedCandles : symbolData.candles['60m'],
+                '1D': symbolData.candles['1D'],
               },
               lastUpdated: Date.now(),
             },
@@ -1011,7 +1075,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
         
         // Recompute comprehensive indicators/signals if this is the primary timeframe
         // Note: recomputeSymbol has built-in conditional logic (only runs on bar close or significant move)
-        if (timeframe === symbolData.primaryTimeframe) {
+        if (timeframe === symbolData.primaryTimeframe || timeframe === '1m') {
           get().recomputeSymbol(normalized);
         }
       },
