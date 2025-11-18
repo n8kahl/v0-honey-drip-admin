@@ -16,12 +16,16 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log('[v0] AuthProvider rendering');
   
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [initError, setInitError] = useState<string | null>(null);
   const autoLogin = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true')
     || (typeof navigator !== 'undefined' && (navigator as any)?.webdriver === true);
+  
+  // Initialize with test user if auto-login enabled
+  const [user, setUser] = useState<User | null>(
+    autoLogin ? ({ id: 'test-user', email: 'test@example.com' } as any) : null
+  );
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(!autoLogin); // Start not loading if auto-login
+  const [initError, setInitError] = useState<string | null>(null);
   
   let supabase;
   if (!autoLogin) {
@@ -43,13 +47,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[v0] AuthProvider: Auto-login enabled, skipping Supabase entirely');
   }
 
-  // In test auto-login mode, set a dummy user and skip Supabase
+  // Log auto-login mode
   useEffect(() => {
     if (autoLogin) {
-      console.log('[v0] AuthProvider: VITE_TEST_AUTO_LOGIN enabled - using dummy user');
-      setUser({ id: 'test-user', email: 'test@example.com' } as any);
-      setSession(null);
-      setLoading(false);
+      console.log('[v0] AuthProvider: Auto-login mode - user set at initialization');
     }
   }, [autoLogin]);
 
