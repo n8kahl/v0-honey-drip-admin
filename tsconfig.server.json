@@ -20,6 +20,7 @@
     "src/lib/strategy/engine.ts",
     "src/lib/strategy/featuresBuilder.ts",
     "src/lib/strategy/scanner.ts",
+    "src/lib/strategy/patternDetection.ts",
     "src/lib/strategy/alertProcessor.ts",
     "src/lib/discord/webhook.ts",
     "src/lib/discord/strategyAlerts.ts",
