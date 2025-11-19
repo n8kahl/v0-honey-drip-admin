@@ -233,6 +233,7 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         features: {
           [symbol]: features,
         },
+        supabaseClient: supabaseRef.current,
       });
 
       if (signals.length > 0) {

@@ -229,7 +229,7 @@ async function fetchSymbolFeatures(symbol: string): Promise<ReturnType<typeof bu
         rsi: indicators.rsi,
         atr: indicators.atr,
       },
-    };
+    } as any; // Type assertion needed for RawMTFContext compatibility
 
     // Build features
     const features = buildSymbolFeatures({

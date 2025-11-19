@@ -5,7 +5,7 @@
     "target": "ES2020",
     "lib": ["ES2020"],
     "outDir": "./server/dist",
-    "rootDir": "./server",
+    "rootDir": ".",
     "noEmit": false,
     "moduleResolution": "node",
     "esModuleInterop": true,
@@ -15,11 +15,31 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["server/**/*"],
+  "include": [
+    "server/**/*",
+    "src/lib/strategy/engine.ts",
+    "src/lib/strategy/featuresBuilder.ts",
+    "src/lib/strategy/scanner.ts",
+    "src/lib/strategy/alertProcessor.ts",
+    "src/lib/discord/webhook.ts",
+    "src/lib/discord/strategyAlerts.ts",
+    "src/types/strategy.ts",
+    "src/lib/indicators/**/*"
+  ],
   "exclude": [
     "node_modules",
     "dist",
     "build",
-    "server/dist"
+    "server/dist",
+    "src/components",
+    "src/hooks",
+    "src/stores",
+    "src/services",
+    "src/App.tsx",
+    "src/lib/supabase/**/*",
+    "src/lib/strategy/esm/**/*",
+    "**/*-old.ts",
+    "**/*.backup.ts",
+    "**/*.esm.ts"
   ]
 }

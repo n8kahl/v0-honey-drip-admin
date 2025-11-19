@@ -1,4 +1,3 @@
-import { createClient } from '../supabase/client';
 import type { StrategySignal, StrategyDefinition } from '../../types/strategy';
 import { mapStrategyDefinitionRow, mapStrategySignalRow } from '../../types/strategy';
 import { evaluateStrategy, type SymbolFeatures } from './engine';
@@ -8,7 +7,7 @@ export interface StrategyScannerOptions {
   symbols: string[];
   featuresBySymbol?: Record<string, SymbolFeatures>; // Deprecated, use 'features'
   features?: Record<string, SymbolFeatures>; // Preferred field name
-  supabaseClient?: any; // Optional Supabase client (for server-side usage)
+  supabaseClient: any; // Required Supabase client
 }
 
 function isSPXSymbol(sym: string): boolean {
@@ -82,7 +81,10 @@ function getConfidenceThresholds(def: StrategyDefinition): { min: number; ready:
 }
 
 export async function scanStrategiesForUser(opts: StrategyScannerOptions): Promise<StrategySignal[]> {
-  const supabase = opts.supabaseClient || createClient();
+  if (!opts.supabaseClient) {
+    throw new Error('supabaseClient is required');
+  }
+  const supabase = opts.supabaseClient;
   const owner = opts.owner;
   const newSignals: StrategySignal[] = [];
   
