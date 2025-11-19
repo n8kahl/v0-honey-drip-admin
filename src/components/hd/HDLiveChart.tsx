@@ -870,9 +870,16 @@ const loadHistoricalBars = useCallback(async () => {
   };
   
   if (!ready) {
+    const hasFailures = failedFetchesRef.current.size > 0;
     return (
-      <div className="h-[var(--chart-height,400px)] flex items-center justify-center bg-[var(--surface-2)] rounded-[var(--radius)] border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] text-sm">
-        Loading market data…
+      <div className="h-[var(--chart-height,400px)] flex flex-col items-center justify-center gap-2 bg-[var(--surface-2)] rounded-[var(--radius)] border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] text-xs px-4 text-center">
+        {!hasFailures && <span>Loading market data…</span>}
+        {hasFailures && (
+          <>
+            <span className="text-[var(--text-high)]">No historical bars available.</span>
+            <span className="opacity-80">Configure MASSIVE_API_KEY in .env.local to enable chart history.</span>
+          </>
+        )}
       </div>
     );
   }
