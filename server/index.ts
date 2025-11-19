@@ -85,6 +85,122 @@ app.get('/api/massive-key-status', (_req: Request, res: Response) => {
   });
 });
 
+// ===== Health Check Endpoint =====
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services: {
+      massive: false,
+      supabase: false,
+      scanner: false,
+    },
+    details: {} as any,
+  };
+
+  // Check Massive.com connectivity
+  try {
+    const massiveResponse = await fetch('https://api.massive.com/v1/marketstatus/now', {
+      headers: {
+        Authorization: `Bearer ${process.env.MASSIVE_API_KEY}`,
+      },
+      signal: AbortSignal.timeout(3000),
+    });
+    health.services.massive = massiveResponse.ok;
+    health.details.massive = {
+      status: massiveResponse.status,
+      ok: massiveResponse.ok,
+    };
+  } catch (error: any) {
+    health.services.massive = false;
+    health.details.massive = {
+      error: error.message || 'Connection failed',
+    };
+  }
+
+  // Check Supabase connectivity
+  try {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseKey) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      // Quick health check query
+      const { error } = await supabase
+        .from('profiles')
+        .select('count')
+        .limit(1)
+        .maybeSingle();
+
+      health.services.supabase = !error;
+      health.details.supabase = error ? { error: error.message } : { ok: true };
+    } else {
+      health.services.supabase = false;
+      health.details.supabase = { error: 'Missing Supabase credentials' };
+    }
+  } catch (error: any) {
+    health.services.supabase = false;
+    health.details.supabase = {
+      error: error.message || 'Connection failed',
+    };
+  }
+
+  // Check scanner worker heartbeat
+  try {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseKey) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      const { data, error } = await supabase
+        .from('scanner_heartbeat')
+        .select('*')
+        .eq('id', 'main_scanner')
+        .maybeSingle();
+
+      if (!error && data) {
+        const lastScan = new Date(data.last_scan).getTime();
+        const now = Date.now();
+        const ageMinutes = (now - lastScan) / 60000;
+
+        // Scanner is healthy if last scan was within 2 minutes
+        health.services.scanner = ageMinutes < 2;
+        health.details.scanner = {
+          lastScan: data.last_scan,
+          ageMinutes: Math.round(ageMinutes * 10) / 10,
+          signalsDetected: data.signals_detected,
+          status: data.status,
+          healthy: ageMinutes < 2,
+        };
+      } else {
+        health.services.scanner = false;
+        health.details.scanner = {
+          error: error?.message || 'No heartbeat record found',
+        };
+      }
+    } else {
+      health.services.scanner = false;
+      health.details.scanner = { error: 'Missing Supabase credentials' };
+    }
+  } catch (error: any) {
+    health.services.scanner = false;
+    health.details.scanner = {
+      error: error.message || 'Connection failed',
+    };
+  }
+
+  // Determine overall health
+  const allHealthy = Object.values(health.services).every(v => v);
+  health.status = allHealthy ? 'ok' : 'degraded';
+
+  res.status(allHealthy ? 200 : 503).json(health);
+});
+
 // ===== Static SPA (vite build) =====
 const distDir = path.resolve(process.cwd(), 'dist');
 const indexFile = path.join(distDir, 'index.html');

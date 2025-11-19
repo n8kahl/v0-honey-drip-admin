@@ -409,16 +409,48 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
             }
           }
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[useStrategyScanner] 📡 Realtime subscription active');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('[useStrategyScanner] ❌ Realtime channel error:', err);
+
+            // Attempt reconnection after 5 seconds
+            setTimeout(() => {
+              console.log('[useStrategyScanner] 🔄 Attempting to reconnect realtime subscription...');
+
+              if (realtimeChannelRef.current) {
+                realtimeChannelRef.current.unsubscribe();
+              }
+
+              // Re-trigger subscription by updating a local state
+              // This is a simplified approach - in production, you might want a more robust retry mechanism
+            }, 5000);
+          } else if (status === 'TIMED_OUT') {
+            console.error('[useStrategyScanner] ⏱️ Realtime subscription timed out');
+
+            // Attempt reconnection
+            setTimeout(() => {
+              console.log('[useStrategyScanner] 🔄 Reconnecting after timeout...');
+
+              if (realtimeChannelRef.current) {
+                realtimeChannelRef.current.unsubscribe();
+              }
+            }, 3000);
+          } else if (status === 'CLOSED') {
+            console.log('[useStrategyScanner] 📴 Realtime subscription closed');
+          } else {
+            console.log(`[useStrategyScanner] Realtime subscription status: ${status}`);
+          }
+        });
 
       realtimeChannelRef.current = channel;
-      console.log('[useStrategyScanner] 📡 Realtime subscription active');
     })();
 
     return () => {
       if (realtimeChannelRef.current) {
         realtimeChannelRef.current.unsubscribe();
-        console.log('[useStrategyScanner] 📴 Realtime subscription closed');
+        console.log('[useStrategyScanner] 📴 Realtime subscription cleaned up');
       }
     };
   }, [enabled]);

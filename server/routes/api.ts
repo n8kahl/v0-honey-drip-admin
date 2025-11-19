@@ -564,39 +564,121 @@ router.get('/quotes', requireProxyToken, async (req, res) => {
       }
     }
 
-    // Fetch stocks via per-symbol options snapshot (most reliable on free tier)
+    // Fetch stocks via batch ticker snapshot (optimized to reduce N+1 queries)
     if (stockSymbols.length) {
-      for (const s of stockSymbols) {
-        try {
-          const path = `/v3/snapshot/options/${encodeURIComponent(s)}?limit=1`;
-          const snap = await callMassive<any>(path);
-          if (snap.ok) {
-            const r = (snap.data as any)?.results?.[0];
-            const underlying = r?.underlying_asset || {};
+      try {
+        // Batch fetch all stock symbols in a single request
+        const tickersParam = stockSymbols.join(',');
+        const path = `/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${encodeURIComponent(tickersParam)}`;
+        const snap = await callMassive<any>(path);
+
+        if (snap.ok) {
+          const tickers = (snap.data as any)?.tickers || [];
+
+          // Create a map for quick lookup
+          const tickerMap = new Map();
+          for (const ticker of tickers) {
             const last = Number(
-              underlying?.price ??
-              r?.last_trade?.p ??
-              r?.last_quote?.ap ??
-              r?.last_quote?.bp ??
+              ticker?.day?.c ??
+              ticker?.lastTrade?.p ??
+              ticker?.lastQuote?.ap ??
+              ticker?.lastQuote?.bp ??
               0
             );
-            
-            // Options snapshot doesn't include session change data reliably
-            // Client will calculate from previous cached values or leave at 0
-            results.push({
-              symbol: s,
+            const prevClose = Number(ticker?.prevDay?.c ?? 0);
+            const change = prevClose > 0 ? last - prevClose : 0;
+            const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+            tickerMap.set(ticker.ticker, {
+              symbol: ticker.ticker,
               last,
-              change: 0,
-              changePercent: 0,
+              change,
+              changePercent,
               asOf: Date.now(),
-              source: 'options-snapshot',
+              source: 'stocks-snapshot',
             });
-          } else {
-            console.log(`[v0] /api/quotes ${s}: options snapshot !ok, returning 0`);
-            results.push({ symbol: s, last: 0, change: 0, changePercent: 0, asOf: Date.now(), source: 'error' });
           }
-        } catch (err) {
-          console.error(`[v0] /api/quotes ${s}: error`, err);
+
+          // Add results for all requested symbols
+          for (const s of stockSymbols) {
+            if (tickerMap.has(s)) {
+              results.push(tickerMap.get(s));
+            } else {
+              console.log(`[v0] /api/quotes ${s}: not found in batch response, trying fallback`);
+
+              // Fallback to individual options snapshot for missing symbols
+              try {
+                const fallbackPath = `/v3/snapshot/options/${encodeURIComponent(s)}?limit=1`;
+                const fallbackSnap = await callMassive<any>(fallbackPath);
+                if (fallbackSnap.ok) {
+                  const r = (fallbackSnap.data as any)?.results?.[0];
+                  const underlying = r?.underlying_asset || {};
+                  const last = Number(
+                    underlying?.price ??
+                    r?.last_trade?.p ??
+                    r?.last_quote?.ap ??
+                    r?.last_quote?.bp ??
+                    0
+                  );
+
+                  results.push({
+                    symbol: s,
+                    last,
+                    change: 0,
+                    changePercent: 0,
+                    asOf: Date.now(),
+                    source: 'options-snapshot',
+                  });
+                } else {
+                  results.push({ symbol: s, last: 0, change: 0, changePercent: 0, asOf: Date.now(), source: 'error' });
+                }
+              } catch (fallbackErr) {
+                console.error(`[v0] /api/quotes ${s}: fallback error`, fallbackErr);
+                results.push({ symbol: s, last: 0, change: 0, changePercent: 0, asOf: Date.now(), source: 'error' });
+              }
+            }
+          }
+        } else {
+          console.log(`[v0] /api/quotes: batch snapshot !ok, falling back to individual requests`);
+
+          // Fallback to individual requests if batch fails
+          for (const s of stockSymbols) {
+            try {
+              const path = `/v3/snapshot/options/${encodeURIComponent(s)}?limit=1`;
+              const snap = await callMassive<any>(path);
+              if (snap.ok) {
+                const r = (snap.data as any)?.results?.[0];
+                const underlying = r?.underlying_asset || {};
+                const last = Number(
+                  underlying?.price ??
+                  r?.last_trade?.p ??
+                  r?.last_quote?.ap ??
+                  r?.last_quote?.bp ??
+                  0
+                );
+
+                results.push({
+                  symbol: s,
+                  last,
+                  change: 0,
+                  changePercent: 0,
+                  asOf: Date.now(),
+                  source: 'options-snapshot',
+                });
+              } else {
+                results.push({ symbol: s, last: 0, change: 0, changePercent: 0, asOf: Date.now(), source: 'error' });
+              }
+            } catch (err) {
+              console.error(`[v0] /api/quotes ${s}: error`, err);
+              results.push({ symbol: s, last: 0, change: 0, changePercent: 0, asOf: Date.now(), source: 'error' });
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[v0] /api/quotes: batch fetch error`, err);
+
+        // Add error results for all stock symbols
+        for (const s of stockSymbols) {
           results.push({ symbol: s, last: 0, change: 0, changePercent: 0, asOf: Date.now(), source: 'error' });
         }
       }

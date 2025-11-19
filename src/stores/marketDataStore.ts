@@ -975,6 +975,11 @@ export const useMarketDataStore = create<MarketDataStore>()(
                   close: quote.last,
                   volume: quote.volume || 0,
                 });
+
+                // Trim to prevent memory growth
+                if (candles.length > MAX_CANDLES_PER_TIMEFRAME) {
+                  candles.splice(0, candles.length - MAX_CANDLES_PER_TIMEFRAME);
+                }
               }
             }
             

@@ -23,6 +23,9 @@ export class MassiveSubscriptionManager {
   private config: SubscriptionManagerConfig;
   private watchedSymbols = new Set<string>();
   private unsubscribeCallbacks: Map<string, () => void> = new Map();
+  private pendingWatchlist: string[] = [];
+  private updateTimer: NodeJS.Timeout | null = null;
+  private readonly DEBOUNCE_MS = 300; // 300ms debounce for batching
 
   constructor(config: SubscriptionManagerConfig) {
     this.config = config;
@@ -56,9 +59,31 @@ export class MassiveSubscriptionManager {
     this.watchedSymbols.clear();
   }
 
+  /**
+   * Update watchlist with debouncing to batch rapid changes
+   */
   updateWatchlist(symbols: string[]) {
-    console.log('[SubscriptionManager] Updating watchlist:', symbols);
-    
+    // Store pending update
+    this.pendingWatchlist = symbols;
+
+    // Clear existing timer
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+    }
+
+    // Schedule debounced update
+    this.updateTimer = setTimeout(() => {
+      this.applyWatchlistUpdate(this.pendingWatchlist);
+      this.updateTimer = null;
+    }, this.DEBOUNCE_MS);
+  }
+
+  /**
+   * Apply the watchlist update immediately (used internally after debounce)
+   */
+  private applyWatchlistUpdate(symbols: string[]) {
+    console.log('[SubscriptionManager] Applying batched watchlist update:', symbols);
+
     // Clear existing subscriptions
     this.unsubscribeCallbacks.forEach(unsub => unsub());
     this.unsubscribeCallbacks.clear();
@@ -80,7 +105,7 @@ export class MassiveSubscriptionManager {
     // Update options watchlist (equity roots become wildcards)
     if (equityRoots.length > 0) {
       massiveWS.updateWatchlist(equityRoots);
-      
+
       // Subscribe to aggregates for underlying prices
       const unsubAggregates = massiveWS.subscribeAggregates(equityRoots, (message) => {
         if (message.type === 'quote' || message.type === 'aggregate') {
@@ -109,8 +134,19 @@ export class MassiveSubscriptionManager {
 
     // Update internal state
     symbols.forEach(s => this.watchedSymbols.add(s));
-    
-    console.log(`[SubscriptionManager] Subscribed to ${equityRoots.length} equity roots and ${indexSymbols.length} indices`);
+
+    console.log(`[SubscriptionManager] ✅ Subscribed to ${equityRoots.length} equity roots and ${indexSymbols.length} indices`);
+  }
+
+  /**
+   * Force immediate update without debouncing (for critical updates)
+   */
+  updateWatchlistImmediate(symbols: string[]) {
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
+    this.applyWatchlistUpdate(symbols);
   }
 
   private isIndex(symbol: string): boolean {
