@@ -716,45 +716,51 @@ function runStrategySignals(
   indicators: Indicators,
   confluence: ConfluenceScore
 ): StrategySignal[] {
-  // TODO: Integrate with actual src/lib/strategy/ patterns
-  // For now, return empty array - strategies will be added in next phase
-  
   const signals: StrategySignal[] = [];
   
-  // Example: Simple EMA crossover strategy
-  const { ema9, ema20 } = indicators;
-  if (ema9 && ema20) {
-    const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
-    if (primaryCandles.length >= 2) {
-      const prevCloses = primaryCandles.slice(-2).map(c => c.close);
-      const prevEma9 = calculateEMA(prevCloses, 9)[0];
-      const prevEma20 = calculateEMA(prevCloses, 9)[1];
-      
-      // Bullish crossover
-      if (prevEma9 < prevEma20 && ema9 > ema20) {
-        signals.push({
-          id: `${symbol}-ema-cross-${Date.now()}`,
-          symbol,
-          strategy: 'EMA Crossover',
-          signal: 'BUY',
-          confidence: confluence.overall,
-          timestamp: Date.now(),
-          reason: 'EMA 9 crossed above EMA 20',
-        } as any);
-      }
-      
-      // Bearish crossover
-      if (prevEma9 > prevEma20 && ema9 < ema20) {
-        signals.push({
-          id: `${symbol}-ema-cross-${Date.now()}`,
-          symbol,
-          strategy: 'EMA Crossover',
-          signal: 'SELL',
-          confidence: confluence.overall,
-          timestamp: Date.now(),
-          reason: 'EMA 9 crossed below EMA 20',
-        } as any);
-      }
+  // Simple pattern detection for immediate feedback (useStrategyScanner handles full strategies)
+  const { ema9, ema20, rsi14 } = indicators;
+  const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
+  
+  if (primaryCandles.length >= 2 && ema9 && ema20) {
+    const lastCandle = primaryCandles[primaryCandles.length - 1];
+    const prevCandle = primaryCandles[primaryCandles.length - 2];
+    
+    // Calculate previous EMAs properly
+    const prevCloses = primaryCandles.slice(0, -1).map(c => c.close);
+    const prevEma9Values = calculateEMA(prevCloses, 9);
+    const prevEma20Values = calculateEMA(prevCloses, 20);
+    const prevEma9 = prevEma9Values[prevEma9Values.length - 1];
+    const prevEma20 = prevEma20Values[prevEma20Values.length - 1];
+    
+    // Bullish crossover with confluence confirmation
+    if (prevEma9 < prevEma20 && ema9 > ema20 && confluence.overall >= 50) {
+      signals.push({
+        id: `${symbol}-ema-cross-bull-${lastCandle.time}`,
+        symbol,
+        strategy: 'EMA Crossover',
+        signal: 'BUY',
+        confidence: Math.min(confluence.overall, 79), // Cap at "setup" level
+        timestamp: lastCandle.time || Date.now(),
+        reason: `EMA 9/20 bullish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
+        price: lastCandle.close,
+      } as any);
+      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bullish Crossover @${lastCandle.close.toFixed(2)}`);
+    }
+    
+    // Bearish crossover with confluence confirmation
+    if (prevEma9 > prevEma20 && ema9 < ema20 && confluence.overall >= 50) {
+      signals.push({
+        id: `${symbol}-ema-cross-bear-${lastCandle.time}`,
+        symbol,
+        strategy: 'EMA Crossover',
+        signal: 'SELL',
+        confidence: Math.min(confluence.overall, 79),
+        timestamp: lastCandle.time || Date.now(),
+        reason: `EMA 9/20 bearish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
+        price: lastCandle.close,
+      } as any);
+      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bearish Crossover @${lastCandle.close.toFixed(2)}`);
     }
   }
   
@@ -875,6 +881,14 @@ export const useMarketDataStore = create<MarketDataStore>()(
           },
           onBar: (symbol, timeframe, bar) => {
             const normalized = symbol.toUpperCase();
+            
+            // VERBOSE LOGGING
+            console.log(`[v0] 📊 New ${timeframe} bar for ${normalized}:`, {
+              time: new Date(bar.time).toISOString(),
+              close: bar.close,
+              volume: bar.volume,
+            });
+            
             const tfMap: Record<string, Timeframe> = {
               '1m': '1m',
               '5m': '5m',
@@ -899,6 +913,8 @@ export const useMarketDataStore = create<MarketDataStore>()(
               wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() },
               lastServerTimestamp: Date.now() 
             });
+            
+            console.log(`[v0] ✅ Merged bar into store, triggering recompute for ${normalized}`);
           },
           onTrade: (symbol, trade) => {
             // Optional: log trades
@@ -951,10 +967,13 @@ export const useMarketDataStore = create<MarketDataStore>()(
         }
 
         const symbols = Array.from(subscribedSymbols);
-        console.log('[v0] marketDataStore: Updating watchlist with', symbols.length, 'symbols:', symbols);
+        console.log('[v0] marketDataStore: 📡 Subscribing to', symbols.length, 'symbols:', symbols);
         
         // Update watchlist - manager will handle channel subscriptions
         wsManager.updateWatchlist(symbols);
+        
+        // Log subscription confirmation
+        console.log('[v0] marketDataStore: ✅ Subscription request sent for:', symbols.join(', '));
       },
       
       handleAggregateBar: (msg: MassiveAggregateMessage) => {
@@ -1196,21 +1215,20 @@ export const useMarketDataStore = create<MarketDataStore>()(
         if (!symbolData) return;
         
         const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
-        if (primaryCandles.length === 0) return;
+        if (primaryCandles.length < 2) return; // Need at least 2 candles for comparison
+        
+        const lastCandle = primaryCandles[primaryCandles.length - 1];
+        const prevCandle = primaryCandles[primaryCandles.length - 2];
         
         // ===== Conditional Execution: Only recompute on bar close or significant move =====
-        const lastCandle = primaryCandles[primaryCandles.length - 1];
-        const prevSymbolData = get().symbols[normalized];
         
-        // Check if this is a new bar (timestamp changed)
-        const isNewBar = !prevSymbolData.lastUpdated || 
-          (lastCandle.time || lastCandle.timestamp) !== 
-          (prevSymbolData.candles[symbolData.primaryTimeframe][prevSymbolData.candles[symbolData.primaryTimeframe].length - 1]?.time || 
-           prevSymbolData.candles[symbolData.primaryTimeframe][prevSymbolData.candles[symbolData.primaryTimeframe].length - 1]?.timestamp);
+        // Check if this is a new bar (different timestamp from previous)
+        const lastTime = lastCandle.time || lastCandle.timestamp || 0;
+        const prevTime = prevCandle.time || prevCandle.timestamp || 0;
+        const isNewBar = lastTime !== prevTime;
         
         // Check if price moved significantly (>0.5%)
-        const prevClose = prevSymbolData.candles[symbolData.primaryTimeframe][prevSymbolData.candles[symbolData.primaryTimeframe].length - 1]?.close || lastCandle.close;
-        const priceChange = Math.abs((lastCandle.close - prevClose) / prevClose);
+        const priceChange = Math.abs((lastCandle.close - prevCandle.close) / prevCandle.close);
         const significantMove = priceChange > 0.005; // 0.5%
         
         // Skip if neither condition met
@@ -1218,7 +1236,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
           return;
         }
         
-        console.log(`[v0] Recomputing ${symbol} - isNewBar: ${isNewBar}, priceChange: ${(priceChange * 100).toFixed(2)}%`);
+        console.log(`[v0] 🔄 Recomputing ${symbol} - isNewBar: ${isNewBar}, priceChange: ${(priceChange * 100).toFixed(2)}%`);
         
         // ===== Step 1: Calculate comprehensive indicators from all timeframes =====
         const indicators = calculateComprehensiveIndicators(symbolData);

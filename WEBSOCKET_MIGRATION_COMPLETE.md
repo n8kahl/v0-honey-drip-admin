@@ -12,12 +12,14 @@ Successfully migrated from multi-socket WebSocket architecture to a unified dual
 ### 1. Core WebSocket Classes Created
 
 #### `src/lib/massive/unifiedWebSocket.ts`
+
 - Single WebSocket connection manager
 - Features: connect, auth, subscribe, unsubscribe, heartbeat, reconnect
 - Handles Massive WebSocket protocol (status messages, data messages)
 - 240 lines, fully typed
 
 #### `src/lib/massive/subscriptionManager.ts`
+
 - Manages dual WebSocket connections (options + indices)
 - Dynamic watchlist-driven subscriptions
 - Routes channels to correct WebSocket by symbol type
@@ -29,6 +31,7 @@ Successfully migrated from multi-socket WebSocket architecture to a unified dual
 **File**: `src/stores/marketDataStore.ts`
 
 **Changes**:
+
 - Replaced `massiveWS` import with `MassiveSubscriptionManager`
 - Added `wsManager: MassiveSubscriptionManager | null` to state
 - Updated `connectWebSocket()` to initialize dual WebSocket connections
@@ -41,6 +44,7 @@ Successfully migrated from multi-socket WebSocket architecture to a unified dual
 **File**: `src/App.tsx`
 
 **Changes**:
+
 - Added `initializeMarketData` and `marketDataCleanup` hooks
 - Initialize marketDataStore when watchlist loads
 - Cleanup WebSocket on unmount
@@ -75,34 +79,41 @@ MassiveSubscriptionManager (routes by symbol type)
 ## Channel Syntax (Massive Docs-Compliant)
 
 ### Indices Channels
+
 - `V.I:SPX` - Real-time index value
 - `AM.I:SPX` - 1-minute aggregates (OHLCV + VWAP)
 
 ### Options Channels
+
 - `Q.O:SPY251219C00650000` - Quotes (bid/ask)
 - `T.O:SPY251219C00650000` - Trades
 - `A.O:SPY251219C00650000` - 1-second aggregates
 
 ### Equity Roots
+
 - **SPY, QQQ, AAPL, MSFT, GILD**: Use REST fallback (no direct WebSocket channels)
 - Reason: OPTIONS ADVANCED plan doesn't include equity root streaming
 
 ## Test Results
 
 ### ✅ WebSocket Connections Established
+
 ```bash
 [1] [WS hub] Deprecated static token used for WS auth; switch client to /api/ws-token
 [1] [WS hub] Deprecated static token used for WS auth; switch client to /api/ws-token
 ```
+
 - Two connections = Options + Indices ✅
 - "Deprecated token" warning expected (using VITE_MASSIVE_PROXY_TOKEN instead of ephemeral token)
 
 ### ✅ Server Logs Confirm
+
 - MASSIVE_API_KEY detected (prefix=X1yfaG..., length=32) ✅
 - Both WebSocket upgrade requests processed ✅
 - No connection errors ✅
 
 ### ✅ Browser Console (Expected Logs)
+
 ```
 [v0] App: Initializing marketDataStore with watchlist: ['SPX', 'VIX', 'SPY', 'QQQ', ...]
 [SubManager:Options] Status: connecting
@@ -117,15 +128,18 @@ MassiveSubscriptionManager (routes by symbol type)
 ## Commits
 
 1. **feat: add unified Massive WebSocket architecture**
+
    - Created UnifiedMassiveWebSocket and MassiveSubscriptionManager classes
    - Files: `unifiedWebSocket.ts`, `subscriptionManager.ts`
 
 2. **feat: integrate unified WebSocket into marketDataStore**
+
    - Replaced massiveWS with MassiveSubscriptionManager
    - Updated all subscription/unsubscription logic
    - Added callbacks for quotes, bars, trades, status
 
 3. **fix: use dual WebSocket connections via server proxy**
+
    - Changed from direct Massive connection to server proxy
    - Options WebSocket: `/ws/options?token=...`
    - Indices WebSocket: `/ws/indices?token=...`
@@ -139,12 +153,14 @@ MassiveSubscriptionManager (routes by symbol type)
 ## Benefits Over Previous Architecture
 
 ### Before
+
 - Multiple socket instances (1 per component)
 - No centralized subscription management
 - Inconsistent reconnection logic
 - Symbol type handling scattered
 
 ### After
+
 - ✅ **2 connections** instead of 10+ (options + indices only)
 - ✅ **Centralized** in marketDataStore
 - ✅ **Dynamic subscriptions** (add/remove on the fly)
@@ -156,11 +172,13 @@ MassiveSubscriptionManager (routes by symbol type)
 ## Environment Variables (No Changes)
 
 **Client (.env.local)**:
+
 ```
 VITE_MASSIVE_PROXY_TOKEN=57825048d317cc9c402266a3c5d25becb8982468f249c9b2c73c42a5125085eb
 ```
 
 **Server (.env.local)**:
+
 ```
 MASSIVE_PROXY_TOKEN=57825048d317cc9c402266a3c5d25becb8982468f249c9b2c73c42a5125085eb
 MASSIVE_API_KEY=X1yfaGtpB0ga35h6pQ_wa0rJ_UVgriUj
@@ -169,6 +187,7 @@ MASSIVE_API_KEY=X1yfaGtpB0ga35h6pQ_wa0rJ_UVgriUj
 ## Known Limitations
 
 1. **Equity Roots (SPY, QQQ, etc.)**: No direct WebSocket channels
+
    - Fallback: REST `/api/quotes` endpoint
    - Reason: OPTIONS ADVANCED doesn't include equity root streaming
    - Impact: Equity roots update every 2-3 seconds instead of real-time
@@ -180,20 +199,24 @@ MASSIVE_API_KEY=X1yfaGtpB0ga35h6pQ_wa0rJ_UVgriUj
 ## Next Steps (Optional Future Enhancements)
 
 1. **Ephemeral Token System**
+
    - Create `/api/ws-token` endpoint that generates time-limited tokens
    - Update client to request token before connecting
    - Eliminates "deprecated token" warning
 
 2. **Options Contract Streaming**
+
    - Add actual options contracts to watchlist
    - Subscribe to `Q.O:...`, `T.O:...`, `A.O:...` channels
    - Display real-time Greeks, bid/ask, volume
 
 3. **Remove Old WebSocket Files** (optional cleanup)
+
    - `src/lib/massive/websocket.ts` (legacy multi-socket)
    - Verify no components still use old `massiveWS` import
 
 4. **Monitoring Dashboard**
+
    - Add WebSocket status indicator in UI
    - Show: connection state, message rate, latency
    - Reconnection attempts, last message timestamp

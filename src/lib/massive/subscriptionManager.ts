@@ -202,6 +202,14 @@ export class MassiveSubscriptionManager {
     // A event: similar structure for 1-second bars
     const symbol = event.sym.startsWith('I:') ? this.stripIndexPrefix(event.sym) : event.sym;
     
+    // ADD LOGGING
+    console.log(`[SubManager] 📊 ${event.ev} event:`, {
+      symbol,
+      timeframe,
+      close: event.c,
+      time: new Date(event.s || event.t).toISOString(),
+    });
+    
     const bar = {
       time: event.s || event.t, // start timestamp
       open: event.o,
