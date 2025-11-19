@@ -5,6 +5,7 @@ import { useSymbolData } from '../../stores/marketDataStore';
 import { HDStrategyBadge } from './HDStrategyBadge';
 import { useUIStore } from '../../stores';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { useRef, useEffect } from 'react';
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
@@ -22,8 +23,20 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   // Explicit store instance for row click, per request
   const uiStore = useUIStore();
   
+  // Local timestamp tracking based on price changes since marketDataStore isn't updating quotes
+  const lastUpdateRef = useRef<number>(Date.now());
+  const prevPriceRef = useRef<number>(ticker.last);
+
+  useEffect(() => {
+    if (ticker.last !== prevPriceRef.current) {
+      lastUpdateRef.current = Date.now();
+      prevPriceRef.current = ticker.last;
+    }
+  }, [ticker.last]);
+
   const currentPrice = ticker.last;
-  const lastUpdated = symbolData?.lastUpdated || 0;
+  // Prefer symbolData timestamp if present, else fallback to local ref
+  const lastUpdated = symbolData?.lastUpdated || lastUpdateRef.current;
   const strategySignals = symbolData?.strategySignals || [];
   const activeCount = Array.isArray(strategySignals)
     ? strategySignals.filter((s: any) => s?.active === true || s?.status === 'ACTIVE').length
