@@ -724,13 +724,22 @@ function runStrategySignals(
   // Simple pattern detection for immediate feedback (useStrategyScanner handles full strategies)
   const { ema9, ema20, rsi14 } = indicators;
   const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
-  
-  // Debug logging
-  console.log(`[v0] 🔍 Checking signals for ${symbol}:`, {
+  const strategyDebug = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
+  const log = (msg: string, extra?: any) => {
+    if (strategyDebug) {
+      if (extra) console.log(`[v0][Strategy] ${msg}`, extra); else console.log(`[v0][Strategy] ${msg}`);
+    }
+  };
+
+  const startTs = Date.now();
+  log(`Checking signals for ${symbol}` , {
     candleCount: primaryCandles.length,
-    ema9: ema9?.toFixed(2),
-    ema20: ema20?.toFixed(2),
-    confluence: confluence.overall,
+    lastClose: primaryCandles[primaryCandles.length - 1]?.close,
+    ema9: ema9?.toFixed(4),
+    ema20: ema20?.toFixed(4),
+    rsi14: rsi14?.toFixed(2),
+    confluenceOverall: confluence.overall,
+    confluenceComponents: confluence.components,
     hasEnoughData: primaryCandles.length >= 2 && !!ema9 && !!ema20,
   });
   
@@ -745,20 +754,30 @@ function runStrategySignals(
     const prevEma9 = prevEma9Values[prevEma9Values.length - 1];
     const prevEma20 = prevEma20Values[prevEma20Values.length - 1];
     
-    console.log(`[v0] 🔍 EMA comparison for ${symbol}:`, {
-      prevEma9: prevEma9?.toFixed(2),
-      prevEma20: prevEma20?.toFixed(2),
-      currentEma9: ema9.toFixed(2),
-      currentEma20: ema20.toFixed(2),
-      bullishCross: prevEma9 < prevEma20 && ema9 > ema20,
-      bearishCross: prevEma9 > prevEma20 && ema9 < ema20,
+    const bullishCross = prevEma9 < prevEma20 && ema9 > ema20;
+    const bearishCross = prevEma9 > prevEma20 && ema9 < ema20;
+    const emaGap = Math.abs(ema9 - ema20);
+    const prevEmaGap = Math.abs(prevEma9 - prevEma20);
+    log(`EMA state ${symbol}`, {
+      prevEma9: prevEma9?.toFixed(4),
+      prevEma20: prevEma20?.toFixed(4),
+      currentEma9: ema9.toFixed(4),
+      currentEma20: ema20.toFixed(4),
+      prevEmaGap: prevEmaGap.toFixed(4),
+      emaGap: emaGap.toFixed(4),
+      bullishCross,
+      bearishCross,
+      lastCandleTime: new Date(lastCandle.time || Date.now()).toISOString(),
+      lastClose: lastCandle.close,
+      prevClose: prevCandle.close,
+      candleVol: lastCandle.volume,
     });
     
     // TEMPORARILY LOWER THRESHOLD TO 30% for testing
     const minConfluence = 30;
     
     // Bullish crossover with confluence confirmation
-    if (prevEma9 < prevEma20 && ema9 > ema20 && confluence.overall >= minConfluence) {
+    if (bullishCross && confluence.overall >= minConfluence) {
       signals.push({
         id: `${symbol}-ema-cross-bull-${lastCandle.time}`,
         symbol,
@@ -769,11 +788,11 @@ function runStrategySignals(
         reason: `EMA 9/20 bullish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
         price: lastCandle.close,
       } as any);
-      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bullish Crossover @${lastCandle.close.toFixed(2)} (Conf: ${confluence.overall}%)`);
+      log(`SETUP DETECTED bullish crossover ${symbol} @${lastCandle.close.toFixed(2)} conf=${confluence.overall}`);
     }
     
     // Bearish crossover with confluence confirmation
-    if (prevEma9 > prevEma20 && ema9 < ema20 && confluence.overall >= minConfluence) {
+    if (bearishCross && confluence.overall >= minConfluence) {
       signals.push({
         id: `${symbol}-ema-cross-bear-${lastCandle.time}`,
         symbol,
@@ -784,16 +803,20 @@ function runStrategySignals(
         reason: `EMA 9/20 bearish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
         price: lastCandle.close,
       } as any);
-      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bearish Crossover @${lastCandle.close.toFixed(2)} (Conf: ${confluence.overall}%)`);
+      log(`SETUP DETECTED bearish crossover ${symbol} @${lastCandle.close.toFixed(2)} conf=${confluence.overall}`);
     }
     
     if (signals.length === 0) {
-      console.log(`[v0] ℹ️ No signals for ${symbol}: no crossover or confluence too low (${confluence.overall}% < ${minConfluence}%)`);
+      const reason = bullishCross || bearishCross
+        ? `cross detected but confluence ${confluence.overall} < ${minConfluence}`
+        : 'no valid EMA cross pattern';
+      log(`No signals for ${symbol}: ${reason}`);
     }
   } else {
-    console.log(`[v0] ⚠️ Not enough data for ${symbol}: candles=${primaryCandles.length}, ema9=${!!ema9}, ema20=${!!ema20}`);
+    log(`Not enough data: candles=${primaryCandles.length} ema9=${!!ema9} ema20=${!!ema20}`);
   }
-  
+  const duration = Date.now() - startTs;
+  log(`Finished evaluation for ${symbol} in ${duration}ms (signals=${signals.length})`);
   return signals;
 }
 
