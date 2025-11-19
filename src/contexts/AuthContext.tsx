@@ -15,9 +15,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log('[v0] AuthProvider rendering');
+  console.log('[v0] VITE_TEST_AUTO_LOGIN value:', (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN);
+  console.log('[v0] import.meta.env:', import.meta.env);
   
   const autoLogin = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true')
     || (typeof navigator !== 'undefined' && (navigator as any)?.webdriver === true);
+  
+  console.log('[v0] autoLogin computed as:', autoLogin);
   
   // Initialize with test user if auto-login enabled
   const [user, setUser] = useState<User | null>(
