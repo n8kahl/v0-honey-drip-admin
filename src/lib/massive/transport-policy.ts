@@ -12,7 +12,7 @@ function toNumber(value: unknown): number {
 
 function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuote | null {
   if (!data) {
-    console.log('[mapMassiveMessageToQuote] No data received');
+    // console.log('[mapMassiveMessageToQuote] No data received');
     return null;
   }
 
@@ -23,18 +23,14 @@ function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuo
     typeof data.change === 'number' &&
     typeof data.changePercent === 'number'
   ) {
-    console.log(`[mapMassiveMessageToQuote] Data already formatted for ${data.symbol}:`, {
-      last: data.last,
-      change: data.change,
-      changePercent: data.changePercent
-    });
+    // console.log(`[mapMassiveMessageToQuote] Data already formatted for ${data.symbol}:`, ...);
     return data as MassiveQuote;
   }
 
   let symbol =
     data.symbol || data.ticker || data.sym || data.underlying_ticker || fallbackSymbol;
   if (!symbol) {
-    console.log('[mapMassiveMessageToQuote] No symbol found in data:', data);
+    // console.log('[mapMassiveMessageToQuote] No symbol found in data:', data);
     return null;
   }
 
@@ -59,7 +55,7 @@ function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuo
   );
   const timestamp = toNumber(data.timestamp ?? data.t ?? Date.now());
 
-  console.log(`[mapMassiveMessageToQuote] Mapped ${symbol}:`, { last, change, changePercent });
+  // console.log(`[mapMassiveMessageToQuote] Mapped ${symbol}:`, { last, change, changePercent });
 
   return {
     symbol,
@@ -225,9 +221,9 @@ export class TransportPolicy {
   start() {
     if (this.isActive) return;
     this.isActive = true;
-    
-    console.log(`[TransportPolicy] Starting for ${this.config.symbol}`);
-    
+
+    // console.log(`[TransportPolicy] Starting for ${this.config.symbol}`);
+
     // Try WebSocket first
     this.tryWebSocket();
     
@@ -238,9 +234,9 @@ export class TransportPolicy {
   stop() {
     if (!this.isActive) return;
     this.isActive = false;
-    
-    console.log(`[TransportPolicy] Stopping for ${this.config.symbol}`);
-    
+
+    // console.log(`[TransportPolicy] Stopping for ${this.config.symbol}`);
+
     // Cancel in-flight requests
     try {
       massiveClient.cancel();
@@ -282,7 +278,7 @@ export class TransportPolicy {
     }
 
     const wsState = massiveWS.getConnectionState();
-    console.log(`[TransportPolicy] WebSocket state for ${this.config.symbol}:`, wsState);
+    // console.log(`[TransportPolicy] WebSocket state for ${this.config.symbol}:`, wsState);
 
     if (wsState === 'closed') {
       // WebSocket is not connected, fall back to polling immediately
@@ -295,16 +291,13 @@ export class TransportPolicy {
     // Subscribe based on symbol type
     if (this.config.isOption) {
       // Options contract quote subscription
-      this.wsUnsubscribe = massiveWS.subscribeOptionQuotes([this.config.symbol], this.handleWsMessage.bind(this));
-    } else if (this.config.isIndex) {
-      // Index subscription
-      this.wsUnsubscribe = massiveWS.subscribeIndices([this.config.symbol], this.handleWsMessage.bind(this));
+      this.wsUnsubscribe = massiveWS.subscribeOptionAggregates([this.config.symbol], this.handleWsMessage.bind(this));
     } else {
-      // Stock/underlying quote subscription
+      // Index and stock/underlying quote subscription (both use subscribeQuotes)
       this.wsUnsubscribe = massiveWS.subscribeQuotes([this.config.symbol], this.handleWsMessage.bind(this));
     }
 
-    console.log(`[TransportPolicy] Subscribed to WebSocket for ${this.config.symbol}`);
+    // console.log(`[TransportPolicy] Subscribed to WebSocket for ${this.config.symbol}`);
   }
 
   private handleWsMessage(message: WebSocketMessage) {
@@ -459,7 +452,7 @@ export class TransportPolicy {
 
       // Detect state changes
       if (wsState !== this.lastWsState) {
-        console.log(`[TransportPolicy] WebSocket state changed for ${this.config.symbol}: ${this.lastWsState} → ${wsState}`);
+        // console.log(`[TransportPolicy] WebSocket state changed for ${this.config.symbol}: ${this.lastWsState} → ${wsState}`);
         this.lastWsState = wsState;
       }
 
@@ -501,7 +494,7 @@ export class TransportPolicy {
     const jitter = Math.random() * 1000;
     const delay = Math.min(baseDelay + jitter, this.config.maxReconnectDelay!);
 
-    console.log(`[TransportPolicy] Scheduling WebSocket reconnect for ${this.config.symbol} in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`);
+    // console.log(`[TransportPolicy] Scheduling WebSocket reconnect for ${this.config.symbol} in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
