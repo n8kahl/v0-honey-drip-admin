@@ -74,6 +74,17 @@ app.use('/api', (req, res, next) => {
 // ===== API routes =====
 app.use('/api', apiRouter);
 
+// Diagnostic: expose limited MASSIVE_API_KEY presence (no full key)
+app.get('/api/massive-key-status', (_req: Request, res: Response) => {
+  const key = process.env.MASSIVE_API_KEY || '';
+  res.json({
+    present: Boolean(key),
+    length: key.length,
+    prefix: key ? key.slice(0, 6) + '…' : null,
+    nodeEnv: process.env.NODE_ENV || 'unknown',
+  });
+});
+
 // ===== Static SPA (vite build) =====
 const distDir = path.resolve(process.cwd(), 'dist');
 const indexFile = path.join(distDir, 'index.html');
@@ -110,6 +121,9 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`✓ Server listening on ${PORT} (${process.env.NODE_ENV || 'production'})`);
   if (!process.env.MASSIVE_API_KEY) {
     console.warn('⚠️  MASSIVE_API_KEY is not set — REST/WS proxy will reject upstream calls');
+  } else {
+    const masked = process.env.MASSIVE_API_KEY.slice(0, 6) + '…';
+    console.log(`MASSIVE_API_KEY detected (prefix=${masked}, length=${process.env.MASSIVE_API_KEY.length})`);
   }
 });
 

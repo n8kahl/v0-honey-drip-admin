@@ -360,7 +360,8 @@ class MassiveClient {
     const to = new Date();
     const from = new Date(to.getTime() - normalizedTimeframe * lookback * 60 * 1000);
     const formatDay = (date: Date) => date.toISOString().split('T')[0];
-    const endpoint = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+    const endpointV2 = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+    const endpointV3 = `/v3/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
     
     // Check cache first
     const cacheKey = `${symbol}:${timeframe}:${lookback}`;
@@ -370,8 +371,25 @@ class MassiveClient {
       return cached.data;
     }
     
-    console.log(`[MassiveClient] 🔄 Fetching aggregates for ${cacheKey}`);
-    const data = await this.fetch(endpoint);
+    console.log(`[MassiveClient] 🔄 Fetching aggregates for ${cacheKey} (v2)`);
+    let data: any;
+    try {
+      data = await this.fetch(endpointV2);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/403|forbidden/i.test(msg) || /Massive API error/.test(msg)) {
+        console.warn(`[MassiveClient] v2 aggregates forbidden or failed (${msg}), trying v3`);
+        try {
+          data = await this.fetch(endpointV3);
+          console.log(`[MassiveClient] ✅ Fallback v3 aggregates succeeded for ${cacheKey}`);
+        } catch (e2: any) {
+          console.error(`[MassiveClient] v3 aggregates also failed for ${cacheKey}:`, e2?.message || e2);
+          return [];
+        }
+      } else {
+        throw e;
+      }
+    }
     const results: any[] = data.results || data;
     if (!Array.isArray(results)) return [];
     const bars = results.map((bar) => ({

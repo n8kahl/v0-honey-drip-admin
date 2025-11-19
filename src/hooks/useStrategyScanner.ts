@@ -170,8 +170,17 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
     try {
       setScanning(true);
 
+      // Normalize symbol for indices (add I: prefix) and skip stocks (only options+indices plans available)
+      const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
+      const isOption = symbol.startsWith('O:');
+      if (!isIndex && !isOption) {
+        console.warn(`[useStrategyScanner] Skipping ${symbol}: stocks plan not available (indices+options only)`);
+        return;
+      }
+      const normalizedSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
+
       // Fetch 5-minute bars (last 200 bars = ~16 hours)
-      const bars = await massiveClient.getAggregates(symbol, '5', 200);
+      const bars = await massiveClient.getAggregates(normalizedSymbol, '5', 200);
       if (bars.length < 20) {
         console.warn(`[useStrategyScanner] Insufficient bars for ${symbol} (${bars.length} bars), skipping`);
         return;
