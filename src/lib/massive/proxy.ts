@@ -90,28 +90,7 @@ function encodeParams(params: Record<string, string | number>) {
     .join('&');
 }
 
-export function getStockBars(
-  symbol: string,
-  multiplier: number,
-  timespan: string,
-  from: string,
-  to: string,
-  limit = 144,
-  adjusted = 'true',
-  sort = 'asc'
-) {
-  const query = encodeParams({
-    symbol,
-    multiplier,
-    timespan,
-    from,
-    to,
-    limit,
-    adjusted,
-    sort,
-  });
-  return fetchJSON(`${API_BASE}/stocks/bars?${query}`);
-}
+// Removed legacy getStockBars(): app only uses indices + options endpoints.
 
 export function getIndexBars(
   symbol: string,

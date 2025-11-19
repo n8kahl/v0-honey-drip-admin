@@ -98,25 +98,7 @@ router.post('/ws-token', (_req, res) => {
   res.json({ token, exp });
 });
 
-router.get('/massive/stocks/bars', requireProxyToken, async (req, res) => {
-  const { symbol, multiplier, timespan, from, to, limit = '144', adjusted = 'true', sort = 'asc' } =
-    req.query as BarsQuery;
-
-  const missing = ensureParams(['symbol', 'multiplier', 'timespan', 'from', 'to'], req.query as Record<string, string>);
-  if (missing.length) {
-    return res.status(400).json({ error: `Missing query params: ${missing.join(', ')}` });
-  }
-
-  try {
-    const path = `/v2/aggs/ticker/${encodeURIComponent(symbol!)}`
-      + `/range/${multiplier}/${timespan}/${from}/${to}`
-      + `?adjusted=${adjusted}&sort=${sort}&limit=${limit}`;
-    const json = await massiveFetch(path);
-    res.json(json);
-  } catch (error) {
-    handleMassiveError(res, error);
-  }
-});
+// Removed /massive/stocks/bars endpoint: application operates solely on indices and options.
 
 router.get('/massive/indices/bars', requireProxyToken, async (req, res) => {
   const { symbol, multiplier, timespan, from, to, limit = '250', adjusted = 'true', sort = 'asc' } =
