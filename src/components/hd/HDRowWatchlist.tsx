@@ -108,7 +108,10 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
         pulseClass
       )}
       data-testid={`watchlist-item-${ticker.symbol}`}
-      onClick={() => uiStore.setMainCockpitSymbol(ticker.symbol)}
+      onClick={() => {
+        onClick?.();
+        uiStore.setMainCockpitSymbol(ticker.symbol);
+      }}
     >
       <div
         className="flex-1 flex items-center justify-between text-left"
