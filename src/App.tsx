@@ -17,7 +17,7 @@ import { useQuotes } from './hooks/useMassiveData';
 import { useDiscord } from './hooks/useDiscord';
 import { useStrategyScanner } from './hooks/useStrategyScanner';
 import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './stores';
-import { useMarketSessionActions } from './stores/marketDataStore';
+import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
 import './styles/globals.css';
 
 export default function App() {
@@ -60,6 +60,10 @@ export default function App() {
   
   // Market session actions
   const { fetchMarketSession } = useMarketSessionActions();
+  
+  // Market data store - for WebSocket management
+  const initializeMarketData = useMarketDataStore((state) => state.initialize);
+  const marketDataCleanup = useMarketDataStore((state) => state.cleanup);
 
   // Discord hook - MUST be called before any early returns
   const discord = useDiscord();
@@ -115,6 +119,20 @@ export default function App() {
     
     return () => clearInterval(interval);
   }, [fetchMarketSession]);
+  
+  // Initialize market data WebSocket when watchlist is loaded
+  useEffect(() => {
+    if (watchlistSymbols.length > 0) {
+      console.log('[v0] App: Initializing marketDataStore with watchlist:', watchlistSymbols);
+      initializeMarketData(watchlistSymbols);
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('[v0] App: Cleaning up marketDataStore');
+      marketDataCleanup();
+    };
+  }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
 
   // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
   // useEffect(() => {
