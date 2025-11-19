@@ -10,11 +10,13 @@ Upgraded to use the official Options + Indices Advanced endpoints:
 ## Key Changes
 
 ### 1. Direct WebSocket Connections
+
 - Removed proxy server WebSocket routes (`/ws/options`, `/ws/indices`)
 - Now connects directly to Massive's official endpoints
 - Uses `VITE_MASSIVE_PROXY_TOKEN` for authentication
 
 ### 2. Auth Format (2025)
+
 ```json
 {
   "action": "auth",
@@ -23,6 +25,7 @@ Upgraded to use the official Options + Indices Advanced endpoints:
 ```
 
 ### 3. Subscription Format (2025)
+
 ```json
 {
   "action": "subscribe",
@@ -36,12 +39,15 @@ Upgraded to use the official Options + Indices Advanced endpoints:
 ```
 
 ### 4. Wildcard Support
+
 - Use `SPY*` to subscribe to all SPY options contracts
 - Use `QQQ*` to subscribe to all QQQ options contracts
 - Dramatically reduces subscription overhead
 
 ### 5. Underlying Price Included
+
 Options bars now include `underlying` field with the spot price:
+
 ```typescript
 {
   ev: 'AM',
@@ -57,6 +63,7 @@ Options bars now include `underlying` field with the spot price:
 ```
 
 ### 6. Zero Stocks Feed Bandwidth
+
 - No `stocks.*` channels at all
 - Pure options + indices data only
 - Underlying prices from options bars, not stocks feed
@@ -64,6 +71,7 @@ Options bars now include `underlying` field with the spot price:
 ## Files Modified
 
 1. **src/lib/massive/websocket.ts**
+
    - Updated WS URLs to official 2025 endpoints
    - Changed auth to use `token` field
    - Changed subscriptions to use `channels` array
@@ -71,6 +79,7 @@ Options bars now include `underlying` field with the spot price:
    - Routes indices to indices socket, options to options socket
 
 2. **src/stores/marketDataStore.ts**
+
    - Uses indices socket for SPX/NDX/VIX/RVX
    - Subscribes to `indices.bars:1m:SPX,NDX,VIX`
    - No stock subscriptions
@@ -82,16 +91,19 @@ Options bars now include `underlying` field with the spot price:
 ## Testing
 
 Build: ✅ Successful
+
 ```bash
 pnpm run build
 ```
 
 Run locally:
+
 ```bash
 pnpm run dev
 ```
 
 Expected behavior:
+
 - Two WebSocket connections open: `wss://socket.massive.com/options` and `wss://socket.massive.com/indices`
 - Auth on both with same token
 - Indices stream: SPX, NDX, VIX 1m bars
@@ -100,11 +112,13 @@ Expected behavior:
 ## Bandwidth Savings
 
 **Before (stocks mode):**
+
 - `stocks.bars:1m:SPY,QQQ,IWM` (redundant with options underlying)
 - `stocks.quotes:SPY,QQQ,IWM` (redundant)
 - `stocks.trades:SPY,QQQ,IWM` (redundant)
 
 **After (pure options+indices):**
+
 - `indices.bars:1m:SPX,NDX,VIX` (macro context)
 - `options.bars:1m:SPY*` (includes underlying price)
 - Zero wasted equity bandwidth ✅

@@ -177,12 +177,17 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
         </div>
         {/* Options chain area */}
         <div className="flex-1 relative flex flex-col">
-          {optionsLoading && (
+          {!activeTicker && (
             <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">
-              Loading options chain...
+              Select a contract to load a trade
             </div>
           )}
-          {optionsError && (
+          {activeTicker && optionsLoading && (
+            <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">
+              Loading options chain for {activeTicker.symbol}...
+            </div>
+          )}
+          {activeTicker && optionsError && (
             <div className="flex-1 flex items-center justify-center text-[var(--text-danger)] text-sm">
               Error loading options chain: {optionsError}
             </div>
@@ -193,7 +198,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               Stale · {optionsAsOf ? new Date(optionsAsOf).toLocaleTimeString() : 'unknown'}
             </div>
           )}
-          {!optionsLoading && !optionsError && streamingContracts && streamingContracts.length > 0 && (
+          {activeTicker && !optionsLoading && !optionsError && streamingContracts && streamingContracts.length > 0 && (
             <TradingWorkspace
               watchlist={watchlist}
               activeTicker={activeTicker}

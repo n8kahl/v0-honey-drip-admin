@@ -239,6 +239,14 @@ class MassiveWebSocket {
         console.log(`[Massive WS] Authenticated to ${endpoint} successfully`);
         this.isAuthenticated[endpoint] = true;
         
+        // Notify marketDataStore of connection
+        if (typeof window !== 'undefined') {
+          import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
+            const state = useMarketDataStore.getState();
+            state.wsConnection = { ...state.wsConnection, status: 'connected', lastMessageTime: Date.now() };
+          });
+        }
+        
         // Start heartbeat
         this.heartbeatIntervals[endpoint] = setInterval(
           () => this.send(endpoint!, { action: 'ping' }),
