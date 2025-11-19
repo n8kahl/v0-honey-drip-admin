@@ -257,7 +257,7 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
     const { data: channels, error: channelsErr } = await supabase
       .from('discord_channels')
       .select('*')
-      .eq('owner', userId)
+      .eq('user_id', userId)
       .eq('enabled', true);
 
     if (channelsErr) {
@@ -317,8 +317,8 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     // Fetch user's watchlist
     const { data: watchlist, error: watchlistErr } = await supabase
       .from('watchlist')
-      .select('symbol')
-      .eq('owner', userId);
+      .select('ticker')
+      .eq('user_id', userId);
 
     if (watchlistErr) {
       console.error(`[Scanner Worker] Error fetching watchlist for user ${userId}:`, watchlistErr);
@@ -330,7 +330,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map(w => w.symbol);
+    const symbols = watchlist.map(w => w.ticker);
     console.log(`[Scanner Worker] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(', ')}`);
 
     // Fetch market data for each symbol
