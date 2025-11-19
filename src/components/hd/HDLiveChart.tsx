@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { MassiveError, getIndexBars, getOptionBars, getStockBars } from '../../lib/massive/proxy';
+import { MassiveError, getIndexBars, getOptionBars } from '../../lib/massive/proxy';
 import { massiveClient } from '../../lib/massive/client';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
@@ -248,7 +248,14 @@ const loadHistoricalBars = useCallback(async () => {
       return;
     }
 
-    const fetcher = isOption ? getOptionBars : isIndex ? getIndexBars : getStockBars;
+    // Only indices and options are supported. For equities (non-index, non-option) skip fetch.
+    if (!isOption && !isIndex) {
+      console.warn(`[HDLiveChart] Skipping historical fetch for unsupported underlying ${ticker} (indices + options only)`);
+      setBars([]); // Clear any prior bars
+      setDataSource('rest');
+      return;
+    }
+    const fetcher = isOption ? getOptionBars : getIndexBars;
     const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
 
     const fetchPromise = (async () => {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { getIndexBars, getOptionBars, getStockBars, MassiveError } from '../../lib/massive/proxy';
+import { getIndexBars, getOptionBars, MassiveError } from '../../lib/massive/proxy';
 import { calculateEMA } from '../../lib/indicators';
 
 interface HDMicroChartProps {
@@ -42,11 +42,11 @@ async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
 
   console.log('[v0] Fetching real 5-minute chart data for:', ticker, fromDate, toDate);
 
-  const fetcher = isOptionsContract
-    ? getOptionBars
-    : isIndex
-    ? getIndexBars
-    : getStockBars;
+  if (!isOptionsContract && !isIndex) {
+    console.warn(`[HDMicroChart] Skipping bar fetch for unsupported underlying ${ticker} (indices + options only)`);
+    return [];
+  }
+  const fetcher = isOptionsContract ? getOptionBars : getIndexBars;
 
   const data = await fetcher(normalizedTicker, 5, 'minute', fromDate, toDate, 144);
   const results = data.results || data;
