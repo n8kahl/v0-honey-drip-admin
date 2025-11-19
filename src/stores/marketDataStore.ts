@@ -194,6 +194,9 @@ interface MarketDataStore {
   /** Initialize WebSocket connections and subscribe to watchlist */
   initialize: (watchlistSymbols: string[]) => void;
   
+  /** Fetch historical bars for symbols */
+  fetchHistoricalBars: (symbols: string[]) => Promise<void>;
+  
   /** Connect to WebSocket */
   connectWebSocket: () => void;
   
@@ -722,6 +725,15 @@ function runStrategySignals(
   const { ema9, ema20, rsi14 } = indicators;
   const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
   
+  // Debug logging
+  console.log(`[v0] 🔍 Checking signals for ${symbol}:`, {
+    candleCount: primaryCandles.length,
+    ema9: ema9?.toFixed(2),
+    ema20: ema20?.toFixed(2),
+    confluence: confluence.overall,
+    hasEnoughData: primaryCandles.length >= 2 && !!ema9 && !!ema20,
+  });
+  
   if (primaryCandles.length >= 2 && ema9 && ema20) {
     const lastCandle = primaryCandles[primaryCandles.length - 1];
     const prevCandle = primaryCandles[primaryCandles.length - 2];
@@ -733,8 +745,20 @@ function runStrategySignals(
     const prevEma9 = prevEma9Values[prevEma9Values.length - 1];
     const prevEma20 = prevEma20Values[prevEma20Values.length - 1];
     
+    console.log(`[v0] 🔍 EMA comparison for ${symbol}:`, {
+      prevEma9: prevEma9?.toFixed(2),
+      prevEma20: prevEma20?.toFixed(2),
+      currentEma9: ema9.toFixed(2),
+      currentEma20: ema20.toFixed(2),
+      bullishCross: prevEma9 < prevEma20 && ema9 > ema20,
+      bearishCross: prevEma9 > prevEma20 && ema9 < ema20,
+    });
+    
+    // TEMPORARILY LOWER THRESHOLD TO 30% for testing
+    const minConfluence = 30;
+    
     // Bullish crossover with confluence confirmation
-    if (prevEma9 < prevEma20 && ema9 > ema20 && confluence.overall >= 50) {
+    if (prevEma9 < prevEma20 && ema9 > ema20 && confluence.overall >= minConfluence) {
       signals.push({
         id: `${symbol}-ema-cross-bull-${lastCandle.time}`,
         symbol,
@@ -745,11 +769,11 @@ function runStrategySignals(
         reason: `EMA 9/20 bullish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
         price: lastCandle.close,
       } as any);
-      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bullish Crossover @${lastCandle.close.toFixed(2)}`);
+      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bullish Crossover @${lastCandle.close.toFixed(2)} (Conf: ${confluence.overall}%)`);
     }
     
     // Bearish crossover with confluence confirmation
-    if (prevEma9 > prevEma20 && ema9 < ema20 && confluence.overall >= 50) {
+    if (prevEma9 > prevEma20 && ema9 < ema20 && confluence.overall >= minConfluence) {
       signals.push({
         id: `${symbol}-ema-cross-bear-${lastCandle.time}`,
         symbol,
@@ -760,8 +784,14 @@ function runStrategySignals(
         reason: `EMA 9/20 bearish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
         price: lastCandle.close,
       } as any);
-      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bearish Crossover @${lastCandle.close.toFixed(2)}`);
+      console.log(`[v0] 🎯 SETUP DETECTED: ${symbol} EMA Bearish Crossover @${lastCandle.close.toFixed(2)} (Conf: ${confluence.overall}%)`);
     }
+    
+    if (signals.length === 0) {
+      console.log(`[v0] ℹ️ No signals for ${symbol}: no crossover or confluence too low (${confluence.overall}% < ${minConfluence}%)`);
+    }
+  } else {
+    console.log(`[v0] ⚠️ Not enough data for ${symbol}: candles=${primaryCandles.length}, ema9=${!!ema9}, ema20=${!!ema20}`);
   }
   
   return signals;
@@ -825,8 +855,56 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Initialize WebSocket connection
         get().connectWebSocket();
         
+        // Fetch historical bars for all symbols (async, don't wait)
+        get().fetchHistoricalBars(allSymbols);
+        
         console.log('[v0] marketDataStore: Initialized with', allSymbols.length, 'symbols');
         set({ isInitializing: false });
+      },
+      
+      /** Fetch historical bars for symbols to populate initial candles */
+      fetchHistoricalBars: async (symbols: string[]) => {
+        console.log('[v0] 📥 Fetching historical bars for', symbols.length, 'symbols');
+        
+        const { massiveClient } = await import('../lib/massive/client');
+        
+        for (const symbol of symbols) {
+          try {
+            const normalized = symbol.toUpperCase();
+            console.log(`[v0] 📥 Fetching bars for ${normalized}...`);
+            
+            // Fetch 1m bars (last 200 bars = ~3 hours of data)
+            const bars = await massiveClient.getAggregates(normalized, '1', 200);
+            
+            if (bars && bars.length > 0) {
+              console.log(`[v0] ✅ Loaded ${bars.length} bars for ${normalized}`);
+              
+              // Convert to Candle format and update store
+              const candles: Candle[] = bars.map(bar => ({
+                time: bar.t,
+                timestamp: bar.t,
+                open: bar.o,
+                high: bar.h,
+                low: bar.l,
+                close: bar.c,
+                volume: bar.v,
+                vwap: bar.vw,
+              }));
+              
+              // Update candles for 1m timeframe
+              get().updateCandles(normalized, '1m', candles);
+              
+              // Trigger recompute to calculate indicators and signals
+              get().recomputeSymbol(normalized);
+            } else {
+              console.log(`[v0] ⚠️ No bars returned for ${normalized}`);
+            }
+          } catch (error) {
+            console.error(`[v0] ❌ Failed to fetch bars for ${symbol}:`, error);
+          }
+        }
+        
+        console.log('[v0] ✅ Historical bars fetch complete');
       },
       
       connectWebSocket: () => {
