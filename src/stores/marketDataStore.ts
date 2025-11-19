@@ -19,7 +19,7 @@ import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { produce } from 'immer';
 import { Bar } from '../types/shared';
-import { massiveWS } from '../lib/massive/websocket';
+import { MassiveSubscriptionManager } from '../lib/massive/subscriptionManager';
 import { StrategySignal } from '../types/strategy';
 import { 
   calculateEMA, 
@@ -152,6 +152,9 @@ interface MarketDataStore {
   
   /** Map of symbol → data (SPY, QQQ, SPX, etc.) */
   symbols: Record<string, SymbolData>;
+  
+  /** Unified WebSocket manager */
+  wsManager: MassiveSubscriptionManager | null;
   
   /** WebSocket connection (single for stocks) */
   wsConnection: WebSocketConnection;
@@ -767,6 +770,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
     (set, get) => ({
       // Initial state
       symbols: {},
+      wsManager: null,
       wsConnection: { 
         socket: null, 
         status: 'disconnected', 
@@ -820,15 +824,113 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
       
       connectWebSocket: () => {
-        // In pure indices mode, rely on massiveWS managed sockets
-        console.log('[v0] marketDataStore: Using massiveWS indices connection');
-        set({
-          wsConnection: { socket: null, status: 'connected', reconnectAttempts: 0, lastMessageTime: Date.now() },
-          isConnected: true,
-          error: null,
+        const token = import.meta.env.VITE_MASSIVE_PROXY_TOKEN;
+        if (!token) {
+          console.error('[v0] marketDataStore: No VITE_MASSIVE_PROXY_TOKEN');
+          set({ error: 'Missing VITE_MASSIVE_PROXY_TOKEN' });
+          return;
+        }
+
+        console.log('[v0] marketDataStore: Initializing unified WebSocket manager');
+
+        const manager = new MassiveSubscriptionManager({
+          token,
+          onQuote: (symbol, quote) => {
+            // Update candles with quote data (add as latest bar if needed)
+            const normalized = symbol.toUpperCase();
+            const { symbols } = get();
+            const symbolData = symbols[normalized];
+            
+            if (!symbolData) return;
+            
+            // Update last candle's close price or create a minimal bar
+            const primaryTF = symbolData.primaryTimeframe;
+            const candles = symbolData.candles[primaryTF];
+            
+            if (candles.length > 0) {
+              const lastCandle = candles[candles.length - 1];
+              const now = Date.now();
+              const candleAge = now - (lastCandle.time || lastCandle.timestamp || 0);
+              
+              // Update existing candle if < 60s old, else create new
+              if (candleAge < 60000) {
+                lastCandle.close = quote.last;
+                lastCandle.high = Math.max(lastCandle.high, quote.last);
+                lastCandle.low = Math.min(lastCandle.low, quote.last);
+              } else {
+                // New candle
+                candles.push({
+                  time: now,
+                  timestamp: now,
+                  open: quote.last,
+                  high: quote.last,
+                  low: quote.last,
+                  close: quote.last,
+                  volume: quote.volume || 0,
+                });
+              }
+            }
+            
+            set({ lastServerTimestamp: Date.now() });
+          },
+          onBar: (symbol, timeframe, bar) => {
+            const normalized = symbol.toUpperCase();
+            const tfMap: Record<string, Timeframe> = {
+              '1m': '1m',
+              '5m': '5m',
+              '15m': '15m',
+              '60m': '60m',
+              '1D': '1D',
+            };
+            const tf = tfMap[timeframe] || '1m';
+            
+            get().mergeBar(normalized, tf, {
+              time: bar.time,
+              timestamp: bar.time,
+              open: bar.open,
+              high: bar.high,
+              low: bar.low,
+              close: bar.close,
+              volume: bar.volume,
+              vwap: bar.vwap,
+            });
+            
+            set({ 
+              wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() },
+              lastServerTimestamp: Date.now() 
+            });
+          },
+          onTrade: (symbol, trade) => {
+            // Optional: log trades
+            if (Math.random() < 0.01) {
+              console.log('[v0] Trade:', symbol, trade.price, 'x', trade.size);
+            }
+          },
+          onStatus: (status) => {
+            console.log('[v0] marketDataStore: WebSocket status:', status);
+            const wsStatus = status === 'authenticated' ? 'authenticated' : 
+                            status === 'connected' ? 'connected' :
+                            status === 'connecting' ? 'connecting' :
+                            status === 'error' ? 'error' : 'disconnected';
+            
+            set({
+              wsConnection: { 
+                ...get().wsConnection, 
+                status: wsStatus 
+              },
+              isConnected: status === 'authenticated',
+            });
+            
+            // Subscribe to symbols once authenticated
+            if (status === 'authenticated') {
+              console.log('[v0] marketDataStore: WebSocket authenticated, subscribing to symbols');
+              get().subscribeToSymbols();
+            }
+          },
         });
-        // Immediately subscribe
-        get().subscribeToSymbols();
+
+        manager.connect();
+        set({ wsManager: manager });
       },
       
       scheduleReconnect: () => {
@@ -837,44 +939,22 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
       
       subscribeToSymbols: () => {
-        const { subscribedSymbols, unsubscribers } = get();
+        const { wsManager, subscribedSymbols } = get();
+        if (!wsManager) {
+          console.warn('[v0] marketDataStore: WebSocket manager not initialized');
+          return;
+        }
+        
         if (subscribedSymbols.size === 0) {
           console.warn('[v0] marketDataStore: No symbols to subscribe to');
           return;
         }
-        // Pure indices mode: subscribe to indices.bars:1m,5m,15m,60m:SPX,NDX,VIX
-        const indexSymbols = Array.from(subscribedSymbols).filter(s => ['SPX','NDX','VIX','RVX'].includes(s.toUpperCase()));
-        if (indexSymbols.length === 0) return;
 
-        console.log('[v0] marketDataStore: Subscribing to indices (2025 format):', indexSymbols);
-
-        // Subscribe to multi-timeframe indices bars
-        const unsub = massiveWS.subscribeAggregates(indexSymbols.map(s => `I:${s}`), (msg) => {
-          try {
-            if (msg?.type !== 'aggregate' && msg?.type !== 'index') return;
-            const d: any = msg.data;
-            const raw = d.ticker || d.symbol;
-            const sym = raw.replace(/^I:/, '').toUpperCase();
-            const bar: Candle = {
-              time: d.timestamp,
-              timestamp: d.timestamp,
-              open: d.open,
-              high: d.high,
-              low: d.low,
-              close: d.close || d.last,
-              volume: d.volume ?? 0,
-              vwap: d.vwap,
-              trades: undefined,
-            };
-            // 2025: subscribeAggregates with 'minute' = 1m bars
-            get().mergeBar(sym, '1m', bar);
-            set({ wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() }, lastServerTimestamp: Date.now() });
-          } catch (e) {
-            console.error('[v0] marketDataStore: aggregate handler error', e);
-          }
-        }, 'minute');
-
-        set({ unsubscribers: [...unsubscribers, unsub] });
+        const symbols = Array.from(subscribedSymbols);
+        console.log('[v0] marketDataStore: Updating watchlist with', symbols.length, 'symbols:', symbols);
+        
+        // Update watchlist - manager will handle channel subscriptions
+        wsManager.updateWatchlist(symbols);
       },
       
       handleAggregateBar: (msg: MassiveAggregateMessage) => {
@@ -902,7 +982,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       
       subscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { symbols, subscribedSymbols, wsConnection } = get();
+        const { symbols, subscribedSymbols, wsManager } = get();
         
         if (subscribedSymbols.has(normalized)) {
           console.log('[v0] marketDataStore: Already subscribed to', normalized);
@@ -927,36 +1007,15 @@ export const useMarketDataStore = create<MarketDataStore>()(
         newSubscribed.add(normalized);
         set({ subscribedSymbols: newSubscribed });
         
-        // In indices-only mode, subscribe to index aggregates if applicable
-        if (['SPX','NDX','VIX','RVX'].includes(normalized)) {
-          const unsub = massiveWS.subscribeAggregates([`I:${normalized}`], (msg) => {
-            try {
-              if (msg?.type !== 'aggregate' && msg?.type !== 'index') return;
-              const d: any = msg.data;
-              const bar: Candle = {
-                time: d.timestamp,
-                timestamp: d.timestamp,
-                open: d.open,
-                high: d.high,
-                low: d.low,
-                close: d.close || d.last,
-                volume: d.volume ?? 0,
-                vwap: d.vwap,
-                trades: undefined,
-              };
-              get().mergeBar(normalized, '1m', bar);
-              set({ wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() }, lastServerTimestamp: Date.now() });
-            } catch (e) {
-              console.error('[v0] marketDataStore: aggregate handler error', e);
-            }
-          }, 'minute');
-          set({ unsubscribers: [...get().unsubscribers, unsub] });
+        // Update WebSocket watchlist
+        if (wsManager) {
+          wsManager.updateWatchlist(Array.from(newSubscribed));
         }
       },
       
       unsubscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { subscribedSymbols, macroSymbols, wsConnection, unsubscribers } = get();
+        const { subscribedSymbols, macroSymbols, wsManager } = get();
         
         // Don't unsubscribe from macro symbols
         if (macroSymbols.includes(normalized)) {
@@ -972,11 +1031,9 @@ export const useMarketDataStore = create<MarketDataStore>()(
         });
         set({ subscribedSymbols: newSubscribed });
         
-        // Remove any local subscriptions we created for this symbol (best-effort)
-        // We don't track per-symbol unsub fns, so call all and reset
-        if (unsubscribers.length) {
-          try { unsubscribers.forEach(fn => fn()); } catch {}
-          set({ unsubscribers: [] });
+        // Update WebSocket watchlist
+        if (wsManager) {
+          wsManager.updateWatchlist(Array.from(newSubscribed));
         }
       },
       
@@ -1312,16 +1369,20 @@ export const useMarketDataStore = create<MarketDataStore>()(
       
       cleanup: () => {
         console.log('[v0] marketDataStore: Cleaning up WebSocket connection');
-        const { heartbeatInterval, unsubscribers } = get();
+        const { heartbeatInterval, wsManager } = get();
+        
+        // Disconnect unified WebSocket manager
+        if (wsManager) {
+          wsManager.disconnect();
+        }
+        
         // Clear heartbeat
         if (heartbeatInterval) {
           clearInterval(heartbeatInterval);
         }
-        // Unsubscribe from active channels
-        if (unsubscribers.length) {
-          try { unsubscribers.forEach(fn => fn()); } catch {}
-        }
+        
         set({
+          wsManager: null,
           wsConnection: {
             socket: null,
             status: 'disconnected',
