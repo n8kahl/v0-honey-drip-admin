@@ -20,29 +20,65 @@ interface SubscriptionManagerConfig {
 const INDEX_SYMBOLS = new Set(['SPX', 'NDX', 'VIX', 'RVX', 'TICK', 'TRIN', 'VXN']);
 
 export class MassiveSubscriptionManager {
-  private ws: UnifiedMassiveWebSocket;
+  private wsOptions: UnifiedMassiveWebSocket;
+  private wsIndices: UnifiedMassiveWebSocket;
   private config: SubscriptionManagerConfig;
   private watchedSymbols = new Set<string>();
+  private optionsReady = false;
+  private indicesReady = false;
 
   constructor(config: SubscriptionManagerConfig) {
     this.config = config;
 
-    this.ws = new UnifiedMassiveWebSocket({
-      token: config.token,
+    // Build WebSocket URLs with token
+    const baseUrl = import.meta.env.DEV 
+      ? 'ws://localhost:3000' 
+      : `wss://${window.location.host}`;
+    const token = config.token;
+
+    // Options WebSocket (for options contracts)
+    this.wsOptions = new UnifiedMassiveWebSocket({
+      url: `${baseUrl}/ws/options?token=${token}`,
+      token,
       onMessage: this.handleMessage.bind(this),
       onStatus: (status) => {
-        console.log('[SubManager] Status:', status);
-        config.onStatus?.(status);
+        console.log('[SubManager:Options] Status:', status);
+        this.optionsReady = status === 'connected';
+        this.updateGlobalStatus();
+      },
+    });
+
+    // Indices WebSocket (for SPX, VIX, NDX, etc.)
+    this.wsIndices = new UnifiedMassiveWebSocket({
+      url: `${baseUrl}/ws/indices?token=${token}`,
+      token,
+      onMessage: this.handleMessage.bind(this),
+      onStatus: (status) => {
+        console.log('[SubManager:Indices] Status:', status);
+        this.indicesReady = status === 'connected';
+        this.updateGlobalStatus();
       },
     });
   }
 
+  private updateGlobalStatus() {
+    if (this.optionsReady && this.indicesReady) {
+      this.config.onStatus?.('authenticated');
+    } else if (this.optionsReady || this.indicesReady) {
+      this.config.onStatus?.('connected');
+    } else {
+      this.config.onStatus?.('disconnected');
+    }
+  }
+
   connect() {
-    this.ws.connect();
+    this.wsOptions.connect();
+    this.wsIndices.connect();
   }
 
   disconnect() {
-    this.ws.disconnect();
+    this.wsOptions.disconnect();
+    this.wsIndices.disconnect();
   }
 
   /**
@@ -57,33 +93,48 @@ export class MassiveSubscriptionManager {
 
     if (toAdd.length > 0) {
       console.log('[SubManager] Adding symbols:', toAdd);
-      const channels = this.buildChannelsForSymbols(toAdd);
-      this.ws.subscribe(channels);
+      const { optionsChannels, indicesChannels } = this.buildChannelsByType(toAdd);
+      
+      if (optionsChannels.length > 0) {
+        this.wsOptions.subscribe(optionsChannels);
+      }
+      if (indicesChannels.length > 0) {
+        this.wsIndices.subscribe(indicesChannels);
+      }
+      
       toAdd.forEach(s => this.watchedSymbols.add(s));
     }
 
     if (toRemove.length > 0) {
       console.log('[SubManager] Removing symbols:', toRemove);
-      const channels = this.buildChannelsForSymbols(toRemove);
-      this.ws.unsubscribe(channels);
+      const { optionsChannels, indicesChannels } = this.buildChannelsByType(toRemove);
+      
+      if (optionsChannels.length > 0) {
+        this.wsOptions.unsubscribe(optionsChannels);
+      }
+      if (indicesChannels.length > 0) {
+        this.wsIndices.unsubscribe(indicesChannels);
+      }
+      
       toRemove.forEach(s => this.watchedSymbols.delete(s));
     }
   }
 
-  private buildChannelsForSymbols(symbols: string[]): string[] {
-    const channels: string[] = [];
+  private buildChannelsByType(symbols: string[]): { optionsChannels: string[], indicesChannels: string[] } {
+    const optionsChannels: string[] = [];
+    const indicesChannels: string[] = [];
 
     for (const symbol of symbols) {
       if (this.isIndex(symbol)) {
         // Indices channels (use I: prefix)
         const indexTicker = symbol.startsWith('I:') ? symbol : `I:${symbol}`;
-        channels.push(
+        indicesChannels.push(
           `V.${indexTicker}`,    // V = value (real-time index value)
           `AM.${indexTicker}`,   // AM = 1-minute aggregates
         );
       } else if (symbol.startsWith('O:')) {
         // Options contract channels
-        channels.push(
+        optionsChannels.push(
           `Q.${symbol}`,  // Q = quotes
           `T.${symbol}`,  // T = trades
           `A.${symbol}`,  // A = 1-second aggregates
@@ -96,7 +147,7 @@ export class MassiveSubscriptionManager {
       }
     }
 
-    return channels;
+    return { optionsChannels, indicesChannels };
   }
 
   private isIndex(symbol: string): boolean {
@@ -215,7 +266,7 @@ export class MassiveSubscriptionManager {
   }
 
   isConnected(): boolean {
-    return this.ws.isConnected();
+    return this.optionsReady || this.indicesReady;
   }
 
   getWatchedSymbols(): string[] {

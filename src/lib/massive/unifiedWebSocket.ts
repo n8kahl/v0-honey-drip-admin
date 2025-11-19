@@ -30,7 +30,7 @@ export class UnifiedMassiveWebSocket {
 
   constructor(config: UnifiedWSConfig) {
     this.config = {
-      url: 'wss://socket.massive.com',
+      url: config.url || 'wss://socket.massive.com',
       reconnectDelay: 3000,
       ...config,
     };
