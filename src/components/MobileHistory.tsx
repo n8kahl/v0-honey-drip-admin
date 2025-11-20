@@ -5,9 +5,10 @@ import { HDInput } from './hd/HDInput';
 import { HDButton } from './hd/HDButton';
 import { HDCard } from './hd/HDCard';
 import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
-import { Search, Share2, Download, ChevronDown, X, Filter } from 'lucide-react';
+import { Search, Share2, Download, ChevronDown, X, Filter, History } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { HDPanelDiscordAlert } from './hd/HDPanelDiscordAlert';
+import { EmptyState } from './ui/EmptyState';
 import { toast } from 'sonner@2.0.3';
 import { MobileWatermark } from './MobileWatermark';
 
@@ -195,13 +196,17 @@ Duration: ${duration}`;
       )}
       
       {/* Trade Cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 relative z-10">
+      <div className="flex-1 overflow-y-auto relative z-10">
         {filtered.length === 0 ? (
-          <div className="py-12 text-center text-[var(--text-muted)]">
-            No trades found
-          </div>
+          <EmptyState
+            icon={History}
+            title="No trades found"
+            description="Your closed trades will appear here."
+            minHeight="min-h-96"
+          />
         ) : (
-          filtered.map((trade) => {
+          <div className="p-4 space-y-3">
+            {filtered.map((trade) => {
             const isProfit = (trade.movePercent || 0) >= 0;
             
             return (
@@ -271,7 +276,8 @@ Duration: ${duration}`;
                 </div>
               </HDCard>
             );
-          })
+            })}
+          </div>
         )}
       </div>
       
