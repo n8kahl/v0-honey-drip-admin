@@ -39,12 +39,6 @@ const TIMEFRAME_LOOKBACK_DAYS: Record<TfKey, number> = {
   '1D': 365,
 };
 
-type ChartViewport = {
-  mode: 'AUTO' | 'MANUAL';
-  fromTime?: number; // epoch seconds
-  toTime?: number;   // epoch seconds
-};
-
 type IndicatorState = {
   ema9: boolean;
   ema21: boolean;
@@ -121,16 +115,8 @@ const chartRef = useRef<IChartApi | null>(null);
   });
   const timeframeRef = useRef<TfKey>(currentTf);
   const tickerRef = useRef<string>(ticker);
-  const [viewport, setViewport] = useState<ChartViewport>({ mode: 'AUTO' });
-  const viewportRef = useRef<ChartViewport>({ mode: 'AUTO' }); // Ref to avoid re-renders
-  const applyingViewportRef = useRef(false);
   const lastNBarsAuto = 100;
   const [opacity, setOpacity] = useState<number>(1);
-
-  const viewportStorageKey = useMemo(
-    () => `hdchart.viewport:${ticker}:${currentTf}`,
-    [ticker, currentTf]
-  );
 
   const [indState, setIndState] = useState<IndicatorState>(() => {
     try {
@@ -184,43 +170,10 @@ const chartRef = useRef<IChartApi | null>(null);
     return () => clearTimeout(id);
   }, [ticker, currentTf]);
 
-  // Restore persisted viewport per ticker/timeframe
+  // Reset auto-fit flag when ticker/timeframe changes
   useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      const raw = window.localStorage.getItem(viewportStorageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && (parsed.mode === 'AUTO' || parsed.mode === 'MANUAL')) {
-          viewportRef.current = parsed;
-          setViewport(parsed);
-        } else {
-          const defaultViewport = { mode: 'AUTO' as const };
-          viewportRef.current = defaultViewport;
-          setViewport(defaultViewport);
-        }
-      } else {
-        const defaultViewport = { mode: 'AUTO' as const };
-        viewportRef.current = defaultViewport;
-        setViewport(defaultViewport);
-      }
-      hasAutoFitRef.current = false;
-    } catch {
-      const defaultViewport = { mode: 'AUTO' as const };
-      viewportRef.current = defaultViewport;
-      setViewport(defaultViewport);
-      hasAutoFitRef.current = false;
-    }
-  }, [viewportStorageKey]);
-
-  // Persist viewport whenever it changes
-  useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(viewportStorageKey, JSON.stringify(viewport));
-      }
-    } catch {}
-  }, [viewport, viewportStorageKey]);
+    hasAutoFitRef.current = false;
+  }, [ticker, currentTf]);
   
 const loadHistoricalBars = useCallback(async () => {
     if (rateLimited) {
@@ -555,30 +508,7 @@ const loadHistoricalBars = useCallback(async () => {
       }
     }
 
-    // Subscribe to viewport changes to toggle AUTO/MANUAL and persist range
-    const timeScale = chart.timeScale();
-    const handleVisibleRange = (range: { from: Time; to: Time } | null) => {
-      if (applyingViewportRef.current) return;
-      if (!range) return;
-      const from = typeof range.from === 'number' ? range.from : undefined;
-      const to = typeof range.to === 'number' ? range.to : undefined;
-
-      const newViewport: ChartViewport = from && to
-        ? { mode: 'MANUAL', fromTime: from * 1000, toTime: to * 1000 }
-        : { mode: 'MANUAL' };
-
-      viewportRef.current = newViewport;
-      setViewport(newViewport);
-
-      // Persist to localStorage
-      try {
-        window.localStorage.setItem(viewportStorageKey, JSON.stringify(newViewport));
-      } catch (e) {
-        console.warn('[HDLiveChart] Failed to save viewport to localStorage:', e);
-      }
-    };
-    timeScale.subscribeVisibleTimeRangeChange(handleVisibleRange);
-
+    // No viewport subscription needed - let users control pan/zoom freely
     setChartReady(true);
     console.log('[HDLiveChart] Chart initialization complete');
     
@@ -595,9 +525,6 @@ const loadHistoricalBars = useCallback(async () => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      try {
-        timeScale.unsubscribeVisibleTimeRangeChange(handleVisibleRange);
-      } catch {}
       levelSeriesRefs.current.forEach(series => {
         try {
           chart.removeSeries(series);
@@ -623,6 +550,50 @@ const loadHistoricalBars = useCallback(async () => {
     loadHistoricalBars();
   }, [ticker, currentTf]); // Only reload when ticker or timeframe changes
   
+  // Separate effect: ONLY set initial viewport once, never runs again
+  useEffect(() => {
+    if (!chartRef.current || !chartReady || hasAutoFitRef.current || bars.length === 0) return;
+
+    // Safety check: ensure candleSeries exists and has data
+    if (!candleSeriesRef.current) return;
+
+    const ts = chartRef.current.timeScale();
+    const barsToUse = bars.length;
+    if (barsToUse > 1) {
+      // Wait a tick to ensure chart data is loaded before setting viewport
+      requestAnimationFrame(() => {
+        if (!chartRef.current || hasAutoFitRef.current) return;
+
+        try {
+          // Initial view: show bars positioned at 75% from left (most recent at 3/4)
+          const visibleBars = Math.min(lastNBarsAuto, barsToUse);
+          const fromIdx = Math.max(0, barsToUse - visibleBars);
+          const from = bars[fromIdx].time as number;
+
+          // Position last bar at 75% by extending range to create empty space on right
+          const totalRangeNeeded = visibleBars / 0.75;
+          const extraBars = Math.ceil(totalRangeNeeded - visibleBars);
+
+          // Calculate time per bar (average interval)
+          const lastBar = bars[barsToUse - 1].time as number;
+          const firstVisibleBar = bars[fromIdx].time as number;
+          const timePerBar = visibleBars > 1 ? (lastBar - firstVisibleBar) / (visibleBars - 1) : 60;
+
+          // Extend 'to' time to create empty space on the right
+          const to = lastBar + (extraBars * timePerBar);
+
+          ts.setVisibleRange({ from: from as any, to: to as any });
+          hasAutoFitRef.current = true;
+          console.log('[HDLiveChart] Initial viewport set (bars at 75% position) - will never auto-adjust again');
+        } catch (error) {
+          console.error('[HDLiveChart] Error setting initial viewport:', error);
+          // Don't set hasAutoFitRef so it can retry
+        }
+      });
+    }
+  }, [chartReady, bars.length]); // Only depends on chartReady and bars.length, NOT the bars array itself
+
+  // Separate effect: Update chart data and indicators (NO viewport changes)
   useEffect(() => {
     const priceSeries = ensurePriceSeries();
     if (!priceSeries) {
@@ -648,7 +619,7 @@ const loadHistoricalBars = useCallback(async () => {
     const renderUpdate = () => {
       const now = performance.now();
       const delta = now - lastRenderTimeRef.current;
-      
+
       // Calculate FPS (stored in ref to avoid re-render loop)
       if (delta > 0) {
         const currentFps = Math.round(1000 / delta);
@@ -657,7 +628,7 @@ const loadHistoricalBars = useCallback(async () => {
           setTimeout(() => setFps(currentFps), 0);
         }
       }
-      
+
       // Always render all bars (remove FPS-based downsampling to avoid dependency)
       const barsToRender = bars;
 
@@ -678,7 +649,7 @@ const loadHistoricalBars = useCallback(async () => {
       }
 
       priceSeries.setData(candleData);
-      
+
       // Update indicators
       if (indicators?.ema?.periods) {
         const closes = barsToRender.map(b => b.close);
@@ -690,7 +661,7 @@ const loadHistoricalBars = useCallback(async () => {
               value: isNaN(value) ? null : value,
             }))
             .filter(d => d.value !== null) as LineData[];
-          
+
           // Respect indicator visibility
           const s = emaSeriesRefs.current.get(period);
           if (s) {
@@ -700,7 +671,7 @@ const loadHistoricalBars = useCallback(async () => {
           }
         });
       }
-      
+
       if (indState.vwap && vwapSeriesRef.current) {
         const vwapValues = calculateVWAP(barsToRender);
         const vwapData: LineData[] = vwapValues.map((value, i) => ({
@@ -710,7 +681,7 @@ const loadHistoricalBars = useCallback(async () => {
         vwapSeriesRef.current.setData(vwapData);
         vwapSeriesRef.current.applyOptions({ visible: indState.vwap });
       }
-      
+
       if (indState.bb && indicators?.bollinger && bollingerRefs.current) {
         const closes = barsToRender.map(b => b.close);
         const { upper, middle, lower } = calculateBollingerBands(
@@ -718,7 +689,7 @@ const loadHistoricalBars = useCallback(async () => {
           indicators.bollinger.period,
           indicators.bollinger.stdDev
         );
-        
+
         const createBBData = (values: number[]): LineData[] =>
           values
             .map((value, i) => ({
@@ -726,7 +697,7 @@ const loadHistoricalBars = useCallback(async () => {
               value: isNaN(value) ? null : value,
             }))
             .filter(d => d.value !== null) as LineData[];
-        
+
         bollingerRefs.current.upper.setData(createBBData(upper));
         bollingerRefs.current.middle.setData(createBBData(middle));
         bollingerRefs.current.lower.setData(createBBData(lower));
@@ -734,7 +705,7 @@ const loadHistoricalBars = useCallback(async () => {
         bollingerRefs.current.middle.applyOptions({ visible: indState.bb });
         bollingerRefs.current.lower.applyOptions({ visible: indState.bb });
       }
-      
+
       // Add trade event markers
       if (events.length > 0 && candleSeriesRef.current) {
         const markers = events.map(event => ({
@@ -746,40 +717,12 @@ const loadHistoricalBars = useCallback(async () => {
         }));
         priceSeries.setMarkers(markers);
       }
-      
-      // Apply viewport policy
-      if (chartRef.current) {
-        const ts = chartRef.current.timeScale();
-        if (!hasAutoFitRef.current) {
-          // Initial view: auto to lastN bars
-          const barsToUse = bars.length;
-          if (barsToUse > 1) {
-            const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
-            const from = bars[fromIdx].time as number;
-            const to = bars[barsToUse - 1].time as number;
-            applyingViewportRef.current = true;
-            ts.setVisibleRange({ from: from as any, to: to as any });
-            applyingViewportRef.current = false;
-            hasAutoFitRef.current = true;
-          }
-        } else if (viewportRef.current.mode === 'AUTO') {
-          // Follow latest - only update if we have new bars
-          const barsToUse = bars.length;
-          if (barsToUse > 1) {
-            const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
-            const from = bars[fromIdx].time as number;
-            const to = bars[barsToUse - 1].time as number;
-            applyingViewportRef.current = true;
-            ts.setVisibleRange({ from: from as any, to: to as any });
-            applyingViewportRef.current = false;
-          }
-        }
-        // MANUAL mode: Don't force viewport changes, let user control pan/zoom
-      }
-      
+
+      // NO viewport changes here - viewport is set once in separate effect above
+
       lastRenderTimeRef.current = now;
     };
-    
+
     renderUpdate();
   }, [bars, indicators, events, ensurePriceSeries, indState]);
   
@@ -982,14 +925,28 @@ const loadHistoricalBars = useCallback(async () => {
     return `${Math.floor(secondsAgo / 60)}m ago`;
   };
 
-  const handleBackToLive = () => {
-    setViewport({ mode: 'AUTO' });
-    // After next update, AUTO branch will snap to latest window
+  const handleResetView = () => {
+    // Reset to initial view: show last 100 bars at 75% position
+    if (!chartRef.current || bars.length === 0) return;
+
+    const ts = chartRef.current.timeScale();
+    const barsToUse = bars.length;
+    const visibleBars = Math.min(lastNBarsAuto, barsToUse);
+    const fromIdx = Math.max(0, barsToUse - visibleBars);
+    const from = bars[fromIdx].time as number;
+
+    const totalRangeNeeded = visibleBars / 0.75;
+    const extraBars = Math.ceil(totalRangeNeeded - visibleBars);
+
+    const lastBar = bars[barsToUse - 1].time as number;
+    const firstVisibleBar = bars[fromIdx].time as number;
+    const timePerBar = visibleBars > 1 ? (lastBar - firstVisibleBar) / (visibleBars - 1) : 60;
+    const to = lastBar + (extraBars * timePerBar);
+
+    ts.setVisibleRange({ from: from as any, to: to as any });
   };
 
   const handleToggle = (key: keyof IndicatorState) => {
-    // Preserve viewport before updating series visibility
-    setViewport((prev) => ({ ...prev }));
     setIndState((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -1003,7 +960,7 @@ const loadHistoricalBars = useCallback(async () => {
 
   const selectTimeframe = (tf: TfKey) => {
     if (tf === currentTf) return;
-    setViewport({ mode: 'AUTO' });
+    hasAutoFitRef.current = false; // Reset auto-fit for new timeframe
     setBars([]);
     setIsConnected(false);
     setDataSource('rest');
@@ -1051,14 +1008,13 @@ const loadHistoricalBars = useCallback(async () => {
                 Limited
               </span>
             )}
-            <span className={`text-micro px-1.5 py-0.5 rounded border ${viewport.mode === 'AUTO' ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-blue-400 border-blue-400/30 bg-blue-400/10'}`}>
-              {viewport.mode === 'AUTO' ? 'LIVE' : 'HISTORICAL'}
-            </span>
-            {viewport.mode === 'MANUAL' && (
-              <button className="text-micro px-2 py-0.5 rounded border border-[var(--border-hairline)] hover:bg-[var(--surface-3)]" onClick={handleBackToLive} title="Back to Live">
-                Back to Live
-              </button>
-            )}
+            <button
+              className="text-micro px-2 py-0.5 rounded border border-[var(--border-hairline)] hover:bg-[var(--surface-3)] transition-colors"
+              onClick={handleResetView}
+              title="Reset chart view to show latest bars"
+            >
+              Reset View
+            </button>
           </div>
           {fps < 30 && (
             <span className="text-micro text-yellow-500 flex items-center gap-1">
