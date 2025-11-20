@@ -11,6 +11,7 @@ import {
   BreadcrumbSeparator,
 } from '../ui/breadcrumb';
 import { cn } from '../../lib/utils';
+import { colorTransition, focusRing } from '../../lib/a11y';
 
 export interface BreadcrumbItem {
   /**
@@ -83,7 +84,9 @@ export function BreadcrumbNav({ items, className }: BreadcrumbNavProps) {
                   <BreadcrumbLink
                     onClick={() => router.push(item.href!)}
                     className={cn(
-                      'cursor-pointer text-[var(--text-high)] hover:text-[var(--brand-primary)] transition-colors'
+                      'cursor-pointer text-[var(--text-high)] hover:text-[var(--brand-primary)] rounded px-1 py-0.5',
+                      colorTransition,
+                      focusRing
                     )}
                   >
                     {item.label}

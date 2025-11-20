@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { KeyboardShortcut, formatShortcutForDisplay } from '../../hooks/useKeyboardShortcuts';
+import { fadeIn, colorTransition } from '../../lib/a11y';
 
 export interface KeyboardShortcutsDialogProps {
   /**
@@ -61,14 +62,18 @@ export function KeyboardShortcutsDialog({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+        className={cn('fixed inset-0 z-40 bg-black/50 backdrop-blur-sm', fadeIn)}
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Dialog */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] w-full max-w-2xl max-h-[80vh] flex flex-col shadow-lg"
+          className={cn(
+            'bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] w-full max-w-2xl max-h-[80vh] flex flex-col shadow-lg',
+            fadeIn
+          )}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -78,7 +83,10 @@ export function KeyboardShortcutsDialog({
             </h2>
             <button
               onClick={onClose}
-              className="p-2 rounded-[var(--radius)] hover:bg-[var(--surface-2)] transition-colors text-[var(--text-muted)]"
+              className={cn(
+                'p-2 rounded-[var(--radius)] hover:bg-[var(--surface-2)] text-[var(--text-muted)]',
+                colorTransition
+              )}
               title="Close (Esc)"
             >
               <X className="w-5 h-5" />
@@ -102,7 +110,10 @@ export function KeyboardShortcutsDialog({
                     {categoryShortcuts.map((shortcut, idx) => (
                       <div
                         key={`${shortcut.key}-${idx}`}
-                        className="flex items-center justify-between p-3 rounded-[var(--radius)] hover:bg-[var(--surface-2)] transition-colors group"
+                        className={cn(
+                          'flex items-center justify-between p-3 rounded-[var(--radius)] hover:bg-[var(--surface-2)] group',
+                          colorTransition
+                        )}
                       >
                         <span className="text-[var(--text-high)] text-sm">
                           {shortcut.description}
@@ -111,8 +122,9 @@ export function KeyboardShortcutsDialog({
                           className={cn(
                             'text-xs font-semibold px-3 py-1.5 rounded-[calc(var(--radius)-2px)]',
                             'bg-[var(--surface-2)] text-[var(--text-muted)] border border-[var(--border-hairline)]',
-                            'group-hover:bg-[var(--surface-3)] transition-colors',
-                            'whitespace-nowrap flex-shrink-0 ml-4'
+                            'group-hover:bg-[var(--surface-3)]',
+                            'whitespace-nowrap flex-shrink-0 ml-4',
+                            colorTransition
                           )}
                         >
                           {formatShortcutForDisplay(shortcut.key)}
