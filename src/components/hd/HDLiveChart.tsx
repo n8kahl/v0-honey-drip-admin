@@ -17,6 +17,17 @@ const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
   return day;
 };
 
+// Validate that a bar has all required OHLC values as non-null numbers
+const isValidBar = (bar: Partial<Bar>): bar is Bar => {
+  return (
+    typeof bar.time === 'number' && bar.time > 0 &&
+    typeof bar.open === 'number' && !isNaN(bar.open) && bar.open !== null &&
+    typeof bar.high === 'number' && !isNaN(bar.high) && bar.high !== null &&
+    typeof bar.low === 'number' && !isNaN(bar.low) && bar.low !== null &&
+    typeof bar.close === 'number' && !isNaN(bar.close) && bar.close !== null
+  );
+};
+
 const INDEX_TICKERS = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
 type TfKey = '1' | '5' | '15' | '60' | '1D';
 
@@ -567,15 +578,17 @@ const loadHistoricalBars = useCallback(async () => {
       
       // Always render all bars (remove FPS-based downsampling to avoid dependency)
       const barsToRender = bars;
-      
-      // Update candlestick data
-      const candleData: CandlestickData[] = barsToRender.map(bar => ({
-        time: bar.time as Time,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-      }));
+
+      // Update candlestick data - filter out any bars with null OHLC values as a final safety check
+      const candleData: CandlestickData[] = barsToRender
+        .filter(bar => isValidBar(bar))
+        .map(bar => ({
+          time: bar.time as Time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+        }));
       priceSeries.setData(candleData);
       
       // Update indicators
@@ -699,10 +712,10 @@ const loadHistoricalBars = useCallback(async () => {
       ? massiveWS.subscribeOptionAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
           if (document.hidden) return;
-          
+
           if (message.type === 'aggregate' && message.data.ticker === ticker) {
             const agg = message.data;
-            const newBar: Bar = {
+            const newBar: Partial<Bar> = {
               time: Math.floor(agg.timestamp / 1000),
               open: agg.open,
               high: agg.high,
@@ -711,7 +724,13 @@ const loadHistoricalBars = useCallback(async () => {
               volume: agg.volume,
               vwap: agg.vwap,
             };
-            
+
+            // Validate bar has all required OHLC values before adding
+            if (!isValidBar(newBar)) {
+              console.warn('[HDLiveChart] Skipping invalid bar from WebSocket (null OHLC values):', newBar);
+              return;
+            }
+
             setBars(prev => {
               const updated = [...prev];
               const existingIndex = updated.findIndex(b => b.time === newBar.time);
@@ -724,7 +743,7 @@ const loadHistoricalBars = useCallback(async () => {
               }
               return updated.sort((a, b) => (a.time as number) - (b.time as number));
             });
-            
+
             setIsConnected(true);
             setDataSource('websocket');
             setLastUpdate(Date.now());
@@ -733,10 +752,10 @@ const loadHistoricalBars = useCallback(async () => {
       : massiveWS.subscribeAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
           if (document.hidden) return;
-          
+
           if (message.type === 'aggregate') {
             const agg = message.data;
-            const newBar: Bar = {
+            const newBar: Partial<Bar> = {
               time: Math.floor(agg.timestamp / 1000),
               open: agg.open,
               high: agg.high,
@@ -744,7 +763,13 @@ const loadHistoricalBars = useCallback(async () => {
               close: agg.close,
               volume: agg.volume,
             };
-            
+
+            // Validate bar has all required OHLC values before adding
+            if (!isValidBar(newBar)) {
+              console.warn('[HDLiveChart] Skipping invalid bar from WebSocket (null OHLC values):', newBar);
+              return;
+            }
+
             setBars(prev => {
               const updated = [...prev];
               const existingIndex = updated.findIndex(b => b.time === newBar.time);
@@ -755,7 +780,7 @@ const loadHistoricalBars = useCallback(async () => {
               }
               return updated.sort((a, b) => (a.time as number) - (b.time as number));
             });
-            
+
             setIsConnected(true);
             setDataSource('websocket');
             setLastUpdate(Date.now());
