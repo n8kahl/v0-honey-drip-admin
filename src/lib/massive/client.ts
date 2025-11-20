@@ -164,7 +164,6 @@ class MassiveClient {
       if (resp.ok) {
         const json = await resp.json();
         const items: any[] = Array.isArray(json?.results) ? json.results : [];
-        console.log('[MassiveClient] getQuotes response:', items);
         // Map to MassiveQuote shape
         return items.map((it) => {
           const quote = {
@@ -175,7 +174,6 @@ class MassiveClient {
             volume: Number(it.volume ?? 0),
             timestamp: Number(it.asOf ?? Date.now()),
           };
-          console.log(`[MassiveClient] Mapped ${it.symbol}: it.last=${it.last} -> quote.last=${quote.last}`);
           return quote;
         }) as MassiveQuote[];
       }
@@ -239,27 +237,22 @@ class MassiveClient {
   }
 
   async getOptionsChain(underlyingTicker: string, expirationDate?: string, underlyingPrice?: number): Promise<MassiveOptionsChain> {
-    console.log('[MassiveClient] getOptionsChain called for', underlyingTicker, 'with price:', underlyingPrice);
-    
     // If underlying price not provided or is 0, fetch it
     let price = underlyingPrice || 0;
-    
+
     if (price === 0) {
-      console.log('[MassiveClient] Price is 0, fetching from API...');
       try {
         // For indices like SPX, NDX - use I: prefix
         const isIndex = ['SPX', 'NDX', 'VIX', 'RUT'].includes(underlyingTicker);
         if (isIndex) {
           const indexTicker = `I:${underlyingTicker}`;
           const indexData = await this.fetch(`/v3/snapshot/indices?ticker=${encodeURIComponent(indexTicker)}`);
-          console.log('[MassiveClient] Index snapshot result:', indexData);
           if (indexData.value) {
             price = indexData.value;
           }
         } else {
           // For stocks like SPY - try options snapshot first for speed
           const stockData = await this.fetch(`/v3/snapshot/options/${underlyingTicker}?limit=1`);
-          console.log('[MassiveClient] Stock snapshot result:', stockData);
           if (stockData.results?.[0]?.underlying_asset?.price) {
             price = stockData.results[0].underlying_asset.price;
           }
@@ -268,27 +261,17 @@ class MassiveClient {
         console.warn('[MassiveClient] Could not fetch price:', err);
       }
     }
-    
-    console.log('[MassiveClient] Final price for', underlyingTicker, ':', price);
-    
+
     // Calculate strike range: ±15% for reasonable ATM range
     const strikeRange = 0.15; // 15%
     const minStrike = price > 0 ? Math.floor(price * (1 - strikeRange)) : undefined;
     const maxStrike = price > 0 ? Math.ceil(price * (1 + strikeRange)) : undefined;
-    
-    console.log('[MassiveClient] Strike range:', { minStrike, maxStrike });
-    
+
     const contractsData = await getOptionContracts(underlyingTicker, 1000, expirationDate, minStrike, maxStrike);
-    
+
     if (!contractsData || !contractsData.results || contractsData.results.length === 0) {
       return contractsData;
     }
-    
-    console.log('[MassiveClient] Got contracts:', {
-      count: contractsData.results.length,
-      sampleStrikes: contractsData.results.slice(0, 10).map((c: any) => c.strike_price),
-      sampleDates: [...new Set(contractsData.results.slice(0, 20).map((c: any) => c.expiration_date))],
-    });
     
     const filteredContracts = contractsData.results;
     
@@ -358,7 +341,6 @@ class MassiveClient {
     const cacheKey = `${symbol}:${timeframe}:${lookback}`;
     const cached = aggregatesCache.get(cacheKey);
     if (cached && Date.now() - cached.t < AGGREGATES_TTL_MS) {
-      console.log(`[MassiveClient] ✅ Aggregates cache hit for ${cacheKey}`);
       return cached.data;
     }
 
@@ -370,17 +352,15 @@ class MassiveClient {
       const endpointV2 = `/v2/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
       const endpointV3 = `/v3/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
 
-      console.log(`[MassiveClient] 🔄 Fetching daily aggregates for ${cacheKey} (v2)`);
       let data: any;
       try {
         data = await this.fetch(endpointV2);
       } catch (e: any) {
         const msg = String(e?.message || '');
         if (/403|forbidden/i.test(msg) || /Massive API error/.test(msg)) {
-          console.warn(`[MassiveClient] v2 daily aggregates forbidden or failed (${msg}), trying v3`);
+          console.warn(`[MassiveClient] v2 daily aggregates forbidden, trying v3`);
           try {
             data = await this.fetch(endpointV3);
-            console.log(`[MassiveClient] ✅ Fallback v3 daily aggregates succeeded for ${cacheKey}`);
           } catch (e2: any) {
             console.error(`[MassiveClient] v3 daily aggregates also failed for ${cacheKey}:`, e2?.message || e2);
             return [];
@@ -404,7 +384,6 @@ class MassiveClient {
 
       // Cache the result
       aggregatesCache.set(cacheKey, { t: Date.now(), data: bars });
-      console.log(`[MassiveClient] ✅ Cached daily aggregates for ${cacheKey} (${bars.length} bars)`);
       return bars;
     }
 
@@ -418,17 +397,15 @@ class MassiveClient {
     const endpointV2 = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
     const endpointV3 = `/v3/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
 
-    console.log(`[MassiveClient] 🔄 Fetching aggregates for ${cacheKey} (v2)`);
     let data: any;
     try {
       data = await this.fetch(endpointV2);
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (/403|forbidden/i.test(msg) || /Massive API error/.test(msg)) {
-        console.warn(`[MassiveClient] v2 aggregates forbidden or failed (${msg}), trying v3`);
+        console.warn(`[MassiveClient] v2 aggregates forbidden, trying v3`);
         try {
           data = await this.fetch(endpointV3);
-          console.log(`[MassiveClient] ✅ Fallback v3 aggregates succeeded for ${cacheKey}`);
         } catch (e2: any) {
           console.error(`[MassiveClient] v3 aggregates also failed for ${cacheKey}:`, e2?.message || e2);
           return [];
@@ -451,7 +428,6 @@ class MassiveClient {
 
     // Cache the result
     aggregatesCache.set(cacheKey, { t: Date.now(), data: bars });
-    console.log(`[MassiveClient] ✅ Cached aggregates for ${cacheKey} (${bars.length} bars)`);
 
     return bars;
   }

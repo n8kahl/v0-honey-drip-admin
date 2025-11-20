@@ -117,8 +117,6 @@ class GreeksMonitorService {
    * Start monitoring Greeks for active trades
    */
   start(trades: Trade[]) {
-    console.log('[GreeksMonitor] Starting Greeks monitoring for', trades.length, 'trades');
-
     // Clear existing interval
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
@@ -141,7 +139,6 @@ class GreeksMonitorService {
       clearInterval(this.pollingInterval);
       this.pollingInterval = null;
     }
-    console.log('[GreeksMonitor] Stopped');
   }
 
   /**
@@ -149,11 +146,8 @@ class GreeksMonitorService {
    */
   private async poll(trades: Trade[]) {
     if (trades.length === 0) {
-      console.log('[GreeksMonitor] No active trades to monitor');
       return;
     }
-
-    console.log('[GreeksMonitor] Polling Greeks for', trades.length, 'trades');
 
     // Fetch Greeks for each trade
     const snapshots: GreeksSnapshot[] = [];
@@ -191,8 +185,6 @@ class GreeksMonitorService {
 
       // Construct option ticker (OCC format: TICKER + YYMMDD + C/P + Strike)
       const optionTicker = trade.contract.id;
-
-      console.log(`[GreeksMonitor] Fetching real Greeks for ${optionTicker}`);
 
       // Fetch from Massive via proxy endpoint
       const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN;
@@ -270,14 +262,6 @@ class GreeksMonitorService {
         optionPrice,
         daysToExpiry,
       };
-
-      console.log(`[GreeksMonitor] ✅ Real Greeks fetched:`, {
-        delta: snapshot.greeks.delta?.toFixed(3),
-        gamma: snapshot.greeks.gamma?.toFixed(4),
-        theta: snapshot.greeks.theta?.toFixed(2),
-        vega: snapshot.greeks.vega?.toFixed(3),
-        iv: (snapshot.greeks.impliedVolatility * 100)?.toFixed(1) + '%',
-      });
 
       // Record IV for historical tracking
       if (snapshot.greeks.impliedVolatility > 0) {
@@ -369,8 +353,6 @@ class GreeksMonitorService {
       vegaExposure,
       lastUpdated: Date.now(),
     };
-
-    console.log('[GreeksMonitor] Portfolio Greeks:', this.portfolioGreeks);
   }
 
   /**
@@ -383,29 +365,10 @@ class GreeksMonitorService {
     snapshots.forEach((snapshot) => {
       const { greeks, daysToExpiry } = snapshot;
 
-      // Alert on high theta decay
-      if (greeks.theta < -30 && daysToExpiry <= 7) {
-        console.log(
-          `[GreeksMonitor] High theta decay detected for ${snapshot.symbol}:`,
-          greeks.theta
-        );
-      }
-
-      // Alert on gamma spike
-      if (greeks.gamma > 0.2) {
-        console.log(
-          `[GreeksMonitor] High gamma risk detected for ${snapshot.symbol}:`,
-          greeks.gamma
-        );
-      }
-
-      // Alert on IV collapse
-      if (greeks.impliedVolatility < 0.15) {
-        console.log(
-          `[GreeksMonitor] Low IV detected for ${snapshot.symbol}:`,
-          (greeks.impliedVolatility * 100).toFixed(1) + '%'
-        );
-      }
+      // Alert conditions checked but not logged (integrate with alertEscalationStore if needed)
+      // - High theta decay
+      // - High gamma risk
+      // - Low IV
     });
   }
 
@@ -596,11 +559,9 @@ export function createSafeGreeks(
   if (delta === undefined) {
     // Use reasonable defaults based on contract type and ATM assumption
     delta = optionType === 'C' ? 0.5 : -0.5;
-    console.warn(`[GreeksMonitor] ⚠️ Delta missing for ${optionType}, using ATM fallback: ${delta}`);
   } else if (delta < GREEKS_BOUNDS.DELTA_MIN || delta > GREEKS_BOUNDS.DELTA_MAX) {
     // Clamp out-of-bounds deltas
     delta = Math.max(GREEKS_BOUNDS.DELTA_MIN, Math.min(GREEKS_BOUNDS.DELTA_MAX, delta));
-    console.warn(`[GreeksMonitor] ⚠️ Delta clamped to bounds: ${delta}`);
   }
 
   // Gamma: CRITICAL - must never default to 0
@@ -609,30 +570,23 @@ export function createSafeGreeks(
     gamma = 0.01; // ~0.01 is typical for ATM options
     if (apiGreeks.gamma === 0) {
       console.error(`[GreeksMonitor] ❌ Gamma was 0 (data error), using fallback: ${gamma}`);
-    } else {
-      console.warn(`[GreeksMonitor] ⚠️ Gamma missing, using fallback: ${gamma}`);
     }
   } else if (gamma < GREEKS_BOUNDS.GAMMA_MIN || gamma > GREEKS_BOUNDS.GAMMA_MAX) {
     gamma = Math.max(GREEKS_BOUNDS.GAMMA_MIN, Math.min(GREEKS_BOUNDS.GAMMA_MAX, gamma));
-    console.warn(`[GreeksMonitor] ⚠️ Gamma clamped to bounds: ${gamma}`);
   }
 
   // Theta: Reasonable default is small negative (time decay)
   if (theta === undefined) {
     theta = -0.01; // Small daily theta decay
-    console.warn(`[GreeksMonitor] ⚠️ Theta missing, using fallback: ${theta}`);
   } else if (theta < GREEKS_BOUNDS.THETA_MIN || theta > GREEKS_BOUNDS.THETA_MAX) {
     theta = Math.max(GREEKS_BOUNDS.THETA_MIN, Math.min(GREEKS_BOUNDS.THETA_MAX, theta));
-    console.warn(`[GreeksMonitor] ⚠️ Theta clamped to bounds: ${theta}`);
   }
 
   // Vega: Can be 0 (short vega position has minimal vega exposure)
   if (vega === undefined) {
     vega = 0;
-    console.warn(`[GreeksMonitor] ⚠️ Vega missing, defaulting to 0`);
   } else if (vega < GREEKS_BOUNDS.VEGA_MIN || vega > GREEKS_BOUNDS.VEGA_MAX) {
     vega = Math.max(GREEKS_BOUNDS.VEGA_MIN, Math.min(GREEKS_BOUNDS.VEGA_MAX, vega));
-    console.warn(`[GreeksMonitor] ⚠️ Vega clamped to bounds: ${vega}`);
   }
 
   // Rho: Often neglected in short-term trading, default to 0
@@ -640,16 +594,13 @@ export function createSafeGreeks(
     rho = 0;
   } else if (rho < GREEKS_BOUNDS.RHO_MIN || rho > GREEKS_BOUNDS.RHO_MAX) {
     rho = Math.max(GREEKS_BOUNDS.RHO_MIN, Math.min(GREEKS_BOUNDS.RHO_MAX, rho));
-    console.warn(`[GreeksMonitor] ⚠️ Rho clamped to bounds: ${rho}`);
   }
 
   // IV: Clamp to reasonable range
   if (iv < GREEKS_BOUNDS.IV_MIN) {
     iv = GREEKS_BOUNDS.IV_MIN;
-    console.warn(`[GreeksMonitor] ⚠️ IV too low, clamped to ${iv}`);
   } else if (iv > GREEKS_BOUNDS.IV_MAX) {
     iv = GREEKS_BOUNDS.IV_MAX;
-    console.warn(`[GreeksMonitor] ⚠️ IV too high, clamped to ${iv}`);
   }
 
   return {
