@@ -30,6 +30,7 @@ app.use(
         connectSrc: [
           "'self'",
           'https://ejsaflvzljklapbrcfxr.supabase.co',
+          'wss://ejsaflvzljklapbrcfxr.supabase.co',
           'https://hdadmin.up.railway.app',
           'https://api.massive.com',
           'wss://hdadmin.up.railway.app',

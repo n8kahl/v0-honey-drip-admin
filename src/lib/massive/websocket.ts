@@ -221,8 +221,14 @@ class MassiveWebSocket {
   private handleMessage(msg: any, endpoint: WsEndpoint) {
     const { ev, sym } = msg;
 
-    // Handle auth failure
-    if (msg.status === 'auth_failed' || msg.status === 'error' || (msg.status && msg.status !== 'auth_success')) {
+    // Handle connection success (ignore, waiting for auth)
+    if (msg.status === 'connected' && ev === 'status') {
+      console.log(`[Massive WS] ${endpoint} connected, waiting for authentication...`);
+      return;
+    }
+
+    // Handle auth failure (only actual errors)
+    if (msg.status === 'auth_failed' || msg.status === 'auth_timeout' || (msg.status === 'error' && ev === 'status')) {
       console.error(`[Massive WS] ${endpoint} authentication failed:`, msg);
       this.isAuthenticated[endpoint] = false;
       // Don't reconnect on auth failure - likely a token issue
@@ -232,7 +238,7 @@ class MassiveWebSocket {
     }
 
     // Handle auth success
-    if (msg.status === 'auth_success' || (ev === 'status' && msg.message?.includes('auth'))) {
+    if (msg.status === 'auth_success' || (ev === 'status' && msg.message === 'authenticated')) {
       console.log(`[Massive WS] ${endpoint} authenticated successfully`);
       this.isAuthenticated[endpoint] = true;
 
