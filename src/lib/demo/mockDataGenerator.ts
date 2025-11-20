@@ -91,7 +91,7 @@ export function generateMockOptionsChain(
       const isATM = Math.abs(strike - underlyingPrice) < strikeStep * 2;
 
       // Delta based on moneyness (simplified Black-Scholes approximation)
-      const atm Delta = isCall ? 0.5 : -0.5;
+      const atmDelta = isCall ? 0.5 : -0.5;
       let delta: number;
       if (isATM) {
         delta = atmDelta + (Math.random() - 0.5) * 0.1;
