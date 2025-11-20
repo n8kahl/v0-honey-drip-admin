@@ -565,7 +565,11 @@ export class MassiveREST {
    * Build full URL with query params
    */
   private buildUrl(endpoint: string, params?: Record<string, any>): string {
-    const url = new URL(endpoint, `${window.location.origin}${this.baseUrl}`);
+    // Remove leading slash from endpoint if present to avoid path replacement
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+    // Ensure base URL ends with slash for proper path joining
+    const baseWithSlash = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`;
+    const url = new URL(cleanEndpoint, `${window.location.origin}${baseWithSlash}`);
 
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
