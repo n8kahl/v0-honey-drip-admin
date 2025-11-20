@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.tsx";
 import { AuthProvider } from "./contexts/AuthContext";
-import { DemoModeProvider } from "./contexts/DemoModeContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
@@ -16,9 +15,7 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <ErrorBoundary>
     <AuthProvider>
-      <DemoModeProvider>
-        <App />
-      </DemoModeProvider>
+      <App />
     </AuthProvider>
   </ErrorBoundary>
 );

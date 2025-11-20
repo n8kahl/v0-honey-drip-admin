@@ -3,12 +3,11 @@ import { useTradeStore } from '../../stores/tradeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMarketStore } from '../../stores/marketStore';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
-import { Activity, Moon, Sun, User, ChevronDown, Play, Square, Loader2 } from 'lucide-react';
+import { Activity, Moon, Sun, User, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
 import { useMarketDataStore } from '../../stores/marketDataStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { useDemoMode } from '../../contexts/DemoModeContext';
 
 interface MarketStatusProps {
   session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
@@ -271,58 +270,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout }) =>
   );
 };
 
-/**
- * Demo Mode Button
- * Activates demo mode with mock data for testing and demonstration
- */
-const DemoButton: React.FC = () => {
-  const { isDemoMode, isPopulating, toggleDemo } = useDemoMode();
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          onClick={toggleDemo}
-          disabled={isPopulating}
-          className={cn(
-            'w-8 h-8 rounded-md flex items-center justify-center transition-colors',
-            isDemoMode
-              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-              : 'hover:bg-[var(--surface-2)] text-[var(--text-high)]',
-            isPopulating && 'opacity-50 cursor-not-allowed'
-          )}
-          title={isDemoMode ? 'Stop Demo Mode' : 'Start Demo Mode'}
-        >
-          {isPopulating ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : isDemoMode ? (
-            <Square className="w-4 h-4" />
-          ) : (
-            <Play className="w-4 h-4" />
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="bg-zinc-800 text-zinc-200 border border-zinc-700">
-        <div className="max-w-xs space-y-1">
-          <div className="font-semibold text-sm">
-            {isDemoMode ? 'Demo Mode Active' : 'Demo Mode'}
-          </div>
-          <div className="text-xs text-zinc-400">
-            {isDemoMode
-              ? 'Click to stop demo and clear mock data'
-              : 'Load mock data with strategies, flow, and signals'}
-          </div>
-          {isDemoMode && (
-            <div className="text-xs text-green-400 pt-1 border-t border-zinc-700">
-              ✓ 6 symbols loaded with live indicators
-            </div>
-          )}
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  );
-};
-
 export const TraderHeader: React.FC = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [wsLatency, setWsLatency] = useState(0);
@@ -405,12 +352,8 @@ export const TraderHeader: React.FC = () => {
           )}
         </div>
         
-        {/* Right: Demo Mode + Dark Mode + User Menu */}
+        {/* Right: Dark Mode + User Menu */}
         <div className="flex items-center gap-3">
-          <DemoButton />
-
-          <div className="w-px h-4 bg-[var(--border-hairline)]" />
-
           <button
             onClick={handleDarkModeToggle}
             className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)] transition-colors"
