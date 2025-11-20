@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { massiveWS } from '../../lib/massive/websocket';
+import { massive } from '../../lib/massive';
 import { getIndexBars, getOptionBars, MassiveError } from '../../lib/massive/proxy';
 import { calculateEMA } from '../../lib/indicators';
 
@@ -149,7 +149,7 @@ export function HDMicroChart({
     const isOptionsContract = ticker.startsWith('O:');
     
     const unsubscribe = isOptionsContract
-      ? massiveWS.subscribeOptionQuotes([ticker], (message) => {
+      ? massive.subscribeOptionQuotes([ticker], (message) => {
           if (message.type === 'option' && message.data.ticker === ticker) {
             const update = message.data;
             const newPrice = update.last || update.mid || currentPrice;
@@ -181,7 +181,7 @@ export function HDMicroChart({
             });
           }
         })
-      : massiveWS.subscribeQuotes([ticker], (message) => {
+      : massive.subscribeQuotes([ticker], (message) => {
           if (message.type === 'quote' || message.type === 'index') {
             const update = message.data;
             const newPrice = update.value || update.last || currentPrice;

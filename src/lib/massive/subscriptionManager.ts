@@ -6,7 +6,7 @@
  * - Indices: wss://socket.massive.com/indices (fixed SPX/NDX/VIX/RVX)
  */
 
-import { massiveWS } from './websocket';
+import { massive } from './websocket';
 
 interface SubscriptionManagerConfig {
   token: string;
@@ -32,8 +32,8 @@ export class MassiveSubscriptionManager {
   }
 
   private updateGlobalStatus() {
-    const optionsReady = massiveWS.isConnected('options');
-    const indicesReady = massiveWS.isConnected('indices');
+    const optionsReady = massive.isConnected('options');
+    const indicesReady = massive.isConnected('indices');
     
     if (optionsReady && indicesReady) {
       this.config.onStatus?.('authenticated');
@@ -45,8 +45,8 @@ export class MassiveSubscriptionManager {
   }
 
   connect() {
-    // The massiveWS connects automatically on initialization
-    massiveWS.connect();
+    // The massive connects automatically on initialization
+    massive.connect();
     
     // Check status periodically
     setInterval(() => this.updateGlobalStatus(), 1000);
@@ -104,10 +104,10 @@ export class MassiveSubscriptionManager {
 
     // Update options watchlist (equity roots become wildcards)
     if (equityRoots.length > 0) {
-      massiveWS.updateWatchlist(equityRoots);
+      massive.updateWatchlist(equityRoots);
 
       // Subscribe to aggregates for underlying prices
-      const unsubAggregates = massiveWS.subscribeAggregates(equityRoots, (message) => {
+      const unsubAggregates = massive.subscribeAggregates(equityRoots, (message) => {
         if (message.type === 'quote' || message.type === 'aggregate') {
           this.config.onBar?.(message.data.symbol, '1m', message.data);
           this.config.onQuote?.(message.data.symbol, {
@@ -121,7 +121,7 @@ export class MassiveSubscriptionManager {
 
     // Subscribe to quotes for both equity and index symbols
     if (symbols.length > 0) {
-      const unsubQuotes = massiveWS.subscribeQuotes(symbols, (message) => {
+      const unsubQuotes = massive.subscribeQuotes(symbols, (message) => {
         if (message.type === 'quote' || message.type === 'index') {
           this.config.onQuote?.(message.data.symbol, {
             ...message.data,
@@ -158,7 +158,7 @@ export class MassiveSubscriptionManager {
   }
 
   isReady(): boolean {
-    return massiveWS.isConnected('options') && massiveWS.isConnected('indices');
+    return massive.isConnected('options') && massive.isConnected('indices');
   }
 }
 

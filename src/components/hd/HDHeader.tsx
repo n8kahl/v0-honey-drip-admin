@@ -6,7 +6,7 @@ const honeyDripLogo = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/h
 import { useAuth } from '../../contexts/AuthContext';
 import { useState, useEffect, useRef } from 'react';
 import { useMarketDataConnection } from '../../hooks/useMassiveData';
-import { massiveClient } from '../../lib/massive/client';
+import { massive } from '../../lib/massive';
 import { useStreamingIndex } from '../../hooks/useIndicesAdvanced';
 import { useMarketSession } from '../../hooks/useMarketSession';
 import { getSessionColor } from '../../lib/marketSession';

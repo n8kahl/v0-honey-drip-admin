@@ -2,8 +2,8 @@
 // Handles WebSocket subscriptions with jittered backoff reconnection
 // Falls back to 3s REST polling when WebSocket fails or disconnects
 
-import { massiveWS, type WebSocketMessage } from './websocket';
-import { massiveClient } from './client';
+import { massive, type WebSocketMessage } from './websocket';
+import { massive } from './client';
 import type { MassiveQuote } from './types';
 
 function toNumber(value: unknown): number {
@@ -239,7 +239,7 @@ export class TransportPolicy {
 
     // Cancel in-flight requests
     try {
-      massiveClient.cancel();
+      massive.cancel();
     } catch (e) {
       console.warn('[TransportPolicy] Error canceling requests:', e);
     }
@@ -277,7 +277,7 @@ export class TransportPolicy {
       return;
     }
 
-    const wsState = massiveWS.getConnectionState();
+    const wsState = massive.getConnectionState();
     // console.log(`[TransportPolicy] WebSocket state for ${this.config.symbol}:`, wsState);
 
     if (wsState === 'closed') {
@@ -291,10 +291,10 @@ export class TransportPolicy {
     // Subscribe based on symbol type
     if (this.config.isOption) {
       // Options contract quote subscription
-      this.wsUnsubscribe = massiveWS.subscribeOptionAggregates([this.config.symbol], this.handleWsMessage.bind(this));
+      this.wsUnsubscribe = massive.subscribeOptionAggregates([this.config.symbol], this.handleWsMessage.bind(this));
     } else {
       // Index and stock/underlying quote subscription (both use subscribeQuotes)
-      this.wsUnsubscribe = massiveWS.subscribeQuotes([this.config.symbol], this.handleWsMessage.bind(this));
+      this.wsUnsubscribe = massive.subscribeQuotes([this.config.symbol], this.handleWsMessage.bind(this));
     }
 
     // console.log(`[TransportPolicy] Subscribed to WebSocket for ${this.config.symbol}`);
@@ -398,12 +398,12 @@ export class TransportPolicy {
       let data: any;
 
       if (this.config.isOption) {
-        const response = await massiveClient.getOptionsSnapshot(this.config.symbol);
+        const response = await massive.getOptionsSnapshot(this.config.symbol);
         data = response.results?.[0];
       } else if (this.config.isIndex) {
-        data = await massiveClient.getIndex(this.config.symbol);
+        data = await massive.getIndex(this.config.symbol);
       } else {
-        const quotes = await massiveClient.getQuotes([this.config.symbol]);
+        const quotes = await massive.getQuotes([this.config.symbol]);
         data = quotes[0];
       }
 
@@ -444,7 +444,7 @@ export class TransportPolicy {
         return;
       }
 
-        const wsState = massiveWS.getConnectionState();
+        const wsState = massive.getConnectionState();
         const timeSinceLastData = Date.now() - this.lastDataTimestamp;
         const usingRest = !!this.pollTimer;
         const threshold = usingRest ? this.restStaleThresholdMs : this.wsStaleThresholdMs;
@@ -501,10 +501,10 @@ export class TransportPolicy {
       this.reconnectAttempts++;
       
       // Attempt to reconnect the WebSocket
-      const wsState = massiveWS.getConnectionState();
+      const wsState = massive.getConnectionState();
       if (wsState === 'closed') {
         console.log(`[TransportPolicy] Attempting to reconnect WebSocket for ${this.config.symbol}`);
-        massiveWS.connect();
+        massive.connect();
       }
       
       // Try subscribing again
@@ -512,7 +512,7 @@ export class TransportPolicy {
         this.tryWebSocket();
         
         // Schedule another reconnect if still needed
-        if (massiveWS.getConnectionState() === 'closed') {
+        if (massive.getConnectionState() === 'closed') {
           this.scheduleReconnect();
         }
       }
@@ -549,7 +549,7 @@ export class TransportPolicy {
 
     this.lastMarketStatusCheck = now;
     try {
-      const status = await massiveClient.getMarketStatus();
+      const status = await massive.getMarketStatus();
       const marketState = status?.market?.toLowerCase?.() ?? '';
       this.marketOpen = marketState.includes('open');
     } catch (error) {
@@ -564,7 +564,7 @@ export class TransportPolicy {
   }
 
   isUsingWebSocket(): boolean {
-    return !!this.wsUnsubscribe && massiveWS.getConnectionState() === 'open';
+    return !!this.wsUnsubscribe && massive.getConnectionState() === 'open';
   }
 
   isUsingRest(): boolean {

@@ -5,7 +5,7 @@ import { createTransport } from '../transport-policy';
 vi.mock('../websocket', () => {
   const subscribers: Record<string, (msg: any) => void> = {};
   return {
-    massiveWS: {
+    massive: {
       getConnectionState: vi.fn(() => 'open' as const),
       subscribeQuotes: vi.fn((symbols: string[], cb: any) => {
         symbols.forEach((s) => {
@@ -45,7 +45,7 @@ vi.mock('../websocket', () => {
 
 vi.mock('../client', () => {
   return {
-    massiveClient: {
+    massive: {
       cancel: vi.fn(),
       getQuotes: vi.fn(async (symbols: string[]) => {
         return symbols.map((s) => ({
@@ -80,14 +80,14 @@ vi.mock('../client', () => {
   };
 });
 
-import { massiveWS } from '../websocket';
-import { massiveClient } from '../client';
+import { massive } from '../websocket';
+import { massive } from '../client';
 
 const flushPromises = async () => new Promise((r) => setTimeout(r, 0));
 
 describe('TransportPolicy', () => {
   beforeEach(() => {
-    vi.mocked(massiveWS.getConnectionState).mockReturnValue('open');
+    vi.mocked(massive.getConnectionState).mockReturnValue('open');
   });
   
   afterEach(() => {
@@ -106,9 +106,9 @@ describe('TransportPolicy', () => {
 
     const now = Date.now();
     // @ts-ignore test helper on mock
-    massiveWS.__emit('AAPL', { symbol: 'AAPL', last: 100, change: 1, changePercent: 1, timestamp: now });
+    massive.__emit('AAPL', { symbol: 'AAPL', last: 100, change: 1, changePercent: 1, timestamp: now });
     // @ts-ignore
-    massiveWS.__emit('AAPL', { symbol: 'AAPL', last: 101, change: 2, changePercent: 2, timestamp: now + 10 });
+    massive.__emit('AAPL', { symbol: 'AAPL', last: 101, change: 2, changePercent: 2, timestamp: now + 10 });
 
     await new Promise((r) => setTimeout(r, 150));
 
@@ -120,7 +120,7 @@ describe('TransportPolicy', () => {
   });
 
   it('falls back to REST when websocket is closed', async () => {
-    vi.mocked(massiveWS.getConnectionState).mockReturnValue('closed');
+    vi.mocked(massive.getConnectionState).mockReturnValue('closed');
 
     const received: any[] = [];
     const unsubscribe = createTransport(
@@ -135,7 +135,7 @@ describe('TransportPolicy', () => {
     // allow batch flush (100ms)
     await new Promise((r) => setTimeout(r, 150));
 
-    expect(massiveClient.getQuotes).toHaveBeenCalledWith(['SPY']);
+    expect(massive.getQuotes).toHaveBeenCalledWith(['SPY']);
     expect(received.length).toBe(1);
     expect(received[0].source).toBe('rest');
     expect(received[0].quote.symbol).toBe('SPY');
@@ -154,7 +154,7 @@ describe('TransportPolicy', () => {
 
     await new Promise((r) => setTimeout(r, 4200));
 
-    expect(massiveClient.getQuotes).toHaveBeenCalled();
+    expect(massive.getQuotes).toHaveBeenCalled();
     const hasRest = received.some((r) => r.source === 'rest');
     expect(hasRest).toBe(true);
 
@@ -170,7 +170,7 @@ describe('TransportPolicy', () => {
     );
 
     // @ts-ignore test helper on mock
-    massiveWS.__emit('SPX', { symbol: 'SPX', last: 5001, open: 5000, high: 5005, low: 4995, timestamp: Date.now() }, 'index');
+    massive.__emit('SPX', { symbol: 'SPX', last: 5001, open: 5000, high: 5005, low: 4995, timestamp: Date.now() }, 'index');
 
     await new Promise((r) => setTimeout(r, 150));
 
@@ -182,7 +182,7 @@ describe('TransportPolicy', () => {
   });
 
   it('stops REST polling after websocket recovery', async () => {
-    vi.mocked(massiveWS.getConnectionState).mockReturnValue('closed');
+    vi.mocked(massive.getConnectionState).mockReturnValue('closed');
 
     const received: any[] = [];
     const unsubscribe = createTransport(
@@ -191,16 +191,16 @@ describe('TransportPolicy', () => {
     );
 
     await flushPromises();
-    expect(massiveClient.getQuotes).toHaveBeenCalledTimes(1);
+    expect(massive.getQuotes).toHaveBeenCalledTimes(1);
 
-    vi.mocked(massiveWS.getConnectionState).mockReturnValue('open');
+    vi.mocked(massive.getConnectionState).mockReturnValue('open');
     // @ts-ignore test helper on mock
-    massiveWS.__emit('MSFT', { symbol: 'MSFT', last: 222, change: 2, changePercent: 0.9, timestamp: Date.now() }, 'quote');
+    massive.__emit('MSFT', { symbol: 'MSFT', last: 222, change: 2, changePercent: 0.9, timestamp: Date.now() }, 'quote');
     await new Promise((r) => setTimeout(r, 150));
 
-    const callsAfter = vi.mocked(massiveClient.getQuotes).mock.calls.length;
+    const callsAfter = vi.mocked(massive.getQuotes).mock.calls.length;
     await new Promise((r) => setTimeout(r, 600));
-    expect(vi.mocked(massiveClient.getQuotes).mock.calls.length).toBe(callsAfter);
+    expect(vi.mocked(massive.getQuotes).mock.calls.length).toBe(callsAfter);
 
     unsubscribe();
   });
@@ -212,6 +212,6 @@ describe('TransportPolicy', () => {
     );
 
     unsubscribe();
-    expect(massiveClient.cancel).toHaveBeenCalled();
+    expect(massive.cancel).toHaveBeenCalled();
    });
  });

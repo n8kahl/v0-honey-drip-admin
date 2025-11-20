@@ -44,7 +44,7 @@ export function useRiskEngine({
   const [loading, setLoading] = useState(false);
   const [macroContext, setMacroContext] = useState<any>(null);
   
-  const massiveClient = useMassiveClient();
+  const massive = useMassiveClient();
 
   useEffect(() => {
     if (!enabled || !ticker) {
@@ -58,7 +58,7 @@ export function useRiskEngine({
       try {
         console.log('[v0] Risk engine fetching data for', ticker);
         
-        const enhancedContext = await gatherEnhancedMarketContext(ticker, massiveClient);
+        const enhancedContext = await gatherEnhancedMarketContext(ticker, massive);
         
         if (!mounted) return;
         
@@ -113,7 +113,7 @@ export function useRiskEngine({
       mounted = false;
       // clearInterval(interval);
     };
-  }, [enabled, ticker, entryPrice, expirationISO, delta, gamma, vega, theta, massiveClient]);
+  }, [enabled, ticker, entryPrice, expirationISO, delta, gamma, vega, theta, massive]);
 
   return {
     riskResult,

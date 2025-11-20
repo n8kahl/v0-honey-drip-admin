@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { massiveClient } from '../lib/massive/client';
+import { massive } from '../lib/massive';
 import {
   MarketSessionState,
   parseMarketSession,
@@ -17,7 +17,7 @@ export function useMarketSession() {
   
   const fetchSession = async () => {
     try {
-      const data = await massiveClient.getMarketStatus() as MassiveMarketStatusResponse;
+      const data = await massive.getMarketStatus() as MassiveMarketStatusResponse;
       const session = parseMarketSession(data);
       setSessionState(session);
       setError(null);

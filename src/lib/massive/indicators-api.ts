@@ -1,7 +1,7 @@
 // Technical Indicators API for OPTIONS ADVANCED
 // Fetches pre-computed indicators from Massive.com
 
-import { massiveClient } from './client';
+import { massive } from './client';
 import { calculateEMA as centralEMA } from '../indicators';
 
 const INDEX_TICKERS = ['SPX', 'NDX', 'VIX', 'RUT'];
@@ -92,7 +92,7 @@ export async function fetchIndicators(
     const aggSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
     
     // Fetch aggregates
-    const bars = await massiveClient.getAggregates(aggSymbol, timeframe, lookback);
+    const bars = await massive.getAggregates(aggSymbol, timeframe, lookback);
     
     if (bars.length === 0) {
       console.warn(`[IndicatorsAPI] No bars returned for ${symbol}`);

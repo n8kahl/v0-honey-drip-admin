@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '../lib/supabase/client';
-import { massiveClient } from '../lib/massive/client';
+import { massive } from '../lib/massive';
 import { buildSymbolFeatures, scanStrategiesForUser } from '../lib/strategy/esm';
 import { Bar } from '../lib/indicators';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -206,7 +206,7 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         }
       } else {
         // Use Massive for indices and options
-        bars = await massiveClient.getAggregates(normalizedSymbol, '5', 200);
+        bars = await massive.getAggregates(normalizedSymbol, '5', 200);
       }
       if (bars.length < 20) {
         return;

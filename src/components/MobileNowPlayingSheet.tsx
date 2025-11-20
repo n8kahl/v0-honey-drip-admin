@@ -10,7 +10,7 @@ import {
   MassiveTrendMetrics,
   MassiveVolatilityMetrics,
   MassiveLiquidityMetrics,
-} from '../services/massiveClient';
+} from '../services/massive';
 
 interface MobileNowPlayingSheetProps {
   trade: Trade | null;
