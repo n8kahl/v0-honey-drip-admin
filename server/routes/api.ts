@@ -11,25 +11,58 @@ import { calculateDTE, getMarketStatus } from '../lib/marketCalendar.js';
 const router = Router();
 const TOKEN_EXPIRY_MS = 5 * 60 * 1000;
 
-// Lazy-loaded environment variables (read at runtime after dotenv loads)
-function getMassiveProxyToken(): string {
-  return process.env.MASSIVE_PROXY_TOKEN || '';
-}
-
+// Lazy-loaded environment variable (read at runtime after dotenv loads)
 function getMassiveApiKey(): string {
   return process.env.MASSIVE_API_KEY || '';
 }
 
+/**
+ * Validate ephemeral token (signed with MASSIVE_API_KEY)
+ * Same validation logic as WebSocket server
+ */
 function requireProxyToken(req: Request, res: Response, next: NextFunction) {
-  const MASSIVE_PROXY_TOKEN = getMassiveProxyToken();
-  if (!MASSIVE_PROXY_TOKEN) {
-    return res.status(500).json({ error: 'Server not configured: MASSIVE_PROXY_TOKEN' });
-  }
   const token = req.header('x-massive-proxy-token');
-  if (token !== MASSIVE_PROXY_TOKEN) {
-    return res.status(403).json({ error: 'Forbidden' });
+
+  if (!token) {
+    return res.status(403).json({ error: 'Forbidden: Missing token' });
   }
-  next();
+
+  try {
+    const MASSIVE_API_KEY = getMassiveApiKey();
+    if (!MASSIVE_API_KEY) {
+      return res.status(500).json({ error: 'Server not configured: MASSIVE_API_KEY' });
+    }
+
+    const parts = token.split('.');
+    if (parts.length !== 2) {
+      return res.status(403).json({ error: 'Forbidden: Invalid token format' });
+    }
+
+    const payloadB64 = parts[0];
+    const sig = parts[1];
+    const payloadJson = Buffer.from(payloadB64, 'base64').toString('utf-8');
+    const obj = JSON.parse(payloadJson) as { exp?: number; n?: string };
+
+    if (!obj?.exp || typeof obj.exp !== 'number') {
+      return res.status(403).json({ error: 'Forbidden: Invalid token payload' });
+    }
+
+    if (Date.now() > obj.exp) {
+      return res.status(403).json({ error: 'Forbidden: Token expired' });
+    }
+
+    const expected = crypto.createHmac('sha256', MASSIVE_API_KEY).update(payloadJson).digest('hex');
+    const a = Buffer.from(sig, 'utf8');
+    const b = Buffer.from(expected, 'utf8');
+
+    if (a.byteLength !== b.byteLength || !crypto.timingSafeEqual(new Uint8Array(a), new Uint8Array(b))) {
+      return res.status(403).json({ error: 'Forbidden: Invalid signature' });
+    }
+
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'Forbidden: Token validation failed' });
+  }
 }
 
 function handleMassiveError(res: Response, error: any) {
