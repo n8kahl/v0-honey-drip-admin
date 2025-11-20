@@ -19,7 +19,7 @@ import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { produce } from 'immer';
 import { Bar } from '../types/shared';
-import { MassiveSubscriptionManager } from '../lib/massive/subscriptionManager';
+import { massive } from '../lib/massive';
 import { StrategySignal } from '../types/strategy';
 import { 
   calculateEMA, 
@@ -987,7 +987,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       fetchHistoricalBars: async (symbols: string[]) => {
         console.log('[v0] 📥 Fetching historical bars for', symbols.length, 'symbols');
 
-        const { massiveClient } = await import('../lib/massive/client');
+        import { massive } from '../lib/massive';
 
         for (const symbol of symbols) {
           try {
@@ -995,7 +995,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
             console.log(`[v0] 📥 Fetching bars for ${normalized}...`);
 
             // Fetch 1m bars (last 200 bars = ~3 hours of data)
-            const bars1m = await massiveClient.getAggregates(normalized, '1', 200);
+            const bars1m = await massive.getAggregates(normalized, '1', 200);
 
             if (bars1m && bars1m.length > 0) {
               console.log(`[v0] ✅ Loaded ${bars1m.length} 1m bars for ${normalized}`);
@@ -1019,7 +1019,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
             }
 
             // Fetch Daily bars (last 200 days = ~6 months of data)
-            const barsDaily = await massiveClient.getAggregates(normalized, '1D', 200);
+            const barsDaily = await massive.getAggregates(normalized, '1D', 200);
 
             if (barsDaily && barsDaily.length > 0) {
               console.log(`[v0] ✅ Loaded ${barsDaily.length} daily bars for ${normalized}`);
@@ -1643,10 +1643,10 @@ export const useMarketDataStore = create<MarketDataStore>()(
       
       fetchMarketSession: async () => {
         try {
-          const { massiveClient } = await import('../lib/massive/client');
+          import { massive } from '../lib/massive';
           const { enrichMarketStatus } = await import('../lib/marketSession');
           
-          const data = await massiveClient.getMarketStatus();
+          const data = await massive.getMarketStatus();
           const enriched = enrichMarketStatus(data as any);
           
           const session: EnrichedMarketSession = {
