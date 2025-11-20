@@ -1,12 +1,16 @@
-import { useEffect, useMemo } from 'react';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
-import { DesktopSettings } from './components/DesktopSettings';
+import { SettingsPage } from './components/settings/SettingsPage';
 import { MobileActive } from './components/MobileActive';
 import { VoiceCommandDemo } from './components/VoiceCommandDemo';
 // Header moved to app/layout via <TraderHeader />
 import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { useAppNavigation } from './hooks/useAppNavigation';
 import { HDDialogDiscordSettings } from './components/hd/HDDialogDiscordSettings';
 import { HDDialogAddTicker } from './components/hd/HDDialogAddTicker';
 import { HDDialogAddChallenge } from './components/hd/HDDialogAddChallenge';
@@ -18,28 +22,27 @@ import { useDiscord } from './hooks/useDiscord';
 import { useStrategyScanner } from './hooks/useStrategyScanner';
 import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './stores';
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
+import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
+import { KeyboardShortcutsDialog } from './components/shortcuts/KeyboardShortcutsDialog';
 import './styles/globals.css';
 
-export default function App() {
+interface AppProps {
+  initialTab?: 'live' | 'active' | 'history' | 'settings';
+}
+
+export default function App({ initialTab = 'live' }: AppProps) {
+  const router = useRouter();
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
-  
-  // Debug log for auth state
-  // console.log('[v0] App: Auth state', {
-  //   user: user?.id,
-  //   loading,
-  //   isTestAuto,
-  //   envVar: (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN,
-  //   willShowAuth: !user && !isTestAuto
-  // });
-  
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
+
   // Zustand stores
   const { loadTrades, activeTrades, historyTrades, updatedTradeIds } = useTradeStore();
   const { watchlist, loadWatchlist, updateQuotes, getWatchlistSymbols } = useMarketStore();
-  const { 
-    activeTab, 
-    showDiscordDialog, 
-    showAddTickerDialog, 
+  const {
+    activeTab,
+    showDiscordDialog,
+    showAddTickerDialog,
     showAddChallengeDialog,
     voiceState,
     voiceActive,
@@ -51,6 +54,9 @@ export default function App() {
     navigateToActive,
     navigateToHistory,
   } = useUIStore();
+
+  // Navigation hook (provides alternative to prop drilling - available for future use)
+  const nav = useAppNavigation();
   const { 
     discordChannels, 
     challenges, 
@@ -78,7 +84,72 @@ export default function App() {
     enabled: !!user, // Only scan when authenticated
     scanInterval: 60000, // Scan every 1 minute
   });
-  
+
+  // Define keyboard shortcuts
+  const shortcuts: KeyboardShortcut[] = useMemo(
+    () => [
+      // Navigation shortcuts
+      {
+        key: '1',
+        description: 'Go to Watch tab (Live)',
+        action: () => {
+          setActiveTab('live');
+          router.push('/');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '2',
+        description: 'Go to Trade tab (Active)',
+        action: () => {
+          setActiveTab('active');
+          router.push('/trades/active');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '3',
+        description: 'Go to Review tab (History)',
+        action: () => {
+          setActiveTab('history');
+          router.push('/trades/history');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '4',
+        description: 'Go to Settings',
+        action: () => {
+          setActiveTab('settings');
+          router.push('/settings');
+        },
+        category: 'navigation',
+      },
+      {
+        key: 'Escape',
+        description: 'Close shortcuts dialog',
+        action: () => setShowShortcutsDialog(false),
+        category: 'general',
+      },
+      {
+        key: 'Ctrl+?',
+        description: 'Show keyboard shortcuts',
+        action: () => setShowShortcutsDialog(true),
+        category: 'help',
+      },
+      {
+        key: 'Cmd+?',
+        description: 'Show keyboard shortcuts (Mac)',
+        action: () => setShowShortcutsDialog(true),
+        category: 'help',
+      },
+    ],
+    [setActiveTab]
+  );
+
+  // Register keyboard shortcuts
+  useKeyboardShortcuts(shortcuts);
+
   // Update quotes in market store when new data arrives
   useEffect(() => {
     if (quotes.size > 0) {
@@ -126,13 +197,20 @@ export default function App() {
       console.log('[v0] App: Initializing marketDataStore with watchlist:', watchlistSymbols);
       initializeMarketData(watchlistSymbols);
     }
-    
+
     // Cleanup on unmount
     return () => {
       console.log('[v0] App: Cleaning up marketDataStore');
       marketDataCleanup();
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
+
+  // Initialize active tab based on route (from initialTab prop)
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
   // useEffect(() => {
@@ -189,17 +267,26 @@ export default function App() {
         <TabButton
           label="Watch"
           active={activeTab === 'live'}
-          onClick={() => setActiveTab('live')}
+          onClick={() => {
+            setActiveTab('live');
+            router.push('/');
+          }}
         />
         <TabButton
           label="Trade"
           active={activeTab === 'active'}
-          onClick={navigateToActive}
+          onClick={() => {
+            navigateToActive();
+            router.push('/trades/active');
+          }}
         />
         <TabButton
           label="Review"
           active={activeTab === 'history'}
-          onClick={navigateToHistory}
+          onClick={() => {
+            navigateToHistory();
+            router.push('/trades/history');
+          }}
         />
       </nav>
 
@@ -252,7 +339,7 @@ export default function App() {
         )}
 
         {activeTab === 'settings' && (
-          <DesktopSettings
+          <SettingsPage
             onOpenDiscordSettings={() => useUIStore.getState().setShowDiscordDialog(true)}
             onClose={() => setActiveTab('live')}
           />
@@ -296,11 +383,25 @@ export default function App() {
       <div className="lg:hidden">
         <MobileBottomNav
           activeTab={activeTab as any}
-          onTabChange={(tab) => setActiveTab(tab as any)}
+          onTabChange={(tab) => {
+            setActiveTab(tab as any);
+            // Navigate to corresponding route
+            if (tab === 'live') router.push('/');
+            else if (tab === 'active') router.push('/trades/active');
+            else if (tab === 'history') router.push('/trades/history');
+            else if (tab === 'settings') router.push('/settings');
+          }}
           hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
           flashTradeTab={flashTradeTab}
         />
       </div>
+
+      {/* Keyboard Shortcuts Help Dialog */}
+      <KeyboardShortcutsDialog
+        isOpen={showShortcutsDialog}
+        onClose={() => setShowShortcutsDialog(false)}
+        shortcuts={shortcuts}
+      />
 
       <Toaster />
     </div>

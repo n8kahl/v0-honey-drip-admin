@@ -4,9 +4,10 @@ import { HDTagTradeType } from './hd/HDTagTradeType';
 import { HDInput } from './hd/HDInput';
 import { HDButton } from './hd/HDButton';
 import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
-import { Search, Share2, Download, ChevronDown } from 'lucide-react';
+import { Search, Share2, Download, ChevronDown, History } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { HDPanelDiscordAlert } from './hd/HDPanelDiscordAlert';
+import { EmptyState } from './ui/EmptyState';
 import { toast } from 'sonner@2.0.3';
 import { MobileWatermark } from './MobileWatermark';
 
@@ -327,8 +328,13 @@ Duration: ${duration}`;
               {/* Rows */}
               <div>
                 {filtered.length === 0 ? (
-                  <div className="py-12 text-center text-[var(--text-muted)]">
-                    No trades found
+                  <div className="p-6">
+                    <EmptyState
+                      icon={History}
+                      title="No trades found"
+                      description="Your closed trades will appear here once you complete your first trade."
+                      minHeight="min-h-64"
+                    />
                   </div>
                 ) : (
                   filtered.map((trade) => {
