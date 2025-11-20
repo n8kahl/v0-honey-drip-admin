@@ -1,34 +1,23 @@
-// Connect to server-side WebSocket proxy (not direct to Massive.com)
-// The server proxy at /ws/options and /ws/indices handles upstream auth
-const WS_BASE = typeof window !== 'undefined'
-  ? (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
-  : 'ws://localhost:8080';
+/**
+ * MassiveWebSocket
+ *
+ * Unified WebSocket manager for real-time Massive data.
+ * Handles dual endpoints (options + indices), watchlist management, and automatic reconnection.
+ */
+
+import { MassiveTokenManager } from './token-manager';
+
+const WS_BASE =
+  typeof window !== 'undefined'
+    ? (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
+    : 'ws://localhost:8080';
 
 const OPTIONS_WS_URL = `${WS_BASE}/ws/options`;
 const INDICES_WS_URL = `${WS_BASE}/ws/indices`;
 
 type WsEndpoint = 'options' | 'indices';
-
-function getToken(): string {
-  // Token for authenticating to server proxy (not Massive.com API key)
-  // Access directly for Vite's static analysis to recognize and bake into bundle
-  const token = import.meta.env.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
-
-  // Debug logging to diagnose token issue
-  console.log('[Massive WS] 🔍 getToken() debug:', {
-    tokenRaw: token,
-    tokenType: typeof token,
-    tokenLength: token?.length,
-    tokenTruthy: !!token,
-    tokenValue: token ? `${token.substring(0, 12)}...` : 'EMPTY/UNDEFINED',
-    importMetaEnv: import.meta.env,
-    allEnvKeys: import.meta.env ? Object.keys(import.meta.env) : [],
-  });
-
-  return token || '';
-}
-
 type SubscriptionCallback = (message: WebSocketMessage) => void;
+type UnsubscribeFn = () => void;
 
 export type MessageType = 'quote' | 'option' | 'index' | 'trade' | 'error' | 'aggregate';
 
@@ -95,7 +84,28 @@ export interface TradeUpdate {
   timestamp: number;
 }
 
-class MassiveWebSocket {
+export interface WebSocketHealth {
+  options: {
+    connected: boolean;
+    authenticated: boolean;
+    activeSubscriptions: number;
+    lastMessageTime: number | null;
+    reconnectAttempts: number;
+  };
+  indices: {
+    connected: boolean;
+    authenticated: boolean;
+    activeSubscriptions: number;
+    lastMessageTime: number | null;
+    reconnectAttempts: number;
+  };
+}
+
+/**
+ * Unified WebSocket manager with dual endpoints
+ */
+export class MassiveWebSocket {
+  private tokenManager: MassiveTokenManager;
   private sockets: Record<WsEndpoint, WebSocket | null> = { options: null, indices: null };
   private reconnectAttempts: Record<WsEndpoint, number> = { options: 0, indices: 0 };
   private maxReconnectAttempts = 5;
@@ -104,61 +114,54 @@ class MassiveWebSocket {
   private isConnecting: Record<WsEndpoint, boolean> = { options: false, indices: false };
   private isAuthenticated: Record<WsEndpoint, boolean> = { options: false, indices: false };
   private subscriptions: Record<WsEndpoint, Set<string>> = { options: new Set(), indices: new Set() };
-  private heartbeatIntervals: Record<WsEndpoint, any> = { options: null, indices: null };
-  private connectionError: string | null = null;
-  private initialized = false;
+  private heartbeatIntervals: Record<WsEndpoint, NodeJS.Timeout | null> = { options: null, indices: null };
   private watchlistRoots: string[] = [];
+  private lastMessageTime: Record<WsEndpoint, number | null> = { options: null, indices: null };
 
-  constructor() {
-    if (typeof window !== 'undefined') {
-      setTimeout(() => this.initialize(), 0);
-    }
+  constructor(tokenManager: MassiveTokenManager) {
+    this.tokenManager = tokenManager;
   }
 
-  private async initialize() {
-    if (this.initialized) return;
-    this.initialized = true;
-    this.connect();
+  /**
+   * Connect to both WebSocket endpoints
+   */
+  async connect(): Promise<void> {
+    console.log('[MassiveWS] Initializing WebSocket connections');
+    console.log('[MassiveWS] WS_BASE:', WS_BASE);
+
+    // Ensure we have a valid token
+    await this.tokenManager.ensureToken();
+
+    // Connect both endpoints
+    await Promise.all([this.connectEndpoint('options'), this.connectEndpoint('indices')]);
   }
 
-  async connect() {
-    // Connect both options and indices sockets
-    console.log('[Massive WS] 🚀 WebSocket Manager v2 (server proxy mode) initializing...');
-    console.log('[Massive WS] 📡 WS_BASE:', typeof window !== 'undefined' ? ((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host) : 'ws://localhost:8080');
-    this.connectEndpoint('options');
-    this.connectEndpoint('indices');
-  }
-
-  // Connect to specific endpoint (options or indices)
-  connectEndpoint(endpoint: WsEndpoint) {
+  /**
+   * Connect to specific endpoint
+   */
+  async connectEndpoint(endpoint: WsEndpoint): Promise<void> {
     if (this.sockets[endpoint]?.readyState === WebSocket.OPEN || this.isConnecting[endpoint]) {
       return;
     }
 
     this.isConnecting[endpoint] = true;
-    this.connectionError = null;
     this.isAuthenticated[endpoint] = false;
 
     try {
-      // Token passed as URL param for server proxy auth
-      const token = getToken();
+      // Get auth token
+      const token = await this.tokenManager.getToken();
       const baseUrl = endpoint === 'options' ? OPTIONS_WS_URL : INDICES_WS_URL;
-      const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+      const wsUrl = `${baseUrl}?token=${encodeURIComponent(token)}`;
 
-      console.log(`[Massive WS] 🔌 Connecting ${endpoint} to:`, baseUrl);
-      console.log(`[Massive WS] 🎫 Token present:`, token ? `yes (${token.substring(0, 8)}...)` : 'NO TOKEN!');
-      console.log(`[Massive WS] 🌐 Full URL:`, wsUrl.replace(/token=[^&]+/, 'token=***'));
+      console.log(`[MassiveWS] Connecting to ${endpoint} endpoint`);
 
       const socket = new WebSocket(wsUrl);
       this.sockets[endpoint] = socket;
 
       socket.onopen = () => {
-        console.log(`[Massive WS] ${endpoint} connected to server proxy`);
+        console.log(`[MassiveWS] ${endpoint} connected`);
         this.isConnecting[endpoint] = false;
         this.reconnectAttempts[endpoint] = 0;
-
-        // Server proxy handles upstream auth, no client auth needed
-        // Mark as authenticated immediately since we connected successfully
         this.isAuthenticated[endpoint] = true;
 
         // Subscribe based on endpoint
@@ -167,112 +170,245 @@ class MassiveWebSocket {
         } else if (endpoint === 'indices') {
           this.subscribeIndicesFixed();
         }
+
+        // Start heartbeat
+        this.startHeartbeat(endpoint);
       };
 
       socket.onmessage = (event) => {
+        this.lastMessageTime[endpoint] = Date.now();
         try {
           const data = JSON.parse(event.data);
           const messages = Array.isArray(data) ? data : [data];
           messages.forEach((msg: any) => this.handleMessage(msg, endpoint));
-        } catch {
-          this.broadcast(event.data);
+        } catch (err) {
+          console.error(`[MassiveWS] Failed to parse ${endpoint} message:`, err);
         }
       };
 
       socket.onclose = (event) => {
-        console.error(`[Massive WS] ${endpoint} connection closed. Code: ${event.code}, Reason: ${event.reason || 'no reason'}, Clean: ${event.wasClean}`);
+        console.warn(
+          `[MassiveWS] ${endpoint} connection closed (code: ${event.code}, reason: ${event.reason || 'none'})`
+        );
         this.isAuthenticated[endpoint] = false;
         this.cleanup(endpoint);
         this.attemptReconnect(endpoint);
       };
 
       socket.onerror = (error) => {
-        this.connectionError = 'Connection error';
-        console.error(`[Massive WS] ${endpoint} connection error`, error);
+        console.error(`[MassiveWS] ${endpoint} connection error:`, error);
         this.cleanup(endpoint);
         this.attemptReconnect(endpoint);
       };
     } catch (err) {
-      console.error(`[Massive WS] ${endpoint} connection failed:`, err);
+      console.error(`[MassiveWS] Failed to connect ${endpoint}:`, err);
       this.isConnecting[endpoint] = false;
       this.attemptReconnect(endpoint);
     }
   }
 
-  private cleanup(endpoint?: WsEndpoint) {
-    if (endpoint) {
-      if (this.heartbeatIntervals[endpoint]) {
-        clearInterval(this.heartbeatIntervals[endpoint]);
-        this.heartbeatIntervals[endpoint] = null;
-      }
-      if (this.sockets[endpoint]) {
-        this.sockets[endpoint]?.close();
-        this.sockets[endpoint] = null;
-      }
-    } else {
-      // Cleanup all
-      Object.keys(this.heartbeatIntervals).forEach(ep => {
-        if (this.heartbeatIntervals[ep as WsEndpoint]) {
-          clearInterval(this.heartbeatIntervals[ep as WsEndpoint]);
-          this.heartbeatIntervals[ep as WsEndpoint] = null;
-        }
-      });
-      Object.keys(this.sockets).forEach(ep => {
-        if (this.sockets[ep as WsEndpoint]) {
-          this.sockets[ep as WsEndpoint]?.close();
-          this.sockets[ep as WsEndpoint] = null;
-        }
-      });
-    }
+  /**
+   * Disconnect from all endpoints
+   */
+  disconnect(): void {
+    console.log('[MassiveWS] Disconnecting all endpoints');
+    this.cleanup();
   }
 
-  private attemptReconnect(endpoint: WsEndpoint) {
-    this.reconnectAttempts[endpoint] += 1;
-    if (this.reconnectAttempts[endpoint] > this.maxReconnectAttempts) {
-      console.error(`[Massive WS] Max reconnection attempts reached for ${endpoint}`);
+  /**
+   * Update watchlist roots (options only)
+   */
+  updateWatchlist(roots: string[]): void {
+    const oldRoots = [...this.watchlistRoots];
+    this.watchlistRoots = [...roots];
+
+    if (this.sockets.options && this.isAuthenticated.options) {
+      // Unsubscribe old channels
+      if (oldRoots.length > 0) {
+        const oldChannels = this.buildOptionsChannels(oldRoots);
+        this.send('options', { action: 'unsubscribe', params: oldChannels.join(',') });
+        oldChannels.forEach((ch) => this.subscriptions.options.delete(ch));
+      }
+
+      // Subscribe to new watchlist
+      this.subscribeOptionsWatchlist();
+    }
+
+    console.log('[MassiveWS] Watchlist updated:', roots);
+  }
+
+  /**
+   * Subscribe to quotes (compatibility API)
+   */
+  subscribeQuotes(symbols: string[], callback: SubscriptionCallback): UnsubscribeFn {
+    symbols.forEach((symbol) => {
+      const key = this.createSubscriberKey('quote', symbol);
+      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
+      this.subscribers.get(key)!.add(callback);
+    });
+
+    return () => {
+      symbols.forEach((symbol) => {
+        this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
+      });
+    };
+  }
+
+  /**
+   * Subscribe to aggregates (compatibility API)
+   */
+  subscribeAggregates(
+    symbols: string[],
+    callback: SubscriptionCallback,
+    timespan: 'second' | 'minute' = 'minute'
+  ): UnsubscribeFn {
+    symbols.forEach((symbol) => {
+      const key = this.createSubscriberKey('quote', symbol);
+      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
+      this.subscribers.get(key)!.add(callback);
+    });
+
+    return () => {
+      symbols.forEach((symbol) => {
+        this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
+      });
+    };
+  }
+
+  /**
+   * Subscribe to option aggregates (compatibility API)
+   */
+  subscribeOptionAggregates(
+    optionTickers: string[],
+    callback: SubscriptionCallback,
+    timespan: 'second' | 'minute' = 'minute'
+  ): UnsubscribeFn {
+    optionTickers.forEach((ticker) => {
+      const key = this.createSubscriberKey('option', ticker);
+      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
+      this.subscribers.get(key)!.add(callback);
+    });
+
+    return () => {
+      optionTickers.forEach((ticker) => {
+        this.deregisterSubscription(this.createSubscriberKey('option', ticker), callback);
+      });
+    };
+  }
+
+  /**
+   * Get connection state for endpoint
+   */
+  getConnectionState(endpoint: WsEndpoint = 'options'): 'connecting' | 'open' | 'closed' {
+    if (this.isConnecting[endpoint]) return 'connecting';
+    const socket = this.sockets[endpoint];
+    if (!socket) return 'closed';
+    if (socket.readyState === WebSocket.OPEN && this.isAuthenticated[endpoint]) return 'open';
+    return 'connecting';
+  }
+
+  /**
+   * Check if endpoint is connected
+   */
+  isConnected(endpoint: WsEndpoint = 'options'): boolean {
+    return this.getConnectionState(endpoint) === 'open';
+  }
+
+  /**
+   * Get health status
+   */
+  getHealth(): WebSocketHealth {
+    return {
+      options: {
+        connected: this.isConnected('options'),
+        authenticated: this.isAuthenticated.options,
+        activeSubscriptions: this.subscriptions.options.size,
+        lastMessageTime: this.lastMessageTime.options,
+        reconnectAttempts: this.reconnectAttempts.options,
+      },
+      indices: {
+        connected: this.isConnected('indices'),
+        authenticated: this.isAuthenticated.indices,
+        activeSubscriptions: this.subscriptions.indices.size,
+        lastMessageTime: this.lastMessageTime.indices,
+        reconnectAttempts: this.reconnectAttempts.indices,
+      },
+    };
+  }
+
+  /**
+   * Subscribe to dynamic options watchlist
+   */
+  private subscribeOptionsWatchlist(): void {
+    if (!this.sockets.options || !this.isAuthenticated.options) {
+      console.log('[MassiveWS] Cannot subscribe options: socket not ready');
       return;
     }
-    const delay = this.reconnectDelay * 2 ** (this.reconnectAttempts[endpoint] - 1);
-    setTimeout(() => this.connectEndpoint(endpoint), delay);
+
+    if (this.watchlistRoots.length === 0) {
+      console.log('[MassiveWS] No watchlist roots configured');
+      return;
+    }
+
+    const channels = this.buildOptionsChannels(this.watchlistRoots);
+    console.log('[MassiveWS] Subscribing to options:', channels);
+
+    this.send('options', { action: 'subscribe', params: channels.join(',') });
+    channels.forEach((ch) => this.subscriptions.options.add(ch));
   }
 
-  private broadcast(payload: any) {
-    for (const subs of this.subscribers.values()) {
-      subs.forEach((cb) => cb(payload));
+  /**
+   * Subscribe to fixed indices
+   */
+  private subscribeIndicesFixed(): void {
+    if (!this.sockets.indices || !this.isAuthenticated.indices) {
+      return;
     }
+
+    const channels = ['indices.bars:1m,5m,15m,60m:I:SPX,I:NDX,I:VIX,I:RVX'];
+    console.log('[MassiveWS] Subscribing to indices:', channels);
+
+    this.send('indices', { action: 'subscribe', params: channels.join(',') });
+    channels.forEach((ch) => this.subscriptions.indices.add(ch));
   }
 
-  private notifySubscribers(type: MessageType, symbol: string, message: WebSocketMessage) {
-    const key = `${type}:${symbol}`;
-    const symbolSubs = this.subscribers.get(key);
-    if (symbolSubs) {
-      symbolSubs.forEach((cb) => cb(message));
-    }
-    const typeSubs = this.subscribers.get(type);
-    if (typeSubs) {
-      typeSubs.forEach((cb) => cb(message));
-    }
+  /**
+   * Build options subscription channels
+   */
+  private buildOptionsChannels(roots: string[]): string[] {
+    const wildcards = roots.map((root) => `${root}*`);
+    return [
+      `options.bars:1m,5m,15m,60m:${wildcards.join(',')}`,
+      `options.trades:${wildcards.join(',')}`,
+      `options.quotes:${wildcards.join(',')}`,
+    ];
   }
 
-  private handleMessage(msg: any, endpoint: WsEndpoint) {
+  /**
+   * Handle incoming WebSocket message
+   */
+  private handleMessage(msg: any, endpoint: WsEndpoint): void {
     const { ev, sym } = msg;
 
-    // Server proxy forwards all Massive.com messages directly
-    // Auth is handled server-side, so we only process data messages here
-
-    // Notify marketDataStore of activity
+    // Update market data store
     if (typeof window !== 'undefined' && ev) {
       import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
         const state = useMarketDataStore.getState();
-        state.wsConnection = { ...state.wsConnection, status: 'connected', lastMessageTime: Date.now() };
+        state.wsConnection = {
+          ...state.wsConnection,
+          status: 'connected',
+          lastMessageTime: Date.now(),
+        };
       });
     }
-    
-    // Handle data messages: Q = option quotes, A/AM = aggregates, T = trades
+
+    // Handle different message types
     if (ev === 'Q') {
+      // Option quote
       const bid = msg.bp || 0;
       const ask = msg.ap || 0;
-      const mid = bid && ask ? (bid + ask) / 2 : (bid || ask || 0);
+      const mid = bid && ask ? (bid + ask) / 2 : bid || ask || 0;
+
       const message: WebSocketMessage = {
         type: 'option',
         data: {
@@ -289,30 +425,33 @@ class MassiveWebSocket {
         } as OptionQuoteUpdate,
         timestamp: msg.t,
       };
+
       this.notifySubscribers('option', sym, message);
     } else if (ev === 'A' || ev === 'AM') {
-      // For indices, normalize symbol by removing I: prefix for subscriber lookup
+      // Aggregate (bar)
       const isIndex = sym.startsWith('I:');
       const normalizedSym = isIndex ? sym.substring(2) : sym;
       const messageType = isIndex ? 'index' : 'quote';
-      
+
       const message: WebSocketMessage = {
         type: messageType,
         data: {
           symbol: normalizedSym,
-          last: msg.c, // underlying price from options.bars 'c' field
+          last: msg.c,
           open: msg.o,
           high: msg.h,
           low: msg.l,
           volume: msg.v,
           vwap: msg.vw,
           timestamp: msg.e,
-          underlying: msg.c, // For options bars, 'c' contains underlying price
+          underlying: msg.c,
         },
         timestamp: msg.e,
       };
+
       this.notifySubscribers(messageType, normalizedSym, message);
     } else if (ev === 'T') {
+      // Trade
       const message: WebSocketMessage = {
         type: 'trade',
         data: {
@@ -325,94 +464,52 @@ class MassiveWebSocket {
         } as TradeUpdate,
         timestamp: msg.t,
       };
+
       this.notifySubscribers('trade', sym, message);
     }
-    this.broadcast(msg);
   }
 
-  // Subscribe to dynamic watchlist roots on options endpoint
-  private subscribeOptionsWatchlist() {
-    if (!this.sockets.options || !this.isAuthenticated.options) {
-      console.log('[Massive WS] Cannot subscribe options: socket not ready');
-      return;
+  /**
+   * Notify subscribers
+   */
+  private notifySubscribers(type: MessageType, symbol: string, message: WebSocketMessage): void {
+    // Notify symbol-specific subscribers
+    const key = `${type}:${symbol}`;
+    const symbolSubs = this.subscribers.get(key);
+    if (symbolSubs) {
+      symbolSubs.forEach((cb) => cb(message));
     }
 
-    if (this.watchlistRoots.length === 0) {
-      console.log('[Massive WS] No watchlist roots configured, skipping options subscription');
-      return;
-    }
-
-    const roots = this.watchlistRoots.map(root => `${root}*`);
-    const channels = [
-      `options.bars:1m,5m,15m,60m:${roots.join(',')}`,
-      `options.trades:${roots.join(',')}`,
-      `options.quotes:${roots.join(',')}`
-    ];
-
-    console.log('[Massive WS] Subscribing to options watchlist:', channels);
-    // Server expects 'params' as comma-separated string, not 'channels' array
-    this.send('options', { action: 'subscribe', params: channels.join(',') });
-
-    channels.forEach(ch => this.subscriptions.options.add(ch));
-  }
-
-  // Subscribe to fixed indices
-  private subscribeIndicesFixed() {
-    if (!this.sockets.indices || !this.isAuthenticated.indices) {
-      return;
-    }
-
-    const channels = ['indices.bars:1m,5m,15m,60m:I:SPX,I:NDX,I:VIX,I:RVX'];
-
-    console.log('[Massive WS] Subscribing to indices:', channels);
-    // Server expects 'params' as comma-separated string, not 'channels' array
-    this.send('indices', { action: 'subscribe', params: channels.join(',') });
-
-    channels.forEach(ch => this.subscriptions.indices.add(ch));
-  }
-
-  // Update watchlist and resubscribe options only
-  updateWatchlist(roots: string[]) {
-    const oldRoots = [...this.watchlistRoots];
-    this.watchlistRoots = [...roots];
-
-    // Only update options endpoint, indices stay fixed
-    if (this.sockets.options && this.isAuthenticated.options) {
-      // Unsubscribe old channels
-      if (oldRoots.length > 0) {
-        const oldChannels = [
-          `options.bars:1m,5m,15m,60m:${oldRoots.map(r => `${r}*`).join(',')}`,
-          `options.trades:${oldRoots.map(r => `${r}*`).join(',')}`,
-          `options.quotes:${oldRoots.map(r => `${r}*`).join(',')}`
-        ];
-        // Server expects 'params' as comma-separated string, not 'channels' array
-        this.send('options', { action: 'unsubscribe', params: oldChannels.join(',') });
-        oldChannels.forEach(ch => this.subscriptions.options.delete(ch));
-      }
-
-      // Subscribe to new watchlist
-      this.subscribeOptionsWatchlist();
+    // Notify type-wide subscribers
+    const typeSubs = this.subscribers.get(type);
+    if (typeSubs) {
+      typeSubs.forEach((cb) => cb(message));
     }
   }
 
-  private resubscribe(endpoint: WsEndpoint) {
-    const socket = this.sockets[endpoint];
-    if (!socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated[endpoint]) return;
-    const channels = Array.from(this.subscriptions[endpoint]);
-    if (!channels.length) return;
-    console.log(`[Massive WS] Resubscribing to ${endpoint}:`, channels);
-    // Server expects 'params' as comma-separated string, not 'channels' array
-    this.send(endpoint, { action: 'subscribe', params: channels.join(',') });
-  }
-
-  private send(endpoint: WsEndpoint, data: any) {
+  /**
+   * Send message to endpoint
+   */
+  private send(endpoint: WsEndpoint, data: any): void {
     const socket = this.sockets[endpoint];
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(data));
+    } else {
+      console.warn(`[MassiveWS] Cannot send to ${endpoint}: socket not open`);
     }
   }
 
-  private deregisterSubscription(key: string, callback: SubscriptionCallback) {
+  /**
+   * Create subscriber key
+   */
+  private createSubscriberKey(type: MessageType, symbol: string): string {
+    return `${type}:${symbol}`;
+  }
+
+  /**
+   * Deregister subscription
+   */
+  private deregisterSubscription(key: string, callback: SubscriptionCallback): void {
     const subs = this.subscribers.get(key);
     if (!subs) return;
     subs.delete(callback);
@@ -421,73 +518,65 @@ class MassiveWebSocket {
     }
   }
 
-  private createSubscriberKey(type: MessageType, symbol: string) {
-    return `${type}:${symbol}`;
+  /**
+   * Start heartbeat for endpoint
+   */
+  private startHeartbeat(endpoint: WsEndpoint): void {
+    if (this.heartbeatIntervals[endpoint]) {
+      clearInterval(this.heartbeatIntervals[endpoint]!);
+    }
+
+    this.heartbeatIntervals[endpoint] = setInterval(() => {
+      if (this.sockets[endpoint]?.readyState === WebSocket.OPEN) {
+        this.send(endpoint, { action: 'ping' });
+      }
+    }, 30000); // Ping every 30 seconds
   }
 
-  // Legacy compatibility methods
-  subscribeQuotes(symbols: string[], callback: SubscriptionCallback) {
-    symbols.forEach((symbol) => {
-      const key = this.createSubscriberKey('quote', symbol);
-      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
-      this.subscribers.get(key)!.add(callback);
-    });
-    return () => {
-      symbols.forEach((symbol) => {
-        this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
+  /**
+   * Cleanup endpoint resources
+   */
+  private cleanup(endpoint?: WsEndpoint): void {
+    if (endpoint) {
+      if (this.heartbeatIntervals[endpoint]) {
+        clearInterval(this.heartbeatIntervals[endpoint]!);
+        this.heartbeatIntervals[endpoint] = null;
+      }
+      if (this.sockets[endpoint]) {
+        this.sockets[endpoint]?.close();
+        this.sockets[endpoint] = null;
+      }
+    } else {
+      // Cleanup all endpoints
+      (Object.keys(this.heartbeatIntervals) as WsEndpoint[]).forEach((ep) => {
+        if (this.heartbeatIntervals[ep]) {
+          clearInterval(this.heartbeatIntervals[ep]!);
+          this.heartbeatIntervals[ep] = null;
+        }
       });
-    };
-  }
-
-  subscribeAggregates(symbols: string[], callback: SubscriptionCallback, timespan: 'second' | 'minute' = 'minute') {
-    symbols.forEach((symbol) => {
-      const key = this.createSubscriberKey('quote', symbol);
-      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
-      this.subscribers.get(key)!.add(callback);
-    });
-    return () => {
-      symbols.forEach((symbol) => {
-        this.deregisterSubscription(this.createSubscriberKey('quote', symbol), callback);
+      (Object.keys(this.sockets) as WsEndpoint[]).forEach((ep) => {
+        if (this.sockets[ep]) {
+          this.sockets[ep]?.close();
+          this.sockets[ep] = null;
+        }
       });
-    };
+    }
   }
 
-  subscribeOptionAggregates(optionTickers: string[], callback: SubscriptionCallback, timespan: 'second' | 'minute' = 'minute') {
-    optionTickers.forEach((ticker) => {
-      const key = this.createSubscriberKey('option', ticker);
-      if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
-      this.subscribers.get(key)!.add(callback);
-    });
-    return () => {
-      optionTickers.forEach((ticker) => {
-        this.deregisterSubscription(this.createSubscriberKey('option', ticker), callback);
-      });
-    };
-  }
+  /**
+   * Attempt reconnection with exponential backoff
+   */
+  private attemptReconnect(endpoint: WsEndpoint): void {
+    this.reconnectAttempts[endpoint] += 1;
 
-  getConnectionState(endpoint: WsEndpoint = 'options'): 'connecting' | 'open' | 'closed' {
-    if (this.isConnecting[endpoint]) return 'connecting';
-    const socket = this.sockets[endpoint];
-    if (!socket) return 'closed';
-    if (socket.readyState === WebSocket.OPEN && this.isAuthenticated[endpoint]) return 'open';
-    return 'connecting';
-  }
-  
-  isConnected(endpoint: WsEndpoint = 'options'): boolean {
-    return this.getConnectionState(endpoint) === 'open';
-  }
-}
+    if (this.reconnectAttempts[endpoint] > this.maxReconnectAttempts) {
+      console.error(`[MassiveWS] Max reconnection attempts reached for ${endpoint}`);
+      return;
+    }
 
-export const massiveWS = new MassiveWebSocket();
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts[endpoint] - 1);
+    console.log(`[MassiveWS] Reconnecting ${endpoint} in ${delay}ms (attempt ${this.reconnectAttempts[endpoint]})`);
 
-/**
- * Subscribe to options data for multiple roots using wildcards (2025 format)
- * Example: subscribeOptionsForRoots(['SPY','QQQ','NVDA'], callback)
- */
-export function subscribeOptionsForRoots(roots: string[], callback: SubscriptionCallback) {
-  massiveWS.updateWatchlist(roots);
-  
-  // Subscribe to aggregate data for these roots
-  const symbols = roots; // Will be converted to wildcards internally
-  return massiveWS.subscribeAggregates(symbols, callback);
+    setTimeout(() => this.connectEndpoint(endpoint), delay);
+  }
 }
