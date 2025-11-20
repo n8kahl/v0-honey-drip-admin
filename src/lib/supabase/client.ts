@@ -21,10 +21,10 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 let supabaseInstance: SupabaseClient | null = null;
 
 export function createClient(): SupabaseClient {
-  console.log('[v0] 🚀 createClient() called');
-  
+  // console.log('[v0] 🚀 createClient() called');
+
   if (!supabaseInstance) {
-    console.log('[v0] Creating new Supabase instance...');
+    // console.log('[v0] Creating new Supabase instance...');
     
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('[v0] Missing environment variables!', {
@@ -52,8 +52,8 @@ export function createClient(): SupabaseClient {
       throw error;
     }
   } else {
-    console.log('[v0] Returning existing Supabase instance');
+    // console.log('[v0] Returning existing Supabase instance');
   }
-  
+
   return supabaseInstance;
 }

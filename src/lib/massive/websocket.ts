@@ -124,7 +124,7 @@ class MassiveWebSocket {
       this.sockets[endpoint] = socket;
 
       socket.onopen = () => {
-        console.log(`[Massive WS] Connected to ${endpoint}, authenticating...`);
+        // console.log(`[Massive WS] Connected to ${endpoint}, authenticating...`);
         this.isConnecting[endpoint] = false;
         this.reconnectAttempts[endpoint] = 0;
         
@@ -222,7 +222,7 @@ class MassiveWebSocket {
     
     // Handle auth success
     if (msg.status === 'auth_success' || (ev === 'status' && msg.message?.includes('auth'))) {
-      console.log(`[Massive WS] Authenticated to ${endpoint} successfully`);
+      // console.log(`[Massive WS] Authenticated to ${endpoint} successfully`);
       this.isAuthenticated[endpoint] = true;
       
       // Notify marketDataStore of connection
@@ -336,8 +336,8 @@ class MassiveWebSocket {
     }
     
     const channels = ['indices.bars:1m,5m,15m,60m:I:SPX,I:NDX,I:VIX,I:RVX'];
-    
-    console.log('[Massive WS] Subscribing to indices:', channels);
+
+    // console.log('[Massive WS] Subscribing to indices:', channels);
     this.send('indices', { action: 'subscribe', channels });
     
     channels.forEach(ch => this.subscriptions.indices.add(ch));
