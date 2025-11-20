@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { useTradeStore } from '../stores/tradeStore';
 import { AppLayout } from '../components/layouts/AppLayout';
+import { BreadcrumbNav } from '../components/navigation/BreadcrumbNav';
 import { Suspense } from 'react';
 
 /**
@@ -48,10 +49,23 @@ export default function TradeDetailPage() {
     );
   }
 
+  // Determine if trade is active or historical for breadcrumb navigation
+  const isActiveTrade = activeTrades.some((t) => t.id === tradeId);
+  const breadcrumbItems = [
+    { label: 'Trades', href: isActiveTrade ? '/trades/active' : '/trades/history' },
+    {
+      label: `${trade.ticker} ${trade.contract.strike}${trade.contract.type}`,
+      isActive: true,
+    },
+  ];
+
   return (
     <AppLayout hideMainBottomNav>
       <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading trade details...</div>}>
-        {/* Header with back button */}
+        {/* Breadcrumb Navigation */}
+        <BreadcrumbNav items={breadcrumbItems} />
+
+        {/* Header with back button and P&L summary */}
         <div className="sticky top-0 z-40 bg-[var(--surface-1)] border-b border-[var(--border-hairline)] p-4">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
