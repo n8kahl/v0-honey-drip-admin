@@ -28,6 +28,11 @@ import {
   createQualityFlags,
 } from './validation';
 
+import {
+  normalizeIV,
+  clampIV,
+} from './iv-utils';
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -419,7 +424,14 @@ export class TradierOptionsProvider implements OptionsDataProvider {
         const mid = bid && ask && bid > 0 && ask > 0 ? (bid + ask) / 2 : last;
 
         const greeks = c.greeks || {};
-        const iv = Number(greeks.mid_iv || greeks.iv || 0);
+        // Tradier returns IV as percentage (35 = 35%), normalize to decimal (0.35)
+        const rawIV = Number(greeks.mid_iv || greeks.iv || 0);
+        const iv = normalizeIV(rawIV, 'tradier');
+        const normalizedIV = clampIV(iv);
+
+        if (iv !== normalizedIV) {
+          this.log(`IV clamped from ${iv.toFixed(4)} to ${normalizedIV.toFixed(4)}`);
+        }
 
         const contract: OptionContractData = {
           ticker: c.symbol || c.option_symbol || '',
@@ -444,9 +456,9 @@ export class TradierOptionsProvider implements OptionsDataProvider {
             theta: Number(greeks.theta || 0),
             vega: Number(greeks.vega || 0),
             rho: Number(greeks.rho),
-            iv,
-            ivBid: Number(greeks.bid_iv),
-            ivAsk: Number(greeks.ask_iv),
+            iv: normalizedIV,
+            ivBid: clampIV(normalizeIV(Number(greeks.bid_iv), 'tradier')),
+            ivAsk: clampIV(normalizeIV(Number(greeks.ask_iv), 'tradier')),
           },
 
           liquidity: {

@@ -38,6 +38,11 @@ import {
   DEFAULT_QUALITY_OPTIONS,
 } from './validation';
 
+import {
+  normalizeIV,
+  clampIV,
+} from './iv-utils';
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -631,7 +636,14 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
 
         // Greeks
         const greeks = c.greeks || {};
-        const iv = Number(c.implied_volatility || greeks.iv || 0);
+        // Massive returns IV as decimal (0.35 = 35%), already in correct format
+        const rawIV = Number(c.implied_volatility || greeks.iv || 0);
+        const iv = normalizeIV(rawIV, 'massive');
+        const normalizedIV = clampIV(iv);
+
+        if (iv !== normalizedIV) {
+          this.logger?.(`IV clamped from ${iv.toFixed(4)} to ${normalizedIV.toFixed(4)}`);
+        }
 
         const contract: OptionContractData = {
           ticker: c.ticker || '',
@@ -656,9 +668,9 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
             theta: Number(greeks.theta || 0),
             vega: Number(greeks.vega || 0),
             rho: Number(greeks.rho),
-            iv,
-            ivBid: Number(greeks.bid_iv),
-            ivAsk: Number(greeks.ask_iv),
+            iv: normalizedIV,
+            ivBid: clampIV(normalizeIV(Number(greeks.bid_iv), 'massive')),
+            ivAsk: clampIV(normalizeIV(Number(greeks.ask_iv), 'massive')),
           },
 
           liquidity: {
