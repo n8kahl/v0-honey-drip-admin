@@ -1,7 +1,5 @@
 import { Contract } from '../types';
 
-const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
-
 export type NormalizedChain = {
   symbol: string;
   price: number;
@@ -56,8 +54,17 @@ function toContract(n: Norm): Contract {
   };
 }
 
-type ChainQueryOptions = { window?: number; endDate?: string; strikeWindow?: number; provider?: 'massive' | 'tradier' };
+type ChainQueryOptions = {
+  window?: number;
+  endDate?: string;
+  strikeWindow?: number;
+  provider?: 'massive' | 'tradier';
+  tokenManager?: { getToken: () => Promise<string> };
+};
 
+/**
+ * Fetch options chain with ephemeral token authentication
+ */
 export async function fetchNormalizedChain(
   symbol: string,
   windowOrOpts?: number | ChainQueryOptions
@@ -70,7 +77,12 @@ export async function fetchNormalizedChain(
   if (opts.endDate) qs.set('endDate', opts.endDate);
   if (opts.provider) qs.set('provider', opts.provider);
   const headers: Record<string, string> = {};
-  if (PROXY_TOKEN) headers['x-massive-proxy-token'] = PROXY_TOKEN;
+
+  // Get ephemeral token if tokenManager provided
+  if (opts.tokenManager) {
+    const token = await opts.tokenManager.getToken();
+    headers['x-massive-proxy-token'] = token;
+  }
 
   const resp = await fetch(`/api/options/chain?${qs.toString()}`, { headers });
   if (!resp.ok) {

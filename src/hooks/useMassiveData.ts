@@ -76,7 +76,8 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
         const USE_UNIFIED = ((import.meta as any)?.env?.VITE_USE_UNIFIED_CHAIN ?? 'true') === 'true';
         let contracts: Contract[] = [];
         if (USE_UNIFIED) {
-          const normalized = await fetchNormalizedChain(symbol, window);
+          const tokenManager = massive.getTokenManager();
+          const normalized = await fetchNormalizedChain(symbol, { window, tokenManager });
           contracts = normalized;
         } else {
           const data = await massive.getOptionsChain(symbol);
@@ -154,7 +155,8 @@ export function useQuotes(symbols: string[]) {
     // 1) Immediate batched REST fill for all symbols
     (async () => {
       try {
-        const unified = await fetchUnifiedQuotes(symbols);
+        const tokenManager = massive.getTokenManager();
+        const unified = await fetchUnifiedQuotes(symbols, tokenManager);
         const now = Date.now();
         unified.forEach((q) =>
           handleUpdate(

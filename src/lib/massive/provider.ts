@@ -109,6 +109,13 @@ export class MassiveDataProvider {
     console.log('[MassiveProvider] Disconnected');
   }
 
+  /**
+   * Get token manager (for legacy endpoints that need ephemeral tokens)
+   */
+  getTokenManager(): MassiveTokenManager {
+    return this.tokenManager;
+  }
+
   // ==================== REST OPERATIONS ====================
 
   /**

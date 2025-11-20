@@ -7,14 +7,22 @@ export type UnifiedQuote = {
   source: string;
 };
 
-const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
-
 import { useEffect, useState, useRef } from 'react';
+import { massive } from '../lib/massive';
 
-export async function fetchQuotes(symbols: string[]): Promise<UnifiedQuote[]> {
+/**
+ * Fetch quotes with ephemeral token authentication
+ */
+export async function fetchQuotes(symbols: string[], tokenManager?: { getToken: () => Promise<string> }): Promise<UnifiedQuote[]> {
   const qs = new URLSearchParams({ tickers: symbols.join(',') }).toString();
   const headers: Record<string, string> = {};
-  if (PROXY_TOKEN) headers['x-massive-proxy-token'] = PROXY_TOKEN;
+
+  // Get ephemeral token if tokenManager provided
+  if (tokenManager) {
+    const token = await tokenManager.getToken();
+    headers['x-massive-proxy-token'] = token;
+  }
+
   const resp = await fetch(`/api/quotes?${qs}`, { headers });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
@@ -39,7 +47,8 @@ export function useUnifiedQuotes(symbols: string[], intervalMs = 3000) {
     let active = true;
     async function load() {
       try {
-        const q = await fetchQuotes(symbols);
+        const tokenManager = massive.getTokenManager();
+        const q = await fetchQuotes(symbols, tokenManager);
         if (active) setQuotes(q);
       } catch (e) {
         // swallow for now; UI can show stale indicator
