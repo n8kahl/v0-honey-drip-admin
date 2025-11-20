@@ -141,7 +141,7 @@ router.get('/massive/options/bars', requireProxyToken, async (req, res) => {
 });
 
 // Tradier stock bars endpoint - fallback for stocks when user doesn't have Massive stocks plan
-router.get('/tradier/stocks/bars', requireProxyToken, async (req, res) => {
+router.get('/massive/tradier/stocks/bars', requireProxyToken, async (req, res) => {
   const { symbol, interval = '5min', start, end } = req.query as {
     symbol?: string;
     interval?: '1min' | '5min' | '15min' | 'daily' | 'weekly' | 'monthly';
