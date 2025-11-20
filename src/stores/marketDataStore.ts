@@ -113,24 +113,47 @@ export interface ConfluenceScore {
   lastUpdated: number;
 }
 
+export interface Greeks {
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho?: number;
+  iv: number; // Implied volatility (0.30 = 30%)
+  lastUpdated: number;
+
+  // Optional: Contract being tracked
+  contractTicker?: string; // e.g., "SPX250117C05200000"
+  strike?: number;
+  expiry?: string;
+  type?: 'C' | 'P';
+
+  // Quality indicators
+  isFresh: boolean; // Updated in last 30s
+  source: 'massive' | 'cached' | 'fallback';
+}
+
 export interface SymbolData {
   symbol: string;
-  
+
   // Multi-timeframe candles
   candles: Record<Timeframe, Candle[]>;
-  
+
   // Latest indicators (computed from primary timeframe)
   indicators: Indicators;
-  
+
   // Multi-timeframe trend
   mtfTrend: Record<Timeframe, MTFTrend>;
-  
+
   // Confluence scoring
   confluence: ConfluenceScore;
-  
+
   // Strategy signals
   strategySignals: StrategySignal[];
-  
+
+  // Greeks for tracked contract (if monitoring one)
+  greeks?: Greeks;
+
   // Metadata
   lastUpdated: number;
   isSubscribed: boolean;
@@ -232,7 +255,13 @@ interface MarketDataStore {
   
   /** Add strategy signal */
   addStrategySignal: (symbol: string, signal: StrategySignal) => void;
-  
+
+  /** Update Greeks for a symbol */
+  updateGreeks: (symbol: string, greeks: Greeks) => void;
+
+  /** Clear Greeks for a symbol */
+  clearGreeks: (symbol: string) => void;
+
   /** Update market status (legacy) */
   setMarketStatus: (status: MarketStatus) => void;
   
@@ -263,10 +292,16 @@ interface MarketDataStore {
   
   /** Get strategy signals */
   getStrategySignals: (symbol: string) => StrategySignal[];
-  
+
   /** Get MTF trend analysis */
   getMTFTrend: (symbol: string) => Record<Timeframe, MTFTrend>;
-  
+
+  /** Get Greeks for a symbol */
+  getGreeks: (symbol: string) => Greeks | undefined;
+
+  /** Check if Greeks are stale */
+  areGreeksStale: (symbol: string, maxAgeMs?: number) => boolean;
+
   /** Check if data is stale */
   isStale: (symbol: string, maxAgeMs?: number) => boolean;
 }
@@ -1398,38 +1433,53 @@ export const useMarketDataStore = create<MarketDataStore>()(
         });
       },
       
-      /** 
+      /**
        * Recompute all indicators, MTF trends, confluence, and strategies for a symbol
-       * Only runs on bar close OR significant price move (>0.5%)
+       * Only runs on bar close OR significant price move
+       * 0DTE contracts use tighter threshold (0.2%) vs regular (0.5%)
        */
       recomputeSymbol: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
         if (!symbolData) return;
-        
+
         const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
         if (primaryCandles.length < 2) return; // Need at least 2 candles for comparison
-        
+
         const lastCandle = primaryCandles[primaryCandles.length - 1];
         const prevCandle = primaryCandles[primaryCandles.length - 2];
-        
+
         // ===== Conditional Execution: Only recompute on bar close or significant move =====
-        
+
         // Check if this is a new bar (different timestamp from previous)
         const lastTime = lastCandle.time || lastCandle.timestamp || 0;
         const prevTime = prevCandle.time || prevCandle.timestamp || 0;
         const isNewBar = lastTime !== prevTime;
-        
-        // Check if price moved significantly (>0.5%)
+
+        // Check if we're tracking a 0DTE contract (DTE = 0)
+        const is0DTE = symbolData.greeks?.expiry
+          ? (() => {
+              const expiry = new Date(symbolData.greeks.expiry);
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              expiry.setHours(0, 0, 0, 0);
+              return expiry.getTime() === today.getTime();
+            })()
+          : false;
+
+        // Check if price moved significantly
+        // 0DTE: 0.2% threshold (tighter for fast-moving 0DTE options)
+        // Regular: 0.5% threshold (normal sensitivity)
         const priceChange = Math.abs((lastCandle.close - prevCandle.close) / prevCandle.close);
-        const significantMove = priceChange > 0.005; // 0.5%
-        
+        const threshold = is0DTE ? 0.002 : 0.005; // 0.2% for 0DTE, 0.5% for others
+        const significantMove = priceChange > threshold;
+
         // Skip if neither condition met
         if (!isNewBar && !significantMove) {
           return;
         }
-        
-        console.log(`[v0] 🔄 Recomputing ${symbol} - isNewBar: ${isNewBar}, priceChange: ${(priceChange * 100).toFixed(2)}%`);
+
+        console.log(`[v0] 🔄 Recomputing ${symbol} (${is0DTE ? '0DTE' : 'regular'}) - isNewBar: ${isNewBar}, priceChange: ${(priceChange * 100).toFixed(2)}% (threshold: ${(threshold * 100).toFixed(1)}%)`);
         
         // ===== Step 1: Calculate comprehensive indicators from all timeframes =====
         const indicators = calculateComprehensiveIndicators(symbolData);
@@ -1495,12 +1545,12 @@ export const useMarketDataStore = create<MarketDataStore>()(
         const normalized = symbol.toUpperCase();
         const { symbols } = get();
         const symbolData = symbols[normalized];
-        
+
         if (!symbolData) return;
-        
+
         // Add signal and keep only last 10
         const updatedSignals = [signal, ...symbolData.strategySignals].slice(0, 10);
-        
+
         set({
           symbols: {
             ...symbols,
@@ -1511,7 +1561,69 @@ export const useMarketDataStore = create<MarketDataStore>()(
           },
         });
       },
-      
+
+      updateGreeks: (symbol: string, greeks: Greeks) => {
+        const normalized = symbol.toUpperCase();
+        const { symbols } = get();
+        const symbolData = symbols[normalized];
+
+        if (!symbolData) {
+          console.warn(`[v0] marketDataStore: Cannot update Greeks for unknown symbol ${normalized}`);
+          return;
+        }
+
+        // Check freshness (< 30s = fresh)
+        const age = Date.now() - greeks.lastUpdated;
+        const isFresh = age < 30000;
+
+        const updatedGreeks: Greeks = {
+          ...greeks,
+          isFresh,
+          lastUpdated: greeks.lastUpdated || Date.now(),
+        };
+
+        set({
+          symbols: {
+            ...symbols,
+            [normalized]: {
+              ...symbolData,
+              greeks: updatedGreeks,
+              lastUpdated: Date.now(),
+            },
+          },
+        });
+
+        console.log(`[v0] marketDataStore: Greeks updated for ${normalized}:`, {
+          delta: updatedGreeks.delta?.toFixed(3),
+          gamma: updatedGreeks.gamma?.toFixed(4),
+          theta: updatedGreeks.theta?.toFixed(2),
+          vega: updatedGreeks.vega?.toFixed(3),
+          iv: (updatedGreeks.iv * 100)?.toFixed(1) + '%',
+          source: updatedGreeks.source,
+          isFresh: updatedGreeks.isFresh,
+        });
+      },
+
+      clearGreeks: (symbol: string) => {
+        const normalized = symbol.toUpperCase();
+        const { symbols } = get();
+        const symbolData = symbols[normalized];
+
+        if (!symbolData) return;
+
+        set({
+          symbols: {
+            ...symbols,
+            [normalized]: {
+              ...symbolData,
+              greeks: undefined,
+            },
+          },
+        });
+
+        console.log(`[v0] marketDataStore: Greeks cleared for ${normalized}`);
+      },
+
       setMarketStatus: (status: MarketStatus) => {
         set({ marketStatus: status });
       },
@@ -1651,12 +1763,27 @@ export const useMarketDataStore = create<MarketDataStore>()(
           '1D': 'neutral',
         };
       },
-      
+
+      getGreeks: (symbol: string) => {
+        const normalized = symbol.toUpperCase();
+        const symbolData = get().symbols[normalized];
+        return symbolData?.greeks;
+      },
+
+      areGreeksStale: (symbol: string, maxAgeMs = 30000) => {
+        const normalized = symbol.toUpperCase();
+        const symbolData = get().symbols[normalized];
+        if (!symbolData || !symbolData.greeks) return true;
+
+        const age = Date.now() - symbolData.greeks.lastUpdated;
+        return age > maxAgeMs;
+      },
+
       isStale: (symbol: string, maxAgeMs = STALE_THRESHOLD_MS) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
         if (!symbolData) return true;
-        
+
         const age = Date.now() - symbolData.lastUpdated;
         return age > maxAgeMs;
       },
@@ -1715,6 +1842,16 @@ export function useMarketSessionActions() {
     fetchMarketSession: state.fetchMarketSession,
     updateMarketSession: state.updateMarketSession,
   }));
+}
+
+/** Get Greeks for a symbol */
+export function useGreeks(symbol: string) {
+  return useMarketDataStore(state => state.getGreeks(symbol));
+}
+
+/** Check if Greeks are stale */
+export function useAreGreeksStale(symbol: string, maxAgeMs?: number) {
+  return useMarketDataStore(state => state.areGreeksStale(symbol, maxAgeMs));
 }
 
 /** Check if symbol data is stale */
