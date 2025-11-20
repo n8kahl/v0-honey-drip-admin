@@ -5,7 +5,7 @@ import { formatPrice, formatPercent, cn } from '../../lib/utils';
 import { Download, Share2, TrendingUp, TrendingDown } from 'lucide-react';
 import { HDButton } from './HDButton';
 import { formatChallengeDiscordExport } from '../../lib/discordFormatter';
-import { toast } from 'sonner@2.0.3';
+import { useAppToast } from '../../hooks/useAppToast';
 
 interface HDDialogChallengeDetailProps {
   open: boolean;
@@ -24,6 +24,7 @@ export function HDDialogChallengeDetail({
   channels,
   onTradeClick
 }: HDDialogChallengeDetailProps) {
+  const toast = useAppToast();
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   
   if (!challenge) return null;

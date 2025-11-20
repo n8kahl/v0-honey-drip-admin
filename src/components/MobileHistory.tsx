@@ -9,7 +9,7 @@ import { Search, Share2, Download, ChevronDown, X, Filter, History } from 'lucid
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { HDPanelDiscordAlert } from './hd/HDPanelDiscordAlert';
 import { EmptyState } from './ui/EmptyState';
-import { toast } from 'sonner@2.0.3';
+import { useAppToast } from '../hooks/useAppToast';
 import { MobileWatermark } from './MobileWatermark';
 
 interface MobileHistoryProps {
@@ -21,6 +21,7 @@ interface MobileHistoryProps {
 type DateRangeFilter = 'all' | 'today' | '7d' | '30d';
 
 export function MobileHistory({ trades, channels = [], challenges = [] }: MobileHistoryProps) {
+  const toast = useAppToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('7d');

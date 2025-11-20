@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { HDButton } from './HDButton';
 import { DiscordChannel } from '../../types';
 import { Trash2, Plus, Check, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { useAppToast } from '../../hooks/useAppToast';
 
 interface HDDialogDiscordSettingsProps {
   open: boolean;
@@ -24,6 +24,7 @@ export function HDDialogDiscordSettings({
   onRemoveChannel,
   onTestWebhook,
 }: HDDialogDiscordSettingsProps) {
+  const toast = useAppToast();
   const [newChannelName, setNewChannelName] = useState('');
   const [newWebhookUrl, setNewWebhookUrl] = useState('');
   const [testingChannelId, setTestingChannelId] = useState<string | null>(null);

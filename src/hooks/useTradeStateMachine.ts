@@ -3,7 +3,7 @@ import { Trade, Ticker, Contract, TradeState, AlertType, TradeUpdate, DiscordCha
 import { calculateRisk } from '../lib/riskEngine/calculator';
 import { inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS, RISK_PROFILES } from '../lib/riskEngine/profiles';
 import { adjustProfileByConfluence } from '../lib/riskEngine/confluenceAdjustment';
-import { toast } from 'sonner';
+import { useAppToast } from './useAppToast';
 
 interface UseTradeStateMachineProps {
   hotTrades: Trade[];
@@ -61,6 +61,8 @@ export function useTradeStateMachine({
   onMobileTabChange,
   confluence,
 }: UseTradeStateMachineProps): TradeStateMachineState & { actions: TradeStateMachineActions } {
+  const toast = useAppToast();
+
   // State
   const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);

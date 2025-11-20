@@ -1,6 +1,7 @@
 import { ButtonHTMLAttributes, forwardRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { colorTransition, focusStateSmooth, buttonHoverScale, disabledState } from '../../lib/animations';
 
 interface HDButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'ghost';
@@ -14,8 +15,10 @@ export const HDButton = forwardRef<HTMLButtonElement, HDButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          'inline-flex items-center justify-center gap-2 px-4 h-8 rounded-[var(--radius)] transition-all font-medium',
-          'disabled:opacity-40 disabled:cursor-not-allowed',
+          'inline-flex items-center justify-center gap-2 px-4 h-8 rounded-[var(--radius)] font-medium',
+          colorTransition,
+          focusStateSmooth,
+          disabledState,
           variant === 'primary' && [
             'bg-[var(--brand-primary)] text-[var(--bg-base)] shadow-sm',
             'hover:bg-[var(--brand-primary-hover)] hover:shadow-md',

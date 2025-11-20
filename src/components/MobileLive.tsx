@@ -7,7 +7,7 @@ import { HDMobileSparklinePreview } from './hd/HDMobileSparklinePreview';
 import { HDMobileChartModal } from './hd/HDMobileChartModal';
 import { Plus } from 'lucide-react';
 import { useMassiveData } from '../hooks/useMassiveData';
-import { toast } from 'sonner';
+import { useAppToast } from '../hooks/useAppToast';
 
 interface MobileLiveProps {
   watchlist: Ticker[];
@@ -16,6 +16,7 @@ interface MobileLiveProps {
 }
 
 export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileLiveProps) {
+  const toast = useAppToast();
   const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
   const [showContracts, setShowContracts] = useState(false);
   const [contracts, setContracts] = useState<any[]>([]);
@@ -23,7 +24,7 @@ export function MobileLive({ watchlist, onTickerClick, onRemoveTicker }: MobileL
   const [currentTrade, setCurrentTrade] = useState<Trade | null>(null);
   const [tradeState, setTradeState] = useState<TradeState>('WATCHING');
   const [showChartModal, setShowChartModal] = useState(false);
-  
+
   const { fetchOptionsChain } = useMassiveData();
   
   const handleTickerClick = async (ticker: Ticker) => {
