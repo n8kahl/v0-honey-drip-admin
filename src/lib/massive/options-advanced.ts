@@ -118,6 +118,14 @@ export interface TradeTape {
   largeTradeCount: number;
   vwap: number;
   buyPressure: number;
+  // Enhanced flow metrics
+  sweepCount: number;           // Multi-exchange aggressive fills (smart money)
+  blockCount: number;            // Institutional-size trades (>$100k notional)
+  unusualActivity: boolean;      // Volume significantly above normal
+  darkPoolPercent: number;       // % of volume on dark pools
+  avgTradeSize: number;          // Average contract size per trade
+  flowScore: number;             // 0-100 overall flow strength score
+  flowBias: 'bullish' | 'bearish' | 'neutral'; // Directional bias from flow
 }
 
 export interface LiquidityMetrics {
@@ -209,7 +217,8 @@ export function evaluateContractLiquidity(
 
 export function analyzeTradeTape(
   trades: OptionsTrade[],
-  quote?: OptionsQuote | null
+  quote?: OptionsQuote | null,
+  openInterest?: number
 ): TradeTape {
   if (!trades.length) {
     return {
@@ -219,34 +228,100 @@ export function analyzeTradeTape(
       largeTradeCount: 0,
       vwap: 0,
       buyPressure: 0,
+      sweepCount: 0,
+      blockCount: 0,
+      unusualActivity: false,
+      darkPoolPercent: 0,
+      avgTradeSize: 0,
+      flowScore: 0,
+      flowBias: 'neutral',
     };
   }
 
   let buyVolume = 0;
   let sellVolume = 0;
   let largeTradeCount = 0;
+  let sweepCount = 0;
+  let blockCount = 0;
+  let darkPoolVolume = 0;
   let pvSum = 0;
   let vSum = 0;
   let prevPrice = trades[0].price;
 
+  // Sweep detection: condition codes indicating multi-exchange aggressive fills
+  // 37 = Intermarket Sweep, 38 = Derivatively Priced, 39 = Re-opening Prints, 41 = Sold Last
+  const sweepConditions = new Set([37, 38, 41]);
+
+  // Dark pool exchange codes (approximate, varies by data provider)
+  const darkPoolExchanges = new Set([4, 7, 8, 9]); // Common dark pool venues
+
   for (const t of trades) {
     const size = t.size || 0;
-    const isAggressiveBuy = t.conditions?.includes(37) || t.price > prevPrice;
-    const isAggressiveSell = !isAggressiveBuy && t.price < prevPrice;
+    const price = t.price || 0;
+    const notional = price * size * 100; // Contract notional value
 
-    if (isAggressiveBuy) buyVolume += size;
-    if (isAggressiveSell) sellVolume += size;
+    // Direction classification (enhanced)
+    const isAggressiveBuy = t.conditions?.includes(37) || price > prevPrice;
+    const isAggressiveSell = !isAggressiveBuy && price < prevPrice;
+
+    // Sweep detection: multi-exchange aggressive orders (smart money)
+    const isSweep = t.conditions?.some(c => sweepConditions.has(c)) ?? false;
+    if (isSweep) sweepCount += 1;
+
+    // Block detection: institutional-size trades (>$100k notional)
+    if (notional > 100000) blockCount += 1;
+
+    // Large trade threshold (100+ contracts)
     if (size >= 100) largeTradeCount += 1;
 
-    pvSum += (t.price || 0) * size;
+    // Dark pool volume tracking
+    if (darkPoolExchanges.has(t.exchange)) {
+      darkPoolVolume += size;
+    }
+
+    // Volume accounting
+    if (isAggressiveBuy) buyVolume += size;
+    if (isAggressiveSell) sellVolume += size;
+
+    pvSum += price * size;
     vSum += size;
-    prevPrice = t.price;
+    prevPrice = price;
   }
 
   const vwap = vSum > 0 ? pvSum / vSum : quote?.mid ?? 0;
   const totalVolume = buyVolume + sellVolume || 1;
   const buyPressure = (buyVolume / totalVolume) * 100;
+  const avgTradeSize = vSum / trades.length;
+  const darkPoolPercent = (darkPoolVolume / vSum) * 100;
 
+  // Unusual activity: current volume >> open interest (30%+ of OI is unusual)
+  const unusualActivity = openInterest ? vSum > openInterest * 0.3 : false;
+
+  // Flow score calculation (0-100)
+  let flowScore = 0;
+  flowScore += sweepCount * 15;           // Sweeps are high conviction (+15 each)
+  flowScore += blockCount * 10;           // Blocks indicate institutions (+10 each)
+  flowScore += largeTradeCount * 3;       // Large trades (+3 each)
+  flowScore += unusualActivity ? 20 : 0;  // Unusual volume is significant (+20)
+  flowScore += Math.abs(buyPressure - 50); // Directional bias strength (0-50)
+  flowScore = Math.min(100, flowScore);
+
+  // Flow bias: directional conviction from sweeps and blocks
+  let flowBias: TradeTape['flowBias'] = 'neutral';
+  const sweepBuyVolume = trades
+    .filter(t => t.conditions?.some(c => sweepConditions.has(c)) && (t.price > prevPrice || t.conditions?.includes(37)))
+    .reduce((sum, t) => sum + (t.size || 0), 0);
+  const sweepSellVolume = trades
+    .filter(t => t.conditions?.some(c => sweepConditions.has(c)) && t.price < prevPrice)
+    .reduce((sum, t) => sum + (t.size || 0), 0);
+
+  if (sweepBuyVolume > sweepSellVolume * 1.5 || (blockCount > 0 && buyPressure > 60)) {
+    flowBias = 'bullish';
+  } else if (sweepSellVolume > sweepBuyVolume * 1.5 || (blockCount > 0 && buyPressure < 40)) {
+    flowBias = 'bearish';
+  }
+
+  // Sentiment (legacy, based on overall volume)
   let sentiment: TradeTape['sentiment'] = 'neutral';
   if (buyVolume > sellVolume * 1.2) sentiment = 'bullish';
   else if (sellVolume > buyVolume * 1.2) sentiment = 'bearish';
@@ -258,6 +333,13 @@ export function analyzeTradeTape(
     largeTradeCount,
     vwap,
     buyPressure,
+    sweepCount,
+    blockCount,
+    unusualActivity,
+    darkPoolPercent,
+    avgTradeSize,
+    flowScore,
+    flowBias,
   };
 }
 

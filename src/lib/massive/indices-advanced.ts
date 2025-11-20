@@ -61,6 +61,17 @@ export interface MacroContext {
     value: number | null;
     bias: 'up' | 'flat' | 'down';
   };
+  correlation?: {
+    spyQqqCorrelation: 'aligned' | 'diverging' | 'opposite';
+    signal: string;
+    spyChange: number;
+    qqqChange: number;
+    strength: 'strong' | 'moderate' | 'weak';
+  };
+  sectorRotation?: {
+    leadership: 'tech' | 'value' | 'defensive' | 'mixed';
+    signal: string;
+  };
   marketRegime: 'trending' | 'choppy' | 'volatile';
   riskBias: 'bullish' | 'bearish' | 'neutral';
   timestamp: number;
@@ -139,13 +150,15 @@ export async function fetchIndexIndicators(symbol: string): Promise<IndexIndicat
  * Gather complete macro context
  */
 export async function gatherMacroContext(): Promise<MacroContext> {
-  console.log('[IndicesAdvanced] Gathering macro context (SPX, NDX, VIX)');
-  
-  const [spxQuote, ndxQuote, vixQuote, spxIndicators] = await Promise.all([
+  console.log('[IndicesAdvanced] Gathering macro context (SPX, NDX, VIX, SPY, QQQ)');
+
+  const [spxQuote, ndxQuote, vixQuote, spxIndicators, spyQuote, qqqQuote] = await Promise.all([
     fetchIndexQuote('SPX'),
     fetchIndexQuote('NDX'),
     fetchIndexQuote('VIX'),
     fetchIndexIndicators('SPX'),
+    massiveClient.getQuote('SPY').catch(() => ({ results: [{ symbol: 'SPY', changePercent: 0 }] })),
+    massiveClient.getQuote('QQQ').catch(() => ({ results: [{ symbol: 'QQQ', changePercent: 0 }] })),
   ]);
   
   // Analyze SPX
@@ -237,7 +250,85 @@ export async function gatherMacroContext(): Promise<MacroContext> {
   } catch {
     // If not available on provider, silently ignore
   }
-  
+
+  // SPY/QQQ Correlation Analysis
+  let correlation: MacroContext['correlation'] | undefined = undefined;
+  try {
+    const spyChange = (spyQuote as any)?.results?.[0]?.changePercent ?? (spyQuote as any)?.changePercent ?? 0;
+    const qqqChange = (qqqQuote as any)?.results?.[0]?.changePercent ?? (qqqQuote as any)?.changePercent ?? 0;
+
+    const bothPositive = spyChange > 0 && qqqChange > 0;
+    const bothNegative = spyChange < 0 && qqqChange < 0;
+    const opposite = (spyChange > 0 && qqqChange < 0) || (spyChange < 0 && qqqChange > 0);
+
+    // Calculate divergence magnitude
+    const divergenceMagnitude = Math.abs(spyChange - qqqChange);
+
+    let spyQqqCorrelation: 'aligned' | 'diverging' | 'opposite';
+    let strength: 'strong' | 'moderate' | 'weak';
+
+    if (opposite) {
+      spyQqqCorrelation = 'opposite';
+      strength = divergenceMagnitude > 1.0 ? 'strong' : divergenceMagnitude > 0.5 ? 'moderate' : 'weak';
+    } else if (bothPositive || bothNegative) {
+      if (divergenceMagnitude < 0.3) {
+        spyQqqCorrelation = 'aligned';
+        strength = 'strong';
+      } else {
+        spyQqqCorrelation = 'diverging';
+        strength = divergenceMagnitude > 0.8 ? 'strong' : 'moderate';
+      }
+    } else {
+      spyQqqCorrelation = 'diverging';
+      strength = 'weak';
+    }
+
+    const signal =
+      spyQqqCorrelation === 'aligned'
+        ? `SPY/QQQ aligned (${spyChange > 0 ? 'bullish' : 'bearish'})`
+        : spyQqqCorrelation === 'opposite'
+        ? `⚠️ SPY/QQQ opposite (rotation)`
+        : `SPY/QQQ diverging (${divergenceMagnitude.toFixed(1)}%)`;
+
+    correlation = {
+      spyQqqCorrelation,
+      signal,
+      spyChange,
+      qqqChange,
+      strength,
+    };
+  } catch (err) {
+    console.warn('[IndicesAdvanced] SPY/QQQ correlation failed:', err);
+  }
+
+  // Sector Rotation Analysis (heuristic based on SPY vs QQQ)
+  let sectorRotation: MacroContext['sectorRotation'] | undefined = undefined;
+  try {
+    if (correlation) {
+      const { spyChange, qqqChange } = correlation;
+      const qqqLeading = qqqChange > spyChange + 0.5; // QQQ outperforming by >0.5%
+      const spyLeading = spyChange > qqqChange + 0.5; // SPY outperforming (value/defensive)
+
+      let leadership: 'tech' | 'value' | 'defensive' | 'mixed';
+      let signal: string;
+
+      if (qqqLeading) {
+        leadership = 'tech';
+        signal = 'Tech leadership (QQQ outperforming)';
+      } else if (spyLeading) {
+        leadership = vixQuote.value > 20 ? 'defensive' : 'value';
+        signal = vixQuote.value > 20 ? 'Defensive rotation (SPY over QQQ)' : 'Value rotation (SPY over QQQ)';
+      } else {
+        leadership = 'mixed';
+        signal = 'Balanced sector performance';
+      }
+
+      sectorRotation = { leadership, signal };
+    }
+  } catch (err) {
+    console.warn('[IndicesAdvanced] Sector rotation failed:', err);
+  }
+
   return {
     spx: {
       value: spxQuote.value,
@@ -261,6 +352,8 @@ export async function gatherMacroContext(): Promise<MacroContext> {
     putCall,
     breadth,
     tick,
+    correlation,
+    sectorRotation,
     marketRegime,
     riskBias,
     timestamp: Date.now(),

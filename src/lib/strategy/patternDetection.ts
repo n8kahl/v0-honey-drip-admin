@@ -194,11 +194,237 @@ export function isBreakout(currentBar: Bar, consolidationHigh: number, consolida
 
 /**
  * Compute average volume from recent bars.
- * 
+ *
  * @param bars Recent bars
  */
 export function computeAvgVolume(bars: Bar[]): number {
   if (!bars || bars.length === 0) return 0;
   const sum = bars.reduce((acc, b) => acc + b.volume, 0);
   return sum / bars.length;
+}
+
+/**
+ * Calculate Relative Volume (RVOL) - current volume vs average
+ * RVOL > 1.0 = above average, RVOL = 2.0 = 200% of average
+ *
+ * @param currentVolume Current bar/period volume
+ * @param historicalBars Historical bars for baseline (typically 20 days)
+ * @param samePeriod If true, only compare same time-of-day bars
+ */
+export function calculateRelativeVolume(
+  currentVolume: number,
+  historicalBars: Bar[],
+  samePeriod: boolean = false
+): number {
+  if (!currentVolume || !historicalBars || historicalBars.length === 0) return 1.0;
+
+  let avgVolume: number;
+
+  if (samePeriod) {
+    // Compare same time period (e.g., first hour only to first hour avg)
+    // For simplicity, just use all bars for now
+    avgVolume = computeAvgVolume(historicalBars);
+  } else {
+    avgVolume = computeAvgVolume(historicalBars);
+  }
+
+  if (avgVolume === 0) return 1.0;
+  return currentVolume / avgVolume;
+}
+
+/**
+ * RSI calculation helper
+ *
+ * @param bars Recent bars (needs at least period + 1 bars)
+ * @param period RSI period (default 14)
+ */
+export function calculateRSI(bars: Bar[], period: number = 14): number | null {
+  if (!bars || bars.length < period + 1) return null;
+
+  const changes: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    changes.push(bars[i].close - bars[i - 1].close);
+  }
+
+  const recentChanges = changes.slice(-period);
+  const gains = recentChanges.filter(c => c > 0);
+  const losses = recentChanges.filter(c => c < 0).map(c => Math.abs(c));
+
+  const avgGain = gains.length > 0 ? gains.reduce((a, b) => a + b, 0) / period : 0;
+  const avgLoss = losses.length > 0 ? losses.reduce((a, b) => a + b, 0) / period : 0;
+
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+/**
+ * Detect RSI divergence between price and RSI
+ * Bullish divergence: Price makes lower low, RSI makes higher low (reversal signal)
+ * Bearish divergence: Price makes higher high, RSI makes lower high (reversal signal)
+ *
+ * @param bars Price bars (needs at least 30+ for good detection)
+ * @param rsiPeriod RSI calculation period (default 14)
+ * @param lookback How many bars to look back for swing points (default 10)
+ */
+export function detectRSIDivergence(
+  bars: Bar[],
+  rsiPeriod: number = 14,
+  lookback: number = 10
+): { type: 'bullish' | 'bearish' | 'none'; confidence: number } {
+  if (!bars || bars.length < rsiPeriod + lookback + 5) {
+    return { type: 'none', confidence: 0 };
+  }
+
+  // Calculate RSI for all bars
+  const rsiValues: number[] = [];
+  for (let i = rsiPeriod; i < bars.length; i++) {
+    const slice = bars.slice(i - rsiPeriod - 1, i + 1);
+    const rsi = calculateRSI(slice, rsiPeriod);
+    rsiValues.push(rsi ?? 50);
+  }
+
+  // Find recent swing lows/highs in price and RSI
+  const recentBars = bars.slice(-lookback);
+  const recentRSI = rsiValues.slice(-lookback);
+
+  // Find lowest price and its RSI in lookback period
+  let priceLowest = Infinity;
+  let priceLowestIdx = 0;
+  let priceHighest = -Infinity;
+  let priceHighestIdx = 0;
+
+  for (let i = 0; i < recentBars.length; i++) {
+    if (recentBars[i].low < priceLowest) {
+      priceLowest = recentBars[i].low;
+      priceLowestIdx = i;
+    }
+    if (recentBars[i].high > priceHighest) {
+      priceHighest = recentBars[i].high;
+      priceHighestIdx = i;
+    }
+  }
+
+  // Find previous swing low/high before recent
+  const preLookbackBars = bars.slice(-lookback * 2, -lookback);
+  const preLookbackRSI = rsiValues.slice(-lookback * 2, -lookback);
+
+  if (preLookbackBars.length === 0) {
+    return { type: 'none', confidence: 0 };
+  }
+
+  let prevPriceLowest = Infinity;
+  let prevPriceLowestIdx = 0;
+  let prevPriceHighest = -Infinity;
+  let prevPriceHighestIdx = 0;
+
+  for (let i = 0; i < preLookbackBars.length; i++) {
+    if (preLookbackBars[i].low < prevPriceLowest) {
+      prevPriceLowest = preLookbackBars[i].low;
+      prevPriceLowestIdx = i;
+    }
+    if (preLookbackBars[i].high > prevPriceHighest) {
+      prevPriceHighest = preLookbackBars[i].high;
+      prevPriceHighestIdx = i;
+    }
+  }
+
+  // Bullish divergence: Price lower low, RSI higher low
+  const priceLowerLow = priceLowest < prevPriceLowest;
+  const rsiHigherLow = recentRSI[priceLowestIdx] > preLookbackRSI[prevPriceLowestIdx];
+
+  if (priceLowerLow && rsiHigherLow) {
+    const confidence = Math.min(100, Math.abs(recentRSI[priceLowestIdx] - preLookbackRSI[prevPriceLowestIdx]) * 2);
+    return { type: 'bullish', confidence };
+  }
+
+  // Bearish divergence: Price higher high, RSI lower high
+  const priceHigherHigh = priceHighest > prevPriceHighest;
+  const rsiLowerHigh = recentRSI[priceHighestIdx] < preLookbackRSI[prevPriceHighestIdx];
+
+  if (priceHigherHigh && rsiLowerHigh) {
+    const confidence = Math.min(100, Math.abs(recentRSI[priceHighestIdx] - preLookbackRSI[prevPriceHighestIdx]) * 2);
+    return { type: 'bearish', confidence };
+  }
+
+  return { type: 'none', confidence: 0 };
+}
+
+/**
+ * Detect multi-timeframe divergence between two timeframes
+ * Used to confirm trend or spot reversals
+ *
+ * @param lowerTFBars Lower timeframe bars (e.g., 5m)
+ * @param higherTFBars Higher timeframe bars (e.g., 15m)
+ * @param rsiPeriod RSI period
+ */
+export function detectMultiTimeframeDivergence(
+  lowerTFBars: Bar[],
+  higherTFBars: Bar[],
+  rsiPeriod: number = 14
+): {
+  lower: { type: 'bullish' | 'bearish' | 'none'; confidence: number };
+  higher: { type: 'bullish' | 'bearish' | 'none'; confidence: number };
+  aligned: boolean;
+  strength: 'strong' | 'moderate' | 'weak';
+} {
+  const lowerDiv = detectRSIDivergence(lowerTFBars, rsiPeriod);
+  const higherDiv = detectRSIDivergence(higherTFBars, rsiPeriod);
+
+  // Check if both timeframes show same divergence type
+  const aligned = lowerDiv.type !== 'none' && lowerDiv.type === higherDiv.type;
+
+  let strength: 'strong' | 'moderate' | 'weak' = 'weak';
+  if (aligned) {
+    const avgConfidence = (lowerDiv.confidence + higherDiv.confidence) / 2;
+    if (avgConfidence > 70) strength = 'strong';
+    else if (avgConfidence > 40) strength = 'moderate';
+  }
+
+  return {
+    lower: lowerDiv,
+    higher: higherDiv,
+    aligned,
+    strength,
+  };
+}
+
+/**
+ * Detect price/volume divergence
+ * Bullish: Price falling, volume declining (weak sellers)
+ * Bearish: Price rising, volume declining (weak buyers)
+ *
+ * @param bars Recent bars (needs at least 10)
+ */
+export function detectPriceVolumeDivergence(
+  bars: Bar[]
+): { type: 'bullish' | 'bearish' | 'none'; confidence: number } {
+  if (!bars || bars.length < 10) {
+    return { type: 'none', confidence: 0 };
+  }
+
+  const recentBars = bars.slice(-10);
+  const firstHalf = recentBars.slice(0, 5);
+  const secondHalf = recentBars.slice(5);
+
+  const firstAvgPrice = firstHalf.reduce((sum, b) => sum + b.close, 0) / 5;
+  const secondAvgPrice = secondHalf.reduce((sum, b) => sum + b.close, 0) / 5;
+
+  const firstAvgVolume = computeAvgVolume(firstHalf);
+  const secondAvgVolume = computeAvgVolume(secondHalf);
+
+  const priceChange = ((secondAvgPrice - firstAvgPrice) / firstAvgPrice) * 100;
+  const volumeChange = ((secondAvgVolume - firstAvgVolume) / firstAvgVolume) * 100;
+
+  // Bullish divergence: Price down, volume down (weak selling)
+  if (priceChange < -1 && volumeChange < -10) {
+    return { type: 'bullish', confidence: Math.min(100, Math.abs(volumeChange)) };
+  }
+
+  // Bearish divergence: Price up, volume down (weak buying)
+  if (priceChange > 1 && volumeChange < -10) {
+    return { type: 'bearish', confidence: Math.min(100, Math.abs(volumeChange)) };
+  }
+
+  return { type: 'none', confidence: 0 };
 }
