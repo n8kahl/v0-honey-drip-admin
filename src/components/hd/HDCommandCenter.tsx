@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { HDAlertFeed } from './HDAlertFeed';
 import { HDPortfolioHealth } from './HDPortfolioHealth';
 import { HDAIRecommendations } from './HDAIRecommendations';
+import { useCommandCenter } from '../../hooks/useCommandCenter';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -25,6 +26,9 @@ interface Section {
 }
 
 export function HDCommandCenter() {
+  // Start Command Center monitoring
+  const { isRunning } = useCommandCenter();
+
   const sections: Section[] = [
     {
       id: 'portfolio',
