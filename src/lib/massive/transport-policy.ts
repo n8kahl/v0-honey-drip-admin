@@ -2,8 +2,8 @@
 // Handles WebSocket subscriptions with jittered backoff reconnection
 // Falls back to 3s REST polling when WebSocket fails or disconnects
 
-import { massive, type WebSocketMessage } from './websocket';
 import { massive } from '.';
+import { type WebSocketMessage } from './websocket';
 import type { MassiveQuote } from './types';
 
 function toNumber(value: unknown): number {
