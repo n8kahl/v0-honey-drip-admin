@@ -143,7 +143,8 @@ class MassiveWebSocket {
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        console.error(`[Massive WS] ${endpoint} connection closed. Code: ${event.code}, Reason: ${event.reason || 'no reason'}, Clean: ${event.wasClean}`);
         this.isAuthenticated[endpoint] = false;
         this.cleanup(endpoint);
         this.attemptReconnect(endpoint);
@@ -219,12 +220,22 @@ class MassiveWebSocket {
 
   private handleMessage(msg: any, endpoint: WsEndpoint) {
     const { ev, sym } = msg;
-    
+
+    // Handle auth failure
+    if (msg.status === 'auth_failed' || msg.status === 'error' || (msg.status && msg.status !== 'auth_success')) {
+      console.error(`[Massive WS] ${endpoint} authentication failed:`, msg);
+      this.isAuthenticated[endpoint] = false;
+      // Don't reconnect on auth failure - likely a token issue
+      this.sockets[endpoint]?.close();
+      this.sockets[endpoint] = null;
+      return;
+    }
+
     // Handle auth success
     if (msg.status === 'auth_success' || (ev === 'status' && msg.message?.includes('auth'))) {
-      // console.log(`[Massive WS] Authenticated to ${endpoint} successfully`);
+      console.log(`[Massive WS] ${endpoint} authenticated successfully`);
       this.isAuthenticated[endpoint] = true;
-      
+
       // Notify marketDataStore of connection
       if (typeof window !== 'undefined') {
         import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
@@ -232,13 +243,13 @@ class MassiveWebSocket {
           state.wsConnection = { ...state.wsConnection, status: 'connected', lastMessageTime: Date.now() };
         });
       }
-      
+
       // Start heartbeat for this endpoint
       this.heartbeatIntervals[endpoint] = setInterval(
         () => this.send(endpoint, { action: 'ping' }),
         25_000
       );
-      
+
       // Subscribe based on endpoint
       if (endpoint === 'options') {
         this.subscribeOptionsWatchlist();
@@ -312,10 +323,16 @@ class MassiveWebSocket {
 
   // Subscribe to dynamic watchlist roots on options endpoint
   private subscribeOptionsWatchlist() {
-    if (!this.sockets.options || !this.isAuthenticated.options || this.watchlistRoots.length === 0) {
+    if (!this.sockets.options || !this.isAuthenticated.options) {
+      console.log('[Massive WS] Cannot subscribe options: socket not ready');
       return;
     }
-    
+
+    if (this.watchlistRoots.length === 0) {
+      console.log('[Massive WS] No watchlist roots configured, skipping options subscription');
+      return;
+    }
+
     const roots = this.watchlistRoots.map(root => `${root}*`);
     const channels = [
       `options.bars:1m,5m,15m,60m:${roots.join(',')}`,
