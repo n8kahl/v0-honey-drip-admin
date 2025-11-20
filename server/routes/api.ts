@@ -103,7 +103,7 @@ router.post('/massive/ws-token', requireProxyToken, (_req, res) => {
   const payload = JSON.stringify(payloadObj);
   const sig = crypto.createHmac('sha256', MASSIVE_API_KEY).update(payload).digest('hex');
   const token = `${Buffer.from(payload).toString('base64')}.${sig}`;
-  res.json({ token, exp });
+  res.json({ token, expiresAt: exp });
 });
 
 // Public ephemeral token route for client WS auth (no long-lived secret in browser)
@@ -115,7 +115,7 @@ router.post('/ws-token', (_req, res) => {
   const payload = JSON.stringify(payloadObj);
   const sig = crypto.createHmac('sha256', MASSIVE_API_KEY).update(payload).digest('hex');
   const token = `${Buffer.from(payload).toString('base64')}.${sig}`;
-  res.json({ token, exp });
+  res.json({ token, expiresAt: exp });
 });
 
 // Removed /massive/stocks/bars endpoint: application operates solely on indices and options.
