@@ -248,16 +248,15 @@ const loadHistoricalBars = useCallback(async () => {
       return;
     }
 
-    // Determine fetcher based on symbol type
-    const fetcher = isOption
-      ? getOptionBars
-      : isIndex
-      ? getIndexBars
-      : async (symbol: string, multiplier: number, timespan: string, from: string, to: string, limit: number) => {
-          // For stocks, use massiveClient.getAggregates
-          const bars = await massiveClient.getAggregates(symbol, multiplier as 1 | 5 | 15 | 60, limit);
-          return { results: bars };
-        };
+    // Only indices and options are supported (user has Indices Advanced + Options Advanced plans only)
+    if (!isOption && !isIndex) {
+      console.warn(`[HDLiveChart] Skipping ${ticker}: requires stocks plan (user has indices+options only)`);
+      setBars([]); // Clear any prior bars
+      setDataSource('rest');
+      return;
+    }
+
+    const fetcher = isOption ? getOptionBars : getIndexBars;
     const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
 
     const fetchPromise = (async () => {

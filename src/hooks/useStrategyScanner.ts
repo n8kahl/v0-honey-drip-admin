@@ -170,8 +170,13 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
     try {
       setScanning(true);
 
-      // Normalize symbol for indices (add I: prefix if needed)
+      // Only scan indices and options (user has Indices Advanced + Options Advanced plans only)
       const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
+      const isOption = symbol.startsWith('O:');
+      if (!isIndex && !isOption) {
+        console.warn(`[useStrategyScanner] Skipping ${symbol}: requires stocks plan (user has indices+options only)`);
+        return;
+      }
       const normalizedSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
 
       // Fetch 5-minute bars (last 200 bars = ~16 hours)
