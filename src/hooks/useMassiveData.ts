@@ -223,17 +223,24 @@ export function useActiveTradePnL(contractTicker: string | null, entryPrice: num
       contractTicker,
       (data, transportSource, timestamp) => {
         const price = data.last || ((data.bid || 0) + (data.ask || 0)) / 2;
-        
+
         if (price > 0) {
           setCurrentPrice(price);
           setAsOf(timestamp);
           setSource(transportSource);
-          
-          // Calculate PnL percentage
-          const pnl = ((price - entryPrice) / entryPrice) * 100;
+
+          // Calculate GROSS P&L (for comparison)
+          const grossPnl = ((price - entryPrice) / entryPrice) * 100;
+
+          // Calculate REALISTIC net P&L accounting for commissions and slippage
+          // Standard retail options: $0.65 per contract at entry + $0.65 at exit = $1.30 total
+          // Bid-ask spread slippage: ~0.5% for liquid contracts like SPX/SPY
+          // This matches real-world trading conditions
+          const { calculateNetPnLPercent } = require('../services/pnlCalculator');
+          const pnl = calculateNetPnLPercent(entryPrice, price, 1);
           setPnlPercent(pnl);
-          
-          console.log(`[useActiveTradePnL] ${transportSource} update for ${contractTicker}: $${price.toFixed(2)} (${pnl > 0 ? '+' : ''}${pnl.toFixed(1)}%)`);
+
+          console.log(`[useActiveTradePnL] ${transportSource} update for ${contractTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? '+' : ''}${grossPnl.toFixed(1)}%, net after costs: ${pnl > 0 ? '+' : ''}${pnl.toFixed(1)}%)`);
         }
       },
       { isOption: true, pollInterval: 3000 }
