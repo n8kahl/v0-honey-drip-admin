@@ -1,5 +1,6 @@
 import { useMarketStore, useTradeStore, useSettingsStore } from '../../stores';
 import { HDRowWatchlist } from './HDRowWatchlist';
+import { HDMacroPanel } from './HDMacroPanel';
 import { Ticker } from '../../types';
 import { Plus, TrendingUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -40,6 +41,11 @@ export function HDCommandRail({
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
+        {/* Macro Context Panel */}
+        <div className="p-3 border-b border-[var(--border-hairline)]">
+          <HDMacroPanel />
+        </div>
+
         {/* Active Trades Count */}
         {activeTrades.length > 0 && (
           <div className="p-3 bg-[var(--brand-primary)]/10 border-b border-[var(--border-hairline)]">
