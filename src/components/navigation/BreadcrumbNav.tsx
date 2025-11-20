@@ -11,7 +11,8 @@ import {
   BreadcrumbSeparator,
 } from '../ui/breadcrumb';
 import { cn } from '../../lib/utils';
-import { colorTransition, focusRing } from '../../lib/a11y';
+import { colorTransition } from '../../lib/animations';
+import { focusRing } from '../../lib/a11y';
 
 export interface BreadcrumbItem {
   /**
