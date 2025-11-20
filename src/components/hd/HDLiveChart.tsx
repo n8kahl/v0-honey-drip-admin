@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
 import { massiveWS } from '../../lib/massive/websocket';
-import { MassiveError, getIndexBars, getOptionBars } from '../../lib/massive/proxy';
+import { MassiveError, getIndexBars, getOptionBars, getTradierStockBars } from '../../lib/massive/proxy';
 import { massiveClient } from '../../lib/massive/client';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
@@ -248,23 +248,40 @@ const loadHistoricalBars = useCallback(async () => {
       return;
     }
 
-    // Only indices and options are supported. For equities (non-index, non-option) skip fetch.
-    if (!isOption && !isIndex) {
-      console.warn(`[HDLiveChart] Skipping historical fetch for unsupported underlying ${ticker} (indices + options only)`);
-      setBars([]); // Clear any prior bars
-      setDataSource('rest');
-      return;
-    }
-    const fetcher = isOption ? getOptionBars : getIndexBars;
+    // Stock symbols (not option, not index) use Tradier fallback
+    const isStock = !isOption && !isIndex;
+
+    const fetcher = isOption
+      ? getOptionBars
+      : isIndex
+      ? getIndexBars
+      : null; // Stock will use Tradier below
     const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
 
     const fetchPromise = (async () => {
       let retries = 0;
       const maxRetries = 3;
-      
+
       while (retries < maxRetries) {
         try {
-          const response = await fetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
+          let response;
+
+          // Use Tradier for stocks, Massive for indices/options
+          if (isStock) {
+            // Map timeframe to Tradier interval format
+            const tradierInterval =
+              currentTf === '1' ? '1min' :
+              currentTf === '5' ? '5min' :
+              currentTf === '15' ? '15min' :
+              currentTf === '60' ? '15min' : // Tradier doesn't have 60min, use 15min
+              'daily';
+
+            console.log(`[HDLiveChart] Fetching stock ${ticker} from Tradier (interval: ${tradierInterval})`);
+            response = await getTradierStockBars(ticker, tradierInterval, fromDate, toDate);
+          } else {
+            response = await fetcher!(symbolParam, multiplier, timespan, fromDate, toDate, limit);
+          }
+
           const results = Array.isArray(response?.results)
             ? response.results
             : Array.isArray(response)

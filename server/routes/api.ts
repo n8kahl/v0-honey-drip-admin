@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { massiveFetch, callMassive, getOptionChain, listOptionContracts, getIndicesSnapshot } from '../massive/client';
-import { tradierGetUnderlyingPrice, tradierGetExpirations, tradierGetNormalizedForExpiration } from '../vendors/tradier';
+import { tradierGetUnderlyingPrice, tradierGetExpirations, tradierGetNormalizedForExpiration, tradierGetHistory } from '../vendors/tradier';
 import { isV2AggsPath, rememberFailure, shouldShortCircuit, buildEmptyAggsResponse } from '../lib/fallbackAggs';
 import { normalizeSymbolForMassive } from '../lib/symbolUtils';
 import { cachedFetch, getCachedBars, setCachedBars, getCachedContracts, setCachedContracts, getCachedSnapshot, setCachedSnapshot, getCachedIndex, setCachedIndex } from '../lib/cache';
@@ -137,6 +137,29 @@ router.get('/massive/options/bars', requireProxyToken, async (req, res) => {
     res.json(json);
   } catch (error) {
     handleMassiveError(res, error);
+  }
+});
+
+// Tradier stock bars endpoint - fallback for stocks when user doesn't have Massive stocks plan
+router.get('/tradier/stocks/bars', requireProxyToken, async (req, res) => {
+  const { symbol, interval = '5min', start, end } = req.query as {
+    symbol?: string;
+    interval?: '1min' | '5min' | '15min' | 'daily' | 'weekly' | 'monthly';
+    start?: string;
+    end?: string;
+  };
+
+  if (!symbol) {
+    return res.status(400).json({ error: 'Missing query param: symbol' });
+  }
+
+  try {
+    const bars = await tradierGetHistory(symbol, interval, start, end);
+    // Return in Massive-compatible format
+    res.json({ results: bars.map(bar => ({ t: bar.time * 1000, o: bar.open, h: bar.high, l: bar.low, c: bar.close, v: bar.volume })) });
+  } catch (error: any) {
+    console.error('[Tradier] Stock bars error:', error);
+    res.status(502).json({ error: error?.message || 'Tradier API error' });
   }
 });
 

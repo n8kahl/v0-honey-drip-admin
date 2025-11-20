@@ -348,10 +348,11 @@ class MassiveWebSocket {
       `options.trades:${roots.join(',')}`,
       `options.quotes:${roots.join(',')}`
     ];
-    
+
     console.log('[Massive WS] Subscribing to options watchlist:', channels);
-    this.send('options', { action: 'subscribe', channels });
-    
+    // Server expects 'params' as comma-separated string, not 'channels' array
+    this.send('options', { action: 'subscribe', params: channels.join(',') });
+
     channels.forEach(ch => this.subscriptions.options.add(ch));
   }
 
@@ -360,12 +361,13 @@ class MassiveWebSocket {
     if (!this.sockets.indices || !this.isAuthenticated.indices) {
       return;
     }
-    
+
     const channels = ['indices.bars:1m,5m,15m,60m:I:SPX,I:NDX,I:VIX,I:RVX'];
 
-    // console.log('[Massive WS] Subscribing to indices:', channels);
-    this.send('indices', { action: 'subscribe', channels });
-    
+    console.log('[Massive WS] Subscribing to indices:', channels);
+    // Server expects 'params' as comma-separated string, not 'channels' array
+    this.send('indices', { action: 'subscribe', params: channels.join(',') });
+
     channels.forEach(ch => this.subscriptions.indices.add(ch));
   }
 
@@ -373,7 +375,7 @@ class MassiveWebSocket {
   updateWatchlist(roots: string[]) {
     const oldRoots = [...this.watchlistRoots];
     this.watchlistRoots = [...roots];
-    
+
     // Only update options endpoint, indices stay fixed
     if (this.sockets.options && this.isAuthenticated.options) {
       // Unsubscribe old channels
@@ -383,10 +385,11 @@ class MassiveWebSocket {
           `options.trades:${oldRoots.map(r => `${r}*`).join(',')}`,
           `options.quotes:${oldRoots.map(r => `${r}*`).join(',')}`
         ];
-        this.send('options', { action: 'unsubscribe', channels: oldChannels });
+        // Server expects 'params' as comma-separated string, not 'channels' array
+        this.send('options', { action: 'unsubscribe', params: oldChannels.join(',') });
         oldChannels.forEach(ch => this.subscriptions.options.delete(ch));
       }
-      
+
       // Subscribe to new watchlist
       this.subscribeOptionsWatchlist();
     }
@@ -398,7 +401,8 @@ class MassiveWebSocket {
     const channels = Array.from(this.subscriptions[endpoint]);
     if (!channels.length) return;
     console.log(`[Massive WS] Resubscribing to ${endpoint}:`, channels);
-    this.send(endpoint, { action: 'subscribe', channels });
+    // Server expects 'params' as comma-separated string, not 'channels' array
+    this.send(endpoint, { action: 'subscribe', params: channels.join(',') });
   }
 
   private send(endpoint: WsEndpoint, data: any) {

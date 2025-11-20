@@ -170,17 +170,48 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
     try {
       setScanning(true);
 
-      // Normalize symbol for indices (add I: prefix) and skip stocks (only options+indices plans available)
+      // Detect symbol type
       const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
       const isOption = symbol.startsWith('O:');
-      if (!isIndex && !isOption) {
-        console.warn(`[useStrategyScanner] Skipping ${symbol}: stocks plan not available (indices+options only)`);
-        return;
-      }
+      const isStock = !isIndex && !isOption;
       const normalizedSymbol = isIndex ? (symbol.startsWith('I:') ? symbol : `I:${symbol}`) : symbol;
 
       // Fetch 5-minute bars (last 200 bars = ~16 hours)
-      const bars = await massiveClient.getAggregates(normalizedSymbol, '5', 200);
+      let bars: any[];
+
+      if (isStock) {
+        // Use Tradier for stocks (user has indices+options plans, not stocks)
+        console.log(`[useStrategyScanner] Fetching stock ${symbol} from Tradier (5min bars)`);
+        try {
+          // Calculate date range (last 5 days should cover 200 5-minute bars)
+          const endDate = new Date();
+          const startDate = new Date(endDate.getTime() - 5 * 24 * 60 * 60 * 1000);
+          const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+          const response = await fetch(
+            `/api/massive/tradier/stocks/bars?symbol=${encodeURIComponent(symbol)}&interval=5min&start=${formatDate(startDate)}&end=${formatDate(endDate)}`,
+            {
+              headers: {
+                'x-massive-proxy-token': import.meta.env.VITE_MASSIVE_PROXY_TOKEN || '',
+              },
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`Tradier API error: ${response.status}`);
+          }
+
+          const data = await response.json();
+          bars = data.results || [];
+          console.log(`[useStrategyScanner] Fetched ${bars.length} bars from Tradier for ${symbol}`);
+        } catch (err: any) {
+          console.error(`[useStrategyScanner] Failed to fetch Tradier data for ${symbol}:`, err);
+          return;
+        }
+      } else {
+        // Use Massive for indices and options
+        bars = await massiveClient.getAggregates(normalizedSymbol, '5', 200);
+      }
       if (bars.length < 20) {
         console.warn(`[useStrategyScanner] Insufficient bars for ${symbol} (${bars.length} bars), skipping`);
         return;

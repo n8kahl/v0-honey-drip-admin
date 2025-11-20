@@ -123,3 +123,80 @@ export async function tradierGetNormalizedForExpiration(symbol: string, expirati
   }
   return norm;
 }
+
+/**
+ * Get historical OHLC bars from Tradier for a stock symbol
+ * Interval: daily, weekly, monthly (minute intervals require different endpoint)
+ * For intraday: use /markets/timeseries with interval=1min, 5min, 15min
+ */
+export async function tradierGetHistory(
+  symbol: string,
+  interval: 'daily' | 'weekly' | 'monthly' | '1min' | '5min' | '15min',
+  startDate?: string,
+  endDate?: string
+): Promise<{ time: number; open: number; high: number; low: number; close: number; volume: number }[]> {
+  const s = symbol.replace(/^I:/, '');
+
+  // For intraday bars, use timeseries endpoint
+  const isIntraday = ['1min', '5min', '15min'].includes(interval);
+
+  let path: string;
+  if (isIntraday) {
+    // Intraday timeseries: /markets/timeseries?symbol=SPY&interval=5min&start=2024-01-01&end=2024-01-31
+    const params = new URLSearchParams({
+      symbol: s,
+      interval: interval,
+    });
+    if (startDate) params.set('start', startDate);
+    if (endDate) params.set('end', endDate);
+    path = `/markets/timeseries?${params}`;
+  } else {
+    // Daily/weekly/monthly history: /markets/history?symbol=SPY&interval=daily&start=2024-01-01&end=2024-01-31
+    const params = new URLSearchParams({
+      symbol: s,
+      interval: interval,
+    });
+    if (startDate) params.set('start', startDate);
+    if (endDate) params.set('end', endDate);
+    path = `/markets/history?${params}`;
+  }
+
+  const { ok, data, error } = await tradierFetch<any>(path);
+  if (!ok) throw new Error(error || 'Tradier history failed');
+
+  // Parse response - format varies between endpoints
+  let bars: any[] = [];
+  if (isIntraday) {
+    // Timeseries response: { series: { data: [ { time, timestamp, price, open, high, low, close, volume }, ... ] } }
+    bars = data?.series?.data || [];
+  } else {
+    // History response: { history: { day: [ { date, open, high, low, close, volume }, ... ] } }
+    bars = data?.history?.day || [];
+  }
+
+  if (!Array.isArray(bars)) bars = [];
+
+  // Normalize to common format
+  return bars.map((bar: any) => {
+    // Intraday uses 'timestamp' (epoch ms), daily uses 'date' (YYYY-MM-DD)
+    let time: number;
+    if (bar.timestamp) {
+      time = Math.floor(bar.timestamp / 1000); // Convert ms to seconds
+    } else if (bar.time) {
+      time = Math.floor(new Date(bar.time).getTime() / 1000);
+    } else if (bar.date) {
+      time = Math.floor(new Date(bar.date).getTime() / 1000);
+    } else {
+      time = 0;
+    }
+
+    return {
+      time,
+      open: Number(bar.open) || 0,
+      high: Number(bar.high) || 0,
+      low: Number(bar.low) || 0,
+      close: Number(bar.close) || 0,
+      volume: Number(bar.volume) || 0,
+    };
+  }).filter(bar => bar.time > 0);
+}
