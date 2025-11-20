@@ -1569,7 +1569,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
       
       fetchMarketSession: async () => {
         try {
-          import { massive } from '../lib/massive';
           const { enrichMarketStatus } = await import('../lib/marketSession');
           
           const data = await massive.getMarketStatus();
