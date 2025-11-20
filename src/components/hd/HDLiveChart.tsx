@@ -576,8 +576,17 @@ const loadHistoricalBars = useCallback(async () => {
     }
     waitingForChartRef.current = false;
 
-    if (bars.length === 0) return;
-    
+    if (bars.length === 0) {
+      console.warn('[HDLiveChart] No bars to render, clearing chart');
+      // Clear chart data when no bars available
+      try {
+        priceSeries.setData([]);
+      } catch (e) {
+        console.error('[HDLiveChart] Error clearing chart:', e);
+      }
+      return;
+    }
+
     const renderUpdate = () => {
       const now = performance.now();
       const delta = now - lastRenderTimeRef.current;
@@ -604,6 +613,12 @@ const loadHistoricalBars = useCallback(async () => {
           low: bar.low,
           close: bar.close,
         }));
+
+      if (candleData.length === 0) {
+        console.warn('[HDLiveChart] All bars filtered out (invalid OHLC), cannot render');
+        return;
+      }
+
       priceSeries.setData(candleData);
       
       // Update indicators
@@ -690,7 +705,7 @@ const loadHistoricalBars = useCallback(async () => {
             hasAutoFitRef.current = true;
           }
         } else if (viewport.mode === 'AUTO') {
-          // Follow latest
+          // Follow latest - only update if we have new bars
           const barsToUse = bars.length;
           if (barsToUse > 1) {
             const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
@@ -700,12 +715,8 @@ const loadHistoricalBars = useCallback(async () => {
             ts.setVisibleRange({ from: from as any, to: to as any });
             applyingViewportRef.current = false;
           }
-        } else if (viewport.mode === 'MANUAL' && viewport.fromTime && viewport.toTime) {
-          // Re-apply stored range
-          applyingViewportRef.current = true;
-          ts.setVisibleRange({ from: (viewport.fromTime / 1000) as any, to: (viewport.toTime / 1000) as any });
-          applyingViewportRef.current = false;
         }
+        // MANUAL mode: Don't force viewport changes, let user control pan/zoom
       }
       
       lastRenderTimeRef.current = now;
