@@ -6,7 +6,7 @@ import { DesktopHistory } from './components/DesktopHistory';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { MobileActive } from './components/MobileActive';
 import { VoiceCommandDemo } from './components/VoiceCommandDemo';
-// Header moved to app/layout via <TraderHeader />
+import { TraderHeader } from './components/Header/TraderHeader';
 import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { useAppNavigation } from './hooks/useAppNavigation';
@@ -256,6 +256,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
 
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 lg:pb-0">
+      <TraderHeader />
       <LiveStatusBar />
 
       <nav className="hidden lg:flex gap-4 lg:gap-6 px-4 lg:px-6 py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
