@@ -3,7 +3,7 @@
 // Falls back to 3s REST polling when WebSocket fails or disconnects
 
 import { massive, type WebSocketMessage } from './websocket';
-import { massive } from './client';
+import { massive } from '.';
 import type { MassiveQuote } from './types';
 
 function toNumber(value: unknown): number {
