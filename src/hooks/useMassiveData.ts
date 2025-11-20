@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { massiveClient, hasApiKey, type MassiveQuote, type MassiveOptionsChain } from '../lib/massive/client';
+import { massive, type MassiveQuote, type MassiveOptionsChain } from '../lib/massive';
 import { MassiveError } from '../lib/massive/proxy';
 import { createTransport } from '../lib/massive/transport-policy';
 import type { Contract } from '../types';
@@ -79,7 +79,7 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
           const normalized = await fetchNormalizedChain(symbol, window);
           contracts = normalized;
         } else {
-          const data = await massiveClient.getOptionsChain(symbol);
+          const data = await massive.getOptionsChain(symbol);
           contracts = data.results.map((opt: any) => ({
             id: opt.ticker || `${symbol}-${opt.strike}-${opt.expiration}`,
             strike: opt.strike,
@@ -262,11 +262,11 @@ export function useMarketDataConnection() {
     let cancelled = false;
 
     const refresh = async () => {
-      const hasKey = await hasApiKey();
+      const health = massive.getHealth();
       if (cancelled) return;
-      setHasApiKeyAvailable(hasKey);
-      setIsConnected(massiveClient.isConnected());
-      setLastError(massiveClient.getLastError());
+      setHasApiKeyAvailable(health.rest.healthy || health.token.isValid);
+      setIsConnected(massive.isConnected());
+      setLastError(health.rest.lastError);
     };
 
     refresh();
@@ -284,5 +284,5 @@ export function useMarketDataConnection() {
 }
 
 export function useMassiveClient() {
-  return massiveClient;
+  return massive;
 }

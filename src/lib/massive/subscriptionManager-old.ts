@@ -6,7 +6,7 @@
  * - Indices: wss://socket.massive.com/indices (fixed SPX/NDX/VIX/RVX)
  */
 
-import { massiveWS } from './websocket';
+import { massive } from './websocket';
 
 interface SubscriptionManagerConfig {
   token: string;
@@ -29,8 +29,8 @@ export class MassiveSubscriptionManager {
   }
 
   private updateGlobalStatus() {
-    const optionsReady = massiveWS.isConnected('options');
-    const indicesReady = massiveWS.isConnected('indices');
+    const optionsReady = massive.isConnected('options');
+    const indicesReady = massive.isConnected('indices');
     
     if (optionsReady && indicesReady) {
       this.config.onStatus?.('authenticated');
@@ -42,8 +42,8 @@ export class MassiveSubscriptionManager {
   }
 
   connect() {
-    // The massiveWS connects automatically on initialization
-    massiveWS.connect();
+    // The massive connects automatically on initialization
+    massive.connect();
     
     // Check status periodically
     setInterval(() => this.updateGlobalStatus(), 1000);

@@ -1,7 +1,7 @@
 // INDICES ADVANCED - Real-time index data with technical indicators
 // Supports SPX, NDX, VIX, and other major indices
 
-import { massiveClient } from './client';
+import { massive } from './client';
 import { fetchIndicators, IndicatorRequest, IndicatorResponse } from './indicators-api';
 import { streamingManager } from './streaming-manager';
 
@@ -84,7 +84,7 @@ export async function fetchIndexQuote(symbol: string): Promise<IndexQuote> {
   console.log(`[IndicesAdvanced] Fetching quote for ${symbol}`);
   
   try {
-    const data = await massiveClient.getIndex(symbol);
+    const data = await massive.getIndex(symbol);
     
     const updated = (data as any)?.updated ?? (data as any)?.timestamp ?? Date.now();
     return {
@@ -157,8 +157,8 @@ export async function gatherMacroContext(): Promise<MacroContext> {
     fetchIndexQuote('NDX'),
     fetchIndexQuote('VIX'),
     fetchIndexIndicators('SPX'),
-    massiveClient.getQuote('SPY').catch(() => ({ results: [{ symbol: 'SPY', changePercent: 0 }] })),
-    massiveClient.getQuote('QQQ').catch(() => ({ results: [{ symbol: 'QQQ', changePercent: 0 }] })),
+    massive.getQuote('SPY').catch(() => ({ results: [{ symbol: 'SPY', changePercent: 0 }] })),
+    massive.getQuote('QQQ').catch(() => ({ results: [{ symbol: 'QQQ', changePercent: 0 }] })),
   ]);
   
   // Analyze SPX
@@ -202,7 +202,7 @@ export async function gatherMacroContext(): Promise<MacroContext> {
   // Optional: Put/Call from options chain (SPX)
   let putCall: MacroContext['putCall'] | undefined = undefined;
   try {
-    const chain = await massiveClient.getOptionsChain('SPX');
+    const chain = await massive.getOptionsChain('SPX');
     const contracts: any[] = (chain as any)?.results || [];
     if (contracts.length > 0) {
       // Aggregate OI by type (fallback to volume)

@@ -529,7 +529,7 @@ export async function getOptionContracts(underlying: string, limit = 1000, expir
   return data;
 }
 
-export const massiveClient = new MassiveClient();
+export const massive = new MassiveClient();
 
 let cachedHasKey: boolean | null = null;
 let lastCheck = 0;

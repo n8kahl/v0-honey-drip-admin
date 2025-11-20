@@ -1,6 +1,6 @@
-import { massiveClient } from './client';
+import { massive } from './client';
 import { streamingManager } from './streaming-manager';
-import { massiveWS, type TradeUpdate, type WebSocketMessage } from './websocket';
+import { massive, type TradeUpdate, type WebSocketMessage } from './websocket';
 
 // Core option contract shape used by advanced helpers and tests
 export interface OptionContract {
@@ -350,7 +350,7 @@ class OptionsAdvancedManager {
   subscribeTrades(ticker: string, callback: (trade: OptionsTrade) => void): () => void {
     let active = true;
 
-    const wsUnsubscribe = massiveWS.subscribeOptionAggregates([ticker], (msg: WebSocketMessage) => {
+    const wsUnsubscribe = massive.subscribeOptionAggregates([ticker], (msg: WebSocketMessage) => {
       if (!active) return;
       if (msg.type !== 'trade') return;
       const data = msg.data as TradeUpdate;
@@ -375,12 +375,12 @@ class OptionsAdvancedManager {
         if (!active) return;
 
         // Only use REST when WS is not open
-        if (massiveWS.getConnectionState() === 'open') {
+        if (massive.getConnectionState() === 'open') {
           return;
         }
 
         try {
-          const results = await massiveClient.getOptionTrades(ticker, {
+          const results = await massive.getOptionTrades(ticker, {
             limit: 50,
             order: 'asc',
             sort: 'timestamp',
@@ -542,7 +542,7 @@ class OptionsAdvancedManager {
     underlying: string,
     thresholds: OptionsThresholds
   ): Promise<{ contracts: OptionsSnapshot[]; filtered: number }> {
-    const snapshot = await massiveClient.getOptionsSnapshot(underlying);
+    const snapshot = await massive.getOptionsSnapshot(underlying);
     const results: OptionsSnapshot[] = snapshot.results || snapshot || [];
     const filtered: OptionsSnapshot[] = [];
 

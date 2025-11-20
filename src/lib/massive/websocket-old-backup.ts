@@ -478,16 +478,16 @@ class MassiveWebSocket {
   }
 }
 
-export const massiveWS = new MassiveWebSocket();
+export const massive = new MassiveWebSocket();
 
 /**
  * Subscribe to options data for multiple roots using wildcards (2025 format)
  * Example: subscribeOptionsForRoots(['SPY','QQQ','NVDA'], callback)
  */
 export function subscribeOptionsForRoots(roots: string[], callback: SubscriptionCallback) {
-  massiveWS.updateWatchlist(roots);
+  massive.updateWatchlist(roots);
   
   // Subscribe to aggregate data for these roots
   const symbols = roots; // Will be converted to wildcards internally
-  return massiveWS.subscribeAggregates(symbols, callback);
+  return massive.subscribeAggregates(symbols, callback);
 }

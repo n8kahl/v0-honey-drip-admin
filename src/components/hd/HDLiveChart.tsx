@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
-import { massiveWS } from '../../lib/massive/websocket';
+import { massive } from '../../lib/massive';
 import { MassiveError, getIndexBars, getOptionBars, getTradierStockBars } from '../../lib/massive/proxy';
-import { massiveClient } from '../../lib/massive/client';
+import { massive } from '../../lib/massive';
 import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
 import { ChartLevel } from '../../types/tradeLevels';
@@ -736,7 +736,7 @@ const loadHistoricalBars = useCallback(async () => {
     }
 
     const unsubscribe = isOption
-      ? massiveWS.subscribeOptionAggregates([ticker], (message) => {
+      ? massive.subscribeOptionAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
           if (document.hidden) return;
 
@@ -776,7 +776,7 @@ const loadHistoricalBars = useCallback(async () => {
             setLastUpdate(Date.now());
           }
         })
-      : massiveWS.subscribeAggregates([ticker], (message) => {
+      : massive.subscribeAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
           if (document.hidden) return;
 

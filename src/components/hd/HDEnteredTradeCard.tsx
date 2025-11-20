@@ -8,7 +8,7 @@ import {
   MassiveTrendMetrics,
   MassiveVolatilityMetrics,
   MassiveLiquidityMetrics,
-} from '../../services/massiveClient';
+} from '../../services/massive';
 import { useActiveTradePnL } from '../../hooks/useMassiveData';
 import { useTPProximity } from '../../hooks/useTPProximity';
 import { useTPSettings } from '../../hooks/useTPSettings';

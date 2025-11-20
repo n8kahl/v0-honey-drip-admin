@@ -609,7 +609,7 @@ class MassiveWebSocket {
   }
 }
 
-export const massiveWS = new MassiveWebSocket();
+export const massive = new MassiveWebSocket();
 
 /**
  * Subscribe to options data for multiple roots using wildcards (2025 format)
@@ -628,11 +628,11 @@ export function subscribeOptionsForRoots(roots: string[], callback: Subscription
   
   console.log('[MassiveWS] Subscribing to options for roots:', roots);
   
-  massiveWS.connectEndpoint('options');
+  massive.connectEndpoint('options');
   
   const subscribeWhenReady = () => {
-    const socket = (massiveWS as any).sockets.options;
-    if (!socket || socket.readyState !== WebSocket.OPEN || !(massiveWS as any).isAuthenticated.options) {
+    const socket = (massive as any).sockets.options;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !(massive as any).isAuthenticated.options) {
       setTimeout(subscribeWhenReady, 100);
       return;
     }
@@ -640,16 +640,16 @@ export function subscribeOptionsForRoots(roots: string[], callback: Subscription
     socket.send(JSON.stringify({ action: 'subscribe', channels }));
     console.log('[MassiveWS] Subscribed to options channels');
     
-    channels.forEach(c => (massiveWS as any).subscriptions.options.add(c));
+    channels.forEach(c => (massive as any).subscriptions.options.add(c));
   };
   
   subscribeWhenReady();
   
   return () => {
-    const socket = (massiveWS as any).sockets.options;
+    const socket = (massive as any).sockets.options;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ action: 'unsubscribe', channels }));
     }
-    channels.forEach(c => (massiveWS as any).subscriptions.options.delete(c));
+    channels.forEach(c => (massive as any).subscriptions.options.delete(c));
   };
 }

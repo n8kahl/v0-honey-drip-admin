@@ -10,7 +10,7 @@ import {
   MassiveTrendMetrics,
   MassiveVolatilityMetrics,
   MassiveLiquidityMetrics,
-} from '../../services/massiveClient';
+} from '../../services/massive';
 
 export interface ConfluenceContext {
   trend?: MassiveTrendMetrics;

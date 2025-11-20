@@ -47,10 +47,10 @@ export type { HealthStatus } from './provider';
 import { massive } from './provider';
 
 /**
- * Legacy compatibility: massiveClient
+ * Legacy compatibility: massive
  * @deprecated Use `massive` instead
  */
-export const massiveClient = {
+export const massive = {
   getMarketStatus: () => massive.getMarketStatus(),
   getMarketHolidays: (year?: number) => massive.getMarketHolidays(year),
   getRSI: (ticker: string, params?: any) => massive.getRSI(ticker, params),
@@ -73,10 +73,10 @@ export const massiveClient = {
 };
 
 /**
- * Legacy compatibility: massiveWS
+ * Legacy compatibility: massive
  * @deprecated Use `massive` instead
  */
-export const massiveWS = {
+export const massive = {
   connect: () => massive.connect(),
   connectEndpoint: (endpoint: 'options' | 'indices') => Promise.resolve(),
   updateWatchlist: (roots: string[]) => massive.updateWatchlist(roots),
