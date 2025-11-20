@@ -74,6 +74,26 @@ router.get('/market/status', (_req, res) => {
   });
 });
 
+// Metrics endpoint
+// Note: Actual metrics data is tracked client-side via the MonitoringDashboard component
+// which has real-time access to the MetricsService singleton. This endpoint indicates
+// that metrics monitoring is active. The MonitoringDashboard polls metrics every 5 seconds.
+router.get('/metrics', (_req, res) => {
+  res.json({
+    status: 'ok',
+    monitoring: true,
+    message: 'Production metrics are tracked client-side via MonitoringDashboard',
+    metricsTracked: [
+      'Provider Health (Massive/Tradier uptime, response times)',
+      'Greeks Quality (validation rates, bounds checking)',
+      'P&L Accuracy (gross vs net P&L, cost impact)',
+      'System Health (API times, errors, WebSocket status)',
+    ],
+    updateFrequency: '5 seconds',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Backwards-compatible token mint (requires proxy token header). Deprecated: do not include apiKey in payload.
 router.post('/massive/ws-token', requireProxyToken, (_req, res) => {
   const MASSIVE_API_KEY = getMassiveApiKey();

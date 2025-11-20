@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Trade } from '../types';
 
-type AppTab = 'live' | 'active' | 'history' | 'settings';
+type AppTab = 'live' | 'active' | 'history' | 'settings' | 'monitoring';
 type VoiceState = 'idle' | 'listening' | 'processing';
 type ChartViewportMode = 'AUTO' | 'MANUAL';
 
@@ -59,6 +59,7 @@ interface UIStore {
   navigateToActive: () => void;
   navigateToHistory: () => void;
   navigateToSettings: () => void;
+  navigateToMonitoring: () => void;
   focusTradeInLive: (trade: Trade) => void;
   
   // Chart viewport management
@@ -137,15 +138,16 @@ export const useUIStore = create<UIStore>()(
 
       // Navigation helpers
       navigateToLive: () => set({ activeTab: 'live', focusedTrade: null }),
-      
+
       navigateToActive: () => {
         set({ activeTab: 'active', flashTradeTab: true });
         setTimeout(() => set({ flashTradeTab: false }), 2000);
       },
-      
+
       navigateToHistory: () => set({ activeTab: 'history' }),
       navigateToSettings: () => set({ activeTab: 'settings' }),
-      
+      navigateToMonitoring: () => set({ activeTab: 'monitoring' }),
+
       focusTradeInLive: (trade) => {
         set({
           activeTab: 'live',

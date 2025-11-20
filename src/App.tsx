@@ -24,10 +24,11 @@ import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './s
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
 import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsDialog } from './components/shortcuts/KeyboardShortcutsDialog';
+import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard';
 import './styles/globals.css';
 
 interface AppProps {
-  initialTab?: 'live' | 'active' | 'history' | 'settings';
+  initialTab?: 'live' | 'active' | 'history' | 'settings' | 'monitoring';
 }
 
 export default function App({ initialTab = 'live' }: AppProps) {
@@ -52,6 +53,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
     focusTradeInLive,
     navigateToActive,
     navigateToHistory,
+    navigateToMonitoring,
   } = useUIStore();
 
   // Navigation hooks
@@ -118,6 +120,14 @@ export default function App({ initialTab = 'live' }: AppProps) {
         description: 'Go to Settings',
         action: () => {
           setActiveTab('settings');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '5',
+        description: 'Go to Monitoring',
+        action: () => {
+          setActiveTab('monitoring');
         },
         category: 'navigation',
       },
@@ -285,6 +295,13 @@ export default function App({ initialTab = 'live' }: AppProps) {
             router.goToTradeHistory();
           }}
         />
+        <TabButton
+          label="Monitoring"
+          active={activeTab === 'monitoring'}
+          onClick={() => {
+            navigateToMonitoring();
+          }}
+        />
       </nav>
 
       <main className="flex-1 w-full bg-[var(--bg-base)]">
@@ -340,6 +357,10 @@ export default function App({ initialTab = 'live' }: AppProps) {
             onOpenDiscordSettings={() => useUIStore.getState().setShowDiscordDialog(true)}
             onClose={() => setActiveTab('live')}
           />
+        )}
+
+        {activeTab === 'monitoring' && (
+          <MonitoringDashboard />
         )}
       </main>
 

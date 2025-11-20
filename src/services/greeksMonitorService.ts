@@ -12,6 +12,7 @@
 
 import { Contract, Trade } from '../types';
 import { recordIV, detectIVCrush, detectIVSpike } from '../lib/greeks/ivHistory';
+import { getMetricsService } from './monitoring';
 
 // ============================================================================
 // Types
@@ -567,6 +568,17 @@ export function createSafeGreeks(
   optionType: 'C' | 'P'
 ): { greeks: Greeks; validation: GreeksValidationResult } {
   const validation = validateGreeks(apiGreeks);
+
+  // Record Greeks validation metrics
+  try {
+    getMetricsService().recordGreeksValidation(
+      validation.isValid,
+      validation.isEstimated,
+      validation.errors
+    );
+  } catch (e) {
+    // Silently ignore metrics service errors
+  }
 
   // Start with API values
   let delta = apiGreeks.delta;

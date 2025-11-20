@@ -33,6 +33,8 @@ import {
   clampIV,
 } from './iv-utils';
 
+import { getMetricsService } from '../../services/monitoring';
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -121,6 +123,7 @@ class TradierApiClient {
 
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
+        const startTime = Date.now();
         const controller = new AbortController();
         const timeoutHandle = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -130,11 +133,18 @@ class TradierApiClient {
           signal: controller.signal,
         });
 
+        const responseTimeMs = Date.now() - startTime;
         clearTimeout(timeoutHandle);
 
         if (response.status === 429) {
           const retryAfter = Number(response.headers.get('Retry-After') || '1');
           this.log(`Rate limited, retrying after ${retryAfter}s`);
+          // Record rate limit as API request failure
+          try {
+            getMetricsService().recordApiRequest('tradier', responseTimeMs, false);
+          } catch (e) {
+            // Silently ignore metrics service errors
+          }
           await new Promise(r => setTimeout(r, retryAfter * 1000));
           continue;
         }
@@ -150,6 +160,13 @@ class TradierApiClient {
           );
           lastError = error;
 
+          // Record failed API request
+          try {
+            getMetricsService().recordApiRequest('tradier', responseTimeMs, false);
+          } catch (e) {
+            // Silently ignore metrics service errors
+          }
+
           if (response.status >= 500) {
             await new Promise(r => setTimeout(r, Math.min(100 * Math.pow(2, attempt), 2000)));
             continue;
@@ -159,6 +176,14 @@ class TradierApiClient {
 
         const data = await response.json() as T;
         this.log(`Success from ${path}`);
+
+        // Record successful API request
+        try {
+          getMetricsService().recordApiRequest('tradier', responseTimeMs, true);
+        } catch (e) {
+          // Silently ignore metrics service errors
+        }
+
         return data;
       } catch (error) {
         lastError = error as Error;

@@ -11,6 +11,8 @@
  * @module services/pnl-calculator
  */
 
+import { getMetricsService } from './monitoring';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -180,7 +182,7 @@ export function calculatePnL(params: PnLCalculationParams): PnLResult {
   const breakevenMove = entryPrice > 0 ? (totalCostPerContract / entryPrice) * 100 : 0;
   const breakevenPointPercent = breakevenMove;
 
-  return {
+  const result = {
     // Gross
     grossPnL: grossPnLDollars,
     grossPnLPercent,
@@ -203,6 +205,20 @@ export function calculatePnL(params: PnLCalculationParams): PnLResult {
     // Breakeven
     breakevenPointPercent,
   };
+
+  // Record P&L metrics
+  try {
+    getMetricsService().recordPnL(
+      grossPnLPercent,
+      netPnLPercent,
+      totalCommissionCost,
+      totalSlippageCost
+    );
+  } catch (e) {
+    // Silently ignore metrics service errors
+  }
+
+  return result;
 }
 
 /**
