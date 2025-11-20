@@ -23,6 +23,7 @@ import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './s
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
 import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsDialog } from './components/shortcuts/KeyboardShortcutsDialog';
+import { DemoChartShowcase } from './components/demo/DemoChartShowcase';
 import './styles/globals.css';
 
 interface AppProps {
@@ -388,6 +389,9 @@ export default function App({ initialTab = 'live' }: AppProps) {
         onClose={() => setShowShortcutsDialog(false)}
         shortcuts={shortcuts}
       />
+
+      {/* Demo Chart Showcase - Shows strategy charts when demo mode is active */}
+      <DemoChartShowcase />
 
       <Toaster />
     </div>
