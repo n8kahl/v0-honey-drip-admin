@@ -1,7 +1,7 @@
 import type { Server } from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
 import crypto from 'crypto';
-import { MassiveHub } from './hub';
+import { MassiveHub } from './hub.js';
 
 export function attachWsServers(server: Server) {
   // Read environment variables at runtime (after dotenv has loaded)
