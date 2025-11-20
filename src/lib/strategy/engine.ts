@@ -20,11 +20,30 @@ export interface SymbolFeatures {
     current?: number;
     avg?: number;
     prev?: number;
+    relativeToAvg?: number; // RVOL: current/avg (e.g., 2.5 = 250% of average)
   };
   vwap?: {
     value?: number;
     distancePct?: number;
     prev?: number;
+  };
+  greeks?: {
+    delta?: number;
+    gamma?: number;
+    theta?: number;
+    vega?: number;
+    rho?: number;
+    gammaRisk?: 'high' | 'medium' | 'low'; // Auto-calculated based on gamma value
+    thetaDecayRate?: 'extreme' | 'high' | 'moderate' | 'low'; // Per-hour decay
+    deltaNormalized?: number; // Absolute delta (0-1 range)
+  };
+  flow?: {
+    sweepCount?: number;
+    blockCount?: number;
+    unusualActivity?: boolean;
+    flowScore?: number; // 0-100 flow strength
+    flowBias?: 'bullish' | 'bearish' | 'neutral';
+    buyPressure?: number; // 0-100 percentage
   };
   ema?: Record<string, number>;
   rsi?: Record<string, number>;
