@@ -85,3 +85,28 @@ export const getAriaLabel = (label: string, shortcut?: string): string => {
   if (!shortcut) return label;
   return `${label} (${shortcut})`;
 };
+
+/**
+ * Fade in animation classes
+ * Used for smooth transitions when elements appear
+ */
+export const fadeIn = 'animate-in fade-in duration-200';
+
+/**
+ * Color transition classes
+ * Smooth color transitions for interactive elements
+ */
+export const colorTransition = 'transition-colors duration-150';
+
+/**
+ * Focus visible styles
+ * Enhanced focus indicator for keyboard navigation
+ */
+export const focusVisible = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--brand-primary)]';
+
+/**
+ * Screen reader only utility
+ * Alias for srOnlyClasses for consistent API
+ */
+export const srOnly = srOnlyClasses;
+
