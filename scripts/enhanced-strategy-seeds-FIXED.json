@@ -1,0 +1,568 @@
+[
+  {
+    "name": "Opening Range Breakout + Flow (Long)",
+    "slug": "orb-flow-long-v2",
+    "shortName": "ORB+",
+    "description": "Enhanced ORB with institutional flow confirmation, RVOL filter, and macro alignment. Detects bullish breakout with sweep/block activity.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": ">=", "value": 5 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": "<=", "value": 60 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "pattern.orbHigh" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.isPatientCandle", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.2 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 75
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Opening Range Breakdown + Flow (Short)",
+    "slug": "orb-flow-short-v2",
+    "shortName": "ORB+",
+    "description": "Enhanced ORB with institutional flow confirmation, RVOL filter, and macro alignment. Detects bearish breakdown with sweep/block activity.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": ">=", "value": 5 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "session.minutesSinceOpen", "op": "<=", "value": 60 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "pattern.orbLow" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.isPatientCandle", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.2 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 75
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Bounce + Flow Confirmation (Long)",
+    "slug": "ema-bounce-flow-long-v2",
+    "shortName": "EMA+",
+    "description": "Enhanced EMA bounce with flow confirmation and RVOL. Detects bullish EMA21 bounce with institutional backing and relative volume surge.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.prev", "op": "<=", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "mtf.60m.ema.9", "op": ">", "value": "mtf.60m.ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.1 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 55,
+        "ready": 70
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Rejection + Flow Confirmation (Short)",
+    "slug": "ema-rejection-flow-short-v2",
+    "shortName": "EMA+",
+    "description": "Enhanced EMA rejection with flow confirmation and RVOL. Detects bearish EMA21 rejection with institutional selling pressure.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.prev", "op": ">=", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "mtf.60m.ema.9", "op": "<", "value": "mtf.60m.ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.1 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 55,
+        "ready": 70
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Reclaim + Divergence (Long)",
+    "slug": "vwap-reclaim-divergence-long-v2",
+    "shortName": "VWR+",
+    "description": "Enhanced VWAP reclaim with RSI divergence confirmation. Fades VWAP with bullish divergence and flow support.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "vwap.value" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "vwap.distancePct", "op": "<", "value": 0.5 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.1 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 52,
+        "ready": 68
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Rejection + Divergence (Short)",
+    "slug": "vwap-rejection-divergence-short-v2",
+    "shortName": "VWR+",
+    "description": "Enhanced VWAP rejection with RSI divergence confirmation. Fades VWAP with bearish divergence and flow pressure.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "vwap.value" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "vwap.distancePct", "op": "<", "value": 0.5 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.1 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 52,
+        "ready": 68
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Cloud Momentum + Flow (Long)",
+    "slug": "cloud-flow-long-v2",
+    "shortName": "CLD+",
+    "description": "Enhanced EMA cloud with institutional flow and RVOL. Detects strong bullish momentum with sweep activity.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "ema.9" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "ema.9", "op": ">", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.2 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "rsi.14", "op": "<", "value": 75 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 58,
+        "ready": 75
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Cloud Momentum + Flow (Short)",
+    "slug": "cloud-flow-short-v2",
+    "shortName": "CLD+",
+    "description": "Enhanced EMA cloud with institutional flow and RVOL. Detects strong bearish momentum with sweep activity.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "ema.9" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": "<", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "ema.9", "op": "<", "value": "ema.21" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.2 }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "rsi.14", "op": ">", "value": 25 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 58,
+        "ready": 75
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Fibonacci Pullback + MTF (Long)",
+    "slug": "fib-pullback-mtf-long-v2",
+    "shortName": "FIB+",
+    "description": "Enhanced Fibonacci pullback with multi-timeframe confirmation. Detects bullish Fib bounce with higher timeframe alignment.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": { "field": "pattern.nearFib618", "op": "==", "value": true }
+            },
+            {
+              "type": "RULE",
+              "rule": { "field": "pattern.nearFib500", "op": "==", "value": true }
+            }
+          ]
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "price.current", "op": ">", "value": "pattern.fib618" }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.2 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 55,
+        "ready": 72
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Range Breakout + Institutional Flow (Long)",
+    "slug": "breakout-flow-long-v2",
+    "shortName": "BRK+",
+    "description": "Enhanced range breakout with institutional flow confirmation. Detects bullish breakout with sweep/block activity.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.breakoutBullish", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.volumeSpike", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.3 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 78
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Range Breakdown + Institutional Flow (Short)",
+    "slug": "breakdown-flow-short-v2",
+    "shortName": "BRK+",
+    "description": "Enhanced range breakdown with institutional flow confirmation. Detects bearish breakdown with sweep/block activity.",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.breakoutBearish", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "pattern.volumeSpike", "op": "==", "value": true }
+        },
+        {
+          "type": "RULE",
+          "rule": { "field": "volume.relativeToAvg", "op": ">=", "value": 1.3 }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 78
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  }
+]

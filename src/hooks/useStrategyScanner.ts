@@ -17,6 +17,7 @@ import { Bar } from '../lib/indicators';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { processAlertBehavior, shouldProcessAlert, type AlertProcessorContext } from '../lib/strategy/alertProcessor';
 import type { StrategyDefinition, StrategySignal } from '../types/strategy';
+import { getAggregateUnderlyingFlow, type AggregatedFlowMetrics } from '../lib/massive/aggregate-flow';
 
 // Extended signal with enriched strategy info for UI display
 export interface EnrichedStrategySignal extends StrategySignal {
@@ -227,6 +228,53 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         volume: b.v || 0,
       }));
 
+      // Fetch options flow data (if available)
+      let flowMetrics: AggregatedFlowMetrics | null = null;
+      try {
+        // Try to fetch options chain for flow analysis
+        // Only fetch for stocks and major indices (SPX, NDX, SPY, QQQ)
+        const shouldFetchFlow = isStock || ['SPX', 'NDX', 'I:SPX', 'I:NDX'].includes(symbol);
+
+        if (shouldFetchFlow) {
+          console.log(`[useStrategyScanner] 📊 Fetching options flow for ${symbol}...`);
+
+          // Fetch options chain (top contracts by volume)
+          // We'll use the options API endpoint - this is a placeholder, adjust based on your API
+          try {
+            const flowSymbol = isIndex ? symbol.replace('I:', '') : symbol;
+            const response = await fetch(
+              `/api/massive/options/chain?symbol=${encodeURIComponent(flowSymbol)}&limit=20`,
+              {
+                headers: {
+                  'x-massive-proxy-token': import.meta.env.VITE_MASSIVE_PROXY_TOKEN || '',
+                },
+              }
+            );
+
+            if (response.ok) {
+              const chainData = await response.json();
+              const contracts = chainData.results || [];
+
+              // Aggregate flow metrics across the chain
+              flowMetrics = await getAggregateUnderlyingFlow(symbol, contracts);
+
+              if (flowMetrics) {
+                console.log(`[useStrategyScanner] ✅ Flow metrics for ${symbol}:`, {
+                  flowScore: flowMetrics.flowScore,
+                  flowBias: flowMetrics.flowBias,
+                  sweeps: flowMetrics.sweepCount,
+                  blocks: flowMetrics.blockCount,
+                });
+              }
+            }
+          } catch (flowErr: any) {
+            console.log(`[useStrategyScanner] ℹ️ Flow data not available for ${symbol}:`, flowErr.message);
+          }
+        }
+      } catch (err: any) {
+        console.log(`[useStrategyScanner] ℹ️ Skipping flow aggregation for ${symbol}:`, err.message);
+      }
+
       // Build features from bars
       console.log(`[useStrategyScanner] 🔍 Building features for ${symbol} from ${formattedBars.length} bars...`);
       const currentTime = new Date().toISOString();
@@ -246,6 +294,7 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         },
         bars: formattedBars,
         timezone: 'America/New_York',
+        flow: flowMetrics,
       });
 
       // Get current user for scanner
