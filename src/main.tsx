@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.tsx";
+import { RouterProvider } from "react-router-dom";
+import { router } from "./router";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
@@ -15,7 +16,7 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <ErrorBoundary>
     <AuthProvider>
-      <App />
+      <RouterProvider router={router} />
     </AuthProvider>
   </ErrorBoundary>
 );

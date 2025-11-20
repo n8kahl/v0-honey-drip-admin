@@ -10,6 +10,7 @@ import { TraderHeader } from './components/Header/TraderHeader';
 import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { useAppNavigation } from './hooks/useAppNavigation';
+import { useNavigationRouter } from './hooks/useNavigationRouter';
 import { HDDialogDiscordSettings } from './components/hd/HDDialogDiscordSettings';
 import { HDDialogAddTicker } from './components/hd/HDDialogAddTicker';
 import { HDDialogAddChallenge } from './components/hd/HDDialogAddChallenge';
@@ -53,8 +54,9 @@ export default function App({ initialTab = 'live' }: AppProps) {
     navigateToHistory,
   } = useUIStore();
 
-  // Navigation hook (provides alternative to prop drilling - available for future use)
+  // Navigation hooks
   const nav = useAppNavigation();
+  const router = useNavigationRouter();
   const { 
     discordChannels, 
     challenges, 
@@ -264,6 +266,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
           active={activeTab === 'live'}
           onClick={() => {
             setActiveTab('live');
+            router.goToLive();
           }}
         />
         <TabButton
@@ -271,6 +274,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
           active={activeTab === 'active'}
           onClick={() => {
             navigateToActive();
+            router.goToActiveTrades();
           }}
         />
         <TabButton
@@ -278,6 +282,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
           active={activeTab === 'history'}
           onClick={() => {
             navigateToHistory();
+            router.goToTradeHistory();
           }}
         />
       </nav>
@@ -377,6 +382,11 @@ export default function App({ initialTab = 'live' }: AppProps) {
           activeTab={activeTab as any}
           onTabChange={(tab) => {
             setActiveTab(tab as any);
+            // Update URL based on tab
+            if (tab === 'live') router.goToLive();
+            else if (tab === 'active') router.goToActiveTrades();
+            else if (tab === 'history') router.goToTradeHistory();
+            else if (tab === 'settings') router.goToSettings();
           }}
           hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
           flashTradeTab={flashTradeTab}
