@@ -122,6 +122,7 @@ const chartRef = useRef<IChartApi | null>(null);
   const timeframeRef = useRef<TfKey>(currentTf);
   const tickerRef = useRef<string>(ticker);
   const [viewport, setViewport] = useState<ChartViewport>({ mode: 'AUTO' });
+  const viewportRef = useRef<ChartViewport>({ mode: 'AUTO' }); // Ref to avoid re-renders
   const applyingViewportRef = useRef(false);
   const lastNBarsAuto = 100;
   const [opacity, setOpacity] = useState<number>(1);
@@ -191,16 +192,23 @@ const chartRef = useRef<IChartApi | null>(null);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && (parsed.mode === 'AUTO' || parsed.mode === 'MANUAL')) {
+          viewportRef.current = parsed;
           setViewport(parsed);
         } else {
-          setViewport({ mode: 'AUTO' });
+          const defaultViewport = { mode: 'AUTO' as const };
+          viewportRef.current = defaultViewport;
+          setViewport(defaultViewport);
         }
       } else {
-        setViewport({ mode: 'AUTO' });
+        const defaultViewport = { mode: 'AUTO' as const };
+        viewportRef.current = defaultViewport;
+        setViewport(defaultViewport);
       }
       hasAutoFitRef.current = false;
     } catch {
-      setViewport({ mode: 'AUTO' });
+      const defaultViewport = { mode: 'AUTO' as const };
+      viewportRef.current = defaultViewport;
+      setViewport(defaultViewport);
       hasAutoFitRef.current = false;
     }
   }, [viewportStorageKey]);
@@ -554,10 +562,19 @@ const loadHistoricalBars = useCallback(async () => {
       if (!range) return;
       const from = typeof range.from === 'number' ? range.from : undefined;
       const to = typeof range.to === 'number' ? range.to : undefined;
-      if (from && to) {
-        setViewport({ mode: 'MANUAL', fromTime: from * 1000, toTime: to * 1000 });
-      } else {
-        setViewport((prev) => ({ ...prev, mode: 'MANUAL' }));
+
+      const newViewport: ChartViewport = from && to
+        ? { mode: 'MANUAL', fromTime: from * 1000, toTime: to * 1000 }
+        : { mode: 'MANUAL' };
+
+      viewportRef.current = newViewport;
+      setViewport(newViewport);
+
+      // Persist to localStorage
+      try {
+        window.localStorage.setItem(viewportStorageKey, JSON.stringify(newViewport));
+      } catch (e) {
+        console.warn('[HDLiveChart] Failed to save viewport to localStorage:', e);
       }
     };
     timeScale.subscribeVisibleTimeRangeChange(handleVisibleRange);
@@ -745,7 +762,7 @@ const loadHistoricalBars = useCallback(async () => {
             applyingViewportRef.current = false;
             hasAutoFitRef.current = true;
           }
-        } else if (viewport.mode === 'AUTO') {
+        } else if (viewportRef.current.mode === 'AUTO') {
           // Follow latest - only update if we have new bars
           const barsToUse = bars.length;
           if (barsToUse > 1) {
@@ -764,7 +781,7 @@ const loadHistoricalBars = useCallback(async () => {
     };
     
     renderUpdate();
-  }, [bars, indicators, events, ensurePriceSeries, viewport.mode, indState]);
+  }, [bars, indicators, events, ensurePriceSeries, indState]);
   
   // Real-time WebSocket subscription for live aggregate updates (paid tier)
   useEffect(() => {
