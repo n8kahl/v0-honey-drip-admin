@@ -17,14 +17,14 @@ const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
   return day;
 };
 
-// Validate that a bar has all required OHLC values as non-null numbers
+// Validate that a bar has all required OHLC values as non-null finite numbers
 const isValidBar = (bar: Partial<Bar>): bar is Bar => {
   return (
-    typeof bar.time === 'number' && bar.time > 0 &&
-    typeof bar.open === 'number' && !isNaN(bar.open) && bar.open !== null &&
-    typeof bar.high === 'number' && !isNaN(bar.high) && bar.high !== null &&
-    typeof bar.low === 'number' && !isNaN(bar.low) && bar.low !== null &&
-    typeof bar.close === 'number' && !isNaN(bar.close) && bar.close !== null
+    typeof bar.time === 'number' && bar.time > 0 && !isNaN(bar.time) && isFinite(bar.time) &&
+    typeof bar.open === 'number' && !isNaN(bar.open) && isFinite(bar.open) &&
+    typeof bar.high === 'number' && !isNaN(bar.high) && isFinite(bar.high) &&
+    typeof bar.low === 'number' && !isNaN(bar.low) && isFinite(bar.low) &&
+    typeof bar.close === 'number' && !isNaN(bar.close) && isFinite(bar.close)
   );
 };
 
@@ -322,6 +322,16 @@ const loadHistoricalBars = useCallback(async () => {
           }
 
           const parsed: Bar[] = results
+            .filter((r: any) => {
+              // Pre-filter: ensure raw data has valid timestamp and OHLC values before mapping
+              return (
+                r.t != null && typeof r.t === 'number' && !isNaN(r.t) && r.t > 0 &&
+                r.o != null && typeof r.o === 'number' && !isNaN(r.o) &&
+                r.h != null && typeof r.h === 'number' && !isNaN(r.h) &&
+                r.l != null && typeof r.l === 'number' && !isNaN(r.l) &&
+                r.c != null && typeof r.c === 'number' && !isNaN(r.c)
+              );
+            })
             .map((r: any) => ({
               time: Math.floor(r.t / 1000),
               open: r.o,
@@ -332,13 +342,13 @@ const loadHistoricalBars = useCallback(async () => {
               vwap: r.vw,
             }))
             .filter((bar: Bar) => {
-              // lightweight-charts requires all OHLC values to be non-null
+              // Post-filter: double-check mapped data for lightweight-charts compatibility
               return (
                 bar.time > 0 &&
-                typeof bar.open === 'number' && !isNaN(bar.open) && bar.open !== null &&
-                typeof bar.high === 'number' && !isNaN(bar.high) && bar.high !== null &&
-                typeof bar.low === 'number' && !isNaN(bar.low) && bar.low !== null &&
-                typeof bar.close === 'number' && !isNaN(bar.close) && bar.close !== null
+                typeof bar.open === 'number' && !isNaN(bar.open) && isFinite(bar.open) &&
+                typeof bar.high === 'number' && !isNaN(bar.high) && isFinite(bar.high) &&
+                typeof bar.low === 'number' && !isNaN(bar.low) && isFinite(bar.low) &&
+                typeof bar.close === 'number' && !isNaN(bar.close) && isFinite(bar.close)
               );
             });
 
