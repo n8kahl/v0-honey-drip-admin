@@ -15,8 +15,10 @@ async function tradierFetch<T = any>(path: string): Promise<{ ok: boolean; statu
   const url = `${getTradierBaseUrl()}${path}`;
   const token = getTradierToken();
   if (!token) {
+    console.error('[Tradier] ❌ TRADIER_ACCESS_TOKEN is not set');
     return { ok: false, status: 500, error: 'TRADIER_ACCESS_TOKEN missing' };
   }
+  console.log(`[Tradier] Fetching: ${url}`);
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -25,6 +27,7 @@ async function tradierFetch<T = any>(path: string): Promise<{ ok: boolean; statu
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    console.error(`[Tradier] ❌ HTTP ${res.status} from ${path}:`, text || res.statusText);
     return { ok: false, status: res.status, error: text || `Tradier ${res.status}` };
   }
   const json = await res.json();

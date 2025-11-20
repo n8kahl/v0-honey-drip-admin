@@ -154,11 +154,13 @@ router.get('/massive/tradier/stocks/bars', requireProxyToken, async (req, res) =
   }
 
   try {
+    console.log(`[Tradier] Fetching ${symbol} bars: interval=${interval}, start=${start}, end=${end}`);
     const bars = await tradierGetHistory(symbol, interval, start, end);
+    console.log(`[Tradier] ✅ Received ${bars.length} bars for ${symbol}`);
     // Return in Massive-compatible format
     res.json({ results: bars.map(bar => ({ t: bar.time * 1000, o: bar.open, h: bar.high, l: bar.low, c: bar.close, v: bar.volume })) });
   } catch (error: any) {
-    console.error('[Tradier] Stock bars error:', error);
+    console.error('[Tradier] ❌ Stock bars error for', symbol, ':', error.message || error);
     res.status(502).json({ error: error?.message || 'Tradier API error' });
   }
 });
