@@ -110,6 +110,8 @@ class MassiveWebSocket {
 
   async connect() {
     // Connect both options and indices sockets
+    console.log('[Massive WS] 🚀 WebSocket Manager v2 (server proxy mode) initializing...');
+    console.log('[Massive WS] 📡 WS_BASE:', typeof window !== 'undefined' ? ((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host) : 'ws://localhost:8080');
     this.connectEndpoint('options');
     this.connectEndpoint('indices');
   }
@@ -129,6 +131,10 @@ class MassiveWebSocket {
       const token = getToken();
       const baseUrl = endpoint === 'options' ? OPTIONS_WS_URL : INDICES_WS_URL;
       const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+
+      console.log(`[Massive WS] 🔌 Connecting ${endpoint} to:`, baseUrl);
+      console.log(`[Massive WS] 🎫 Token present:`, token ? `yes (${token.substring(0, 8)}...)` : 'NO TOKEN!');
+      console.log(`[Massive WS] 🌐 Full URL:`, wsUrl.replace(/token=[^&]+/, 'token=***'));
 
       const socket = new WebSocket(wsUrl);
       this.sockets[endpoint] = socket;
