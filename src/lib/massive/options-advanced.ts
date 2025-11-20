@@ -1,4 +1,4 @@
-import { massive } from './client';
+import { massive } from '.';
 import { streamingManager } from './streaming-manager';
 import { massive, type TradeUpdate, type WebSocketMessage } from './websocket';
 

@@ -1,7 +1,7 @@
 // INDICES ADVANCED - Real-time index data with technical indicators
 // Supports SPX, NDX, VIX, and other major indices
 
-import { massive } from './client';
+import { massive } from '.';
 import { fetchIndicators, IndicatorRequest, IndicatorResponse } from './indicators-api';
 import { streamingManager } from './streaming-manager';
 

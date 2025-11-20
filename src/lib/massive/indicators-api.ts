@@ -1,7 +1,7 @@
 // Technical Indicators API for OPTIONS ADVANCED
 // Fetches pre-computed indicators from Massive.com
 
-import { massive } from './client';
+import { massive } from '.';
 import { calculateEMA as centralEMA } from '../indicators';
 
 const INDEX_TICKERS = ['SPX', 'NDX', 'VIX', 'RUT'];
