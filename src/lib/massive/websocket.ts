@@ -9,23 +9,22 @@ const INDICES_WS_URL = `${WS_BASE}/ws/indices`;
 
 type WsEndpoint = 'options' | 'indices';
 
-function getToken(): string {
-  // Token for authenticating to server proxy (not Massive.com API key)
-  // Access directly for Vite's static analysis to recognize and bake into bundle
-  const token = import.meta.env.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
-
-  // Debug logging to diagnose token issue
-  console.log('[Massive WS] 🔍 getToken() debug:', {
-    tokenRaw: token,
-    tokenType: typeof token,
-    tokenLength: token?.length,
-    tokenTruthy: !!token,
-    tokenValue: token ? `${token.substring(0, 12)}...` : 'EMPTY/UNDEFINED',
-    importMetaEnv: import.meta.env,
-    allEnvKeys: import.meta.env ? Object.keys(import.meta.env) : [],
-  });
-
-  return token || '';
+async function getToken(): Promise<string> {
+  // Fetch ephemeral token from server for WebSocket authentication
+  // Server generates time-limited token signed with MASSIVE_API_KEY
+  try {
+    const response = await fetch('/api/ws-token', { method: 'POST' });
+    if (!response.ok) {
+      console.error('[Massive WS] Failed to get ephemeral token:', response.statusText);
+      return '';
+    }
+    const data = await response.json();
+    console.log('[Massive WS] ✓ Ephemeral token obtained, expires in:', Math.round((data.exp - Date.now()) / 1000), 'seconds');
+    return data.token;
+  } catch (err) {
+    console.error('[Massive WS] Error fetching ephemeral token:', err);
+    return '';
+  }
 }
 
 type SubscriptionCallback = (message: WebSocketMessage) => void;
@@ -130,7 +129,7 @@ class MassiveWebSocket {
   }
 
   // Connect to specific endpoint (options or indices)
-  connectEndpoint(endpoint: WsEndpoint) {
+  async connectEndpoint(endpoint: WsEndpoint) {
     if (this.sockets[endpoint]?.readyState === WebSocket.OPEN || this.isConnecting[endpoint]) {
       return;
     }
@@ -140,14 +139,21 @@ class MassiveWebSocket {
     this.isAuthenticated[endpoint] = false;
 
     try {
-      // Token passed as URL param for server proxy auth
-      const token = getToken();
+      // Fetch ephemeral token from server for WebSocket authentication
+      const token = await getToken();
+      if (!token) {
+        console.error(`[Massive WS] ${endpoint} cannot connect: failed to obtain authentication token`);
+        this.isConnecting[endpoint] = false;
+        this.attemptReconnect(endpoint);
+        return;
+      }
+
       const baseUrl = endpoint === 'options' ? OPTIONS_WS_URL : INDICES_WS_URL;
-      const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+      const wsUrl = `${baseUrl}?token=${encodeURIComponent(token)}`;
 
       console.log(`[Massive WS] 🔌 Connecting ${endpoint} to:`, baseUrl);
-      console.log(`[Massive WS] 🎫 Token present:`, token ? `yes (${token.substring(0, 8)}...)` : 'NO TOKEN!');
-      console.log(`[Massive WS] 🌐 Full URL:`, wsUrl.replace(/token=[^&]+/, 'token=***'));
+      console.log(`[Massive WS] 🎫 Token present: yes (ephemeral token obtained)`);
+      console.log(`[Massive WS] 🌐 WebSocket URL: ${baseUrl}?token=***`);
 
       const socket = new WebSocket(wsUrl);
       this.sockets[endpoint] = socket;

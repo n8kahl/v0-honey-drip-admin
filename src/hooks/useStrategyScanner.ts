@@ -90,7 +90,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         return [];
       }
 
-      console.log(`[useStrategyScanner] ✅ Loaded ${data?.length || 0} enabled strategies`);
       return data || [];
     } catch (err: any) {
       console.error('[useStrategyScanner] Exception fetching strategies:', err);
@@ -153,7 +152,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
       });
 
       setSignalsBySymbol(grouped);
-      console.log(`[useStrategyScanner] 📊 Loaded signals for ${grouped.size} symbols`);
     } catch (err: any) {
       console.error('[useStrategyScanner] Exception fetching signals:', err);
     }
@@ -164,7 +162,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
    */
   const scanSymbol = useCallback(async (symbol: string, strategyList: any[]) => {
     if (strategyList.length === 0) {
-      console.log(`[useStrategyScanner] No enabled strategies, skipping scan for ${symbol}`);
       return;
     }
 
@@ -182,7 +179,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
 
       if (isStock) {
         // Use Tradier for stocks (user has indices+options plans, not stocks)
-        console.log(`[useStrategyScanner] Fetching stock ${symbol} from Tradier (5min bars)`);
         try {
           // Calculate date range (last 5 days should cover 200 5-minute bars)
           const endDate = new Date();
@@ -204,7 +200,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
 
           const data = await response.json();
           bars = data.results || [];
-          console.log(`[useStrategyScanner] Fetched ${bars.length} bars from Tradier for ${symbol}`);
         } catch (err: any) {
           console.error(`[useStrategyScanner] Failed to fetch Tradier data for ${symbol}:`, err);
           return;
@@ -214,7 +209,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         bars = await massiveClient.getAggregates(normalizedSymbol, '5', 200);
       }
       if (bars.length < 20) {
-        console.warn(`[useStrategyScanner] Insufficient bars for ${symbol} (${bars.length} bars), skipping`);
         return;
       }
 
@@ -236,8 +230,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         const shouldFetchFlow = isStock || ['SPX', 'NDX', 'I:SPX', 'I:NDX'].includes(symbol);
 
         if (shouldFetchFlow) {
-          console.log(`[useStrategyScanner] 📊 Fetching options flow for ${symbol}...`);
-
           // Fetch options chain (top contracts by volume)
           // We'll use the options API endpoint - this is a placeholder, adjust based on your API
           try {
@@ -257,26 +249,16 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
 
               // Aggregate flow metrics across the chain
               flowMetrics = await getAggregateUnderlyingFlow(symbol, contracts);
-
-              if (flowMetrics) {
-                console.log(`[useStrategyScanner] ✅ Flow metrics for ${symbol}:`, {
-                  flowScore: flowMetrics.flowScore,
-                  flowBias: flowMetrics.flowBias,
-                  sweeps: flowMetrics.sweepCount,
-                  blocks: flowMetrics.blockCount,
-                });
-              }
             }
           } catch (flowErr: any) {
-            console.log(`[useStrategyScanner] ℹ️ Flow data not available for ${symbol}:`, flowErr.message);
+            // Silently skip flow data if unavailable
           }
         }
       } catch (err: any) {
-        console.log(`[useStrategyScanner] ℹ️ Skipping flow aggregation for ${symbol}:`, err.message);
+        // Silently skip flow aggregation
       }
 
       // Build features from bars
-      console.log(`[useStrategyScanner] 🔍 Building features for ${symbol} from ${formattedBars.length} bars...`);
       const currentTime = new Date().toISOString();
       const features = buildSymbolFeatures({
         symbol,
@@ -306,7 +288,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
       }
 
       // Scan strategies against features
-      console.log(`[useStrategyScanner] 🎯 Scanning ${strategyList.length} strategies for ${symbol}...`);
       const signals = await scanStrategiesForUser({
         owner: user.id,
         symbols: [symbol],
@@ -317,11 +298,8 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
       });
 
       if (signals.length > 0) {
-        console.log(`[useStrategyScanner] ✨ Found ${signals.length} signals for ${symbol}:`, signals);
         // Signals are automatically inserted to database by scanner
         // Realtime subscription will pick them up and update UI
-      } else {
-        console.log(`[useStrategyScanner] No signals found for ${symbol}`);
       }
     } catch (err: any) {
       console.error(`[useStrategyScanner] Error scanning ${symbol}:`, err);
@@ -334,22 +312,14 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
    * Scan all watchlist symbols
    */
   const scanAll = useCallback(async () => {
-    if (!enabled || symbols.length === 0) return;
-    if (strategies.length === 0) {
-      console.log('[useStrategyScanner] No strategies loaded yet, skipping scan');
-      return;
-    }
+    if (!enabled || symbols.length === 0 || strategies.length === 0) return;
 
-    console.log(`[useStrategyScanner] 🔄 Starting full scan for ${symbols.length} symbols...`);
-    
     // Scan symbols sequentially to avoid rate limiting
     for (const symbol of symbols) {
       await scanSymbol(symbol, strategies);
       // Small delay between symbols
       await new Promise(resolve => setTimeout(resolve, 500));
     }
-
-    console.log('[useStrategyScanner] ✅ Full scan complete');
   }, [enabled, symbols, strategies, scanSymbol]);
 
   /**
@@ -376,8 +346,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
             filter: `owner=eq.${user.id}`,
           },
           async (payload) => {
-            console.log('[useStrategyScanner] 🔔 New signal received:', payload.new);
-            
             // Fetch full strategy definition for alert processing
             const { data: strategyData } = await supabase
               .from('strategy_definitions')
@@ -491,19 +459,14 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
           }
         )
         .subscribe((status, err) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('[useStrategyScanner] 📡 Realtime subscription active');
-          } else if (status === 'CHANNEL_ERROR') {
+          if (status === 'CHANNEL_ERROR') {
             console.error('[useStrategyScanner] ❌ Realtime channel error:', err);
 
             // Attempt reconnection after 5 seconds
             setTimeout(() => {
-              console.log('[useStrategyScanner] 🔄 Attempting to reconnect realtime subscription...');
-
               if (realtimeChannelRef.current) {
                 realtimeChannelRef.current.unsubscribe();
               }
-
               // Re-trigger subscription by updating a local state
               // This is a simplified approach - in production, you might want a more robust retry mechanism
             }, 5000);
@@ -512,16 +475,10 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
 
             // Attempt reconnection
             setTimeout(() => {
-              console.log('[useStrategyScanner] 🔄 Reconnecting after timeout...');
-
               if (realtimeChannelRef.current) {
                 realtimeChannelRef.current.unsubscribe();
               }
             }, 3000);
-          } else if (status === 'CLOSED') {
-            console.log('[useStrategyScanner] 📴 Realtime subscription closed');
-          } else {
-            console.log(`[useStrategyScanner] Realtime subscription status: ${status}`);
           }
         });
 
@@ -531,7 +488,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
     return () => {
       if (realtimeChannelRef.current) {
         realtimeChannelRef.current.unsubscribe();
-        console.log('[useStrategyScanner] 📴 Realtime subscription cleaned up');
       }
     };
   }, [enabled]);
@@ -575,7 +531,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
 
     return () => {
       clearInterval(intervalId);
-      console.log('[useStrategyScanner] 🛑 Cleared scan interval');
     };
     // Only re-run when enabled, symbols list, or interval changes
     // Do NOT include scanAll or strategies.length to avoid stacking intervals!
@@ -628,8 +583,6 @@ export function useStrategyScanner(options: UseStrategyScannerOptions = {}) {
         }
         return next;
       });
-
-      console.log(`[useStrategyScanner] Signal ${signalId} dismissed`);
     } catch (err: any) {
       console.error('[useStrategyScanner] Exception dismissing signal:', err);
     }

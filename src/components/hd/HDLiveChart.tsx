@@ -215,7 +215,6 @@ const loadHistoricalBars = useCallback(async () => {
 
       setBars(validCachedBars);
       setDataSource('rest');
-      console.log(`[HDLiveChart] Using cached bars for ${ticker} (${validCachedBars.length} bars)`);
       return;
     }
 
@@ -263,7 +262,6 @@ const loadHistoricalBars = useCallback(async () => {
               currentTf === '60' ? '15min' : // Tradier doesn't have 60min, use 15min
               'daily';
 
-            console.log(`[HDLiveChart] Fetching stock ${ticker} from Tradier (interval: ${tradierInterval})`);
             response = await getTradierStockBars(ticker, tradierInterval, fromDate, toDate);
           } else {
             response = await fetcher!(symbolParam, multiplier, timespan, fromDate, toDate, limit);
@@ -282,12 +280,6 @@ const loadHistoricalBars = useCallback(async () => {
             throw new Error('No historical data returned');
           }
 
-          console.log(`[HDLiveChart] Raw API response for ${ticker} ${currentTf}:`, {
-            resultsLength: results.length,
-            firstItem: results[0],
-            sampleTimestamps: results.slice(0, 3).map((r: any) => ({ t: r.t, o: r.o, h: r.h, l: r.l, c: r.c }))
-          });
-
           const preFiltered = results.filter((r: any) => {
             // Pre-filter: ensure raw data has valid timestamp and OHLC values before mapping
             return (
@@ -298,8 +290,6 @@ const loadHistoricalBars = useCallback(async () => {
               r.c != null && typeof r.c === 'number' && !isNaN(r.c)
             );
           });
-
-          console.log(`[HDLiveChart] After pre-filter: ${preFiltered.length}/${results.length} valid items`);
 
           const mapped = preFiltered.map((r: any) => ({
             time: Math.floor(r.t / 1000),
@@ -322,8 +312,6 @@ const loadHistoricalBars = useCallback(async () => {
             );
           });
 
-          console.log(`[HDLiveChart] Final parsed bars for ${ticker} ${currentTf}: ${parsed.length} bars`);
-
           // Deduplicate by timestamp (lightweight-charts requires unique, ascending timestamps)
           const deduplicated: Bar[] = [];
           const seenTimes = new Set<number>();
@@ -341,8 +329,6 @@ const loadHistoricalBars = useCallback(async () => {
 
           // Sort by time ascending (required by lightweight-charts)
           deduplicated.sort((a, b) => a.time - b.time);
-
-          console.log(`[HDLiveChart] Deduplicated bars for ${ticker} ${currentTf}: ${deduplicated.length} unique bars`);
 
           barsCacheRef.current.set(cacheKey, deduplicated);
           // Clear failed fetch marker on success
@@ -379,7 +365,6 @@ const loadHistoricalBars = useCallback(async () => {
       setRateLimited(false);
       setRateLimitMessage(null);
       setDataSource('rest');
-      console.log(`[HDLiveChart] Loaded ${parsedBars.length} historical bars for ${ticker}`);
     } catch (error) {
       // Mark as failed to prevent immediate retry
       failedFetchesRef.current.set(cacheKey, Date.now());
@@ -456,7 +441,6 @@ const loadHistoricalBars = useCallback(async () => {
         wickDownColor: '#EF4444',
       };
       candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries(candleOptions);
-      console.log('[HDLiveChart] Candlestick series created');
     } catch (err) {
       console.error('[HDLiveChart] Failed to create candlestick series:', err);
     }
@@ -475,7 +459,6 @@ const loadHistoricalBars = useCallback(async () => {
         );
         if (emaSeries) {
           emaSeriesRefs.current.set(period, emaSeries);
-          console.log(`[HDLiveChart] EMA${period} series created`);
         }
       });
     }
@@ -493,7 +476,6 @@ const loadHistoricalBars = useCallback(async () => {
       );
       if (vwapSeries) {
         vwapSeriesRef.current = vwapSeries;
-        console.log('[HDLiveChart] VWAP series created');
       }
     }
 
@@ -504,13 +486,11 @@ const loadHistoricalBars = useCallback(async () => {
       const lowerSeries = createLineSeries({ color: '#6366F1', lineWidth: 1, title: 'BB Lower' }, 'BB Lower');
       if (upperSeries && middleSeries && lowerSeries) {
         bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
-        console.log('[HDLiveChart] Bollinger Bands series created');
       }
     }
 
     // No viewport subscription needed - let users control pan/zoom freely
     setChartReady(true);
-    console.log('[HDLiveChart] Chart initialization complete');
     
     // Handle resize
     const handleResize = () => {
@@ -584,7 +564,6 @@ const loadHistoricalBars = useCallback(async () => {
 
           ts.setVisibleRange({ from: from as any, to: to as any });
           hasAutoFitRef.current = true;
-          console.log('[HDLiveChart] Initial viewport set (bars at 75% position) - will never auto-adjust again');
         } catch (error) {
           console.error('[HDLiveChart] Error setting initial viewport:', error);
           // Don't set hasAutoFitRef so it can retry
@@ -818,7 +797,6 @@ const loadHistoricalBars = useCallback(async () => {
     // Only check once per minute to avoid excessive polling
     const fallbackInterval = setInterval(() => {
       if (Date.now() - lastUpdate > 30000 && !document.hidden && bars.length === 0) {
-        console.log('[HDLiveChart] No WebSocket data for 30s and no bars, falling back to REST');
         setIsConnected(false);
         setDataSource('rest');
         loadHistoricalBars();
@@ -914,8 +892,6 @@ const loadHistoricalBars = useCallback(async () => {
         console.error(`[HDLiveChart] Failed to create level line for ${level.label}:`, error);
       }
     });
-    
-    console.log(`[HDLiveChart] Rendered ${levels.length} level lines for ${ticker}`);
   }, [levels, ticker]);
   
   const getAsOfText = () => {
