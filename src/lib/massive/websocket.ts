@@ -11,18 +11,18 @@ type WsEndpoint = 'options' | 'indices';
 
 function getToken(): string {
   // Token for authenticating to server proxy (not Massive.com API key)
-  const env = (import.meta as any)?.env;
-  const token = env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
+  // Access directly for Vite's static analysis to recognize and bake into bundle
+  const token = import.meta.env.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
 
   // Debug logging to diagnose token issue
   console.log('[Massive WS] 🔍 getToken() debug:', {
-    envExists: !!env,
     tokenRaw: token,
     tokenType: typeof token,
     tokenLength: token?.length,
     tokenTruthy: !!token,
     tokenValue: token ? `${token.substring(0, 12)}...` : 'EMPTY/UNDEFINED',
-    allEnvKeys: env ? Object.keys(env) : [],
+    importMetaEnv: import.meta.env,
+    allEnvKeys: import.meta.env ? Object.keys(import.meta.env) : [],
   });
 
   return token || '';
