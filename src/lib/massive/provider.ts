@@ -8,7 +8,7 @@
 import { MassiveTokenManager } from './token-manager';
 import { MassiveCache } from './cache';
 import { MassiveREST } from './rest';
-import { MassiveWebSocket } from './websocket-new';
+import { MassiveWebSocket } from './websocket';
 import type {
   MassiveQuote,
   MassiveOption,
@@ -16,7 +16,7 @@ import type {
   MassiveIndex,
 } from './types';
 import type { MassiveAggregateBar, MassiveMarketStatus, MassiveRSI } from './rest';
-import type { WebSocketMessage } from './websocket-new';
+import type { WebSocketMessage } from './websocket';
 
 export interface MassiveConfig {
   baseUrl?: string;
