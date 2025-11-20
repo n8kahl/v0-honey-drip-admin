@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
@@ -22,6 +22,8 @@ import { useDiscord } from './hooks/useDiscord';
 import { useStrategyScanner } from './hooks/useStrategyScanner';
 import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './stores';
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
+import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
+import { KeyboardShortcutsDialog } from './components/shortcuts/KeyboardShortcutsDialog';
 import './styles/globals.css';
 
 interface AppProps {
@@ -32,6 +34,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
   const router = useRouter();
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
 
   // Zustand stores
   const { loadTrades, activeTrades, historyTrades, updatedTradeIds } = useTradeStore();
@@ -81,7 +84,72 @@ export default function App({ initialTab = 'live' }: AppProps) {
     enabled: !!user, // Only scan when authenticated
     scanInterval: 60000, // Scan every 1 minute
   });
-  
+
+  // Define keyboard shortcuts
+  const shortcuts: KeyboardShortcut[] = useMemo(
+    () => [
+      // Navigation shortcuts
+      {
+        key: '1',
+        description: 'Go to Watch tab (Live)',
+        action: () => {
+          setActiveTab('live');
+          router.push('/');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '2',
+        description: 'Go to Trade tab (Active)',
+        action: () => {
+          setActiveTab('active');
+          router.push('/trades/active');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '3',
+        description: 'Go to Review tab (History)',
+        action: () => {
+          setActiveTab('history');
+          router.push('/trades/history');
+        },
+        category: 'navigation',
+      },
+      {
+        key: '4',
+        description: 'Go to Settings',
+        action: () => {
+          setActiveTab('settings');
+          router.push('/settings');
+        },
+        category: 'navigation',
+      },
+      {
+        key: 'Escape',
+        description: 'Close shortcuts dialog',
+        action: () => setShowShortcutsDialog(false),
+        category: 'general',
+      },
+      {
+        key: 'Ctrl+?',
+        description: 'Show keyboard shortcuts',
+        action: () => setShowShortcutsDialog(true),
+        category: 'help',
+      },
+      {
+        key: 'Cmd+?',
+        description: 'Show keyboard shortcuts (Mac)',
+        action: () => setShowShortcutsDialog(true),
+        category: 'help',
+      },
+    ],
+    [setActiveTab]
+  );
+
+  // Register keyboard shortcuts
+  useKeyboardShortcuts(shortcuts);
+
   // Update quotes in market store when new data arrives
   useEffect(() => {
     if (quotes.size > 0) {
@@ -327,6 +395,13 @@ export default function App({ initialTab = 'live' }: AppProps) {
           flashTradeTab={flashTradeTab}
         />
       </div>
+
+      {/* Keyboard Shortcuts Help Dialog */}
+      <KeyboardShortcutsDialog
+        isOpen={showShortcutsDialog}
+        onClose={() => setShowShortcutsDialog(false)}
+        shortcuts={shortcuts}
+      />
 
       <Toaster />
     </div>
