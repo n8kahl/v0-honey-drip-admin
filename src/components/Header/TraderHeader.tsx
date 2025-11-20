@@ -8,6 +8,7 @@ import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
 import { useMarketDataStore } from '../../stores/marketDataStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { colorTransition, buttonHoverColor, focusStateSmooth } from '../../lib/animations';
 
 interface MarketStatusProps {
   session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
@@ -238,7 +239,12 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout }) =>
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-[var(--surface-2)] transition-colors"
+        className={cn(
+          'flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-[var(--surface-2)]',
+          colorTransition,
+          buttonHoverColor,
+          focusStateSmooth
+        )}
       >
         <div className="w-6 h-6 rounded-full bg-[var(--brand-primary)] flex items-center justify-center">
           <User className="w-3.5 h-3.5 text-white" />
@@ -250,16 +256,16 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout }) =>
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-48 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] shadow-lg z-50">
           <div className="p-2 space-y-1">
-            <button className="w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded transition-colors">
+            <button className={cn('w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}>
               Profile
             </button>
-            <button className="w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded transition-colors">
+            <button className={cn('w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}>
               Settings
             </button>
             <div className="h-px bg-[var(--border-hairline)] my-1" />
             <button
               onClick={onLogout}
-              className="w-full px-3 py-2 text-left text-sm text-[var(--accent-negative)] hover:bg-[var(--surface-3)] rounded transition-colors"
+              className={cn('w-full px-3 py-2 text-left text-sm text-[var(--accent-negative)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}
             >
               Logout
             </button>
@@ -356,7 +362,12 @@ export const TraderHeader: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={handleDarkModeToggle}
-            className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)] transition-colors"
+            className={cn(
+              'w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)]',
+              colorTransition,
+              buttonHoverColor,
+              focusStateSmooth
+            )}
             title="Toggle dark mode"
           >
             {darkMode ? (

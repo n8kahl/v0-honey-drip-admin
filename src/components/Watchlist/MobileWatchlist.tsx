@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { HDStrategyMiniChart } from '../hd/HDStrategyMiniChart';
 import { calculateEMA } from '../../lib/indicators';
+import { cardHover, colorTransition } from '../../lib/animations';
 
 interface MobileWatchlistProps {
   tickers: Ticker[];
@@ -118,8 +119,10 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
         'flex-shrink-0 w-64 h-80 rounded-2xl p-4 flex flex-col justify-between',
         'bg-[var(--surface-2)]',
         'border border-[var(--border-hairline)]',
-        'active:scale-95 transition-transform cursor-pointer',
-        'relative overflow-hidden'
+        'active:scale-95 cursor-pointer',
+        'relative overflow-hidden',
+        cardHover,
+        colorTransition
       )}
     >
 
