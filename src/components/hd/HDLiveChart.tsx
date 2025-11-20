@@ -242,16 +242,31 @@ const loadHistoricalBars = useCallback(async () => {
     }
 
     if (barsCacheRef.current.has(cacheKey)) {
-      setBars(barsCacheRef.current.get(cacheKey)!);
+      const cachedBars = barsCacheRef.current.get(cacheKey)!;
+      // Filter cached bars to ensure they're valid (cache might have old data with nulls)
+      const validCachedBars = cachedBars.filter(bar => isValidBar(bar));
+
+      if (validCachedBars.length !== cachedBars.length) {
+        console.warn(`[HDLiveChart] Filtered ${cachedBars.length - validCachedBars.length} invalid bars from cache for ${ticker}`);
+        // Update cache with filtered data
+        barsCacheRef.current.set(cacheKey, validCachedBars);
+      }
+
+      setBars(validCachedBars);
       setDataSource('rest');
-      console.log(`[HDLiveChart] Using cached bars for ${ticker} (${barsCacheRef.current.get(cacheKey)!.length} bars)`);
+      console.log(`[HDLiveChart] Using cached bars for ${ticker} (${validCachedBars.length} bars)`);
       return;
     }
 
     if (inflightFetchesRef.current.has(cacheKey)) {
       try {
         const cached = await inflightFetchesRef.current.get(cacheKey)!;
-        setBars(cached);
+        // Filter inflight fetch results to ensure they're valid
+        const validCached = cached.filter(bar => isValidBar(bar));
+        if (validCached.length !== cached.length) {
+          console.warn(`[HDLiveChart] Filtered ${cached.length - validCached.length} invalid bars from inflight fetch for ${ticker}`);
+        }
+        setBars(validCached);
         setDataSource('rest');
       } catch (error) {
         console.error('[HDLiveChart] Cached historical fetch failed:', error);
