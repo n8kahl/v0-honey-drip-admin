@@ -1,10 +1,16 @@
-// Dedicated endpoints for Options Advanced and Indices Advanced plans (2025 spec)
-const OPTIONS_WS_URL = 'wss://socket.massive.com/options';
-const INDICES_WS_URL = 'wss://socket.massive.com/indices';
+// Connect to server-side WebSocket proxy (not direct to Massive.com)
+// The server proxy at /ws/options and /ws/indices handles upstream auth
+const WS_BASE = typeof window !== 'undefined'
+  ? (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
+  : 'ws://localhost:8080';
+
+const OPTIONS_WS_URL = `${WS_BASE}/ws/options`;
+const INDICES_WS_URL = `${WS_BASE}/ws/indices`;
 
 type WsEndpoint = 'options' | 'indices';
 
 function getToken(): string {
+  // Token for authenticating to server proxy (not Massive.com API key)
   const token = (import.meta as any)?.env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
   return token || '';
 }
@@ -119,18 +125,29 @@ class MassiveWebSocket {
     this.isAuthenticated[endpoint] = false;
 
     try {
-      const wsUrl = endpoint === 'options' ? OPTIONS_WS_URL : INDICES_WS_URL;
+      // Token passed as URL param for server proxy auth
+      const token = getToken();
+      const baseUrl = endpoint === 'options' ? OPTIONS_WS_URL : INDICES_WS_URL;
+      const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+
       const socket = new WebSocket(wsUrl);
       this.sockets[endpoint] = socket;
 
       socket.onopen = () => {
-        // console.log(`[Massive WS] Connected to ${endpoint}, authenticating...`);
+        console.log(`[Massive WS] ${endpoint} connected to server proxy`);
         this.isConnecting[endpoint] = false;
         this.reconnectAttempts[endpoint] = 0;
 
-        // Auth with token (Massive.com expects 'params' field, not 'token')
-        const token = getToken();
-        this.send(endpoint, { action: 'auth', params: token });
+        // Server proxy handles upstream auth, no client auth needed
+        // Mark as authenticated immediately since we connected successfully
+        this.isAuthenticated[endpoint] = true;
+
+        // Subscribe based on endpoint
+        if (endpoint === 'options') {
+          this.subscribeOptionsWatchlist();
+        } else if (endpoint === 'indices') {
+          this.subscribeIndicesFixed();
+        }
       };
 
       socket.onmessage = (event) => {
@@ -221,48 +238,15 @@ class MassiveWebSocket {
   private handleMessage(msg: any, endpoint: WsEndpoint) {
     const { ev, sym } = msg;
 
-    // Handle connection success (ignore, waiting for auth)
-    if (msg.status === 'connected' && ev === 'status') {
-      console.log(`[Massive WS] ${endpoint} connected, waiting for authentication...`);
-      return;
-    }
+    // Server proxy forwards all Massive.com messages directly
+    // Auth is handled server-side, so we only process data messages here
 
-    // Handle auth failure (only actual errors)
-    if (msg.status === 'auth_failed' || msg.status === 'auth_timeout' || (msg.status === 'error' && ev === 'status')) {
-      console.error(`[Massive WS] ${endpoint} authentication failed:`, msg);
-      this.isAuthenticated[endpoint] = false;
-      // Don't reconnect on auth failure - likely a token issue
-      this.sockets[endpoint]?.close();
-      this.sockets[endpoint] = null;
-      return;
-    }
-
-    // Handle auth success
-    if (msg.status === 'auth_success' || (ev === 'status' && msg.message === 'authenticated')) {
-      console.log(`[Massive WS] ${endpoint} authenticated successfully`);
-      this.isAuthenticated[endpoint] = true;
-
-      // Notify marketDataStore of connection
-      if (typeof window !== 'undefined') {
-        import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
-          const state = useMarketDataStore.getState();
-          state.wsConnection = { ...state.wsConnection, status: 'connected', lastMessageTime: Date.now() };
-        });
-      }
-
-      // Start heartbeat for this endpoint
-      this.heartbeatIntervals[endpoint] = setInterval(
-        () => this.send(endpoint, { action: 'ping' }),
-        25_000
-      );
-
-      // Subscribe based on endpoint
-      if (endpoint === 'options') {
-        this.subscribeOptionsWatchlist();
-      } else if (endpoint === 'indices') {
-        this.subscribeIndicesFixed();
-      }
-      return;
+    // Notify marketDataStore of activity
+    if (typeof window !== 'undefined' && ev) {
+      import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
+        const state = useMarketDataStore.getState();
+        state.wsConnection = { ...state.wsConnection, status: 'connected', lastMessageTime: Date.now() };
+      });
     }
     
     // Handle data messages: Q = option quotes, A/AM = aggregates, T = trades
