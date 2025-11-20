@@ -25,13 +25,13 @@ export default function App() {
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
   
   // Debug log for auth state
-  console.log('[v0] App: Auth state', { 
-    user: user?.id, 
-    loading, 
-    isTestAuto,
-    envVar: (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN,
-    willShowAuth: !user && !isTestAuto 
-  });
+  // console.log('[v0] App: Auth state', {
+  //   user: user?.id,
+  //   loading,
+  //   isTestAuto,
+  //   envVar: (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN,
+  //   willShowAuth: !user && !isTestAuto
+  // });
   
   // Zustand stores
   const { loadTrades, activeTrades, historyTrades, updatedTradeIds } = useTradeStore();
