@@ -127,10 +127,10 @@ class MassiveWebSocket {
         // console.log(`[Massive WS] Connected to ${endpoint}, authenticating...`);
         this.isConnecting[endpoint] = false;
         this.reconnectAttempts[endpoint] = 0;
-        
-        // Auth with token
+
+        // Auth with token (Massive.com expects 'params' field, not 'token')
         const token = getToken();
-        this.send(endpoint, { action: 'auth', token });
+        this.send(endpoint, { action: 'auth', params: token });
       };
 
       socket.onmessage = (event) => {
