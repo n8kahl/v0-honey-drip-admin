@@ -144,19 +144,19 @@ export async function tradierGetHistory(
 ): Promise<{ time: number; open: number; high: number; low: number; close: number; volume: number }[]> {
   const s = symbol.replace(/^I:/, '');
 
-  // For intraday bars, use timeseries endpoint
+  // For intraday bars, use timesales endpoint
   const isIntraday = ['1min', '5min', '15min'].includes(interval);
 
   let path: string;
   if (isIntraday) {
-    // Intraday timeseries: /markets/timeseries?symbol=SPY&interval=5min&start=2024-01-01&end=2024-01-31
+    // Intraday timesales: /markets/timesales?symbol=SPY&interval=5min&start=2024-01-01&end=2024-01-31
     const params = new URLSearchParams({
       symbol: s,
       interval: interval,
     });
     if (startDate) params.set('start', startDate);
     if (endDate) params.set('end', endDate);
-    path = `/markets/timeseries?${params}`;
+    path = `/markets/timesales?${params}`;
   } else {
     // Daily/weekly/monthly history: /markets/history?symbol=SPY&interval=daily&start=2024-01-01&end=2024-01-31
     const params = new URLSearchParams({
@@ -174,7 +174,7 @@ export async function tradierGetHistory(
   // Parse response - format varies between endpoints
   let bars: any[] = [];
   if (isIntraday) {
-    // Timeseries response: { series: { data: [ { time, timestamp, price, open, high, low, close, volume }, ... ] } }
+    // Timesales response: { series: { data: [ { time, timestamp, price, open, high, low, close, volume }, ... ] } }
     bars = data?.series?.data || [];
   } else {
     // History response: { history: { day: [ { date, open, high, low, close, volume }, ... ] } }
