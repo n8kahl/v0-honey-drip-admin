@@ -1,4 +1,7 @@
+'use client';
+
 import { useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -26,6 +29,7 @@ interface AppProps {
 }
 
 export default function App({ initialTab = 'live' }: AppProps) {
+  const router = useRouter();
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
 
@@ -195,17 +199,26 @@ export default function App({ initialTab = 'live' }: AppProps) {
         <TabButton
           label="Watch"
           active={activeTab === 'live'}
-          onClick={() => setActiveTab('live')}
+          onClick={() => {
+            setActiveTab('live');
+            router.push('/');
+          }}
         />
         <TabButton
           label="Trade"
           active={activeTab === 'active'}
-          onClick={navigateToActive}
+          onClick={() => {
+            navigateToActive();
+            router.push('/trades/active');
+          }}
         />
         <TabButton
           label="Review"
           active={activeTab === 'history'}
-          onClick={navigateToHistory}
+          onClick={() => {
+            navigateToHistory();
+            router.push('/trades/history');
+          }}
         />
       </nav>
 
@@ -302,7 +315,14 @@ export default function App({ initialTab = 'live' }: AppProps) {
       <div className="lg:hidden">
         <MobileBottomNav
           activeTab={activeTab as any}
-          onTabChange={(tab) => setActiveTab(tab as any)}
+          onTabChange={(tab) => {
+            setActiveTab(tab as any);
+            // Navigate to corresponding route
+            if (tab === 'live') router.push('/');
+            else if (tab === 'active') router.push('/trades/active');
+            else if (tab === 'history') router.push('/trades/history');
+            else if (tab === 'settings') router.push('/settings');
+          }}
           hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
           flashTradeTab={flashTradeTab}
         />
