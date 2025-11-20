@@ -295,15 +295,26 @@ const loadHistoricalBars = useCallback(async () => {
             throw new Error('No historical data returned');
           }
 
-          const parsed: Bar[] = results.map((r: any) => ({
-            time: Math.floor(r.t / 1000),
-            open: r.o,
-            high: r.h,
-            low: r.l,
-            close: r.c,
-            volume: r.v,
-            vwap: r.vw,
-          }));
+          const parsed: Bar[] = results
+            .map((r: any) => ({
+              time: Math.floor(r.t / 1000),
+              open: r.o,
+              high: r.h,
+              low: r.l,
+              close: r.c,
+              volume: r.v,
+              vwap: r.vw,
+            }))
+            .filter((bar: Bar) => {
+              // lightweight-charts requires all OHLC values to be non-null
+              return (
+                bar.time > 0 &&
+                typeof bar.open === 'number' && !isNaN(bar.open) && bar.open !== null &&
+                typeof bar.high === 'number' && !isNaN(bar.high) && bar.high !== null &&
+                typeof bar.low === 'number' && !isNaN(bar.low) && bar.low !== null &&
+                typeof bar.close === 'number' && !isNaN(bar.close) && bar.close !== null
+              );
+            });
 
           barsCacheRef.current.set(cacheKey, parsed);
           // Clear failed fetch marker on success
