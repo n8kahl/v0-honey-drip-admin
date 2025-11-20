@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { KeyboardShortcut, formatShortcutForDisplay } from '../../hooks/useKeyboardShortcuts';
-import { fadeIn, colorTransition } from '../../lib/a11y';
+import { fadeIn, colorTransition } from '../../lib/animations';
 
 export interface KeyboardShortcutsDialogProps {
   /**
