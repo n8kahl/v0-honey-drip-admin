@@ -203,7 +203,7 @@ describe('buildSymbolFeatures - Phase 1', () => {
     expect(typeof features.volume?.relativeToAvg).toBe('number');
   });
 
-  it('should confirm NO market_regime field (Phase 1)', () => {
+  it('should populate market_regime field (Phase 2 - NEW)', () => {
     const features = buildSymbolFeatures({
       symbol: 'SPY',
       timeISO: '2024-11-20T14:30:00Z',
@@ -212,8 +212,56 @@ describe('buildSymbolFeatures - Phase 1', () => {
       bars: mockBars,
     });
 
-    // These fields should NOT exist yet (Phase 2)
-    expect(features.pattern?.market_regime).toBeUndefined();
+    // NEW: Market regime detection (requires 30+ bars)
+    expect(features.pattern?.market_regime).toBeDefined();
+    expect(['trending', 'choppy', 'volatile', 'ranging']).toContain(features.pattern?.market_regime);
+  });
+
+  it('should populate vix_level field when provided (Phase 2 - NEW)', () => {
+    const features = buildSymbolFeatures({
+      symbol: 'SPY',
+      timeISO: '2024-11-20T14:30:00Z',
+      primaryTf: '5m',
+      mtf: mockMTF,
+      bars: mockBars,
+      vixLevel: 'medium',
+    });
+
+    // NEW: VIX level classification
+    expect(features.pattern?.vix_level).toBe('medium');
+  });
+
+  it('should handle missing vix_level gracefully', () => {
+    const features = buildSymbolFeatures({
+      symbol: 'SPY',
+      timeISO: '2024-11-20T14:30:00Z',
+      primaryTf: '5m',
+      mtf: mockMTF,
+      bars: mockBars,
+      // vixLevel not provided
+    });
+
+    // Should be undefined, not throw errors
     expect(features.pattern?.vix_level).toBeUndefined();
+
+    // Other fields should still populate
+    expect(features.pattern?.market_regime).toBeDefined();
+    expect(features.pattern?.rsi_divergence_5m).toBeDefined();
+  });
+
+  it('should handle insufficient bars for market regime', () => {
+    // Only 10 bars (< 30 required for regime)
+    const shortBars = mockBars.slice(0, 10);
+
+    const features = buildSymbolFeatures({
+      symbol: 'SPY',
+      timeISO: '2024-11-20T14:30:00Z',
+      primaryTf: '5m',
+      mtf: mockMTF,
+      bars: shortBars,
+    });
+
+    // Should default to 'ranging' when insufficient bars
+    expect(features.pattern?.market_regime).toBe('ranging');
   });
 });

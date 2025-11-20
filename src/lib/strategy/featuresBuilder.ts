@@ -13,10 +13,12 @@ import {
   computeAvgVolume,
   calculateRelativeVolume,
   detectRSIDivergence,
-  detectMultiTimeframeDivergence,
+  detectMTFDivergenceFromRSI,
   type Bar,
 } from './patternDetection.js';
 import type { AggregatedFlowMetrics } from '../massive/aggregate-flow.js';
+import { detectMarketRegime } from './marketRegime.js';
+import { classifyVIXLevel } from './vixClassifier.js';
 
 export type TimeframeKey = '1m' | '5m' | '15m' | '60m' | '1d';
 
@@ -41,6 +43,7 @@ export interface BuildFeaturesOptions {
   bars?: Bar[]; // Historical bars for pattern detection (sorted chronologically)
   timezone?: string; // For session time calculations (default "America/New_York")
   flow?: AggregatedFlowMetrics | null; // Aggregated flow metrics from options chain
+  vixLevel?: 'low' | 'medium' | 'high' | 'extreme'; // Global VIX level (fetched once per scan)
 }
 
 /**
@@ -51,7 +54,7 @@ export interface BuildFeaturesOptions {
  * - Computes pattern features (ORB, patient candle, consolidation, etc.) from bars.
  */
 export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures {
-  const { symbol, timeISO, mtf, primaryTf = '5m', bars = [], timezone = 'America/New_York', flow = null } = opts;
+  const { symbol, timeISO, mtf, primaryTf = '5m', bars = [], timezone = 'America/New_York', flow = null, vixLevel } = opts;
   const primary = mtf[primaryTf] || {};
 
   const price = primary.price || {};
@@ -107,7 +110,7 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
   // Requires at least 20 bars for reliable divergence detection
   const rsiDiv5m = bars.length >= 20
     ? detectRSIDivergence(bars.slice(-20), 14, 10)
-    : { bullish: false, bearish: false };
+    : { type: 'none' as const, confidence: 0 };
 
   // Multi-Timeframe Divergence Detection
   // Checks if RSI trends across timeframes align (bullish or bearish convergence)
@@ -126,9 +129,14 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
   }
 
   // Only detect MTF divergence if we have data from at least 2 timeframes
-  const mtfDiv = Object.keys(mtfRsiData).length >= 2
-    ? detectMultiTimeframeDivergence(mtfRsiData)
-    : { aligned: false, direction: null };
+  // Simple MTF divergence: check if RSI is oversold/overbought across timeframes
+  const mtfDiv = detectMTFDivergenceFromRSI(mtfRsiData);
+
+  // Market Regime Detection (Phase 2)
+  // Requires at least 30 bars for reliable ADX calculation
+  const marketRegime = bars.length >= 30
+    ? detectMarketRegime(bars)
+    : { regime: 'ranging' as const, adx: 0, atr: 0, confidence: 0 };
 
   // Build previous snapshot for cross operations
   const prevSnapshot = mtf[primaryTf]?.price?.prev !== undefined ? {
@@ -203,8 +211,11 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       breakoutBearish: breakout.bearish,
       volumeSpike,
       // Divergence Detection (Phase 1 - wired up existing functions)
-      rsi_divergence_5m: rsiDiv5m.bullish || rsiDiv5m.bearish,
+      rsi_divergence_5m: rsiDiv5m.type !== 'none',
       mtf_divergence_aligned: mtfDiv.aligned,
+      // Market Context (Phase 2 - NEW)
+      market_regime: marketRegime.regime,
+      vix_level: vixLevel,
     },
     prev: prevSnapshot,
   };
