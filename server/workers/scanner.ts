@@ -14,11 +14,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { scanStrategiesForUser } from '../../src/lib/strategy/scanner';
-import { buildSymbolFeatures, type TimeframeKey } from '../../src/lib/strategy/featuresBuilder';
-import { getIndexAggregates, getOptionChain, getIndicesSnapshot } from '../massive/client';
-import { sendStrategySignalToDiscord } from '../../src/lib/discord/strategyAlerts';
-import type { Bar } from '../../src/lib/strategy/patternDetection';
+import { scanStrategiesForUser } from '../../src/lib/strategy/scanner.js';
+import { buildSymbolFeatures, type TimeframeKey } from '../../src/lib/strategy/featuresBuilder.js';
+import { getIndexAggregates, getOptionChain, getIndicesSnapshot } from '../massive/client.js';
+import { sendStrategySignalToDiscord } from '../../src/lib/discord/strategyAlerts.js';
+import type { Bar } from '../../src/lib/strategy/patternDetection.js';
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute

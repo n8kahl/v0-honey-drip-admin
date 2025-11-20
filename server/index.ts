@@ -11,8 +11,8 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import path from 'path';
-import apiRouter from './routes/api';
-import { attachWsServers } from './ws';
+import apiRouter from './routes/api.js';
+import { attachWsServers } from './ws/index.js';
 
 const app = express();
 

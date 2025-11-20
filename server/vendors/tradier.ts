@@ -1,4 +1,4 @@
-import { calculateDTE } from '../lib/marketCalendar';
+import { calculateDTE } from '../lib/marketCalendar.js';
 
 function getTradierBaseUrl() {
   // Allow sandbox or prod via env
