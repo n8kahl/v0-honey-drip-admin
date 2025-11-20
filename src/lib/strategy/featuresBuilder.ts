@@ -11,8 +11,10 @@ import {
   isConsolidation,
   isBreakout,
   computeAvgVolume,
+  calculateRelativeVolume,
   type Bar,
 } from './patternDetection';
+import type { AggregatedFlowMetrics } from '../massive/aggregate-flow';
 
 export type TimeframeKey = '1m' | '5m' | '15m' | '60m' | '1d';
 
@@ -36,6 +38,7 @@ export interface BuildFeaturesOptions {
   mtf: RawMTFContext;
   bars?: Bar[]; // Historical bars for pattern detection (sorted chronologically)
   timezone?: string; // For session time calculations (default "America/New_York")
+  flow?: AggregatedFlowMetrics | null; // Aggregated flow metrics from options chain
 }
 
 /**
@@ -46,7 +49,7 @@ export interface BuildFeaturesOptions {
  * - Computes pattern features (ORB, patient candle, consolidation, etc.) from bars.
  */
 export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures {
-  const { symbol, timeISO, mtf, primaryTf = '5m', bars = [], timezone = 'America/New_York' } = opts;
+  const { symbol, timeISO, mtf, primaryTf = '5m', bars = [], timezone = 'America/New_York', flow = null } = opts;
   const primary = mtf[primaryTf] || {};
 
   const price = primary.price || {};
@@ -88,6 +91,11 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
   const avgVolume = computeAvgVolume(last10Bars);
   const volumeSpike = currentBar && avgVolume > 0 ? isVolumeSpike(currentBar.volume, avgVolume) : false;
 
+  // Calculate RVOL (Relative Volume)
+  const rvol = currentBar && avgVolume > 0
+    ? calculateRelativeVolume(currentBar.volume, previousBars, false)
+    : undefined;
+
   // Near Fib levels
   const currentPrice = price.current ?? 0;
   const nearFib618 = currentPrice > 0 ? isNearFibLevel(currentPrice, fib.fib618) : false;
@@ -127,7 +135,16 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       current: currentBar?.volume,
       avg: avgVolume > 0 ? avgVolume : undefined,
       prev: previousBars.length > 0 ? previousBars[previousBars.length - 1].volume : undefined,
+      relativeToAvg: rvol,
     },
+    flow: flow ? {
+      sweepCount: flow.sweepCount,
+      blockCount: flow.blockCount,
+      unusualActivity: flow.unusualActivity,
+      flowScore: flow.flowScore,
+      flowBias: flow.flowBias,
+      buyPressure: flow.buyPressure,
+    } : undefined,
     vwap: {
       value: vwap.value,
       distancePct: vwap.distancePct,
