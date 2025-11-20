@@ -175,10 +175,7 @@ interface MarketDataStore {
   
   /** Map of symbol → data (SPY, QQQ, SPX, etc.) */
   symbols: Record<string, SymbolData>;
-  
-  /** Unified WebSocket manager */
-  wsManager: MassiveSubscriptionManager | null;
-  
+
   /** WebSocket connection (single for stocks) */
   wsConnection: WebSocketConnection;
   
@@ -925,10 +922,9 @@ export const useMarketDataStore = create<MarketDataStore>()(
     (set, get) => ({
       // Initial state
       symbols: {},
-      wsManager: null,
-      wsConnection: { 
-        socket: null, 
-        status: 'disconnected', 
+      wsConnection: {
+        socket: null,
+        status: 'disconnected',
         reconnectAttempts: 0,
         lastMessageTime: 0,
       },
@@ -1043,105 +1039,22 @@ export const useMarketDataStore = create<MarketDataStore>()(
           return;
         }
 
-        const manager = new MassiveSubscriptionManager({
-          token,
-          onQuote: (symbol, quote) => {
-            // Update candles with quote data (add as latest bar if needed)
-            const normalized = symbol.toUpperCase();
-            const { symbols } = get();
-            const symbolData = symbols[normalized];
-            
-            if (!symbolData) return;
-            
-            // Update last candle's close price or create a minimal bar
-            const primaryTF = symbolData.primaryTimeframe;
-            const candles = symbolData.candles[primaryTF];
-            
-            if (candles.length > 0) {
-              const lastCandle = candles[candles.length - 1];
-              const now = Date.now();
-              const candleAge = now - (lastCandle.time || lastCandle.timestamp || 0);
-              
-              // Update existing candle if < 60s old, else create new
-              if (candleAge < 60000) {
-                lastCandle.close = quote.last;
-                lastCandle.high = Math.max(lastCandle.high, quote.last);
-                lastCandle.low = Math.min(lastCandle.low, quote.last);
-              } else {
-                // New candle
-                candles.push({
-                  time: now,
-                  timestamp: now,
-                  open: quote.last,
-                  high: quote.last,
-                  low: quote.last,
-                  close: quote.last,
-                  volume: quote.volume || 0,
-                });
+        // Note: With unified massive API, subscriptions are now handled
+        // via massive.subscribeQuotes() and massive.subscribeAggregates()
+        // This legacy code path is deprecated but kept for backwards compatibility
+        console.log('[v0] marketDataStore: connectWebSocket - using unified massive API');
 
-                // Trim to prevent memory growth
-                if (candles.length > MAX_CANDLES_PER_TIMEFRAME) {
-                  candles.splice(0, candles.length - MAX_CANDLES_PER_TIMEFRAME);
-                }
-              }
-            }
-            
-            set({ lastServerTimestamp: Date.now() });
+        // Mark as connected since massive handles connection automatically
+        set({
+          wsConnection: {
+            ...get().wsConnection,
+            status: 'authenticated'
           },
-          onBar: (symbol, timeframe, bar) => {
-            const normalized = symbol.toUpperCase();
-
-            const tfMap: Record<string, Timeframe> = {
-              '1m': '1m',
-              '5m': '5m',
-              '15m': '15m',
-              '60m': '60m',
-              '1D': '1D',
-            };
-            const tf = tfMap[timeframe] || '1m';
-
-            get().mergeBar(normalized, tf, {
-              time: bar.time,
-              timestamp: bar.time,
-              open: bar.open,
-              high: bar.high,
-              low: bar.low,
-              close: bar.close,
-              volume: bar.volume,
-              vwap: bar.vwap,
-            });
-
-            set({
-              wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() },
-              lastServerTimestamp: Date.now()
-            });
-          },
-          onTrade: (symbol, trade) => {
-            // Trades logged in debug mode only
-          },
-          onStatus: (status) => {
-            const wsStatus = status === 'authenticated' ? 'authenticated' :
-                            status === 'connected' ? 'connected' :
-                            status === 'connecting' ? 'connecting' :
-                            status === 'error' ? 'error' : 'disconnected';
-
-            set({
-              wsConnection: {
-                ...get().wsConnection,
-                status: wsStatus
-              },
-              isConnected: status === 'authenticated',
-            });
-
-            // Subscribe to symbols once authenticated
-            if (status === 'authenticated') {
-              get().subscribeToSymbols();
-            }
-          },
+          isConnected: true,
         });
 
-        manager.connect();
-        set({ wsManager: manager });
+        // Subscribe to symbols
+        get().subscribeToSymbols();
       },
       
       scheduleReconnect: () => {
@@ -1150,11 +1063,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
       
       subscribeToSymbols: () => {
-        const { wsManager, subscribedSymbols } = get();
-        if (!wsManager) {
-          console.warn('[v0] marketDataStore: WebSocket manager not initialized');
-          return;
-        }
+        const { subscribedSymbols } = get();
 
         if (subscribedSymbols.size === 0) {
           console.warn('[v0] marketDataStore: No symbols to subscribe to');
@@ -1162,8 +1071,8 @@ export const useMarketDataStore = create<MarketDataStore>()(
         }
 
         const symbols = Array.from(subscribedSymbols);
-        // Update watchlist - manager will handle channel subscriptions
-        wsManager.updateWatchlist(symbols);
+        // Update watchlist using unified massive API
+        massive.updateWatchlist(symbols);
       },
       
       handleAggregateBar: (msg: MassiveAggregateMessage) => {
@@ -1182,7 +1091,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       
       subscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { symbols, subscribedSymbols, wsManager } = get();
+        const { symbols, subscribedSymbols } = get();
 
         if (subscribedSymbols.has(normalized)) {
           return;
@@ -1204,15 +1113,13 @@ export const useMarketDataStore = create<MarketDataStore>()(
         newSubscribed.add(normalized);
         set({ subscribedSymbols: newSubscribed });
 
-        // Update WebSocket watchlist
-        if (wsManager) {
-          wsManager.updateWatchlist(Array.from(newSubscribed));
-        }
+        // Update WebSocket watchlist using unified massive API
+        massive.updateWatchlist(Array.from(newSubscribed));
       },
 
       unsubscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { subscribedSymbols, macroSymbols, wsManager } = get();
+        const { subscribedSymbols, macroSymbols } = get();
 
         // Don't unsubscribe from macro symbols
         if (macroSymbols.includes(normalized)) {
@@ -1225,10 +1132,8 @@ export const useMarketDataStore = create<MarketDataStore>()(
         });
         set({ subscribedSymbols: newSubscribed });
 
-        // Update WebSocket watchlist
-        if (wsManager) {
-          wsManager.updateWatchlist(Array.from(newSubscribed));
-        }
+        // Update WebSocket watchlist using unified massive API
+        massive.updateWatchlist(Array.from(newSubscribed));
       },
       
       updateCandles: (symbol: string, timeframe: Timeframe, candles: Candle[]) => {
@@ -1614,20 +1519,17 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
       
       cleanup: () => {
-        const { heartbeatInterval, wsManager } = get();
-        
-        // Disconnect unified WebSocket manager
-        if (wsManager) {
-          wsManager.disconnect();
-        }
-        
+        const { heartbeatInterval } = get();
+
+        // Note: massive singleton handles its own connection lifecycle
+        // We don't call massive.disconnect() here as it's globally managed
+
         // Clear heartbeat
         if (heartbeatInterval) {
           clearInterval(heartbeatInterval);
         }
-        
+
         set({
-          wsManager: null,
           wsConnection: {
             socket: null,
             status: 'disconnected',
