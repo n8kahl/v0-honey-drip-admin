@@ -27,6 +27,46 @@ export interface Greeks {
   timestamp: number;
 }
 
+/**
+ * Greeks validation result
+ */
+export interface GreeksValidationResult {
+  isValid: boolean;
+  isEstimated: boolean; // True if using fallback values
+  errors: string[];
+  warnings: string[];
+}
+
+// ============================================================================
+// Constants - Greeks Validation Bounds
+// ============================================================================
+
+const GREEKS_BOUNDS = {
+  // Delta: -1 to +1 for puts/calls respectively
+  DELTA_MIN: -1,
+  DELTA_MAX: 1,
+
+  // Gamma: always positive, typically 0 to 0.1 for most contracts
+  GAMMA_MIN: 0,
+  GAMMA_MAX: 0.5,
+
+  // Theta: typically negative (time decay works against position)
+  THETA_MIN: -5,
+  THETA_MAX: 5,
+
+  // Vega: typically 0 to 0.5 (sensitivity to 1% IV change)
+  VEGA_MIN: -1,
+  VEGA_MAX: 1,
+
+  // Rho: interest rate sensitivity, typically -0.5 to 0.5
+  RHO_MIN: -1,
+  RHO_MAX: 1,
+
+  // Implied Volatility: typically 0.05 to 3.0 (5% to 300%)
+  IV_MIN: 0.01,
+  IV_MAX: 5.0,
+};
+
 export interface GreeksSnapshot {
   symbol: string; // Option symbol (e.g., "AAPL250117C00180000")
   strike: number;
@@ -190,20 +230,39 @@ class GreeksMonitorService {
       const ask = lastQuote.ask || lastQuote.ap || 0;
       const optionPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : (contract.last_trade?.price || trade.contract.mid);
 
+      // Create safe Greeks with validation and fallback bounds
+      const apiGreeks: Partial<Greeks> = {
+        delta: greeks.delta ?? trade.contract.delta,
+        gamma: greeks.gamma,
+        theta: greeks.theta,
+        vega: greeks.vega ?? trade.contract.vega,
+        rho: greeks.rho,
+        impliedVolatility: contract.implied_volatility ?? trade.contract.iv,
+      };
+
+      const { greeks: safeGreeks, validation: greeksValidation } = createSafeGreeks(
+        apiGreeks,
+        trade.contract.type
+      );
+
+      // Log validation results
+      if (!greeksValidation.isValid) {
+        console.warn(`[GreeksMonitor] ⚠️ Greeks validation failed for ${optionTicker}:`, {
+          errors: greeksValidation.errors,
+          warnings: greeksValidation.warnings,
+        });
+      }
+
+      if (greeksValidation.isEstimated) {
+        console.warn(`[GreeksMonitor] ⚠️ Using estimated Greeks for ${optionTicker} (API data incomplete)`);
+      }
+
       const snapshot: GreeksSnapshot = {
         symbol: optionTicker,
         strike: trade.contract.strike,
         expiry: trade.contract.expiry,
         type: trade.contract.type,
-        greeks: {
-          delta: greeks.delta ?? trade.contract.delta ?? (trade.contract.type === 'C' ? 0.5 : -0.5),
-          gamma: greeks.gamma ?? 0,
-          theta: greeks.theta ?? 0,
-          vega: greeks.vega ?? trade.contract.vega ?? 0,
-          rho: greeks.rho ?? 0,
-          impliedVolatility: contract.implied_volatility ?? trade.contract.iv ?? 0,
-          timestamp: Date.now(),
-        },
+        greeks: safeGreeks,
         underlyingPrice: underlyingAsset.price ?? trade.currentPrice ?? trade.entryPrice ?? 0,
         optionPrice,
         daysToExpiry,
@@ -425,6 +484,173 @@ class GreeksMonitorService {
 // ============================================================================
 
 export const greeksMonitor = new GreeksMonitorService();
+
+// ============================================================================
+// Greeks Validation Functions
+// ============================================================================
+
+/**
+ * Validate Greeks values against realistic bounds
+ * Returns validation result with errors, warnings, and estimated flag
+ */
+export function validateGreeks(greeks: Partial<Greeks>): GreeksValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  let isEstimated = false;
+
+  // Validate delta
+  if (greeks.delta !== undefined) {
+    if (greeks.delta < GREEKS_BOUNDS.DELTA_MIN || greeks.delta > GREEKS_BOUNDS.DELTA_MAX) {
+      errors.push(`Delta ${greeks.delta} out of bounds [${GREEKS_BOUNDS.DELTA_MIN}, ${GREEKS_BOUNDS.DELTA_MAX}]`);
+    }
+  } else {
+    warnings.push('Delta not provided (will use fallback)');
+    isEstimated = true;
+  }
+
+  // Validate gamma (must be non-negative, never 0)
+  if (greeks.gamma !== undefined) {
+    if (greeks.gamma < GREEKS_BOUNDS.GAMMA_MIN || greeks.gamma > GREEKS_BOUNDS.GAMMA_MAX) {
+      warnings.push(`Gamma ${greeks.gamma} outside typical range [${GREEKS_BOUNDS.GAMMA_MIN}, ${GREEKS_BOUNDS.GAMMA_MAX}]`);
+    }
+    if (greeks.gamma === 0) {
+      errors.push('Gamma cannot be exactly 0 (API likely missing data)');
+      isEstimated = true;
+    }
+  } else {
+    errors.push('Gamma not provided (critical for position risk)');
+    isEstimated = true;
+  }
+
+  // Validate theta
+  if (greeks.theta !== undefined) {
+    if (greeks.theta < GREEKS_BOUNDS.THETA_MIN || greeks.theta > GREEKS_BOUNDS.THETA_MAX) {
+      warnings.push(`Theta ${greeks.theta} outside typical range [${GREEKS_BOUNDS.THETA_MIN}, ${GREEKS_BOUNDS.THETA_MAX}]`);
+    }
+  } else {
+    warnings.push('Theta not provided (will use 0)');
+    isEstimated = true;
+  }
+
+  // Validate vega
+  if (greeks.vega !== undefined) {
+    if (greeks.vega < GREEKS_BOUNDS.VEGA_MIN || greeks.vega > GREEKS_BOUNDS.VEGA_MAX) {
+      warnings.push(`Vega ${greeks.vega} outside typical range [${GREEKS_BOUNDS.VEGA_MIN}, ${GREEKS_BOUNDS.VEGA_MAX}]`);
+    }
+  } else {
+    warnings.push('Vega not provided (will use 0)');
+    isEstimated = true;
+  }
+
+  // Validate IV
+  if (greeks.impliedVolatility !== undefined) {
+    if (greeks.impliedVolatility < GREEKS_BOUNDS.IV_MIN || greeks.impliedVolatility > GREEKS_BOUNDS.IV_MAX) {
+      warnings.push(`IV ${(greeks.impliedVolatility * 100).toFixed(1)}% outside typical range [${GREEKS_BOUNDS.IV_MIN * 100}%, ${GREEKS_BOUNDS.IV_MAX * 100}%]`);
+    }
+  } else {
+    warnings.push('IV not provided');
+    isEstimated = true;
+  }
+
+  const isValid = errors.length === 0;
+  return { isValid, isEstimated, errors, warnings };
+}
+
+/**
+ * Create safely bounded Greeks with fallback values
+ * @param apiGreeks - Greeks from API (may have missing values)
+ * @param optionType - 'C' for call, 'P' for put (used for delta fallback)
+ * @returns Validated Greeks with all values in reasonable bounds
+ */
+export function createSafeGreeks(
+  apiGreeks: Partial<Greeks>,
+  optionType: 'C' | 'P'
+): { greeks: Greeks; validation: GreeksValidationResult } {
+  const validation = validateGreeks(apiGreeks);
+
+  // Start with API values
+  let delta = apiGreeks.delta;
+  let gamma = apiGreeks.gamma;
+  let theta = apiGreeks.theta;
+  let vega = apiGreeks.vega;
+  let rho = apiGreeks.rho;
+  let iv = apiGreeks.impliedVolatility || 0;
+
+  // ===== Apply Safe Fallbacks =====
+
+  // Delta: Only use fallback if completely missing
+  if (delta === undefined) {
+    // Use reasonable defaults based on contract type and ATM assumption
+    delta = optionType === 'C' ? 0.5 : -0.5;
+    console.warn(`[GreeksMonitor] ⚠️ Delta missing for ${optionType}, using ATM fallback: ${delta}`);
+  } else if (delta < GREEKS_BOUNDS.DELTA_MIN || delta > GREEKS_BOUNDS.DELTA_MAX) {
+    // Clamp out-of-bounds deltas
+    delta = Math.max(GREEKS_BOUNDS.DELTA_MIN, Math.min(GREEKS_BOUNDS.DELTA_MAX, delta));
+    console.warn(`[GreeksMonitor] ⚠️ Delta clamped to bounds: ${delta}`);
+  }
+
+  // Gamma: CRITICAL - must never default to 0
+  if (gamma === undefined || gamma === 0) {
+    // Use a small positive value for ATM assumption
+    gamma = 0.01; // ~0.01 is typical for ATM options
+    if (apiGreeks.gamma === 0) {
+      console.error(`[GreeksMonitor] ❌ Gamma was 0 (data error), using fallback: ${gamma}`);
+    } else {
+      console.warn(`[GreeksMonitor] ⚠️ Gamma missing, using fallback: ${gamma}`);
+    }
+  } else if (gamma < GREEKS_BOUNDS.GAMMA_MIN || gamma > GREEKS_BOUNDS.GAMMA_MAX) {
+    gamma = Math.max(GREEKS_BOUNDS.GAMMA_MIN, Math.min(GREEKS_BOUNDS.GAMMA_MAX, gamma));
+    console.warn(`[GreeksMonitor] ⚠️ Gamma clamped to bounds: ${gamma}`);
+  }
+
+  // Theta: Reasonable default is small negative (time decay)
+  if (theta === undefined) {
+    theta = -0.01; // Small daily theta decay
+    console.warn(`[GreeksMonitor] ⚠️ Theta missing, using fallback: ${theta}`);
+  } else if (theta < GREEKS_BOUNDS.THETA_MIN || theta > GREEKS_BOUNDS.THETA_MAX) {
+    theta = Math.max(GREEKS_BOUNDS.THETA_MIN, Math.min(GREEKS_BOUNDS.THETA_MAX, theta));
+    console.warn(`[GreeksMonitor] ⚠️ Theta clamped to bounds: ${theta}`);
+  }
+
+  // Vega: Can be 0 (short vega position has minimal vega exposure)
+  if (vega === undefined) {
+    vega = 0;
+    console.warn(`[GreeksMonitor] ⚠️ Vega missing, defaulting to 0`);
+  } else if (vega < GREEKS_BOUNDS.VEGA_MIN || vega > GREEKS_BOUNDS.VEGA_MAX) {
+    vega = Math.max(GREEKS_BOUNDS.VEGA_MIN, Math.min(GREEKS_BOUNDS.VEGA_MAX, vega));
+    console.warn(`[GreeksMonitor] ⚠️ Vega clamped to bounds: ${vega}`);
+  }
+
+  // Rho: Often neglected in short-term trading, default to 0
+  if (rho === undefined) {
+    rho = 0;
+  } else if (rho < GREEKS_BOUNDS.RHO_MIN || rho > GREEKS_BOUNDS.RHO_MAX) {
+    rho = Math.max(GREEKS_BOUNDS.RHO_MIN, Math.min(GREEKS_BOUNDS.RHO_MAX, rho));
+    console.warn(`[GreeksMonitor] ⚠️ Rho clamped to bounds: ${rho}`);
+  }
+
+  // IV: Clamp to reasonable range
+  if (iv < GREEKS_BOUNDS.IV_MIN) {
+    iv = GREEKS_BOUNDS.IV_MIN;
+    console.warn(`[GreeksMonitor] ⚠️ IV too low, clamped to ${iv}`);
+  } else if (iv > GREEKS_BOUNDS.IV_MAX) {
+    iv = GREEKS_BOUNDS.IV_MAX;
+    console.warn(`[GreeksMonitor] ⚠️ IV too high, clamped to ${iv}`);
+  }
+
+  return {
+    greeks: {
+      delta,
+      gamma,
+      theta,
+      vega,
+      rho,
+      impliedVolatility: iv,
+      timestamp: Date.now(),
+    },
+    validation,
+  };
+}
 
 // ============================================================================
 // Public API
