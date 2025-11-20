@@ -5,7 +5,7 @@ import { VoiceCommandsSettings } from './VoiceCommandsSettings';
 import { LiveDataBehaviorSettings } from './LiveDataBehaviorSettings';
 import { DiscordNotificationSettings } from './DiscordNotificationSettings';
 import { StrategyLibraryAdmin } from '../StrategyLibraryAdmin';
-import { toast } from 'sonner';
+import { useAppToast } from '../../hooks/useAppToast';
 
 interface SettingsPageProps {
   onOpenDiscordSettings?: () => void;
@@ -13,6 +13,8 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPageProps) {
+  const toast = useAppToast();
+
   const handleSaveAll = () => {
     toast.success('Settings saved successfully');
     if (onClose) {

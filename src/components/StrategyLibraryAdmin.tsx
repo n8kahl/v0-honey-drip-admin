@@ -3,12 +3,12 @@ import { HDCard } from './hd/HDCard';
 import { HDButton } from './hd/HDButton';
 import { HDDialogEditStrategy } from './hd/HDDialogEditStrategy';
 import { HDDialogCreateStrategy } from './hd/HDDialogCreateStrategy';
-import { toast } from 'sonner';
+import { useAppToast } from '../hooks/useAppToast';
 import { RefreshCw, Database, TrendingUp } from 'lucide-react';
 import { seedCoreStrategies } from '../lib/strategy/seedStrategies';
-import { 
-  listAllStrategies, 
-  toggleStrategyEnabled, 
+import {
+  listAllStrategies,
+  toggleStrategyEnabled,
   getStrategyStats,
   createStrategy,
   updateStrategy,
@@ -21,6 +21,7 @@ import type { StrategyDefinition } from '../types/strategy';
  * Displays all strategies with toggle switches, seed button, and stats.
  */
 export function StrategyLibraryAdmin() {
+  const toast = useAppToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editStrategy, setEditStrategy] = useState<StrategyDefinition | null>(null);

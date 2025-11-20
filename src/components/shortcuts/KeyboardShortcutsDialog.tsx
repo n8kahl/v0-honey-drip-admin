@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { KeyboardShortcut, formatShortcutForDisplay } from '../../hooks/useKeyboardShortcuts';
-import { fadeIn, colorTransition } from '../../lib/animations';
+import { fadeIn, zoomIn, colorTransition, buttonHoverColor, focusStateSmooth } from '../../lib/animations';
 
 export interface KeyboardShortcutsDialogProps {
   /**
@@ -72,7 +72,8 @@ export function KeyboardShortcutsDialog({
         <div
           className={cn(
             'bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] w-full max-w-2xl max-h-[80vh] flex flex-col shadow-lg',
-            fadeIn
+            fadeIn,
+            zoomIn
           )}
           onClick={(e) => e.stopPropagation()}
         >
@@ -85,7 +86,9 @@ export function KeyboardShortcutsDialog({
               onClick={onClose}
               className={cn(
                 'p-2 rounded-[var(--radius)] hover:bg-[var(--surface-2)] text-[var(--text-muted)]',
-                colorTransition
+                colorTransition,
+                buttonHoverColor,
+                focusStateSmooth
               )}
               title="Close (Esc)"
             >

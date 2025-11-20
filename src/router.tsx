@@ -1,8 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
-import { Suspense, lazy } from 'react';
+import App from './App';
 
-// Pages - lazy load for code splitting
-const TradeDetailPage = lazy(() => import('./pages/TradeDetailPage'));
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen bg-[var(--bg-base)]">
     <div className="text-[var(--text-muted)]">Loading...</div>
@@ -10,40 +8,32 @@ const PageLoader = () => (
 );
 
 /**
- * Router Configuration (Client-Side)
+ * Router Configuration for Vite App
  *
- * This router handles client-side navigation for:
- * - /trades/active → Active Trades view
- * - /trades/history → Trade History view
- * - /trades/:id → Individual Trade Detail view
+ * This router handles all client-side navigation:
+ * - / → Live view (default)
+ * - /active → Active Trades view
+ * - /history → Trade History view
  * - /settings → Settings page
  *
- * Note: Top-level routes (/, /radar) are handled by Next.js App Router.
- * This router manages internal tab-based navigation and detail pages.
- *
- * The App component is the entry point and handles conditional rendering
- * based on the current route.
- */
-export const routes = [
-  {
-    path: '/trades/:tradeId',
-    element: (
-      <Suspense fallback={<PageLoader />}>
-        <TradeDetailPage />
-      </Suspense>
-    ),
-  },
-];
-
-/**
- * Create router instance.
- * Note: This router is created but may not be used if Next.js routing takes precedence.
- * Alternative: Use URL state management library (useLocation) instead.
+ * The App component handles tab-based rendering based on the current route.
  */
 export const router = createBrowserRouter([
   {
     path: '/',
-    children: routes,
+    element: <App initialTab="live" />,
+  },
+  {
+    path: '/active',
+    element: <App initialTab="active" />,
+  },
+  {
+    path: '/history',
+    element: <App initialTab="history" />,
+  },
+  {
+    path: '/settings',
+    element: <App initialTab="settings" />,
   },
 ]);
 

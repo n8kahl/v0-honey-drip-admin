@@ -1,42 +1,36 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 
 /**
- * Hook for navigating between pages using Next.js router.
+ * Hook for navigating between pages using React Router.
  *
- * Provides domain-specific navigation methods that wrap Next.js router.
+ * Provides domain-specific navigation methods that wrap React Router navigate.
  *
  * Usage:
  *   const nav = useNavigationRouter();
  *   nav.goToActiveTrades();
- *   nav.goToTradeDetail(trade.id);
- *   nav.goToRadar();
+ *   nav.goToSettings();
  */
 export function useNavigationRouter() {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   return {
     // Dashboard / Home
-    goHome: () => router.push('/'),
-    goToWatchTab: () => router.push('/'),
+    goHome: () => navigate('/'),
+    goToWatchTab: () => navigate('/'),
+    goToLive: () => navigate('/'),
 
     // Trades
-    goToActiveTrades: () => router.push('/trades/active'),
-    goToTradeHistory: () => router.push('/trades/history'),
-    goToTradeDetail: (tradeId: string) => router.push(`/trades/${tradeId}`),
-
-    // Radar
-    goToRadar: () => router.push('/radar'),
+    goToActiveTrades: () => navigate('/active'),
+    goToTradeHistory: () => navigate('/history'),
 
     // Settings
-    goToSettings: () => router.push('/settings'),
+    goToSettings: () => navigate('/settings'),
 
     // Navigation methods
-    back: () => router.back(),
-    forward: () => router.forward(),
+    back: () => navigate(-1),
+    forward: () => navigate(1),
 
     // Utilities
-    replace: (path: string) => router.replace(path),
+    replace: (path: string) => navigate(path, { replace: true }),
   };
 }

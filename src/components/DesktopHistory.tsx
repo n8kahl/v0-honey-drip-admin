@@ -8,7 +8,7 @@ import { Search, Share2, Download, ChevronDown, History } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { HDPanelDiscordAlert } from './hd/HDPanelDiscordAlert';
 import { EmptyState } from './ui/EmptyState';
-import { toast } from 'sonner@2.0.3';
+import { useAppToast } from '../hooks/useAppToast';
 import { MobileWatermark } from './MobileWatermark';
 
 interface DesktopHistoryProps {
@@ -20,13 +20,14 @@ interface DesktopHistoryProps {
 type DateRangeFilter = 'all' | 'today' | '7d' | '30d';
 
 export function DesktopHistory({ trades, channels = [], challenges = [] }: DesktopHistoryProps) {
+  const toast = useAppToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tickerFilter, setTickerFilter] = useState('');
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('7d'); // Default to last 7 days
   const [challengeFilter, setChallengeFilter] = useState<string>('all');
   const [showAdditionalFilters, setShowAdditionalFilters] = useState(false); // Collapsed by default
-  
+
   // For export/share dialog
   const [showAlertDialog, setShowAlertDialog] = useState(false);
   const [alertMode, setAlertMode] = useState<'export' | 'share'>('export');

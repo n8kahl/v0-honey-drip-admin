@@ -12,7 +12,7 @@ import {
 import { useActiveTradePnL } from '../../hooks/useMassiveData';
 import { useTPProximity } from '../../hooks/useTPProximity';
 import { useTPSettings } from '../../hooks/useTPSettings';
-import { toast } from 'sonner@2.0.3';
+import { useAppToast } from '../../hooks/useAppToast';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from './HDConfluenceChips';
 import { HDConfluenceDetailPanel } from './HDConfluenceDetailPanel';
@@ -38,6 +38,7 @@ interface HDEnteredTradeCardProps {
 }
 
 export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, signals }: HDEnteredTradeCardProps) {
+  const toast = useAppToast();
   const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
     trade.contract.id,
     trade.entryPrice || trade.contract.mid

@@ -1,9 +1,12 @@
 import React from 'react';
 import { Ticker } from '../../types';
-import { useSymbolData, useCandles } from '../../stores/marketDataStore';
+import { useSymbolData, useCandles, useMarketDataStore } from '../../stores/marketDataStore';
 import { useUIStore } from '../../stores/uiStore';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { HDStrategyMiniChart } from '../hd/HDStrategyMiniChart';
+import { calculateEMA } from '../../lib/indicators';
+import { cardHover, colorTransition } from '../../lib/animations';
 
 interface MobileWatchlistProps {
   tickers: Ticker[];
@@ -55,7 +58,7 @@ const MiniSparkline: React.FC<{ data: number[] }> = ({ data }) => {
 
 const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
   const symbolData = useSymbolData(ticker.symbol);
-  const oneMinCandles = useCandles(ticker.symbol, '1m') || [];
+  const marketData = useMarketDataStore((s) => s.symbols[ticker.symbol]);
   const strategySignals = symbolData?.strategySignals || [];
   const activeSignals = strategySignals.filter((s) => s.status === 'ACTIVE');
   const confluence = symbolData?.confluence;
@@ -65,12 +68,40 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
   const priceChangePercent = ticker.changePercent || 0;
   const isPositive = priceChangePercent >= 0;
 
-  // Sparkline: last 20 minutes of 1m closes, fallback to simple mock if unavailable
-  const sparklineData = React.useMemo(() => {
-    const closes = oneMinCandles.slice(-20).map(c => c.close).filter(n => typeof n === 'number' && !Number.isNaN(n));
-    if (closes.length >= 2) return closes;
-    return Array.from({ length: 20 }, (_, i) => currentPrice * (1 + Math.sin(i * 0.3) * 0.004));
-  }, [oneMinCandles, currentPrice]);
+  // Prepare chart data
+  const chartData = React.useMemo(() => {
+    const bars = marketData?.bars?.['5m'] || [];
+    if (bars.length < 20) return null;
+
+    const closes = bars.map((b) => b.close);
+    const ema9 = calculateEMA(closes, 9);
+    const ema21 = calculateEMA(closes, 21);
+
+    const signals = strategySignals.map((sig) => ({
+      time: new Date(sig.createdAt).getTime() / 1000,
+      price: sig.payload?.entryPrice || currentPrice,
+      strategyName: sig.payload?.strategyName || 'Unknown',
+      confidence: sig.confidence || 0,
+      side: (sig.payload?.side as 'long' | 'short') || 'long',
+      entry: sig.payload?.entryPrice,
+      stop: sig.payload?.stopLoss,
+      targets: sig.payload?.targets,
+    }));
+
+    const flow = marketData?.flowMetrics
+      ? [
+          {
+            time: marketData.flowMetrics.timestamp / 1000,
+            callVolume: marketData.flowMetrics.callVolume,
+            putVolume: marketData.flowMetrics.putVolume,
+            hasSweep: marketData.flowMetrics.sweepCount > 0,
+            hasBlock: marketData.flowMetrics.blockCount > 0,
+          },
+        ]
+      : [];
+
+    return { bars, ema9, ema21, signals, flow };
+  }, [marketData, strategySignals, currentPrice]);
 
   // Confluence pills
   const confluenceLabels = React.useMemo(() => {
@@ -88,8 +119,10 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
         'flex-shrink-0 w-64 h-80 rounded-2xl p-4 flex flex-col justify-between',
         'bg-[var(--surface-2)]',
         'border border-[var(--border-hairline)]',
-        'active:scale-95 transition-transform cursor-pointer',
-        'relative overflow-hidden'
+        'active:scale-95 cursor-pointer',
+        'relative overflow-hidden',
+        cardHover,
+        colorTransition
       )}
     >
 
@@ -117,9 +150,23 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
         </div>
       </div>
 
-      {/* Middle: Sparkline */}
-      <div className="relative z-10 flex-1 flex items-center">
-        <MiniSparkline data={sparklineData} />
+      {/* Middle: Strategy Chart */}
+      <div className="relative z-10 flex-1 flex items-center overflow-hidden">
+        {chartData ? (
+          <HDStrategyMiniChart
+            symbol={ticker.symbol}
+            bars={chartData.bars}
+            ema9={chartData.ema9}
+            ema21={chartData.ema21}
+            signals={chartData.signals}
+            flow={chartData.flow}
+            className="w-full"
+          />
+        ) : (
+          <div className="w-full flex items-center justify-center text-xs text-[var(--text-muted)]">
+            Loading chart...
+          </div>
+        )}
       </div>
 
       {/* Bottom: Confluence Pills */}

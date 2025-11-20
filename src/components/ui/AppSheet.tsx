@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { fadeIn, slideInBottom, colorTransition, buttonHoverColor, focusStateSmooth } from '@/lib/animations';
 
 export type AppSheetSnapPoint = 'half' | 'full' | 'collapsed';
 
@@ -130,7 +131,8 @@ export function AppSheet({
       {/* Backdrop */}
       <div
         className={cn(
-          'fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300',
+          'fixed inset-0 bg-black/60 backdrop-blur-sm z-40',
+          fadeIn,
           open ? 'opacity-100' : 'opacity-0'
         )}
         onClick={handleBackdropClick}
@@ -143,7 +145,7 @@ export function AppSheet({
           'fixed bottom-0 left-0 right-0 z-50',
           'bg-[var(--surface-1)] border-t border-[var(--border-hairline)]',
           'rounded-t-[var(--radius-xl)] shadow-2xl',
-          'transition-all duration-300 ease-out',
+          slideInBottom,
           'flex flex-col',
           isDragging ? 'transition-none' : '',
           className
@@ -172,7 +174,12 @@ export function AppSheet({
             <h2 className="text-[var(--text-high)] font-medium text-lg">{title}</h2>
             <button
               onClick={handleClose}
-              className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)] transition-colors"
+              className={cn(
+                'w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)]',
+                colorTransition,
+                buttonHoverColor,
+                focusStateSmooth
+              )}
             >
               <X className="w-4 h-4 text-[var(--text-muted)]" />
             </button>
