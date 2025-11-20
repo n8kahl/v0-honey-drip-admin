@@ -8,7 +8,7 @@
  * - autoOpenTradePlanner: Open trade planner with suggested entry/TP/SL
  */
 
-import type { StrategySignal, StrategyDefinition } from '../../types/strategy';
+import type { StrategySignal, StrategyDefinition } from '../../types/strategy.js';
 
 export interface AlertProcessorContext {
   // UI callbacks
