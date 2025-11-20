@@ -824,9 +824,7 @@ function runStrategySignals(
   const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
   const strategyDebug = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
   const log = (msg: string, extra?: any) => {
-    if (strategyDebug) {
-      if (extra) console.log(`[v0][Strategy] ${msg}`, extra); else console.log(`[v0][Strategy] ${msg}`);
-    }
+    // Logging disabled in production
   };
 
   const startTs = Date.now();
@@ -950,7 +948,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
       // ======================================================================
       
       initialize: (watchlistSymbols: string[]) => {
-        console.log('[v0] marketDataStore: Initializing with watchlist:', watchlistSymbols);
         set({ isInitializing: true, error: null });
         
         const { macroSymbols } = get();
@@ -978,8 +975,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
         
         // Fetch historical bars for all symbols (async, don't wait)
         get().fetchHistoricalBars(allSymbols);
-        
-        console.log('[v0] marketDataStore: Initialized with', allSymbols.length, 'symbols');
+
         set({ isInitializing: false });
       },
       
@@ -987,19 +983,14 @@ export const useMarketDataStore = create<MarketDataStore>()(
       fetchHistoricalBars: async (symbols: string[]) => {
         console.log('[v0] 📥 Fetching historical bars for', symbols.length, 'symbols');
 
-        import { massive } from '../lib/massive';
-
         for (const symbol of symbols) {
           try {
             const normalized = symbol.toUpperCase();
-            console.log(`[v0] 📥 Fetching bars for ${normalized}...`);
 
             // Fetch 1m bars (last 200 bars = ~3 hours of data)
             const bars1m = await massive.getAggregates(normalized, '1', 200);
 
             if (bars1m && bars1m.length > 0) {
-              console.log(`[v0] ✅ Loaded ${bars1m.length} 1m bars for ${normalized}`);
-
               // Convert to Candle format and update store
               const candles1m: Candle[] = bars1m.map(bar => ({
                 time: bar.t,
@@ -1014,16 +1005,12 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
               // Update candles for 1m timeframe (rollup to 5m, 15m, 60m happens in mergeBar)
               get().updateCandles(normalized, '1m', candles1m);
-            } else {
-              console.log(`[v0] ⚠️ No 1m bars returned for ${normalized}`);
             }
 
             // Fetch Daily bars (last 200 days = ~6 months of data)
             const barsDaily = await massive.getAggregates(normalized, '1D', 200);
 
             if (barsDaily && barsDaily.length > 0) {
-              console.log(`[v0] ✅ Loaded ${barsDaily.length} daily bars for ${normalized}`);
-
               // Convert to Candle format and update store
               const candlesDaily: Candle[] = barsDaily.map(bar => ({
                 time: bar.t,
@@ -1038,8 +1025,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
               // Update candles for Daily timeframe
               get().updateCandles(normalized, '1D', candlesDaily);
-            } else {
-              console.log(`[v0] ⚠️ No daily bars returned for ${normalized}`);
             }
 
             // Trigger recompute to calculate indicators and signals
@@ -1048,8 +1033,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
             console.error(`[v0] ❌ Failed to fetch bars for ${symbol}:`, error);
           }
         }
-
-        console.log('[v0] ✅ Historical bars fetch complete');
       },
       
       connectWebSocket: () => {
@@ -1059,8 +1042,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
           set({ error: 'Missing VITE_MASSIVE_PROXY_TOKEN' });
           return;
         }
-
-        console.log('[v0] marketDataStore: Initializing unified WebSocket manager');
 
         const manager = new MassiveSubscriptionManager({
           token,
@@ -1109,14 +1090,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
           },
           onBar: (symbol, timeframe, bar) => {
             const normalized = symbol.toUpperCase();
-            
-            // VERBOSE LOGGING
-            console.log(`[v0] 📊 New ${timeframe} bar for ${normalized}:`, {
-              time: new Date(bar.time).toISOString(),
-              close: bar.close,
-              volume: bar.volume,
-            });
-            
+
             const tfMap: Record<string, Timeframe> = {
               '1m': '1m',
               '5m': '5m',
@@ -1125,7 +1099,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
               '1D': '1D',
             };
             const tf = tfMap[timeframe] || '1m';
-            
+
             get().mergeBar(normalized, tf, {
               time: bar.time,
               timestamp: bar.time,
@@ -1136,38 +1110,31 @@ export const useMarketDataStore = create<MarketDataStore>()(
               volume: bar.volume,
               vwap: bar.vwap,
             });
-            
-            set({ 
+
+            set({
               wsConnection: { ...get().wsConnection, lastMessageTime: Date.now() },
-              lastServerTimestamp: Date.now() 
+              lastServerTimestamp: Date.now()
             });
-            
-            console.log(`[v0] ✅ Merged bar into store, triggering recompute for ${normalized}`);
           },
           onTrade: (symbol, trade) => {
-            // Optional: log trades
-            if (Math.random() < 0.01) {
-              console.log('[v0] Trade:', symbol, trade.price, 'x', trade.size);
-            }
+            // Trades logged in debug mode only
           },
           onStatus: (status) => {
-            console.log('[v0] marketDataStore: WebSocket status:', status);
-            const wsStatus = status === 'authenticated' ? 'authenticated' : 
+            const wsStatus = status === 'authenticated' ? 'authenticated' :
                             status === 'connected' ? 'connected' :
                             status === 'connecting' ? 'connecting' :
                             status === 'error' ? 'error' : 'disconnected';
-            
+
             set({
-              wsConnection: { 
-                ...get().wsConnection, 
-                status: wsStatus 
+              wsConnection: {
+                ...get().wsConnection,
+                status: wsStatus
               },
               isConnected: status === 'authenticated',
             });
-            
+
             // Subscribe to symbols once authenticated
             if (status === 'authenticated') {
-              console.log('[v0] marketDataStore: WebSocket authenticated, subscribing to symbols');
               get().subscribeToSymbols();
             }
           },
@@ -1188,56 +1155,39 @@ export const useMarketDataStore = create<MarketDataStore>()(
           console.warn('[v0] marketDataStore: WebSocket manager not initialized');
           return;
         }
-        
+
         if (subscribedSymbols.size === 0) {
           console.warn('[v0] marketDataStore: No symbols to subscribe to');
           return;
         }
 
         const symbols = Array.from(subscribedSymbols);
-        console.log('[v0] marketDataStore: 📡 Subscribing to', symbols.length, 'symbols:', symbols);
-        
         // Update watchlist - manager will handle channel subscriptions
         wsManager.updateWatchlist(symbols);
-        
-        // Log subscription confirmation
-        console.log('[v0] marketDataStore: ✅ Subscription request sent for:', symbols.join(', '));
       },
       
       handleAggregateBar: (msg: MassiveAggregateMessage) => {
         // Extract symbol (remove I: prefix for indices)
         const symbol = msg.sym.replace(/^I:/, '').toUpperCase();
-        
+
         // Detect timeframe from start/end timestamps
         const timeframe = detectTimeframe(msg.s, msg.e);
-        
+
         // Parse bar
         const bar = parseAggregateBar(msg, timeframe);
-        
+
         // Merge bar into store
         get().mergeBar(symbol, timeframe, bar);
-        
-        // Log occasionally for debugging
-        if (Math.random() < 0.01) {
-          console.log('[v0] marketDataStore: Received bar:', symbol, timeframe, {
-            time: new Date(bar.time).toISOString(),
-            close: bar.close,
-            volume: bar.volume,
-          });
-        }
       },
       
       subscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const { symbols, subscribedSymbols, wsManager } = get();
-        
+
         if (subscribedSymbols.has(normalized)) {
-          console.log('[v0] marketDataStore: Already subscribed to', normalized);
           return;
         }
-        
-        console.log('[v0] marketDataStore: Subscribing to', normalized);
-        
+
         // Create data structure if doesn't exist
         if (!symbols[normalized]) {
           set({
@@ -1247,37 +1197,34 @@ export const useMarketDataStore = create<MarketDataStore>()(
             },
           });
         }
-        
+
         // Add to subscribed set
         const newSubscribed = new Set<string>();
         Array.from(subscribedSymbols).forEach(s => newSubscribed.add(s));
         newSubscribed.add(normalized);
         set({ subscribedSymbols: newSubscribed });
-        
+
         // Update WebSocket watchlist
         if (wsManager) {
           wsManager.updateWatchlist(Array.from(newSubscribed));
         }
       },
-      
+
       unsubscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const { subscribedSymbols, macroSymbols, wsManager } = get();
-        
+
         // Don't unsubscribe from macro symbols
         if (macroSymbols.includes(normalized)) {
-          console.log('[v0] marketDataStore: Cannot unsubscribe from macro symbol', normalized);
           return;
         }
-        
-        console.log('[v0] marketDataStore: Unsubscribing from', normalized);
-        
+
         const newSubscribed = new Set<string>();
         Array.from(subscribedSymbols).forEach(s => {
           if (s !== normalized) newSubscribed.add(s);
         });
         set({ subscribedSymbols: newSubscribed });
-        
+
         // Update WebSocket watchlist
         if (wsManager) {
           wsManager.updateWatchlist(Array.from(newSubscribed));
@@ -1424,13 +1371,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
             },
           },
         });
-        
-        console.log('[v0] marketDataStore: Recomputed indicators for', normalized, {
-          ema9: indicators.ema9,
-          ema20: indicators.ema20,
-          rsi14: indicators.rsi14,
-          confluence: confluence.overall,
-        });
       },
       
       /**
@@ -1479,8 +1419,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
           return;
         }
 
-        console.log(`[v0] 🔄 Recomputing ${symbol} (${is0DTE ? '0DTE' : 'regular'}) - isNewBar: ${isNewBar}, priceChange: ${(priceChange * 100).toFixed(2)}% (threshold: ${(threshold * 100).toFixed(1)}%)`);
-        
         // ===== Step 1: Calculate comprehensive indicators from all timeframes =====
         const indicators = calculateComprehensiveIndicators(symbolData);
         
@@ -1592,16 +1530,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
             },
           },
         });
-
-        console.log(`[v0] marketDataStore: Greeks updated for ${normalized}:`, {
-          delta: updatedGreeks.delta?.toFixed(3),
-          gamma: updatedGreeks.gamma?.toFixed(4),
-          theta: updatedGreeks.theta?.toFixed(2),
-          vega: updatedGreeks.vega?.toFixed(3),
-          iv: (updatedGreeks.iv * 100)?.toFixed(1) + '%',
-          source: updatedGreeks.source,
-          isFresh: updatedGreeks.isFresh,
-        });
       },
 
       clearGreeks: (symbol: string) => {
@@ -1620,8 +1548,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
             },
           },
         });
-
-        console.log(`[v0] marketDataStore: Greeks cleared for ${normalized}`);
       },
 
       setMarketStatus: (status: MarketStatus) => {
@@ -1661,19 +1587,18 @@ export const useMarketDataStore = create<MarketDataStore>()(
           };
           
           get().updateMarketSession(session);
-          console.log('[v0] Market session updated:', session);
         } catch (error) {
           console.error('[v0] Failed to fetch market session:', error);
-          
+
           // Use fallback session based on current time
           const { getFallbackSession, getNextMarketTimes } = await import('../lib/marketSession');
           const fallback = getFallbackSession();
           const { nextOpen, nextClose } = getNextMarketTimes(fallback.session);
-          
+
           const now = new Date();
           const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
           const isWeekend = etTime.getDay() === 0 || etTime.getDay() === 6;
-          
+
           const session: EnrichedMarketSession = {
             session: fallback.session,
             isOpen: fallback.isLive,
@@ -1684,14 +1609,12 @@ export const useMarketDataStore = create<MarketDataStore>()(
             label: fallback.label,
             asOf: fallback.asOf,
           };
-          
+
           get().updateMarketSession(session);
-          console.log('[v0] Using fallback market session:', session);
         }
       },
       
       cleanup: () => {
-        console.log('[v0] marketDataStore: Cleaning up WebSocket connection');
         const { heartbeatInterval, wsManager } = get();
         
         // Disconnect unified WebSocket manager
