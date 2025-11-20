@@ -888,22 +888,22 @@ export const useMarketDataStore = create<MarketDataStore>()(
       /** Fetch historical bars for symbols to populate initial candles */
       fetchHistoricalBars: async (symbols: string[]) => {
         console.log('[v0] 📥 Fetching historical bars for', symbols.length, 'symbols');
-        
+
         const { massiveClient } = await import('../lib/massive/client');
-        
+
         for (const symbol of symbols) {
           try {
             const normalized = symbol.toUpperCase();
             console.log(`[v0] 📥 Fetching bars for ${normalized}...`);
-            
+
             // Fetch 1m bars (last 200 bars = ~3 hours of data)
-            const bars = await massiveClient.getAggregates(normalized, '1', 200);
-            
-            if (bars && bars.length > 0) {
-              console.log(`[v0] ✅ Loaded ${bars.length} bars for ${normalized}`);
-              
+            const bars1m = await massiveClient.getAggregates(normalized, '1', 200);
+
+            if (bars1m && bars1m.length > 0) {
+              console.log(`[v0] ✅ Loaded ${bars1m.length} 1m bars for ${normalized}`);
+
               // Convert to Candle format and update store
-              const candles: Candle[] = bars.map(bar => ({
+              const candles1m: Candle[] = bars1m.map(bar => ({
                 time: bar.t,
                 timestamp: bar.t,
                 open: bar.o,
@@ -913,20 +913,44 @@ export const useMarketDataStore = create<MarketDataStore>()(
                 volume: bar.v,
                 vwap: bar.vw,
               }));
-              
-              // Update candles for 1m timeframe
-              get().updateCandles(normalized, '1m', candles);
-              
-              // Trigger recompute to calculate indicators and signals
-              get().recomputeSymbol(normalized);
+
+              // Update candles for 1m timeframe (rollup to 5m, 15m, 60m happens in mergeBar)
+              get().updateCandles(normalized, '1m', candles1m);
             } else {
-              console.log(`[v0] ⚠️ No bars returned for ${normalized}`);
+              console.log(`[v0] ⚠️ No 1m bars returned for ${normalized}`);
             }
+
+            // Fetch Daily bars (last 200 days = ~6 months of data)
+            const barsDaily = await massiveClient.getAggregates(normalized, '1D', 200);
+
+            if (barsDaily && barsDaily.length > 0) {
+              console.log(`[v0] ✅ Loaded ${barsDaily.length} daily bars for ${normalized}`);
+
+              // Convert to Candle format and update store
+              const candlesDaily: Candle[] = barsDaily.map(bar => ({
+                time: bar.t,
+                timestamp: bar.t,
+                open: bar.o,
+                high: bar.h,
+                low: bar.l,
+                close: bar.c,
+                volume: bar.v,
+                vwap: bar.vw,
+              }));
+
+              // Update candles for Daily timeframe
+              get().updateCandles(normalized, '1D', candlesDaily);
+            } else {
+              console.log(`[v0] ⚠️ No daily bars returned for ${normalized}`);
+            }
+
+            // Trigger recompute to calculate indicators and signals
+            get().recomputeSymbol(normalized);
           } catch (error) {
             console.error(`[v0] ❌ Failed to fetch bars for ${symbol}:`, error);
           }
         }
-        
+
         console.log('[v0] ✅ Historical bars fetch complete');
       },
       

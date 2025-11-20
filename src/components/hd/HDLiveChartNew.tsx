@@ -324,15 +324,29 @@ export function HDLiveChartNew({
   // Update candlestick data
   useEffect(() => {
     if (!candleSeriesRef.current || candles.length === 0) return;
-    
-    const chartData = candles.map(c => ({
-      time: (c.time || c.timestamp || 0) as Time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-    
+
+    const chartData = candles
+      .filter(c => {
+        // Filter out invalid bars (must have valid time and all OHLC values)
+        const hasValidTime = (c.time || c.timestamp) && (c.time || c.timestamp) > 0;
+        const hasValidOHLC = c.open != null && c.high != null && c.low != null && c.close != null &&
+                            !isNaN(c.open) && !isNaN(c.high) && !isNaN(c.low) && !isNaN(c.close) &&
+                            isFinite(c.open) && isFinite(c.high) && isFinite(c.low) && isFinite(c.close);
+        return hasValidTime && hasValidOHLC;
+      })
+      .map(c => ({
+        time: (c.time || c.timestamp || 0) as Time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
+
+    if (chartData.length === 0) {
+      console.warn('[HDLiveChart] No valid candle data to display for', ticker, currentTf);
+      return;
+    }
+
     candleSeriesRef.current.setData(chartData);
     
     // Check if new bar closed (time changed)
