@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -31,7 +30,6 @@ interface AppProps {
 }
 
 export default function App({ initialTab = 'live' }: AppProps) {
-  const router = useRouter();
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
@@ -94,7 +92,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
         description: 'Go to Watch tab (Live)',
         action: () => {
           setActiveTab('live');
-          router.push('/');
         },
         category: 'navigation',
       },
@@ -103,7 +100,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
         description: 'Go to Trade tab (Active)',
         action: () => {
           setActiveTab('active');
-          router.push('/trades/active');
         },
         category: 'navigation',
       },
@@ -112,7 +108,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
         description: 'Go to Review tab (History)',
         action: () => {
           setActiveTab('history');
-          router.push('/trades/history');
         },
         category: 'navigation',
       },
@@ -121,7 +116,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
         description: 'Go to Settings',
         action: () => {
           setActiveTab('settings');
-          router.push('/settings');
         },
         category: 'navigation',
       },
@@ -269,7 +263,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
           active={activeTab === 'live'}
           onClick={() => {
             setActiveTab('live');
-            router.push('/');
           }}
         />
         <TabButton
@@ -277,7 +270,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
           active={activeTab === 'active'}
           onClick={() => {
             navigateToActive();
-            router.push('/trades/active');
           }}
         />
         <TabButton
@@ -285,7 +277,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
           active={activeTab === 'history'}
           onClick={() => {
             navigateToHistory();
-            router.push('/trades/history');
           }}
         />
       </nav>
@@ -385,11 +376,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
           activeTab={activeTab as any}
           onTabChange={(tab) => {
             setActiveTab(tab as any);
-            // Navigate to corresponding route
-            if (tab === 'live') router.push('/');
-            else if (tab === 'active') router.push('/trades/active');
-            else if (tab === 'history') router.push('/trades/history');
-            else if (tab === 'settings') router.push('/settings');
           }}
           hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
           flashTradeTab={flashTradeTab}
