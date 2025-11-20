@@ -47,9 +47,10 @@ const GREEKS_BOUNDS = {
   DELTA_MIN: -1,
   DELTA_MAX: 1,
 
-  // Gamma: always positive, typically 0 to 0.1 for most contracts
+  // Gamma: always positive, can reach 2.0+ for ATM options very close to expiry
+  // Typical: 0 to 0.1, but allow up to 2.0 for edge cases
   GAMMA_MIN: 0,
-  GAMMA_MAX: 0.5,
+  GAMMA_MAX: 2.0,
 
   // Theta: typically negative (time decay works against position)
   THETA_MIN: -5,
@@ -63,7 +64,8 @@ const GREEKS_BOUNDS = {
   RHO_MIN: -1,
   RHO_MAX: 1,
 
-  // Implied Volatility: typically 0.05 to 3.0 (5% to 300%)
+  // Implied Volatility: 0.01 to 5.0 (1% to 500%)
+  // Allow up to 500% for extreme market events
   IV_MIN: 0.01,
   IV_MAX: 5.0,
 };
