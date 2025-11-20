@@ -1,6 +1,6 @@
-import type { StrategySignal, StrategyDefinition } from '../../types/strategy';
-import { mapStrategyDefinitionRow, mapStrategySignalRow } from '../../types/strategy';
-import { evaluateStrategy, type SymbolFeatures } from './engine';
+import type { StrategySignal, StrategyDefinition } from '../../types/strategy.js';
+import { mapStrategyDefinitionRow, mapStrategySignalRow } from '../../types/strategy.js';
+import { evaluateStrategy, type SymbolFeatures } from './engine.js';
 
 export interface StrategyScannerOptions {
   owner: string; // user id

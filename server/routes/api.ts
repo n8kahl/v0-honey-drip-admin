@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { massiveFetch, callMassive, getOptionChain, listOptionContracts, getIndicesSnapshot } from '../massive/client';
-import { tradierGetUnderlyingPrice, tradierGetExpirations, tradierGetNormalizedForExpiration, tradierGetHistory } from '../vendors/tradier';
-import { isV2AggsPath, rememberFailure, shouldShortCircuit, buildEmptyAggsResponse } from '../lib/fallbackAggs';
-import { normalizeSymbolForMassive } from '../lib/symbolUtils';
-import { cachedFetch, getCachedBars, setCachedBars, getCachedContracts, setCachedContracts, getCachedSnapshot, setCachedSnapshot, getCachedIndex, setCachedIndex } from '../lib/cache';
-import { calculateDTE, getMarketStatus } from '../lib/marketCalendar';
+import { massiveFetch, callMassive, getOptionChain, listOptionContracts, getIndicesSnapshot } from '../massive/client.js';
+import { tradierGetUnderlyingPrice, tradierGetExpirations, tradierGetNormalizedForExpiration, tradierGetHistory } from '../vendors/tradier.js';
+import { isV2AggsPath, rememberFailure, shouldShortCircuit, buildEmptyAggsResponse } from '../lib/fallbackAggs.js';
+import { normalizeSymbolForMassive } from '../lib/symbolUtils.js';
+import { cachedFetch, getCachedBars, setCachedBars, getCachedContracts, setCachedContracts, getCachedSnapshot, setCachedSnapshot, getCachedIndex, setCachedIndex } from '../lib/cache.js';
+import { calculateDTE, getMarketStatus } from '../lib/marketCalendar.js';
 
 const router = Router();
 const TOKEN_EXPIRY_MS = 5 * 60 * 1000;

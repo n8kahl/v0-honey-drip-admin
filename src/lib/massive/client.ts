@@ -353,7 +353,62 @@ class MassiveClient {
     return this.fetch(`/v3/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
   }
 
-  async getAggregates(symbol: string, timeframe: '1' | '5' | '15' | '60', lookback: number = 200): Promise<MassiveAggregateBar[]> {
+  async getAggregates(symbol: string, timeframe: '1' | '5' | '15' | '60' | '1D', lookback: number = 200): Promise<MassiveAggregateBar[]> {
+    // Check cache first
+    const cacheKey = `${symbol}:${timeframe}:${lookback}`;
+    const cached = aggregatesCache.get(cacheKey);
+    if (cached && Date.now() - cached.t < AGGREGATES_TTL_MS) {
+      console.log(`[MassiveClient] ✅ Aggregates cache hit for ${cacheKey}`);
+      return cached.data;
+    }
+
+    // Handle Daily timeframe separately
+    if (timeframe === '1D') {
+      const to = new Date();
+      const from = new Date(to.getTime() - lookback * 24 * 60 * 60 * 1000); // lookback days
+      const formatDay = (date: Date) => date.toISOString().split('T')[0];
+      const endpointV2 = `/v2/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+      const endpointV3 = `/v3/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+
+      console.log(`[MassiveClient] 🔄 Fetching daily aggregates for ${cacheKey} (v2)`);
+      let data: any;
+      try {
+        data = await this.fetch(endpointV2);
+      } catch (e: any) {
+        const msg = String(e?.message || '');
+        if (/403|forbidden/i.test(msg) || /Massive API error/.test(msg)) {
+          console.warn(`[MassiveClient] v2 daily aggregates forbidden or failed (${msg}), trying v3`);
+          try {
+            data = await this.fetch(endpointV3);
+            console.log(`[MassiveClient] ✅ Fallback v3 daily aggregates succeeded for ${cacheKey}`);
+          } catch (e2: any) {
+            console.error(`[MassiveClient] v3 daily aggregates also failed for ${cacheKey}:`, e2?.message || e2);
+            return [];
+          }
+        } else {
+          throw e;
+        }
+      }
+
+      const results: any[] = data.results || data;
+      if (!Array.isArray(results)) return [];
+      const bars = results.map((bar) => ({
+        t: bar.t,
+        o: bar.o,
+        h: bar.h,
+        l: bar.l,
+        c: bar.c,
+        v: bar.v,
+        vw: bar.vw,
+      }));
+
+      // Cache the result
+      aggregatesCache.set(cacheKey, { t: Date.now(), data: bars });
+      console.log(`[MassiveClient] ✅ Cached daily aggregates for ${cacheKey} (${bars.length} bars)`);
+      return bars;
+    }
+
+    // Handle intraday timeframes (1, 5, 15, 60 minutes)
     // Normalize timeframe to ensure values like "1/5" fall back to the last segment
     const timeframeSegments = timeframe.split('/');
     const normalizedTimeframe = Number(timeframeSegments[timeframeSegments.length - 1]) || 1;
@@ -362,15 +417,7 @@ class MassiveClient {
     const formatDay = (date: Date) => date.toISOString().split('T')[0];
     const endpointV2 = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
     const endpointV3 = `/v3/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
-    
-    // Check cache first
-    const cacheKey = `${symbol}:${timeframe}:${lookback}`;
-    const cached = aggregatesCache.get(cacheKey);
-    if (cached && Date.now() - cached.t < AGGREGATES_TTL_MS) {
-      console.log(`[MassiveClient] ✅ Aggregates cache hit for ${cacheKey}`);
-      return cached.data;
-    }
-    
+
     console.log(`[MassiveClient] 🔄 Fetching aggregates for ${cacheKey} (v2)`);
     let data: any;
     try {
@@ -401,11 +448,11 @@ class MassiveClient {
       v: bar.v,
       vw: bar.vw,
     }));
-    
+
     // Cache the result
     aggregatesCache.set(cacheKey, { t: Date.now(), data: bars });
     console.log(`[MassiveClient] ✅ Cached aggregates for ${cacheKey} (${bars.length} bars)`);
-    
+
     return bars;
   }
 

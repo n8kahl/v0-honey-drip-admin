@@ -2,7 +2,7 @@ import type {
   StrategyDefinition,
   StrategyConditionTree,
   StrategyConditionRule,
-} from '../../types/strategy';
+} from '../../types/strategy.js';
 
 // Feature snapshot used for rule evaluation
 export interface SymbolFeatures {

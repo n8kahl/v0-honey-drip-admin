@@ -4,8 +4,8 @@
  * Formats and sends strategy signal notifications to Discord channels.
  */
 
-import type { StrategySignal, StrategyDefinition } from '../../types/strategy';
-import { sendToMultipleChannels } from './webhook';
+import type { StrategySignal, StrategyDefinition } from '../../types/strategy.js';
+import { sendToMultipleChannels } from './webhook.js';
 
 export const STRATEGY_COLORS = {
   setup: 0xf39c12,    // Orange (50-79% confidence)

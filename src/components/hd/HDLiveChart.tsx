@@ -17,6 +17,17 @@ const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
   return day;
 };
 
+// Validate that a bar has all required OHLC values as non-null finite numbers
+const isValidBar = (bar: Partial<Bar>): bar is Bar => {
+  return (
+    typeof bar.time === 'number' && bar.time > 0 && !isNaN(bar.time) && isFinite(bar.time) &&
+    typeof bar.open === 'number' && !isNaN(bar.open) && isFinite(bar.open) &&
+    typeof bar.high === 'number' && !isNaN(bar.high) && isFinite(bar.high) &&
+    typeof bar.low === 'number' && !isNaN(bar.low) && isFinite(bar.low) &&
+    typeof bar.close === 'number' && !isNaN(bar.close) && isFinite(bar.close)
+  );
+};
+
 const INDEX_TICKERS = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
 type TfKey = '1' | '5' | '15' | '60' | '1D';
 
@@ -26,12 +37,6 @@ const TIMEFRAME_LOOKBACK_DAYS: Record<TfKey, number> = {
   '15': 10,
   '60': 30,
   '1D': 365,
-};
-
-type ChartViewport = {
-  mode: 'AUTO' | 'MANUAL';
-  fromTime?: number; // epoch seconds
-  toTime?: number;   // epoch seconds
 };
 
 type IndicatorState = {
@@ -110,15 +115,8 @@ const chartRef = useRef<IChartApi | null>(null);
   });
   const timeframeRef = useRef<TfKey>(currentTf);
   const tickerRef = useRef<string>(ticker);
-  const [viewport, setViewport] = useState<ChartViewport>({ mode: 'AUTO' });
-  const applyingViewportRef = useRef(false);
   const lastNBarsAuto = 100;
   const [opacity, setOpacity] = useState<number>(1);
-
-  const viewportStorageKey = useMemo(
-    () => `hdchart.viewport:${ticker}:${currentTf}`,
-    [ticker, currentTf]
-  );
 
   const [indState, setIndState] = useState<IndicatorState>(() => {
     try {
@@ -172,36 +170,10 @@ const chartRef = useRef<IChartApi | null>(null);
     return () => clearTimeout(id);
   }, [ticker, currentTf]);
 
-  // Restore persisted viewport per ticker/timeframe
+  // Reset auto-fit flag when ticker/timeframe changes
   useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      const raw = window.localStorage.getItem(viewportStorageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && (parsed.mode === 'AUTO' || parsed.mode === 'MANUAL')) {
-          setViewport(parsed);
-        } else {
-          setViewport({ mode: 'AUTO' });
-        }
-      } else {
-        setViewport({ mode: 'AUTO' });
-      }
-      hasAutoFitRef.current = false;
-    } catch {
-      setViewport({ mode: 'AUTO' });
-      hasAutoFitRef.current = false;
-    }
-  }, [viewportStorageKey]);
-
-  // Persist viewport whenever it changes
-  useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(viewportStorageKey, JSON.stringify(viewport));
-      }
-    } catch {}
-  }, [viewport, viewportStorageKey]);
+    hasAutoFitRef.current = false;
+  }, [ticker, currentTf]);
   
 const loadHistoricalBars = useCallback(async () => {
     if (rateLimited) {
@@ -231,16 +203,31 @@ const loadHistoricalBars = useCallback(async () => {
     }
 
     if (barsCacheRef.current.has(cacheKey)) {
-      setBars(barsCacheRef.current.get(cacheKey)!);
+      const cachedBars = barsCacheRef.current.get(cacheKey)!;
+      // Filter cached bars to ensure they're valid (cache might have old data with nulls)
+      const validCachedBars = cachedBars.filter(bar => isValidBar(bar));
+
+      if (validCachedBars.length !== cachedBars.length) {
+        console.warn(`[HDLiveChart] Filtered ${cachedBars.length - validCachedBars.length} invalid bars from cache for ${ticker}`);
+        // Update cache with filtered data
+        barsCacheRef.current.set(cacheKey, validCachedBars);
+      }
+
+      setBars(validCachedBars);
       setDataSource('rest');
-      console.log(`[HDLiveChart] Using cached bars for ${ticker} (${barsCacheRef.current.get(cacheKey)!.length} bars)`);
+      console.log(`[HDLiveChart] Using cached bars for ${ticker} (${validCachedBars.length} bars)`);
       return;
     }
 
     if (inflightFetchesRef.current.has(cacheKey)) {
       try {
         const cached = await inflightFetchesRef.current.get(cacheKey)!;
-        setBars(cached);
+        // Filter inflight fetch results to ensure they're valid
+        const validCached = cached.filter(bar => isValidBar(bar));
+        if (validCached.length !== cached.length) {
+          console.warn(`[HDLiveChart] Filtered ${cached.length - validCached.length} invalid bars from inflight fetch for ${ticker}`);
+        }
+        setBars(validCached);
         setDataSource('rest');
       } catch (error) {
         console.error('[HDLiveChart] Cached historical fetch failed:', error);
@@ -295,31 +282,72 @@ const loadHistoricalBars = useCallback(async () => {
             throw new Error('No historical data returned');
           }
 
-          const parsed: Bar[] = results
-            .map((r: any) => ({
-              time: Math.floor(r.t / 1000),
-              open: r.o,
-              high: r.h,
-              low: r.l,
-              close: r.c,
-              volume: r.v,
-              vwap: r.vw,
-            }))
-            .filter((bar: Bar) => {
-              // lightweight-charts requires all OHLC values to be non-null
-              return (
-                bar.time > 0 &&
-                typeof bar.open === 'number' && !isNaN(bar.open) && bar.open !== null &&
-                typeof bar.high === 'number' && !isNaN(bar.high) && bar.high !== null &&
-                typeof bar.low === 'number' && !isNaN(bar.low) && bar.low !== null &&
-                typeof bar.close === 'number' && !isNaN(bar.close) && bar.close !== null
-              );
-            });
+          console.log(`[HDLiveChart] Raw API response for ${ticker} ${currentTf}:`, {
+            resultsLength: results.length,
+            firstItem: results[0],
+            sampleTimestamps: results.slice(0, 3).map((r: any) => ({ t: r.t, o: r.o, h: r.h, l: r.l, c: r.c }))
+          });
 
-          barsCacheRef.current.set(cacheKey, parsed);
+          const preFiltered = results.filter((r: any) => {
+            // Pre-filter: ensure raw data has valid timestamp and OHLC values before mapping
+            return (
+              r.t != null && typeof r.t === 'number' && !isNaN(r.t) && r.t > 0 &&
+              r.o != null && typeof r.o === 'number' && !isNaN(r.o) &&
+              r.h != null && typeof r.h === 'number' && !isNaN(r.h) &&
+              r.l != null && typeof r.l === 'number' && !isNaN(r.l) &&
+              r.c != null && typeof r.c === 'number' && !isNaN(r.c)
+            );
+          });
+
+          console.log(`[HDLiveChart] After pre-filter: ${preFiltered.length}/${results.length} valid items`);
+
+          const mapped = preFiltered.map((r: any) => ({
+            time: Math.floor(r.t / 1000),
+            open: r.o,
+            high: r.h,
+            low: r.l,
+            close: r.c,
+            volume: r.v,
+            vwap: r.vw,
+          }));
+
+          const parsed: Bar[] = mapped.filter((bar: Bar) => {
+            // Post-filter: double-check mapped data for lightweight-charts compatibility
+            return (
+              bar.time > 0 &&
+              typeof bar.open === 'number' && !isNaN(bar.open) && isFinite(bar.open) &&
+              typeof bar.high === 'number' && !isNaN(bar.high) && isFinite(bar.high) &&
+              typeof bar.low === 'number' && !isNaN(bar.low) && isFinite(bar.low) &&
+              typeof bar.close === 'number' && !isNaN(bar.close) && isFinite(bar.close)
+            );
+          });
+
+          console.log(`[HDLiveChart] Final parsed bars for ${ticker} ${currentTf}: ${parsed.length} bars`);
+
+          // Deduplicate by timestamp (lightweight-charts requires unique, ascending timestamps)
+          const deduplicated: Bar[] = [];
+          const seenTimes = new Set<number>();
+
+          for (const bar of parsed) {
+            if (!seenTimes.has(bar.time)) {
+              seenTimes.add(bar.time);
+              deduplicated.push(bar);
+            }
+          }
+
+          if (deduplicated.length < parsed.length) {
+            console.warn(`[HDLiveChart] Removed ${parsed.length - deduplicated.length} duplicate timestamps for ${ticker}`);
+          }
+
+          // Sort by time ascending (required by lightweight-charts)
+          deduplicated.sort((a, b) => a.time - b.time);
+
+          console.log(`[HDLiveChart] Deduplicated bars for ${ticker} ${currentTf}: ${deduplicated.length} unique bars`);
+
+          barsCacheRef.current.set(cacheKey, deduplicated);
           // Clear failed fetch marker on success
           failedFetchesRef.current.delete(cacheKey);
-          return parsed;
+          return deduplicated;
         } catch (error: any) {
           if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
             retries++;
@@ -480,21 +508,7 @@ const loadHistoricalBars = useCallback(async () => {
       }
     }
 
-    // Subscribe to viewport changes to toggle AUTO/MANUAL and persist range
-    const timeScale = chart.timeScale();
-    const handleVisibleRange = (range: { from: Time; to: Time } | null) => {
-      if (applyingViewportRef.current) return;
-      if (!range) return;
-      const from = typeof range.from === 'number' ? range.from : undefined;
-      const to = typeof range.to === 'number' ? range.to : undefined;
-      if (from && to) {
-        setViewport({ mode: 'MANUAL', fromTime: from * 1000, toTime: to * 1000 });
-      } else {
-        setViewport((prev) => ({ ...prev, mode: 'MANUAL' }));
-      }
-    };
-    timeScale.subscribeVisibleTimeRangeChange(handleVisibleRange);
-
+    // No viewport subscription needed - let users control pan/zoom freely
     setChartReady(true);
     console.log('[HDLiveChart] Chart initialization complete');
     
@@ -511,9 +525,6 @@ const loadHistoricalBars = useCallback(async () => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      try {
-        timeScale.unsubscribeVisibleTimeRangeChange(handleVisibleRange);
-      } catch {}
       levelSeriesRefs.current.forEach(series => {
         try {
           chart.removeSeries(series);
@@ -539,6 +550,50 @@ const loadHistoricalBars = useCallback(async () => {
     loadHistoricalBars();
   }, [ticker, currentTf]); // Only reload when ticker or timeframe changes
   
+  // Separate effect: ONLY set initial viewport once, never runs again
+  useEffect(() => {
+    if (!chartRef.current || !chartReady || hasAutoFitRef.current || bars.length === 0) return;
+
+    // Safety check: ensure candleSeries exists and has data
+    if (!candleSeriesRef.current) return;
+
+    const ts = chartRef.current.timeScale();
+    const barsToUse = bars.length;
+    if (barsToUse > 1) {
+      // Wait a tick to ensure chart data is loaded before setting viewport
+      requestAnimationFrame(() => {
+        if (!chartRef.current || hasAutoFitRef.current) return;
+
+        try {
+          // Initial view: show bars positioned at 75% from left (most recent at 3/4)
+          const visibleBars = Math.min(lastNBarsAuto, barsToUse);
+          const fromIdx = Math.max(0, barsToUse - visibleBars);
+          const from = bars[fromIdx].time as number;
+
+          // Position last bar at 75% by extending range to create empty space on right
+          const totalRangeNeeded = visibleBars / 0.75;
+          const extraBars = Math.ceil(totalRangeNeeded - visibleBars);
+
+          // Calculate time per bar (average interval)
+          const lastBar = bars[barsToUse - 1].time as number;
+          const firstVisibleBar = bars[fromIdx].time as number;
+          const timePerBar = visibleBars > 1 ? (lastBar - firstVisibleBar) / (visibleBars - 1) : 60;
+
+          // Extend 'to' time to create empty space on the right
+          const to = lastBar + (extraBars * timePerBar);
+
+          ts.setVisibleRange({ from: from as any, to: to as any });
+          hasAutoFitRef.current = true;
+          console.log('[HDLiveChart] Initial viewport set (bars at 75% position) - will never auto-adjust again');
+        } catch (error) {
+          console.error('[HDLiveChart] Error setting initial viewport:', error);
+          // Don't set hasAutoFitRef so it can retry
+        }
+      });
+    }
+  }, [chartReady, bars.length]); // Only depends on chartReady and bars.length, NOT the bars array itself
+
+  // Separate effect: Update chart data and indicators (NO viewport changes)
   useEffect(() => {
     const priceSeries = ensurePriceSeries();
     if (!priceSeries) {
@@ -550,12 +605,21 @@ const loadHistoricalBars = useCallback(async () => {
     }
     waitingForChartRef.current = false;
 
-    if (bars.length === 0) return;
-    
+    if (bars.length === 0) {
+      console.warn('[HDLiveChart] No bars to render, clearing chart');
+      // Clear chart data when no bars available
+      try {
+        priceSeries.setData([]);
+      } catch (e) {
+        console.error('[HDLiveChart] Error clearing chart:', e);
+      }
+      return;
+    }
+
     const renderUpdate = () => {
       const now = performance.now();
       const delta = now - lastRenderTimeRef.current;
-      
+
       // Calculate FPS (stored in ref to avoid re-render loop)
       if (delta > 0) {
         const currentFps = Math.round(1000 / delta);
@@ -564,20 +628,28 @@ const loadHistoricalBars = useCallback(async () => {
           setTimeout(() => setFps(currentFps), 0);
         }
       }
-      
+
       // Always render all bars (remove FPS-based downsampling to avoid dependency)
       const barsToRender = bars;
-      
-      // Update candlestick data
-      const candleData: CandlestickData[] = barsToRender.map(bar => ({
-        time: bar.time as Time,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-      }));
+
+      // Update candlestick data - filter out any bars with null OHLC values as a final safety check
+      const candleData: CandlestickData[] = barsToRender
+        .filter(bar => isValidBar(bar))
+        .map(bar => ({
+          time: bar.time as Time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+        }));
+
+      if (candleData.length === 0) {
+        console.warn('[HDLiveChart] All bars filtered out (invalid OHLC), cannot render');
+        return;
+      }
+
       priceSeries.setData(candleData);
-      
+
       // Update indicators
       if (indicators?.ema?.periods) {
         const closes = barsToRender.map(b => b.close);
@@ -589,7 +661,7 @@ const loadHistoricalBars = useCallback(async () => {
               value: isNaN(value) ? null : value,
             }))
             .filter(d => d.value !== null) as LineData[];
-          
+
           // Respect indicator visibility
           const s = emaSeriesRefs.current.get(period);
           if (s) {
@@ -599,7 +671,7 @@ const loadHistoricalBars = useCallback(async () => {
           }
         });
       }
-      
+
       if (indState.vwap && vwapSeriesRef.current) {
         const vwapValues = calculateVWAP(barsToRender);
         const vwapData: LineData[] = vwapValues.map((value, i) => ({
@@ -609,7 +681,7 @@ const loadHistoricalBars = useCallback(async () => {
         vwapSeriesRef.current.setData(vwapData);
         vwapSeriesRef.current.applyOptions({ visible: indState.vwap });
       }
-      
+
       if (indState.bb && indicators?.bollinger && bollingerRefs.current) {
         const closes = barsToRender.map(b => b.close);
         const { upper, middle, lower } = calculateBollingerBands(
@@ -617,7 +689,7 @@ const loadHistoricalBars = useCallback(async () => {
           indicators.bollinger.period,
           indicators.bollinger.stdDev
         );
-        
+
         const createBBData = (values: number[]): LineData[] =>
           values
             .map((value, i) => ({
@@ -625,7 +697,7 @@ const loadHistoricalBars = useCallback(async () => {
               value: isNaN(value) ? null : value,
             }))
             .filter(d => d.value !== null) as LineData[];
-        
+
         bollingerRefs.current.upper.setData(createBBData(upper));
         bollingerRefs.current.middle.setData(createBBData(middle));
         bollingerRefs.current.lower.setData(createBBData(lower));
@@ -633,7 +705,7 @@ const loadHistoricalBars = useCallback(async () => {
         bollingerRefs.current.middle.applyOptions({ visible: indState.bb });
         bollingerRefs.current.lower.applyOptions({ visible: indState.bb });
       }
-      
+
       // Add trade event markers
       if (events.length > 0 && candleSeriesRef.current) {
         const markers = events.map(event => ({
@@ -645,46 +717,14 @@ const loadHistoricalBars = useCallback(async () => {
         }));
         priceSeries.setMarkers(markers);
       }
-      
-      // Apply viewport policy
-      if (chartRef.current) {
-        const ts = chartRef.current.timeScale();
-        if (!hasAutoFitRef.current) {
-          // Initial view: auto to lastN bars
-          const barsToUse = bars.length;
-          if (barsToUse > 1) {
-            const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
-            const from = bars[fromIdx].time as number;
-            const to = bars[barsToUse - 1].time as number;
-            applyingViewportRef.current = true;
-            ts.setVisibleRange({ from: from as any, to: to as any });
-            applyingViewportRef.current = false;
-            hasAutoFitRef.current = true;
-          }
-        } else if (viewport.mode === 'AUTO') {
-          // Follow latest
-          const barsToUse = bars.length;
-          if (barsToUse > 1) {
-            const fromIdx = Math.max(0, barsToUse - lastNBarsAuto);
-            const from = bars[fromIdx].time as number;
-            const to = bars[barsToUse - 1].time as number;
-            applyingViewportRef.current = true;
-            ts.setVisibleRange({ from: from as any, to: to as any });
-            applyingViewportRef.current = false;
-          }
-        } else if (viewport.mode === 'MANUAL' && viewport.fromTime && viewport.toTime) {
-          // Re-apply stored range
-          applyingViewportRef.current = true;
-          ts.setVisibleRange({ from: (viewport.fromTime / 1000) as any, to: (viewport.toTime / 1000) as any });
-          applyingViewportRef.current = false;
-        }
-      }
-      
+
+      // NO viewport changes here - viewport is set once in separate effect above
+
       lastRenderTimeRef.current = now;
     };
-    
+
     renderUpdate();
-  }, [bars, indicators, events, ensurePriceSeries, viewport.mode, indState]);
+  }, [bars, indicators, events, ensurePriceSeries, indState]);
   
   // Real-time WebSocket subscription for live aggregate updates (paid tier)
   useEffect(() => {
@@ -699,10 +739,10 @@ const loadHistoricalBars = useCallback(async () => {
       ? massiveWS.subscribeOptionAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
           if (document.hidden) return;
-          
+
           if (message.type === 'aggregate' && message.data.ticker === ticker) {
             const agg = message.data;
-            const newBar: Bar = {
+            const newBar: Partial<Bar> = {
               time: Math.floor(agg.timestamp / 1000),
               open: agg.open,
               high: agg.high,
@@ -711,7 +751,13 @@ const loadHistoricalBars = useCallback(async () => {
               volume: agg.volume,
               vwap: agg.vwap,
             };
-            
+
+            // Validate bar has all required OHLC values before adding
+            if (!isValidBar(newBar)) {
+              console.warn('[HDLiveChart] Skipping invalid bar from WebSocket (null OHLC values):', newBar);
+              return;
+            }
+
             setBars(prev => {
               const updated = [...prev];
               const existingIndex = updated.findIndex(b => b.time === newBar.time);
@@ -724,7 +770,7 @@ const loadHistoricalBars = useCallback(async () => {
               }
               return updated.sort((a, b) => (a.time as number) - (b.time as number));
             });
-            
+
             setIsConnected(true);
             setDataSource('websocket');
             setLastUpdate(Date.now());
@@ -733,10 +779,10 @@ const loadHistoricalBars = useCallback(async () => {
       : massiveWS.subscribeAggregates([ticker], (message) => {
           // Skip updates when tab is hidden for battery efficiency
           if (document.hidden) return;
-          
+
           if (message.type === 'aggregate') {
             const agg = message.data;
-            const newBar: Bar = {
+            const newBar: Partial<Bar> = {
               time: Math.floor(agg.timestamp / 1000),
               open: agg.open,
               high: agg.high,
@@ -744,7 +790,13 @@ const loadHistoricalBars = useCallback(async () => {
               close: agg.close,
               volume: agg.volume,
             };
-            
+
+            // Validate bar has all required OHLC values before adding
+            if (!isValidBar(newBar)) {
+              console.warn('[HDLiveChart] Skipping invalid bar from WebSocket (null OHLC values):', newBar);
+              return;
+            }
+
             setBars(prev => {
               const updated = [...prev];
               const existingIndex = updated.findIndex(b => b.time === newBar.time);
@@ -755,7 +807,7 @@ const loadHistoricalBars = useCallback(async () => {
               }
               return updated.sort((a, b) => (a.time as number) - (b.time as number));
             });
-            
+
             setIsConnected(true);
             setDataSource('websocket');
             setLastUpdate(Date.now());
@@ -873,14 +925,28 @@ const loadHistoricalBars = useCallback(async () => {
     return `${Math.floor(secondsAgo / 60)}m ago`;
   };
 
-  const handleBackToLive = () => {
-    setViewport({ mode: 'AUTO' });
-    // After next update, AUTO branch will snap to latest window
+  const handleResetView = () => {
+    // Reset to initial view: show last 100 bars at 75% position
+    if (!chartRef.current || bars.length === 0) return;
+
+    const ts = chartRef.current.timeScale();
+    const barsToUse = bars.length;
+    const visibleBars = Math.min(lastNBarsAuto, barsToUse);
+    const fromIdx = Math.max(0, barsToUse - visibleBars);
+    const from = bars[fromIdx].time as number;
+
+    const totalRangeNeeded = visibleBars / 0.75;
+    const extraBars = Math.ceil(totalRangeNeeded - visibleBars);
+
+    const lastBar = bars[barsToUse - 1].time as number;
+    const firstVisibleBar = bars[fromIdx].time as number;
+    const timePerBar = visibleBars > 1 ? (lastBar - firstVisibleBar) / (visibleBars - 1) : 60;
+    const to = lastBar + (extraBars * timePerBar);
+
+    ts.setVisibleRange({ from: from as any, to: to as any });
   };
 
   const handleToggle = (key: keyof IndicatorState) => {
-    // Preserve viewport before updating series visibility
-    setViewport((prev) => ({ ...prev }));
     setIndState((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -894,7 +960,7 @@ const loadHistoricalBars = useCallback(async () => {
 
   const selectTimeframe = (tf: TfKey) => {
     if (tf === currentTf) return;
-    setViewport({ mode: 'AUTO' });
+    hasAutoFitRef.current = false; // Reset auto-fit for new timeframe
     setBars([]);
     setIsConnected(false);
     setDataSource('rest');
@@ -942,14 +1008,13 @@ const loadHistoricalBars = useCallback(async () => {
                 Limited
               </span>
             )}
-            <span className={`text-micro px-1.5 py-0.5 rounded border ${viewport.mode === 'AUTO' ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-blue-400 border-blue-400/30 bg-blue-400/10'}`}>
-              {viewport.mode === 'AUTO' ? 'LIVE' : 'HISTORICAL'}
-            </span>
-            {viewport.mode === 'MANUAL' && (
-              <button className="text-micro px-2 py-0.5 rounded border border-[var(--border-hairline)] hover:bg-[var(--surface-3)]" onClick={handleBackToLive} title="Back to Live">
-                Back to Live
-              </button>
-            )}
+            <button
+              className="text-micro px-2 py-0.5 rounded border border-[var(--border-hairline)] hover:bg-[var(--surface-3)] transition-colors"
+              onClick={handleResetView}
+              title="Reset chart view to show latest bars"
+            >
+              Reset View
+            </button>
           </div>
           {fps < 30 && (
             <span className="text-micro text-yellow-500 flex items-center gap-1">

@@ -1,4 +1,4 @@
-import type { SymbolFeatures } from './engine';
+import type { SymbolFeatures } from './engine.js';
 import {
   isPatientCandle,
   computeORBLevels,
@@ -13,8 +13,8 @@ import {
   computeAvgVolume,
   calculateRelativeVolume,
   type Bar,
-} from './patternDetection';
-import type { AggregatedFlowMetrics } from '../massive/aggregate-flow';
+} from './patternDetection.js';
+import type { AggregatedFlowMetrics } from '../massive/aggregate-flow.js';
 
 export type TimeframeKey = '1m' | '5m' | '15m' | '60m' | '1d';
 
