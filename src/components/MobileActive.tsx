@@ -1,6 +1,8 @@
 import { Trade } from '../types';
 import { MobileWatermark } from './MobileWatermark';
 import { TradeCard } from './trades/TradeCard';
+import { EmptyState } from './ui/EmptyState';
+import { Wallet } from 'lucide-react';
 
 interface MobileActiveProps {
   trades: Trade[];
@@ -42,13 +44,13 @@ export function MobileActive({ trades, updatedTradeIds = new Set(), onTradeClick
 
       {/* Empty State */}
       {activeTrades.length === 0 && (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center p-8">
-            <p className="text-[var(--text-high)] text-lg mb-2">No Trades Currently Active</p>
-            <p className="text-[var(--text-muted)] text-sm">
-              Enter trades from the Watch tab to see them here
-            </p>
-          </div>
+        <div className="flex-1">
+          <EmptyState
+            icon={Wallet}
+            title="No Active Trades"
+            description="Enter a trade from the Watch tab to see it here."
+            minHeight="min-h-[50vh]"
+          />
         </div>
       )}
     </div>
