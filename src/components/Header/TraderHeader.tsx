@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useTradeStore } from '../../stores/tradeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMarketStore } from '../../stores/marketStore';
+import { useUIStore } from '../../stores/uiStore';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
+import { useNavigationRouter } from '../../hooks/useNavigationRouter';
 import { Activity, Moon, Sun, User, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
@@ -230,10 +232,27 @@ const ChallengeRing: React.FC<ChallengeRingProps> = ({ completed, target, rMulti
 interface UserMenuProps {
   userName?: string;
   onLogout?: () => void;
+  onProfileClick?: () => void;
+  onSettingsClick?: () => void;
 }
 
-const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout }) => {
+const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout, onProfileClick, onSettingsClick }) => {
   const [isOpen, setIsOpen] = useState(false);
+
+  const handleProfileClick = () => {
+    setIsOpen(false);
+    onProfileClick?.();
+  };
+
+  const handleSettingsClick = () => {
+    setIsOpen(false);
+    onSettingsClick?.();
+  };
+
+  const handleLogoutClick = () => {
+    setIsOpen(false);
+    onLogout?.();
+  };
 
   return (
     <div className="relative">
@@ -256,15 +275,21 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout }) =>
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-48 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] shadow-lg z-50">
           <div className="p-2 space-y-1">
-            <button className={cn('w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}>
+            <button
+              onClick={handleProfileClick}
+              className={cn('w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}
+            >
               Profile
             </button>
-            <button className={cn('w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}>
+            <button
+              onClick={handleSettingsClick}
+              className={cn('w-full px-3 py-2 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}
+            >
               Settings
             </button>
             <div className="h-px bg-[var(--border-hairline)] my-1" />
             <button
-              onClick={onLogout}
+              onClick={handleLogoutClick}
               className={cn('w-full px-3 py-2 text-left text-sm text-[var(--accent-negative)] hover:bg-[var(--surface-3)] rounded', colorTransition, focusStateSmooth)}
             >
               Logout
@@ -279,11 +304,13 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout }) =>
 export const TraderHeader: React.FC = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [wsLatency, setWsLatency] = useState(0);
-  
+
   const activeTrades = useTradeStore((s) => s.activeTrades);
   const challenges = useSettingsStore((s) => s.challenges);
   const watchlist = useMarketStore((s) => s.watchlist);
   const enrichedSession = useEnrichedMarketSession();
+  const { setActiveTab } = useUIStore();
+  const router = useNavigationRouter();
   
   // Get active challenge (first active one)
   const activeChallenge = challenges.find((c) => c.isActive);
@@ -321,6 +348,22 @@ export const TraderHeader: React.FC = () => {
     setDarkMode(!darkMode);
     // TODO: Implement actual theme toggle
     console.log('[v0] Dark mode toggled:', !darkMode);
+  };
+
+  const handleProfileClick = () => {
+    console.log('[v0] Profile clicked');
+    // TODO: Implement profile page
+  };
+
+  const handleSettingsClick = () => {
+    console.log('[v0] Settings clicked');
+    setActiveTab('settings');
+    router.goToSettings();
+  };
+
+  const handleLogout = () => {
+    console.log('[v0] Logout clicked');
+    // TODO: Implement logout
   };
 
   // Default session if enrichedSession is not yet loaded
@@ -377,7 +420,12 @@ export const TraderHeader: React.FC = () => {
             )}
           </button>
 
-          <UserMenu userName="Trader" onLogout={() => console.log('[v0] Logout clicked')} />
+          <UserMenu
+            userName="Trader"
+            onLogout={handleLogout}
+            onProfileClick={handleProfileClick}
+            onSettingsClick={handleSettingsClick}
+          />
         </div>
       </div>
     </header>
