@@ -107,28 +107,13 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
   // Requires at least 20 bars for reliable divergence detection
   const rsiDiv5m = bars.length >= 20
     ? detectRSIDivergence(bars.slice(-20), 14, 10)
-    : { bullish: false, bearish: false };
+    : { type: 'none' as const, confidence: 0 };
 
   // Multi-Timeframe Divergence Detection
-  // Checks if RSI trends across timeframes align (bullish or bearish convergence)
-  const mtfRsiData: Record<string, { rsi: number; price: number }> = {};
-
-  // Build MTF RSI data from available timeframes
-  const timeframes = ['1m', '5m', '15m', '60m'] as const;
-  for (const tf of timeframes) {
-    const tfData = mtf[tf];
-    if (tfData?.rsi?.['14'] !== undefined && tfData?.price?.current !== undefined) {
-      mtfRsiData[tf] = {
-        rsi: tfData.rsi['14'],
-        price: tfData.price.current
-      };
-    }
-  }
-
-  // Only detect MTF divergence if we have data from at least 2 timeframes
-  const mtfDiv = Object.keys(mtfRsiData).length >= 2
-    ? detectMultiTimeframeDivergence(mtfRsiData)
-    : { aligned: false, direction: null };
+  // Note: detectMultiTimeframeDivergence requires Bar[] arrays for multiple timeframes
+  // Currently we only have bars for the primary timeframe, so we disable this for now
+  // TODO: Pass bars for multiple timeframes to enable proper MTF divergence detection
+  const mtfDiv = { aligned: false, direction: null };
 
   // Build previous snapshot for cross operations
   const prevSnapshot = mtf[primaryTf]?.price?.prev !== undefined ? {
@@ -203,7 +188,7 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       breakoutBearish: breakout.bearish,
       volumeSpike,
       // Divergence Detection (Phase 1 - wired up existing functions)
-      rsi_divergence_5m: rsiDiv5m.bullish || rsiDiv5m.bearish,
+      rsi_divergence_5m: rsiDiv5m.type !== 'none',
       mtf_divergence_aligned: mtfDiv.aligned,
     },
     prev: prevSnapshot,
