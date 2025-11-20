@@ -5,7 +5,7 @@
  * Shows trim/exit/trail-stop suggestions based on analysis.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTradeStore } from '../../stores/tradeStore';
 import { useMarketDataStore } from '../../stores/marketDataStore';
 import {
@@ -25,12 +25,24 @@ interface HDAIRecommendationsProps {
   maxRecommendations?: number;
 }
 
+const RECALC_DEBOUNCE_MS = 2000; // Debounce recommendations to avoid excessive recalculation
+
 export function HDAIRecommendations({ maxRecommendations = 5 }: HDAIRecommendationsProps) {
   const activeTrades = useTradeStore((state) => state.getEnteredTrades());
   const [recommendations, setRecommendations] = useState<ProfitRecommendation[]>([]);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const marketDataWatcherRef = useRef<{
+    lastGreeksDelta: number;
+    lastIV: number;
+    lastConfluence: number;
+  }>({
+    lastGreeksDelta: 0,
+    lastIV: 0,
+    lastConfluence: 0,
+  });
 
-  // Generate recommendations for all active trades
-  useEffect(() => {
+  // Helper: recalculate recommendations from current data
+  const recalculateRecommendations = () => {
     const allRecs: ProfitRecommendation[] = [];
 
     activeTrades.forEach((trade) => {
@@ -89,7 +101,73 @@ export function HDAIRecommendations({ maxRecommendations = 5 }: HDAIRecommendati
       .slice(0, maxRecommendations);
 
     setRecommendations(sortedRecs);
+  };
+
+  // Debounced recalculation
+  const debouncedRecalculate = () => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      recalculateRecommendations();
+    }, RECALC_DEBOUNCE_MS);
+  };
+
+  // Primary effect: recalculate when trades change (entry/exit)
+  useEffect(() => {
+    recalculateRecommendations();
   }, [activeTrades, maxRecommendations]);
+
+  // REAL-TIME UPDATES: Watch for Greeks/IV/confluence changes
+  // Recommendations go stale when market data changes, so poll for updates
+  useEffect(() => {
+    if (activeTrades.length === 0) return;
+
+    const pollInterval = setInterval(() => {
+      let hasChanged = false;
+
+      // Check if Greeks or IV changed significantly on any active trade
+      activeTrades.forEach((trade) => {
+        const greeksSnapshot = getTradeGreeks(trade.id);
+        if (!greeksSnapshot) return;
+
+        const currentDelta = greeksSnapshot.greeks.delta;
+        const currentIV = greeksSnapshot.greeks.impliedVolatility;
+
+        // Trigger update if Greeks moved >5% or IV moved >1%
+        const deltaChanged = Math.abs(currentDelta - marketDataWatcherRef.current.lastGreeksDelta) > 0.05;
+        const ivChanged = Math.abs(currentIV - marketDataWatcherRef.current.lastIV) > 0.01;
+
+        if (deltaChanged || ivChanged) {
+          hasChanged = true;
+          marketDataWatcherRef.current.lastGreeksDelta = currentDelta;
+          marketDataWatcherRef.current.lastIV = currentIV;
+          console.log(`[HDAIRecommendations] ⚡ Greeks/IV changed - delta: ${currentDelta.toFixed(3)}, IV: ${(currentIV * 100).toFixed(1)}%`);
+        }
+      });
+
+      // Also watch confluence
+      if (activeTrades.length > 0) {
+        const confluence = useMarketDataStore.getState().getConfluence(activeTrades[0].ticker);
+        if (confluence && Math.abs(confluence.overall - marketDataWatcherRef.current.lastConfluence) > 5) {
+          hasChanged = true;
+          marketDataWatcherRef.current.lastConfluence = confluence.overall;
+          console.log(`[HDAIRecommendations] ⚡ Confluence changed: ${confluence.overall.toFixed(1)}`);
+        }
+      }
+
+      if (hasChanged) {
+        debouncedRecalculate();
+      }
+    }, 1000); // Poll every second for changes
+
+    return () => clearInterval(pollInterval);
+  }, [activeTrades]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
 
   const handleApprove = (rec: ProfitRecommendation) => {
     approveRecommendation(rec.id);
