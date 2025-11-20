@@ -11,6 +11,7 @@
  */
 
 import { Contract, Trade } from '../types';
+import { recordIV, detectIVCrush, detectIVSpike } from '../lib/greeks/ivHistory';
 
 // ============================================================================
 // Types
@@ -134,52 +135,141 @@ class GreeksMonitorService {
   }
 
   /**
-   * Fetch Greeks from Tradier API
+   * Fetch Greeks from Massive API (real-time)
    */
   private async fetchGreeks(trade: Trade): Promise<GreeksSnapshot | null> {
-    // NOTE: This is a placeholder - you'll need actual Tradier API credentials
-    // For now, we'll simulate Greeks data
+    try {
+      const daysToExpiry = Math.max(
+        0,
+        Math.ceil(
+          (trade.contract.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+        )
+      );
 
-    // In production, you'd call:
-    // const response = await fetch(`${this.TRADIER_API_URL}/markets/options/greeks?symbols=${optionSymbol}`, {
-    //   headers: {
-    //     'Authorization': `Bearer ${TRADIER_API_KEY}`,
-    //     'Accept': 'application/json'
-    //   }
-    // });
+      // Construct option ticker (OCC format: TICKER + YYMMDD + C/P + Strike)
+      const optionTicker = trade.contract.id;
 
-    // Simulated Greeks data (replace with real API call)
-    const daysToExpiry = Math.max(
-      0,
-      Math.ceil(
-        (trade.contract.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      )
-    );
+      console.log(`[GreeksMonitor] Fetching real Greeks for ${optionTicker}`);
 
-    // Simulate Greeks based on DTE
-    const thetaDecayRate = daysToExpiry <= 7 ? -50 : daysToExpiry <= 30 ? -20 : -10;
-    const gammaRisk = daysToExpiry <= 7 ? 0.15 : daysToExpiry <= 30 ? 0.08 : 0.03;
+      // Fetch from Massive via proxy endpoint
+      const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN;
+      const response = await fetch(`/api/massive/snapshot/options/${trade.ticker}?limit=250`, {
+        headers: {
+          'x-massive-proxy-token': PROXY_TOKEN || '',
+        },
+      });
 
-    const snapshot: GreeksSnapshot = {
-      symbol: `${trade.ticker}${trade.contract.expiry.replace(/-/g, '')}${trade.contract.type}${String(trade.contract.strike).padStart(8, '0')}`,
+      if (!response.ok) {
+        throw new Error(`Massive API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      const results = data.results || [];
+
+      // Find the specific contract by matching strike, expiry, and type
+      const contract = results.find((c: any) => {
+        const details = c.details || c;
+        return (
+          details.strike_price === trade.contract.strike &&
+          details.expiration_date === trade.contract.expiry &&
+          (details.contract_type || '').toLowerCase().startsWith(trade.contract.type.toLowerCase())
+        );
+      });
+
+      if (!contract) {
+        console.warn(`[GreeksMonitor] Contract not found in snapshot, using cached values`);
+        return this.createFallbackSnapshot(trade, daysToExpiry);
+      }
+
+      // Extract real Greeks from Massive response
+      const greeks = contract.greeks || {};
+      const lastQuote = contract.last_quote || {};
+      const underlyingAsset = contract.underlying_asset || {};
+
+      const bid = lastQuote.bid || lastQuote.bp || 0;
+      const ask = lastQuote.ask || lastQuote.ap || 0;
+      const optionPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : (contract.last_trade?.price || trade.contract.mid);
+
+      const snapshot: GreeksSnapshot = {
+        symbol: optionTicker,
+        strike: trade.contract.strike,
+        expiry: trade.contract.expiry,
+        type: trade.contract.type,
+        greeks: {
+          delta: greeks.delta ?? trade.contract.delta ?? (trade.contract.type === 'C' ? 0.5 : -0.5),
+          gamma: greeks.gamma ?? 0,
+          theta: greeks.theta ?? 0,
+          vega: greeks.vega ?? trade.contract.vega ?? 0,
+          rho: greeks.rho ?? 0,
+          impliedVolatility: contract.implied_volatility ?? trade.contract.iv ?? 0,
+          timestamp: Date.now(),
+        },
+        underlyingPrice: underlyingAsset.price ?? trade.currentPrice ?? trade.entryPrice ?? 0,
+        optionPrice,
+        daysToExpiry,
+      };
+
+      console.log(`[GreeksMonitor] ✅ Real Greeks fetched:`, {
+        delta: snapshot.greeks.delta?.toFixed(3),
+        gamma: snapshot.greeks.gamma?.toFixed(4),
+        theta: snapshot.greeks.theta?.toFixed(2),
+        vega: snapshot.greeks.vega?.toFixed(3),
+        iv: (snapshot.greeks.impliedVolatility * 100)?.toFixed(1) + '%',
+      });
+
+      // Record IV for historical tracking
+      if (snapshot.greeks.impliedVolatility > 0) {
+        recordIV(trade.ticker, snapshot.greeks.impliedVolatility, 'massive');
+
+        // Check for IV crush or spike
+        const crush = detectIVCrush(trade.ticker);
+        const spike = detectIVSpike(trade.ticker);
+
+        if (crush.isCrush) {
+          console.warn(`[GreeksMonitor] ⚠️ IV CRUSH detected for ${trade.ticker}: ${crush.dropPercent.toFixed(1)}% drop`);
+        }
+
+        if (spike.isSpike) {
+          console.warn(`[GreeksMonitor] ⚠️ IV SPIKE detected for ${trade.ticker}: ${spike.risePercent.toFixed(1)}% rise`);
+        }
+      }
+
+      return snapshot;
+    } catch (error) {
+      console.error(`[GreeksMonitor] Failed to fetch real Greeks:`, error);
+      // Fallback to cached/initial values with warning
+      const daysToExpiry = Math.max(
+        0,
+        Math.ceil((trade.contract.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      );
+      return this.createFallbackSnapshot(trade, daysToExpiry);
+    }
+  }
+
+  /**
+   * Create fallback snapshot using cached contract values
+   */
+  private createFallbackSnapshot(trade: Trade, daysToExpiry: number): GreeksSnapshot {
+    console.warn(`[GreeksMonitor] ⚠️ Using fallback Greeks (cached values)`);
+
+    return {
+      symbol: trade.contract.id,
       strike: trade.contract.strike,
       expiry: trade.contract.expiry,
       type: trade.contract.type,
       greeks: {
         delta: trade.contract.delta || (trade.contract.type === 'C' ? 0.5 : -0.5),
-        gamma: gammaRisk,
-        theta: thetaDecayRate,
-        vega: trade.contract.vega || 0.12,
-        rho: 0.05,
-        impliedVolatility: trade.contract.iv || 0.35,
+        gamma: trade.contract.gamma || 0,
+        theta: trade.contract.theta || 0,
+        vega: trade.contract.vega || 0,
+        rho: 0,
+        impliedVolatility: trade.contract.iv || 0,
         timestamp: Date.now(),
       },
-      underlyingPrice: trade.currentPrice || trade.entryPrice || 100,
+      underlyingPrice: trade.currentPrice || trade.entryPrice || 0,
       optionPrice: trade.contract.mid,
       daysToExpiry,
     };
-
-    return snapshot;
   }
 
   /**
