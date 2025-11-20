@@ -1,0 +1,1406 @@
+[
+  {
+    "name": "Opening Range Breakout + Flow (Long)",
+    "slug": "orb-flow-long-v2",
+    "shortName": "ORB+",
+    "description": "Enhanced ORB with institutional flow confirmation, RVOL filter, and macro alignment. Detects bullish breakout with sweep/block activity. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "session.minutesSinceOpen",
+            "op": ">=",
+            "value": 5
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "session.minutesSinceOpen",
+            "op": "<=",
+            "value": 60
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": ">",
+            "value": "pattern.orbHigh"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "pattern.isPatientCandle",
+            "op": "==",
+            "value": true
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.5
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowScore",
+                "op": ">=",
+                "value": 50
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowBias",
+                    "op": "==",
+                    "value": "bullish"
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowBias",
+                    "op": "==",
+                    "value": "neutral"
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 65,
+        "ready": 80
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Opening Range Breakdown + Flow (Short)",
+    "slug": "orb-flow-short-v2",
+    "shortName": "ORB+",
+    "description": "Enhanced ORB with institutional flow confirmation, RVOL filter, and macro alignment. Detects bearish breakdown with sweep/block activity. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:35",
+      "end": "10:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "session.minutesSinceOpen",
+            "op": ">=",
+            "value": 5
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "session.minutesSinceOpen",
+            "op": "<=",
+            "value": 60
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": "<",
+            "value": "pattern.orbLow"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "pattern.isPatientCandle",
+            "op": "==",
+            "value": true
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.5
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowScore",
+                "op": ">=",
+                "value": 50
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowBias",
+                    "op": "==",
+                    "value": "bearish"
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowBias",
+                    "op": "==",
+                    "value": "neutral"
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 65,
+        "ready": 80
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": true,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Bounce + Flow Confirmation (Long)",
+    "slug": "ema-bounce-flow-long-v2",
+    "shortName": "EMA+",
+    "description": "Enhanced EMA bounce with flow confirmation and RVOL. Detects bullish EMA21 bounce with institutional backing and relative volume surge. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.prev",
+            "op": "<=",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": ">",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.60m.ema.9",
+            "op": ">",
+            "value": "mtf.60m.ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.2
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowScore",
+                "op": ">=",
+                "value": 45
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bearish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 78
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Rejection + Flow Confirmation (Short)",
+    "slug": "ema-rejection-flow-short-v2",
+    "shortName": "EMA+",
+    "description": "Enhanced EMA rejection with flow confirmation and RVOL. Detects bearish EMA21 rejection with institutional selling pressure. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:30",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.prev",
+            "op": ">=",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": "<",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "mtf.60m.ema.9",
+            "op": "<",
+            "value": "mtf.60m.ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.2
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowScore",
+                "op": ">=",
+                "value": 45
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bullish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 78
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Reclaim + Divergence (Long)",
+    "slug": "vwap-reclaim-divergence-long-v2",
+    "shortName": "VWR+",
+    "description": "Enhanced VWAP reclaim with RSI divergence confirmation. Fades VWAP with bullish divergence and flow support. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": ">",
+            "value": "vwap.value"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "vwap.distancePct",
+            "op": "<",
+            "value": 0.5
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.1
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "pattern.rsi_divergence_5m",
+                "op": "==",
+                "value": "bullish"
+              }
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowScore",
+                    "op": ">=",
+                    "value": 55
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bearish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 58,
+        "ready": 75
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "VWAP Rejection + Divergence (Short)",
+    "slug": "vwap-rejection-divergence-short-v2",
+    "shortName": "VWR+",
+    "description": "Enhanced VWAP rejection with RSI divergence confirmation. Fades VWAP with bearish divergence and flow pressure. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": "<",
+            "value": "vwap.value"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "vwap.distancePct",
+            "op": "<",
+            "value": 0.5
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.1
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "pattern.rsi_divergence_5m",
+                "op": "==",
+                "value": "bearish"
+              }
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowScore",
+                    "op": ">=",
+                    "value": 55
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bullish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 58,
+        "ready": 75
+      }
+    },
+    "cooldownMinutes": 10,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Cloud Momentum + Flow (Long)",
+    "slug": "cloud-flow-long-v2",
+    "shortName": "CLD+",
+    "description": "Enhanced EMA cloud with institutional flow and RVOL. Detects strong bullish momentum with sweep activity. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": ">",
+            "value": "ema.9"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": ">",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "ema.9",
+            "op": ">",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.3
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.sweepCount",
+                    "op": ">=",
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowScore",
+                    "op": ">=",
+                    "value": 60
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bearish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "rsi.14",
+            "op": "<",
+            "value": 75
+          }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 65,
+        "ready": 82
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "EMA Cloud Momentum + Flow (Short)",
+    "slug": "cloud-flow-short-v2",
+    "shortName": "CLD+",
+    "description": "Enhanced EMA cloud with institutional flow and RVOL. Detects strong bearish momentum with sweep activity. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": "<",
+            "value": "ema.9"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": "<",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "ema.9",
+            "op": "<",
+            "value": "ema.21"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.3
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.sweepCount",
+                    "op": ">=",
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowScore",
+                    "op": ">=",
+                    "value": 60
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bullish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "rsi.14",
+            "op": ">",
+            "value": 25
+          }
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 65,
+        "ready": 82
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Fibonacci Pullback + MTF Confirmation (Long)",
+    "slug": "fib-mtf-long-v2",
+    "shortName": "FIB+",
+    "description": "Enhanced Fibonacci with multi-timeframe divergence confirmation. Detects pullback to golden zone with MTF alignment. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "pattern.nearFib618",
+                "op": "==",
+                "value": true
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "pattern.nearFib500",
+                "op": "==",
+                "value": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "price.current",
+            "op": ">",
+            "value": "pattern.fib618"
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.1
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "pattern.mtf_divergence_aligned",
+                "op": "==",
+                "value": true
+              }
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.flowScore",
+                    "op": ">=",
+                    "value": 50
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 60,
+        "ready": 78
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Range Breakout + Institutional Flow (Long)",
+    "slug": "breakout-flow-long-v2",
+    "shortName": "BRK+",
+    "description": "Enhanced consolidation breakout with institutional flow detection. Requires block trades or sweeps for confirmation. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "LONG",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "pattern.breakoutBullish",
+            "op": "==",
+            "value": true
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.8
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.sweepCount",
+                    "op": ">=",
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.blockCount",
+                    "op": ">=",
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.unusualActivity",
+                    "op": "==",
+                    "value": true
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bearish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 68,
+        "ready": 85
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  },
+  {
+    "name": "Range Breakdown + Institutional Flow (Short)",
+    "slug": "breakdown-flow-short-v2",
+    "shortName": "BRK+",
+    "description": "Enhanced consolidation breakdown with institutional flow detection. Requires block trades or sweeps for confirmation. [Phase 1: Flow optional, awaiting market regime + VIX]",
+    "category": "OPTIONS_DAY_TRADE",
+    "underlyingScope": "ANY",
+    "timeWindow": {
+      "start": "09:30",
+      "end": "15:00",
+      "timezone": "America/New_York"
+    },
+    "barTimeframe": "5m",
+    "entrySide": "SHORT",
+    "optionsPlayType": "single_leg",
+    "conditions": {
+      "type": "AND",
+      "children": [
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "pattern.breakoutBearish",
+            "op": "==",
+            "value": true
+          }
+        },
+        {
+          "type": "RULE",
+          "rule": {
+            "field": "volume.relativeToAvg",
+            "op": ">=",
+            "value": 1.8
+          }
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.sweepCount",
+                    "op": ">=",
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.blockCount",
+                    "op": ">=",
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            },
+            {
+              "type": "OR",
+              "children": [
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "flow.unusualActivity",
+                    "op": "==",
+                    "value": true
+                  }
+                },
+                {
+                  "type": "RULE",
+                  "rule": {
+                    "field": "volume.relativeToAvg",
+                    "op": ">=",
+                    "value": 1.5
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "OR",
+          "children": [
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "flow.flowBias",
+                "op": "!=",
+                "value": "bullish"
+              }
+            },
+            {
+              "type": "RULE",
+              "rule": {
+                "field": "volume.relativeToAvg",
+                "op": ">=",
+                "value": 1.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "alertBehavior": {
+      "flashWatchlist": true,
+      "showNowPlaying": true,
+      "notifyDiscord": true,
+      "autoOpenTradePlanner": false,
+      "confidenceThresholds": {
+        "min": 68,
+        "ready": 85
+      }
+    },
+    "cooldownMinutes": 15,
+    "oncePerSession": false,
+    "isCoreLibrary": true,
+    "enabled": true
+  }
+]
