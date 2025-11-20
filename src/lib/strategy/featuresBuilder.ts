@@ -12,6 +12,8 @@ import {
   isBreakout,
   computeAvgVolume,
   calculateRelativeVolume,
+  detectRSIDivergence,
+  detectMultiTimeframeDivergence,
   type Bar,
 } from './patternDetection.js';
 import type { AggregatedFlowMetrics } from '../massive/aggregate-flow.js';
@@ -101,6 +103,33 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
   const nearFib618 = currentPrice > 0 ? isNearFibLevel(currentPrice, fib.fib618) : false;
   const nearFib500 = currentPrice > 0 ? isNearFibLevel(currentPrice, fib.fib500) : false;
 
+  // RSI Divergence Detection (5m timeframe)
+  // Requires at least 20 bars for reliable divergence detection
+  const rsiDiv5m = bars.length >= 20
+    ? detectRSIDivergence(bars.slice(-20), 14, 10)
+    : { bullish: false, bearish: false };
+
+  // Multi-Timeframe Divergence Detection
+  // Checks if RSI trends across timeframes align (bullish or bearish convergence)
+  const mtfRsiData: Record<string, { rsi: number; price: number }> = {};
+
+  // Build MTF RSI data from available timeframes
+  const timeframes = ['1m', '5m', '15m', '60m'] as const;
+  for (const tf of timeframes) {
+    const tfData = mtf[tf];
+    if (tfData?.rsi?.['14'] !== undefined && tfData?.price?.current !== undefined) {
+      mtfRsiData[tf] = {
+        rsi: tfData.rsi['14'],
+        price: tfData.price.current
+      };
+    }
+  }
+
+  // Only detect MTF divergence if we have data from at least 2 timeframes
+  const mtfDiv = Object.keys(mtfRsiData).length >= 2
+    ? detectMultiTimeframeDivergence(mtfRsiData)
+    : { aligned: false, direction: null };
+
   // Build previous snapshot for cross operations
   const prevSnapshot = mtf[primaryTf]?.price?.prev !== undefined ? {
     price: {
@@ -173,6 +202,9 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       breakoutBullish: breakout.bullish,
       breakoutBearish: breakout.bearish,
       volumeSpike,
+      // Divergence Detection (Phase 1 - wired up existing functions)
+      rsi_divergence_5m: rsiDiv5m.bullish || rsiDiv5m.bearish,
+      mtf_divergence_aligned: mtfDiv.aligned,
     },
     prev: prevSnapshot,
   };
