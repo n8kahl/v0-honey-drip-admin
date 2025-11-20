@@ -21,7 +21,11 @@ import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './s
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
 import './styles/globals.css';
 
-export default function App() {
+interface AppProps {
+  initialTab?: 'live' | 'active' | 'history' | 'settings';
+}
+
+export default function App({ initialTab = 'live' }: AppProps) {
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
 
@@ -121,13 +125,20 @@ export default function App() {
       console.log('[v0] App: Initializing marketDataStore with watchlist:', watchlistSymbols);
       initializeMarketData(watchlistSymbols);
     }
-    
+
     // Cleanup on unmount
     return () => {
       console.log('[v0] App: Cleaning up marketDataStore');
       marketDataCleanup();
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
+
+  // Initialize active tab based on route (from initialTab prop)
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
   // useEffect(() => {
