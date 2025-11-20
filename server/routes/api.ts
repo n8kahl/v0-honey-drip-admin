@@ -20,16 +20,47 @@ function getMassiveApiKey(): string {
   return process.env.MASSIVE_API_KEY || '';
 }
 
+/**
+ * Verify ephemeral token (signed with MASSIVE_API_KEY)
+ */
+function verifyEphemeralToken(token: string | null | undefined): boolean {
+  if (!token) return false;
+  try {
+    const MASSIVE_API_KEY = getMassiveApiKey();
+    if (!MASSIVE_API_KEY) return false;
+    const parts = token.split('.');
+    if (parts.length !== 2) return false;
+    const payloadB64 = parts[0];
+    const sig = parts[1];
+    const payloadJson = Buffer.from(payloadB64, 'base64').toString('utf-8');
+    const obj = JSON.parse(payloadJson) as { exp?: number; n?: string };
+    if (!obj?.exp || typeof obj.exp !== 'number') return false;
+    if (Date.now() > obj.exp) return false;
+    const expected = crypto.createHmac('sha256', MASSIVE_API_KEY).update(payloadJson).digest('hex');
+    const a = Buffer.from(sig, 'utf8');
+    const b = Buffer.from(expected, 'utf8');
+    if (a.byteLength !== b.byteLength) return false;
+    return crypto.timingSafeEqual(new Uint8Array(a), new Uint8Array(b));
+  } catch {
+    return false;
+  }
+}
+
 function requireProxyToken(req: Request, res: Response, next: NextFunction) {
-  const MASSIVE_PROXY_TOKEN = getMassiveProxyToken();
-  if (!MASSIVE_PROXY_TOKEN) {
-    return res.status(500).json({ error: 'Server not configured: MASSIVE_PROXY_TOKEN' });
-  }
   const token = req.header('x-massive-proxy-token');
-  if (token !== MASSIVE_PROXY_TOKEN) {
-    return res.status(403).json({ error: 'Forbidden' });
+
+  // First, try to validate as ephemeral token (preferred method)
+  if (verifyEphemeralToken(token)) {
+    return next();
   }
-  next();
+
+  // Fall back to static proxy token for backward compatibility
+  const MASSIVE_PROXY_TOKEN = getMassiveProxyToken();
+  if (MASSIVE_PROXY_TOKEN && token === MASSIVE_PROXY_TOKEN) {
+    return next();
+  }
+
+  return res.status(403).json({ error: 'Forbidden: Invalid or expired token' });
 }
 
 function handleMassiveError(res: Response, error: any) {
