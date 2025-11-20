@@ -1,12 +1,13 @@
 import { useEffect, useMemo } from 'react';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
-import { DesktopSettings } from './components/DesktopSettings';
+import { SettingsPage } from './components/settings/SettingsPage';
 import { MobileActive } from './components/MobileActive';
 import { VoiceCommandDemo } from './components/VoiceCommandDemo';
 // Header moved to app/layout via <TraderHeader />
 import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { useAppNavigation } from './hooks/useAppNavigation';
 import { HDDialogDiscordSettings } from './components/hd/HDDialogDiscordSettings';
 import { HDDialogAddTicker } from './components/hd/HDDialogAddTicker';
 import { HDDialogAddChallenge } from './components/hd/HDDialogAddChallenge';
@@ -23,23 +24,14 @@ import './styles/globals.css';
 export default function App() {
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
-  
-  // Debug log for auth state
-  // console.log('[v0] App: Auth state', {
-  //   user: user?.id,
-  //   loading,
-  //   isTestAuto,
-  //   envVar: (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN,
-  //   willShowAuth: !user && !isTestAuto
-  // });
-  
+
   // Zustand stores
   const { loadTrades, activeTrades, historyTrades, updatedTradeIds } = useTradeStore();
   const { watchlist, loadWatchlist, updateQuotes, getWatchlistSymbols } = useMarketStore();
-  const { 
-    activeTab, 
-    showDiscordDialog, 
-    showAddTickerDialog, 
+  const {
+    activeTab,
+    showDiscordDialog,
+    showAddTickerDialog,
     showAddChallengeDialog,
     voiceState,
     voiceActive,
@@ -51,6 +43,9 @@ export default function App() {
     navigateToActive,
     navigateToHistory,
   } = useUIStore();
+
+  // Navigation hook (provides alternative to prop drilling - available for future use)
+  const nav = useAppNavigation();
   const { 
     discordChannels, 
     challenges, 
@@ -252,7 +247,7 @@ export default function App() {
         )}
 
         {activeTab === 'settings' && (
-          <DesktopSettings
+          <SettingsPage
             onOpenDiscordSettings={() => useUIStore.getState().setShowDiscordDialog(true)}
             onClose={() => setActiveTab('live')}
           />
