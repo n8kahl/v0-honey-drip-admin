@@ -2,6 +2,7 @@ import React from 'react';
 import { Trade } from '../../types';
 import { HDTagTradeType } from '../hd/HDTagTradeType';
 import { formatPercent, formatPrice, cn } from '../../lib/utils';
+import { focusRing } from '../../lib/a11y';
 import { TrendingUp, TrendingDown, ChevronRight } from 'lucide-react';
 
 export interface TradeCardProps {
@@ -41,6 +42,7 @@ export function TradeCard({
       onClick={onClick}
       className={cn(
         'w-full text-left transition-all duration-200 rounded-lg border active:scale-95',
+        focusRing,
         // Min height 44px for mobile touch target accessibility
         variant === 'compact' && 'p-4 bg-[var(--surface-1)] hover:bg-[var(--surface-2)] active:bg-[var(--surface-3)] min-h-[44px] flex flex-col justify-center',
         variant === 'detailed' && 'p-4 bg-[var(--surface-1)] hover:bg-[var(--surface-2)] active:bg-[var(--surface-3)]',
@@ -51,6 +53,7 @@ export function TradeCard({
         isUpdating && !isPositive && 'bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]',
         className
       )}
+      aria-label={`${trade.ticker} ${trade.contract.strike}${trade.contract.type} - ${formatPercent(trade.movePercent || 0)}`}
     >
       {/* Header: Ticker, Type, P&L % */}
       <div className="flex items-start justify-between gap-2">

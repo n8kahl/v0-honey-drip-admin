@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AlertCircle, Trash2, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { focusRing } from '../../lib/a11y';
 
 export type ConfirmationAction = 'delete' | 'exit' | 'remove' | 'warning';
 
@@ -93,6 +94,23 @@ export function ConfirmationDialog({
   isLoading = false,
   className,
 }: ConfirmationDialogProps) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Focus cancel button when dialog opens
+  useEffect(() => {
+    if (isOpen && cancelButtonRef.current) {
+      // Use setTimeout to ensure DOM is rendered
+      setTimeout(() => cancelButtonRef.current?.focus(), 0);
+    }
+  }, [isOpen]);
+
+  // Handle keyboard events
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && !isLoading) {
+      onClose();
+    }
+  };
+
   if (!isOpen) return null;
 
   const actionConfig = {
@@ -127,6 +145,7 @@ export function ConfirmationDialog({
       <div
         className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Dialog */}
@@ -137,6 +156,11 @@ export function ConfirmationDialog({
             className
           )}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={handleKeyDown}
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirmation-title"
+          aria-describedby="confirmation-description"
         >
           {/* Icon */}
           <div className="flex justify-center pt-6">
@@ -147,18 +171,24 @@ export function ConfirmationDialog({
 
           {/* Content */}
           <div className="px-6 py-4 text-center">
-            <h2 className="text-lg font-semibold text-[var(--text-high)] mb-2">
+            <h2 id="confirmation-title" className="text-lg font-semibold text-[var(--text-high)] mb-2">
               {title}
             </h2>
-            <p className="text-sm text-[var(--text-muted)]">{description}</p>
+            <p id="confirmation-description" className="text-sm text-[var(--text-muted)]">
+              {description}
+            </p>
           </div>
 
           {/* Actions */}
           <div className="px-6 pb-6 flex gap-3">
             <button
+              ref={cancelButtonRef}
               onClick={onClose}
               disabled={isLoading}
-              className="flex-1 px-4 py-2.5 rounded-[var(--radius)] text-sm font-medium transition-colors border border-[var(--border-hairline)] text-[var(--text-high)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] disabled:opacity-50 disabled:cursor-not-allowed"
+              className={cn(
+                'flex-1 px-4 py-2.5 rounded-[var(--radius)] text-sm font-medium transition-colors border border-[var(--border-hairline)] text-[var(--text-high)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] disabled:opacity-50 disabled:cursor-not-allowed',
+                focusRing
+              )}
             >
               {cancelLabel}
             </button>
@@ -167,6 +197,7 @@ export function ConfirmationDialog({
               disabled={isLoading}
               className={cn(
                 'flex-1 px-4 py-2.5 rounded-[var(--radius)] text-sm font-medium transition-all text-white disabled:opacity-50 disabled:cursor-not-allowed',
+                focusRing,
                 action === 'delete' || action === 'remove'
                   ? 'bg-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/90'
                   : 'bg-[var(--accent-warning)] hover:bg-[var(--accent-warning)]/90'
