@@ -237,13 +237,9 @@ export class TransportPolicy {
 
     // console.log(`[TransportPolicy] Stopping for ${this.config.symbol}`);
 
-    // Cancel in-flight requests
-    try {
-      massive.cancel();
-    } catch (e) {
-      console.warn('[TransportPolicy] Error canceling requests:', e);
-    }
-    
+    // Note: In-flight requests will be handled by browser's natural cleanup
+    // The unified massive API manages its own connection lifecycle
+
     // Flush any pending batched messages
     this.flushBatch();
     if (this.batchFlushTimer) {
