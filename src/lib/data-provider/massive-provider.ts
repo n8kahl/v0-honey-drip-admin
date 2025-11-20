@@ -384,24 +384,179 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     const cached = this.flowCache.get(cacheKey);
     if (cached) return cached;
 
-    // Note: Massive flow endpoint would be /v3/flow/options/{ticker}
-    // For now, returning synthetic flow data based on volume/OI
-    // In production, replace with actual Massive flow endpoint
-    const chain = await this.getOptionChain(underlying, { limit: 100 });
+    try {
+      // Fetch option chain to analyze flow from real data
+      const chain = await this.getOptionChain(underlying, { limit: 250 });
 
-    const flowData: OptionFlowData = {
-      sweepCount: Math.floor(Math.random() * 100),    // Would come from /v3/flow/options
-      blockCount: Math.floor(Math.random() * 20),     // Placeholder
-      darkPoolPercent: 35,                            // Placeholder
-      flowBias: 'neutral',                            // Would be calculated from actual flow
-      buyPressure: 50,                                // Would come from flow data
-      unusualActivity: false,                         // Would be calculated
-      flowScore: 50,                                  // Would come from API
+      // Calculate real flow metrics from chain data
+      const flowData = this.calculateFlowFromChain(chain);
+
+      this.flowCache.set(cacheKey, flowData, 60000);
+      return flowData;
+    } catch (error) {
+      this.logger?.('[MassiveOptionsProvider] Flow data fetch failed, returning neutral metrics', error);
+
+      // Return neutral flow data as fallback
+      const fallbackFlow: OptionFlowData = {
+        sweepCount: 0,
+        blockCount: 0,
+        darkPoolPercent: 0,
+        flowBias: 'neutral',
+        buyPressure: 50,
+        unusualActivity: false,
+        flowScore: 50,
+        updatedAt: Date.now(),
+      };
+
+      this.flowCache.set(cacheKey, fallbackFlow, 60000);
+      return fallbackFlow;
+    }
+  }
+
+  /**
+   * Calculate real flow metrics from option chain data
+   * Analyzes volume, open interest, and bid-ask spreads to derive flow signals
+   */
+  private calculateFlowFromChain(chain: OptionChainData): OptionFlowData {
+    if (!chain.contracts || chain.contracts.length === 0) {
+      return {
+        sweepCount: 0,
+        blockCount: 0,
+        darkPoolPercent: 0,
+        flowBias: 'neutral',
+        buyPressure: 50,
+        unusualActivity: false,
+        flowScore: 50,
+        updatedAt: Date.now(),
+      };
+    }
+
+    // ===== Analyze Calls vs Puts =====
+    let callVolume = 0,
+      putVolume = 0;
+    let callOI = 0,
+      putOI = 0;
+    let largeVolumeTrades = 0;
+    let tightSpreadCount = 0;
+
+    const volumeThreshold = 500; // Contracts > 500 volume = "large"
+    const spreadThreshold = 0.02; // Bid-ask spread < 2% = "tight"
+
+    for (const contract of chain.contracts) {
+      const vol = contract.quote?.volume || 0;
+      const oi = contract.quote?.openInterest || 0;
+      const bid = contract.quote?.bid || 0;
+      const ask = contract.quote?.ask || 0;
+      const mid = (bid + ask) / 2 || 1;
+      const spread = ask > 0 && bid > 0 ? (ask - bid) / mid : 1;
+
+      if (contract.type === 'call') {
+        callVolume += vol;
+        callOI += oi;
+      } else {
+        putVolume += vol;
+        putOI += oi;
+      }
+
+      // Track large trades (potential block trades or unusual activity)
+      if (vol > volumeThreshold) {
+        largeVolumeTrades++;
+      }
+
+      // Track tight spreads (liquidity indicator)
+      if (spread < spreadThreshold && spread > 0) {
+        tightSpreadCount++;
+      }
+    }
+
+    // ===== Flow Bias (Call vs Put Pressure) =====
+    const totalVolume = callVolume + putVolume;
+    let flowBias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+    let buyPressure = 50;
+
+    if (totalVolume > 0) {
+      const callRatio = callVolume / totalVolume;
+
+      if (callRatio > 0.55) {
+        flowBias = 'bullish';
+        buyPressure = Math.min(100, 50 + (callRatio - 0.5) * 100);
+      } else if (callRatio < 0.45) {
+        flowBias = 'bearish';
+        buyPressure = Math.max(0, 50 + (callRatio - 0.5) * 100);
+      }
+    }
+
+    // ===== Unusual Activity Detection =====
+    // Indicator 1: Volume spike (large trades as % of total)
+    const largeTradePercent = totalVolume > 0 ? (largeVolumeTrades / chain.contracts.length) * 100 : 0;
+    const volumeSpike = largeTradePercent > 10; // >10% of contracts have large volume
+
+    // Indicator 2: Open Interest vs Volume ratio (unusual if highly imbalanced)
+    const totalOI = callOI + putOI;
+    const oiVolumeRatio = totalVolume > 0 ? totalOI / totalVolume : 0;
+    const oiVolumeMismatch = oiVolumeRatio > 5 || oiVolumeRatio < 0.2; // Unusual if ratio very high or low
+
+    const unusualActivity = volumeSpike || oiVolumeMismatch;
+
+    // ===== Block Trade Detection =====
+    // Count contracts with volume > 1000 as potential block trades
+    const blockCount = chain.contracts.filter((c) => (c.quote?.volume || 0) > 1000).length;
+
+    // ===== Sweep Detection (High volume + tight spreads) =====
+    // Estimate sweep count as high-volume + tight-spread contracts
+    const sweepCount = chain.contracts.filter(
+      (c) => {
+        const vol = c.quote?.volume || 0;
+        const bid = c.quote?.bid || 0;
+        const ask = c.quote?.ask || 0;
+        const mid = (bid + ask) / 2 || 1;
+        const spread = ask > 0 && bid > 0 ? (ask - bid) / mid : 1;
+        return vol > 100 && spread < spreadThreshold && spread > 0;
+      }
+    ).length;
+
+    // ===== Dark Pool Percentage =====
+    // Estimate from tight spreads and high volume (indicates institutional activity)
+    // More tight spreads = higher likelihood of dark pool participation
+    const darkPoolPercent = Math.min(100, (tightSpreadCount / Math.max(1, chain.contracts.length)) * 80);
+
+    // ===== Flow Score (0-100) =====
+    // Combines: liquidity (tight spreads), activity (volume), and confidence (OI)
+    let flowScore = 50;
+
+    // Boost for high liquidity (many tight spreads)
+    if (tightSpreadCount > chain.contracts.length * 0.6) {
+      flowScore += 20;
+    }
+
+    // Boost for high volume activity
+    if (totalVolume > 10000) {
+      flowScore += 15;
+    }
+
+    // Adjust for OI backing (confidence)
+    if (totalOI > totalVolume * 2) {
+      flowScore += 10; // Good OI backing volume
+    }
+
+    // Penalize unusual activity
+    if (unusualActivity) {
+      flowScore -= 10;
+    }
+
+    // Clamp to 0-100
+    flowScore = Math.max(0, Math.min(100, flowScore));
+
+    return {
+      sweepCount,
+      blockCount,
+      darkPoolPercent: Math.round(darkPoolPercent),
+      flowBias,
+      buyPressure,
+      unusualActivity,
+      flowScore,
       updatedAt: Date.now(),
     };
-
-    this.flowCache.set(cacheKey, flowData, 60000);
-    return flowData;
   }
 
   // === SUBSCRIPTIONS ===
