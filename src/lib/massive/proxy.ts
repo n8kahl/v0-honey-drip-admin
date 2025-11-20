@@ -137,3 +137,14 @@ export function getOptionBars(
   });
   return fetchJSON(`${API_BASE}/options/bars?${query}`);
 }
+
+// Tradier fallback for stock bars (user has indices+options plans, not stocks)
+export function getTradierStockBars(
+  symbol: string,
+  interval: '1min' | '5min' | '15min' | 'daily' | 'weekly' | 'monthly',
+  start: string,
+  end: string
+) {
+  const query = encodeParams({ symbol, interval, start, end });
+  return fetchJSON(`${API_BASE}/tradier/stocks/bars?${query}`);
+}
