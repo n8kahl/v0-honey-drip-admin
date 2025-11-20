@@ -311,16 +311,16 @@ export const TraderHeader: React.FC = () => {
   const enrichedSession = useEnrichedMarketSession();
   const { setActiveTab } = useUIStore();
   const router = useNavigationRouter();
-  
+
   // Get active challenge (first active one)
   const activeChallenge = challenges.find((c) => c.isActive);
-  
+
   // Calculate challenge stats
   const exitedTrades = activeTrades.filter((t) => t.state === 'EXITED');
   const completedInChallenge = activeChallenge
     ? exitedTrades.filter((t) => t.challenges.includes(activeChallenge.id))
     : [];
-  
+
   const todayRMultiple = completedInChallenge.reduce((sum, trade) => {
     // Simplified R calculation: (exit - entry) / (entry - stop)
     if (!trade.entryPrice || !trade.exitPrice || !trade.stopLoss) return sum;
@@ -329,25 +329,49 @@ export const TraderHeader: React.FC = () => {
     const gainPerShare = trade.exitPrice - trade.entryPrice;
     return sum + (gainPerShare / riskPerShare);
   }, 0);
-  
+
   const winningTrades = completedInChallenge.filter((t) => t.exitPrice && t.entryPrice && t.exitPrice > t.entryPrice);
   const winRate = completedInChallenge.length > 0 ? (winningTrades.length / completedInChallenge.length) * 100 : 0;
-  
+
   // Active setups shown via ActiveSetups component
-  
+
+  // Load theme preference from localStorage on mount
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme-mode');
+    const isDark = savedTheme !== 'light';
+    setDarkMode(isDark);
+
+    // Apply theme to HTML element
+    if (isDark) {
+      document.documentElement.classList.remove('light-mode');
+    } else {
+      document.documentElement.classList.add('light-mode');
+    }
+  }, []);
+
   useEffect(() => {
     // Mock WebSocket latency (replace with actual WS ping from marketDataStore)
     const interval = setInterval(() => {
       setWsLatency(Math.floor(Math.random() * 150) + 50); // 50-200ms
     }, 5000);
-    
+
     return () => clearInterval(interval);
   }, []);
-  
+
   const handleDarkModeToggle = () => {
-    setDarkMode(!darkMode);
-    // TODO: Implement actual theme toggle
-    console.log('[v0] Dark mode toggled:', !darkMode);
+    const newDarkMode = !darkMode;
+    setDarkMode(newDarkMode);
+
+    // Toggle light-mode class on HTML element
+    if (newDarkMode) {
+      document.documentElement.classList.remove('light-mode');
+      localStorage.setItem('theme-mode', 'dark');
+    } else {
+      document.documentElement.classList.add('light-mode');
+      localStorage.setItem('theme-mode', 'light');
+    }
+
+    console.log('[v0] Theme toggled to:', newDarkMode ? 'dark' : 'light');
   };
 
   const handleProfileClick = () => {
@@ -386,7 +410,7 @@ export const TraderHeader: React.FC = () => {
           />
           <ActiveSetups />
         </div>
-        
+
         {/* Center: Challenge Progress Ring */}
         <div className="hidden md:flex items-center justify-center flex-1">
           {activeChallenge ? (
@@ -400,18 +424,18 @@ export const TraderHeader: React.FC = () => {
             <div className="text-xs text-[var(--text-muted)] italic">No active challenge</div>
           )}
         </div>
-        
+
         {/* Right: Dark Mode + User Menu */}
         <div className="flex items-center gap-3">
           <button
             onClick={handleDarkModeToggle}
             className={cn(
-              'w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)]',
+              'w-8 h-8 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)] transition-colors',
               colorTransition,
               buttonHoverColor,
               focusStateSmooth
             )}
-            title="Toggle dark mode"
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {darkMode ? (
               <Moon className="w-4 h-4 text-[var(--text-high)]" />
