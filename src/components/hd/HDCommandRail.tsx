@@ -1,6 +1,7 @@
 import { useMarketStore, useTradeStore, useSettingsStore } from '../../stores';
 import { HDRowWatchlist } from './HDRowWatchlist';
 import { HDMacroPanel } from './HDMacroPanel';
+import { HDCommandCenter } from './HDCommandCenter';
 import { Ticker } from '../../types';
 import { Plus, TrendingUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -46,15 +47,10 @@ export function HDCommandRail({
           <HDMacroPanel />
         </div>
 
-        {/* Active Trades Count */}
+        {/* Command Center - Phase 1: Real-Time Trade Management */}
         {activeTrades.length > 0 && (
-          <div className="p-3 bg-[var(--brand-primary)]/10 border-b border-[var(--border-hairline)]">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[var(--brand-primary)]" />
-              <span className="text-sm font-medium text-[var(--text-high)]">
-                {activeTrades.length} Active Trade{activeTrades.length !== 1 ? 's' : ''}
-              </span>
-            </div>
+          <div className="p-3 border-b border-[var(--border-hairline)]">
+            <HDCommandCenter />
           </div>
         )}
 
