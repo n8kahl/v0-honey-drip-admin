@@ -1,12 +1,16 @@
-import { useParams, useNavigate } from 'react-router-dom';
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { useTradeStore } from '../stores/tradeStore';
+import { AppLayout } from '../components/layouts/AppLayout';
 import { Suspense } from 'react';
 
 /**
  * TradeDetailPage - View details for a specific trade
  *
- * Route: /trades/:tradeId
+ * Route: /trades/[id]
  *
  * Shows:
  * - Full trade information
@@ -16,8 +20,9 @@ import { Suspense } from 'react';
  * - Option to close trade
  */
 export default function TradeDetailPage() {
-  const { tradeId } = useParams<{ tradeId: string }>();
-  const navigate = useNavigate();
+  const params = useParams();
+  const tradeId = params?.id as string;
+  const router = useRouter();
   const { activeTrades, historyTrades } = useTradeStore();
 
   // Find the trade from either active or history trades
@@ -26,32 +31,32 @@ export default function TradeDetailPage() {
 
   if (!trade) {
     return (
-      <Suspense fallback={<div>Loading...</div>}>
-        <div className="min-h-screen bg-[var(--bg-base)] p-4 flex items-center justify-center">
+      <AppLayout hideMainBottomNav>
+        <div className="p-4 flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <h1 className="text-[var(--text-high)] text-xl mb-2">Trade not found</h1>
             <p className="text-[var(--text-muted)] mb-4">Trade ID: {tradeId}</p>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => router.back()}
               className="px-4 py-2 bg-[var(--brand-primary)] text-[var(--bg-base)] rounded-[var(--radius)] hover:opacity-90 transition-opacity"
             >
-              Back to Dashboard
+              Go Back
             </button>
           </div>
         </div>
-      </Suspense>
+      </AppLayout>
     );
   }
 
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading trade details...</div>}>
-      <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-high)]">
+    <AppLayout hideMainBottomNav>
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading trade details...</div>}>
         {/* Header with back button */}
         <div className="sticky top-0 z-40 bg-[var(--surface-1)] border-b border-[var(--border-hairline)] p-4">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => navigate(-1)}
+                onClick={() => router.back()}
                 className="p-2 rounded-[var(--radius)] hover:bg-[var(--surface-2)] transition-colors"
                 title="Go back"
               >
@@ -66,7 +71,9 @@ export default function TradeDetailPage() {
               </div>
             </div>
             <div className="text-right">
-              <div className={`text-2xl font-bold ${(trade.movePercent || 0) >= 0 ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}`}>
+              <div
+                className={`text-2xl font-bold ${(trade.movePercent || 0) >= 0 ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}`}
+              >
                 {(trade.movePercent || 0) >= 0 ? '+' : ''}{(trade.movePercent || 0).toFixed(2)}%
               </div>
               <p className="text-[var(--text-muted)] text-sm">P&L</p>
@@ -125,12 +132,10 @@ export default function TradeDetailPage() {
 
           {/* TODO: Add charts, detailed analysis, etc. */}
           <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-6">
-            <p className="text-[var(--text-muted)]">
-              Additional trade details, charts, and analysis coming soon.
-            </p>
+            <p className="text-[var(--text-muted)]">Additional trade details, charts, and analysis coming soon.</p>
           </div>
         </div>
-      </div>
-    </Suspense>
+      </Suspense>
+    </AppLayout>
   );
 }
