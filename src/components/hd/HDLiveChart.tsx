@@ -321,41 +321,72 @@ const loadHistoricalBars = useCallback(async () => {
             throw new Error('No historical data returned');
           }
 
-          const parsed: Bar[] = results
-            .filter((r: any) => {
-              // Pre-filter: ensure raw data has valid timestamp and OHLC values before mapping
-              return (
-                r.t != null && typeof r.t === 'number' && !isNaN(r.t) && r.t > 0 &&
-                r.o != null && typeof r.o === 'number' && !isNaN(r.o) &&
-                r.h != null && typeof r.h === 'number' && !isNaN(r.h) &&
-                r.l != null && typeof r.l === 'number' && !isNaN(r.l) &&
-                r.c != null && typeof r.c === 'number' && !isNaN(r.c)
-              );
-            })
-            .map((r: any) => ({
-              time: Math.floor(r.t / 1000),
-              open: r.o,
-              high: r.h,
-              low: r.l,
-              close: r.c,
-              volume: r.v,
-              vwap: r.vw,
-            }))
-            .filter((bar: Bar) => {
-              // Post-filter: double-check mapped data for lightweight-charts compatibility
-              return (
-                bar.time > 0 &&
-                typeof bar.open === 'number' && !isNaN(bar.open) && isFinite(bar.open) &&
-                typeof bar.high === 'number' && !isNaN(bar.high) && isFinite(bar.high) &&
-                typeof bar.low === 'number' && !isNaN(bar.low) && isFinite(bar.low) &&
-                typeof bar.close === 'number' && !isNaN(bar.close) && isFinite(bar.close)
-              );
-            });
+          console.log(`[HDLiveChart] Raw API response for ${ticker} ${currentTf}:`, {
+            resultsLength: results.length,
+            firstItem: results[0],
+            sampleTimestamps: results.slice(0, 3).map((r: any) => ({ t: r.t, o: r.o, h: r.h, l: r.l, c: r.c }))
+          });
 
-          barsCacheRef.current.set(cacheKey, parsed);
+          const preFiltered = results.filter((r: any) => {
+            // Pre-filter: ensure raw data has valid timestamp and OHLC values before mapping
+            return (
+              r.t != null && typeof r.t === 'number' && !isNaN(r.t) && r.t > 0 &&
+              r.o != null && typeof r.o === 'number' && !isNaN(r.o) &&
+              r.h != null && typeof r.h === 'number' && !isNaN(r.h) &&
+              r.l != null && typeof r.l === 'number' && !isNaN(r.l) &&
+              r.c != null && typeof r.c === 'number' && !isNaN(r.c)
+            );
+          });
+
+          console.log(`[HDLiveChart] After pre-filter: ${preFiltered.length}/${results.length} valid items`);
+
+          const mapped = preFiltered.map((r: any) => ({
+            time: Math.floor(r.t / 1000),
+            open: r.o,
+            high: r.h,
+            low: r.l,
+            close: r.c,
+            volume: r.v,
+            vwap: r.vw,
+          }));
+
+          const parsed: Bar[] = mapped.filter((bar: Bar) => {
+            // Post-filter: double-check mapped data for lightweight-charts compatibility
+            return (
+              bar.time > 0 &&
+              typeof bar.open === 'number' && !isNaN(bar.open) && isFinite(bar.open) &&
+              typeof bar.high === 'number' && !isNaN(bar.high) && isFinite(bar.high) &&
+              typeof bar.low === 'number' && !isNaN(bar.low) && isFinite(bar.low) &&
+              typeof bar.close === 'number' && !isNaN(bar.close) && isFinite(bar.close)
+            );
+          });
+
+          console.log(`[HDLiveChart] Final parsed bars for ${ticker} ${currentTf}: ${parsed.length} bars`);
+
+          // Deduplicate by timestamp (lightweight-charts requires unique, ascending timestamps)
+          const deduplicated: Bar[] = [];
+          const seenTimes = new Set<number>();
+
+          for (const bar of parsed) {
+            if (!seenTimes.has(bar.time)) {
+              seenTimes.add(bar.time);
+              deduplicated.push(bar);
+            }
+          }
+
+          if (deduplicated.length < parsed.length) {
+            console.warn(`[HDLiveChart] Removed ${parsed.length - deduplicated.length} duplicate timestamps for ${ticker}`);
+          }
+
+          // Sort by time ascending (required by lightweight-charts)
+          deduplicated.sort((a, b) => a.time - b.time);
+
+          console.log(`[HDLiveChart] Deduplicated bars for ${ticker} ${currentTf}: ${deduplicated.length} unique bars`);
+
+          barsCacheRef.current.set(cacheKey, deduplicated);
           // Clear failed fetch marker on success
           failedFetchesRef.current.delete(cacheKey);
-          return parsed;
+          return deduplicated;
         } catch (error: any) {
           if (error instanceof MassiveError && error.code === 'RATE_LIMIT') {
             retries++;
