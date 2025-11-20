@@ -1,4 +1,7 @@
+'use client';
+
 import { useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -21,7 +24,12 @@ import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './s
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
 import './styles/globals.css';
 
-export default function App() {
+interface AppProps {
+  initialTab?: 'live' | 'active' | 'history' | 'settings';
+}
+
+export default function App({ initialTab = 'live' }: AppProps) {
+  const router = useRouter();
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
 
@@ -121,13 +129,20 @@ export default function App() {
       console.log('[v0] App: Initializing marketDataStore with watchlist:', watchlistSymbols);
       initializeMarketData(watchlistSymbols);
     }
-    
+
     // Cleanup on unmount
     return () => {
       console.log('[v0] App: Cleaning up marketDataStore');
       marketDataCleanup();
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
+
+  // Initialize active tab based on route (from initialTab prop)
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
   // useEffect(() => {
@@ -184,17 +199,26 @@ export default function App() {
         <TabButton
           label="Watch"
           active={activeTab === 'live'}
-          onClick={() => setActiveTab('live')}
+          onClick={() => {
+            setActiveTab('live');
+            router.push('/');
+          }}
         />
         <TabButton
           label="Trade"
           active={activeTab === 'active'}
-          onClick={navigateToActive}
+          onClick={() => {
+            navigateToActive();
+            router.push('/trades/active');
+          }}
         />
         <TabButton
           label="Review"
           active={activeTab === 'history'}
-          onClick={navigateToHistory}
+          onClick={() => {
+            navigateToHistory();
+            router.push('/trades/history');
+          }}
         />
       </nav>
 
@@ -291,7 +315,14 @@ export default function App() {
       <div className="lg:hidden">
         <MobileBottomNav
           activeTab={activeTab as any}
-          onTabChange={(tab) => setActiveTab(tab as any)}
+          onTabChange={(tab) => {
+            setActiveTab(tab as any);
+            // Navigate to corresponding route
+            if (tab === 'live') router.push('/');
+            else if (tab === 'active') router.push('/trades/active');
+            else if (tab === 'history') router.push('/trades/history');
+            else if (tab === 'settings') router.push('/settings');
+          }}
           hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
           flashTradeTab={flashTradeTab}
         />
