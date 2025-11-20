@@ -436,6 +436,69 @@ function determineTrend(candles: Candle[], indicators: Indicators): MTFTrend {
   return 'neutral';
 }
 
+/** Calculate confluence score from market data */
+function calculateConfluence(
+  symbol: string,
+  candles: Candle[],
+  indicators: Indicators,
+  mtfTrend: Record<Timeframe, MTFTrend>
+): ConfluenceScore {
+  if (candles.length === 0) {
+    return {
+      overall: 0,
+      trend: 0,
+      momentum: 0,
+      volatility: 0,
+      volume: 0,
+      technical: 0,
+      components: {
+        trendAlignment: false,
+        aboveVWAP: false,
+        rsiConfirm: false,
+        volumeConfirm: false,
+        supportResistance: false,
+      },
+      lastUpdated: Date.now(),
+    };
+  }
+
+  const lastClose = candles[candles.length - 1].close;
+  const { ema9, ema20, ema50, vwap, rsi14 } = indicators;
+
+  // Component checks
+  const trendAlignment = mtfTrend['5m'] === mtfTrend['15m'] && mtfTrend['15m'] === mtfTrend['60m'];
+  const aboveVWAP = vwap ? lastClose > vwap : false;
+  const rsiConfirm = rsi14 ? (rsi14 > 40 && rsi14 < 70) : false;
+  const supportResistance = ema9 && ema20 && ema50 ? (ema9 > ema20 && ema20 > ema50) : false;
+  const volumeConfirm = candles.length > 1 ? candles[candles.length - 1].volume > candles[candles.length - 2].volume : false;
+
+  // Score components (0-100)
+  const trend = trendAlignment ? 100 : 50;
+  const momentum = rsiConfirm ? 100 : 50;
+  const volatility = 50; // Placeholder
+  const volume = volumeConfirm ? 100 : 50;
+  const technical = supportResistance ? 100 : 50;
+
+  const overall = Math.round((trend + momentum + volatility + volume + technical) / 5);
+
+  return {
+    overall,
+    trend,
+    momentum,
+    volatility,
+    volume,
+    technical,
+    components: {
+      trendAlignment,
+      aboveVWAP,
+      rsiConfirm,
+      volumeConfirm,
+      supportResistance,
+    },
+    lastUpdated: Date.now(),
+  };
+}
+
 /** Get Massive API key from environment */
 function getMassiveApiKey(): string {
   // In production, this would come from a secure token endpoint

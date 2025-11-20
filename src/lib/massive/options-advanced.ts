@@ -350,7 +350,7 @@ class OptionsAdvancedManager {
   subscribeTrades(ticker: string, callback: (trade: OptionsTrade) => void): () => void {
     let active = true;
 
-    const wsUnsubscribe = massiveWS.subscribeOptionTrades([ticker], (msg: WebSocketMessage) => {
+    const wsUnsubscribe = massiveWS.subscribeOptionAggregates([ticker], (msg: WebSocketMessage) => {
       if (!active) return;
       if (msg.type !== 'trade') return;
       const data = msg.data as TradeUpdate;

@@ -75,7 +75,7 @@ export async function getAggregateUnderlyingFlow(
 
     // Filter for liquid contracts (volume > 0, open interest > 100)
     const liquidContracts = contracts.filter(
-      c => (c.volume || 0) > 0 && (c.openInterest || 0) > 100
+      c => (c.volume || 0) > 0 && (c.open_interest || (c as any).openInterest || 0) > 100
     );
 
     if (liquidContracts.length === 0) {
@@ -104,9 +104,10 @@ export async function getAggregateUnderlyingFlow(
     let hasUnusualActivity = false;
 
     for (const contract of topContracts) {
+      const contractAny = contract as any;
       // If contract has trade tape data attached, use it
-      if (contract.tradeTape) {
-        const tape = contract.tradeTape;
+      if (contractAny.tradeTape) {
+        const tape = contractAny.tradeTape;
         totalSweeps += tape.sweepCount || 0;
         totalBlocks += tape.blockCount || 0;
         totalBuyPressure += tape.buyPressure || 0;
@@ -117,7 +118,8 @@ export async function getAggregateUnderlyingFlow(
         }
 
         // Aggregate volume by option type
-        if (contract.optionType === 'call') {
+        const optionType = contractAny.optionType || contract.contract_type;
+        if (optionType === 'call') {
           totalCallVolume += contract.volume || 0;
         } else {
           totalPutVolume += contract.volume || 0;
