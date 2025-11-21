@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useTradeStore } from '../stores/tradeStore';
 import { AppLayout } from '../components/layouts/AppLayout';
 import { BreadcrumbNav } from '../components/navigation/BreadcrumbNav';
+import { HDLiveChart } from '../components/hd/charts/HDLiveChart';
 import { Suspense } from 'react';
 
 /**
@@ -144,10 +145,77 @@ export default function TradeDetailPage() {
             </div>
           </div>
 
-          {/* TODO: Add charts, detailed analysis, etc. */}
-          <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-6">
-            <p className="text-[var(--text-muted)]">Additional trade details, charts, and analysis coming soon.</p>
+          {/* Price Chart */}
+          <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4 mb-4">
+            <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Price Chart</h2>
+            <div className="h-[400px]">
+              <HDLiveChart
+                ticker={trade.ticker}
+                timeframe="5m"
+                showToolbar={true}
+                height={400}
+              />
+            </div>
           </div>
+
+          {/* Trade Analysis */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            {/* Risk Metrics */}
+            <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4">
+              <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Risk Metrics</h2>
+              <div className="space-y-3">
+                {trade.targetPrice && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">Target</span>
+                    <span className="font-medium">${trade.targetPrice.toFixed(2)}</span>
+                  </div>
+                )}
+                {trade.stopLoss && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">Stop Loss</span>
+                    <span className="font-medium">${trade.stopLoss.toFixed(2)}</span>
+                  </div>
+                )}
+                {trade.contract.daysToExpiry && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">DTE</span>
+                    <span className="font-medium">{trade.contract.daysToExpiry}d</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Contract Details */}
+            <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4">
+              <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Contract Details</h2>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Strike</span>
+                  <span className="font-medium">${trade.contract.strike}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Type</span>
+                  <span className="font-medium uppercase">{trade.contract.type}</span>
+                </div>
+                {trade.contract.expiration && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">Expiration</span>
+                    <span className="font-medium text-sm">
+                      {new Date(trade.contract.expiration).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Trade Notes */}
+          {trade.notes && (
+            <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4">
+              <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Notes</h2>
+              <p className="text-sm text-[var(--text-high)]">{trade.notes}</p>
+            </div>
+          )}
         </div>
       </Suspense>
     </AppLayout>

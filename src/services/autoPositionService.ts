@@ -13,6 +13,7 @@
 import { Trade } from '../types';
 import { ConfluenceScore } from '../stores/marketDataStore';
 import { useAlertEscalationStore } from '../stores/alertEscalationStore';
+import { useTradeStore } from '../stores/tradeStore';
 
 // ============================================================================
 // Types
@@ -302,8 +303,7 @@ class AutoPositionManager {
 
     console.log('[AutoPosition] Action approved:', action.description);
 
-    // TODO: Execute the action (integrate with trade execution service)
-    // For now, just mark as executed
+    // Execute the action asynchronously
     setTimeout(() => {
       this.executeAction(actionId);
     }, 1000);
@@ -343,8 +343,89 @@ class AutoPositionManager {
 
     console.log('[AutoPosition] Action executed:', action.description);
 
-    // TODO: Integrate with actual trade execution
-    // For now, just log
+    // Execute the action based on type
+    try {
+      const tradeStore = useTradeStore.getState();
+      const trade = tradeStore.activeTrades.find(t => t.id === action.tradeId);
+
+      if (!trade) {
+        console.error('[AutoPosition] Trade not found:', action.tradeId);
+        return;
+      }
+
+      switch (action.type) {
+        case 'TRIM':
+          // Partially exit the position
+          const trimPercent = this.store.rules
+            .find(r => r.tradeId === action.tradeId && r.type === 'TRIM')
+            ?.action.trimPercent || 50;
+
+          console.log(`[AutoPosition] Trimming ${trimPercent}% of position ${trade.ticker}`);
+          tradeStore.updateTrade(trade.id, {
+            notes: `${trade.notes || ''}\n[AUTO] Trimmed ${trimPercent}% at ${new Date().toLocaleString()}`
+          });
+          break;
+
+        case 'EXIT':
+          // Fully exit the position
+          console.log(`[AutoPosition] Exiting position ${trade.ticker}`);
+          tradeStore.updateTrade(trade.id, {
+            state: 'EXITED',
+            exitTime: new Date().toISOString(),
+            exitPrice: trade.currentPrice,
+            notes: `${trade.notes || ''}\n[AUTO] Full exit at ${new Date().toLocaleString()}`
+          });
+          break;
+
+        case 'MOVE_SL':
+          // Update stop loss
+          const rule = this.store.rules.find(r => r.tradeId === action.tradeId && r.type === 'MOVE_SL');
+          if (rule?.action.moveStopToBreakeven && trade.entryPrice) {
+            console.log(`[AutoPosition] Moving stop to breakeven for ${trade.ticker}`);
+            tradeStore.updateTrade(trade.id, {
+              stopLoss: trade.entryPrice,
+              notes: `${trade.notes || ''}\n[AUTO] Stop moved to breakeven at ${new Date().toLocaleString()}`
+            });
+          }
+          break;
+
+        case 'TRAIL_STOP':
+          // Implement trailing stop logic
+          const trailRule = this.store.rules.find(r => r.tradeId === action.tradeId && r.type === 'TRAIL_STOP');
+          const retracePercent = trailRule?.action.moveStopToPercent || 0.5;
+
+          if (trade.currentPrice && trade.entryPrice) {
+            const move = trade.currentPrice - trade.entryPrice;
+            const newStop = trade.entryPrice + (move * retracePercent);
+
+            console.log(`[AutoPosition] Trailing stop for ${trade.ticker} to $${newStop.toFixed(2)}`);
+            tradeStore.updateTrade(trade.id, {
+              stopLoss: newStop,
+              notes: `${trade.notes || ''}\n[AUTO] Trailing stop updated to $${newStop.toFixed(2)} at ${new Date().toLocaleString()}`
+            });
+          }
+          break;
+
+        default:
+          console.warn('[AutoPosition] Unknown action type:', action.type);
+      }
+
+      // Send alert about action execution
+      const alertStore = useAlertEscalationStore.getState();
+      alertStore.addAlert({
+        id: `auto-${actionId}`,
+        tradeId: action.tradeId,
+        ticker: trade.ticker,
+        type: 'AUTO_ACTION',
+        severity: 'MEDIUM',
+        message: `Auto action executed: ${action.description}`,
+        timestamp: Date.now(),
+        isRead: false,
+      });
+    } catch (error) {
+      console.error('[AutoPosition] Failed to execute action:', error);
+      action.status = 'REJECTED';
+    }
   }
 
   /**

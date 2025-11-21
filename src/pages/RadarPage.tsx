@@ -2,21 +2,24 @@
 
 import { Suspense } from 'react';
 import { RadarLayout } from '../components/layouts/RadarLayout';
+import { HDRadarScanner } from '../components/hd/dashboard/HDRadarScanner';
+import { useAuth } from '../contexts/AuthContext';
 
 /**
  * RadarPage - Symbol radar scanner page
  *
  * This is the /radar route which shows the strategy scanner UI.
- * Eventually this will integrate the full radar scanner component from the existing app.
+ * Displays real-time composite signals across all watched symbols.
  */
 export default function RadarPage() {
+  const { user } = useAuth();
+  const userId = user?.id || 'test-user';
+
   return (
     <RadarLayout>
       <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading radar...</div>}>
-        {/* TODO: Integrate radar scanner component from existing app/radar/page.tsx */}
-        <div className="p-4">
-          <h1 className="text-[var(--text-high)]">Symbol Radar Scanner</h1>
-          <p className="text-[var(--text-muted)] mt-2">Radar scanner component coming soon</p>
+        <div className="p-4 max-w-7xl mx-auto">
+          <HDRadarScanner userId={userId} />
         </div>
       </Suspense>
     </RadarLayout>
