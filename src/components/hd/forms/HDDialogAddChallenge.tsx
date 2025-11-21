@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Challenge } from '../../types';
-import { AppSheet } from '../ui/AppSheet';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
+import { AppSheet } from '../../ui/AppSheet';
+import { Input } from '../../ui/input';
+import { Label } from '../../ui/label';
 import { HDButton } from '../common/HDButton';
 
 interface HDDialogAddChallengeProps {
