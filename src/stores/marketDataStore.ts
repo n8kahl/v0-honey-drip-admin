@@ -214,7 +214,7 @@ interface MarketDataStore {
   error: string | null;
   
   /** Heartbeat interval */
-  heartbeatInterval: any;
+  heartbeatInterval: ReturnType<typeof setInterval> | null;
 
   /** Unsubscribe fns for active WS subscriptions */
   unsubscribers: Array<() => void>;

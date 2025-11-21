@@ -99,9 +99,10 @@ export const useMarketStore = create<MarketStore>()(
             isLoading: false,
           }));
           toast.success(`${newTicker.symbol} added to watchlist`);
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('[MarketStore] Failed to add ticker:', error);
-          const code = error?.code || error?.status || error?.name;
+          const err = error as {code?: string; status?: string; name?: string; message?: string};
+          const code = err?.code || err?.status || err?.name;
           if (code === '23505') {
             // Unique violation
             toast.info(`${symbol} is already in your watchlist`);

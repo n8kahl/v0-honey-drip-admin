@@ -90,7 +90,7 @@ let pendingMacroFetch: Promise<MacroContext> | null = null;
 const MACRO_CACHE_TTL = 30_000; // 30 seconds
 
 // Global refresh interval - shared across ALL hook instances
-let globalRefreshInterval: any = null;
+let globalRefreshInterval: ReturnType<typeof setInterval> | null = null;
 let subscriberCount = 0;
 
 async function refreshMacroContext() {
@@ -172,8 +172,9 @@ export function useMacroContext(refreshInterval: number = 30000): {
       const data = await refreshMacroContext();
       setMacro(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setIsLoading(false);
     }

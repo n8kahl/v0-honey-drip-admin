@@ -21,7 +21,7 @@ export function useMarketSession() {
       const session = parseMarketSession(data);
       setSessionState(session);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[v0] Market session fetch failed, using fallback:', err);
       
       // Use fallback instead of failing
