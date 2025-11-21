@@ -24,6 +24,7 @@ import { getIndexAggregates } from '../massive/client.js';
 import { insertCompositeSignal, expireOldSignals } from '../../src/lib/supabase/compositeSignals.js';
 import type { Bar } from '../../src/lib/strategy/patternDetection.js';
 import { fileURLToPath } from 'url';
+import { OPTIMIZED_SCANNER_CONFIG } from '../../src/lib/composite/OptimizedScannerConfig.js';
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -441,9 +442,10 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     const symbols = watchlist.map(w => w.ticker);
     console.log(`[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(', ')}`);
 
-    // Create scanner instance for this user
+    // Create scanner instance for this user with optimized configuration
     const scanner = new CompositeScanner({
       owner: userId,
+      config: OPTIMIZED_SCANNER_CONFIG,
     });
 
     let signalsGenerated = 0;
@@ -653,9 +655,12 @@ export class CompositeScannerWorker {
     this.isRunning = true;
     console.log('[Composite Scanner] ======================================');
     console.log('[Composite Scanner] Starting Composite Signal Scanner');
+    console.log('[Composite Scanner] Configuration: OPTIMIZED (High Accuracy)');
     console.log('[Composite Scanner] Scan interval: 60 seconds');
     console.log('[Composite Scanner] Primary timeframe: 5m');
-    console.log('[Composite Scanner] Using Phase 5 CompositeScanner');
+    console.log('[Composite Scanner] Min Base Score: 80 (Equity), 85 (Index)');
+    console.log('[Composite Scanner] Min R:R Ratio: 2.0:1');
+    console.log('[Composite Scanner] Target Win Rate: 65%+');
     console.log('[Composite Scanner] ======================================\n');
 
     // Run initial scan immediately

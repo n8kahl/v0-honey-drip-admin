@@ -106,10 +106,10 @@ export class TransportPolicy {
   private readonly closedMarketPollInterval = 12000;
   // Health/debounce tuning
   private consecutiveHealthFailures = 0;
-  private readonly healthFailureThreshold = 2; // require 2 consecutive failures before switching to REST
-  // Staleness thresholds per architecture: >5s WebSocket, >6s REST
-  private readonly wsStaleThresholdMs = 5000;  // consider WS data stale after 5s
-  private readonly restStaleThresholdMs = 6000; // consider REST data stale after 6s
+  private readonly healthFailureThreshold = 1; // require 1 consecutive failure before switching to REST (faster fallback)
+  // Staleness thresholds per architecture: >3s WebSocket, >4s REST
+  private readonly wsStaleThresholdMs = 3000;  // consider WS data stale after 3s
+  private readonly restStaleThresholdMs = 4000; // consider REST data stale after 4s
   private lastMarketStatusCheck = 0;
   private marketOpen = true;
   // Message batching: accumulate updates and flush every 100ms

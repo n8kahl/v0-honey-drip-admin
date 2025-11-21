@@ -458,6 +458,14 @@ export class MassiveWebSocket {
       };
 
       this.notifySubscribers('option', sym, message);
+
+      // Update marketDataStore timestamp for quote updates
+      if (typeof window !== 'undefined') {
+        import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
+          const state = useMarketDataStore.getState();
+          state.handleQuoteUpdate(sym, mid);
+        });
+      }
     } else if (ev === 'A' || ev === 'AM') {
       // Aggregate (bar)
       const isIndex = sym.startsWith('I:');
@@ -481,6 +489,14 @@ export class MassiveWebSocket {
       };
 
       this.notifySubscribers(messageType, normalizedSym, message);
+
+      // Update marketDataStore timestamp for bar updates
+      if (typeof window !== 'undefined') {
+        import('../../stores/marketDataStore').then(({ useMarketDataStore }) => {
+          const state = useMarketDataStore.getState();
+          state.handleQuoteUpdate(normalizedSym, msg.c);
+        });
+      }
     } else if (ev === 'T') {
       // Trade
       const message: WebSocketMessage = {

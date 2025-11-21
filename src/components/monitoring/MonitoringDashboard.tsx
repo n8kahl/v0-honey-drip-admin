@@ -13,8 +13,17 @@ import { getMetricsService, type DashboardMetrics } from '../../services/monitor
 import { Activity, TrendingUp, AlertTriangle, Server, BarChart3 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
+interface ScannerHealth {
+  status: string;
+  healthy: boolean;
+  lastScan: string;
+  signalsDetected: number;
+  ageMinutes: number;
+}
+
 export function MonitoringDashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [scannerHealth, setScannerHealth] = useState<ScannerHealth | null>(null);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
@@ -28,6 +37,27 @@ export function MonitoringDashboard() {
     // Update every 5 seconds
     updateMetrics();
     const interval = setInterval(updateMetrics, 5000);
+
+    return () => clearInterval(interval);
+  }, [isPaused]);
+
+  // Fetch scanner health
+  useEffect(() => {
+    const updateScannerHealth = async () => {
+      if (!isPaused) {
+        try {
+          const res = await fetch('/api/health');
+          const health = await res.json();
+          setScannerHealth(health.details.scanner);
+        } catch (err) {
+          console.error('Failed to fetch scanner health:', err);
+        }
+      }
+    };
+
+    // Update every 5 seconds
+    updateScannerHealth();
+    const interval = setInterval(updateScannerHealth, 5000);
 
     return () => clearInterval(interval);
   }, [isPaused]);
@@ -61,7 +91,7 @@ export function MonitoringDashboard() {
         </div>
       </div>
 
-      {/* Grid: 4 Panels */}
+      {/* Grid: 5 Panels */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Panel 1: Data Provider Health */}
         <ProviderHealthPanel metrics={metrics} />
@@ -74,6 +104,9 @@ export function MonitoringDashboard() {
 
         {/* Panel 4: System Health */}
         <SystemHealthPanel metrics={metrics} />
+
+        {/* Panel 5: Scanner Worker Health */}
+        {scannerHealth && <ScannerHealthPanel health={scannerHealth} />}
       </div>
     </div>
   );
@@ -336,6 +369,78 @@ function SystemHealthPanel({ metrics }: { metrics: DashboardMetrics }) {
           <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/20">
             <div className="text-[9px] font-bold text-red-500 mb-1">Last Error</div>
             <div className="text-[8px] text-red-400 truncate">{systemHealth.lastErrorMessage}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScannerHealthPanel({ health }: { health: ScannerHealth }) {
+  const isHealthy = health.healthy && health.ageMinutes < 2;
+  const statusColor = isHealthy ? 'text-green-500' : 'text-red-500';
+
+  const formatLastScan = (lastScan: string) => {
+    try {
+      return new Date(lastScan).toLocaleTimeString();
+    } catch {
+      return 'Never';
+    }
+  };
+
+  return (
+    <div className="p-3 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+      <div className="flex items-center gap-2 mb-3">
+        <Activity className="w-4 h-4 text-[var(--brand-primary)]" />
+        <h2 className="text-xs font-bold uppercase text-[var(--text-high)]">Scanner Worker</h2>
+      </div>
+
+      <div className="space-y-3">
+        {/* Status */}
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-[var(--text-muted)]">Status</span>
+          <span className={cn('text-xs font-bold', statusColor)}>
+            {isHealthy ? '✓ Active' : '✗ Down'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div>
+            <span className="text-[var(--text-muted)]">Last Scan</span>
+            <div className="text-[var(--text-high)] font-mono text-[9px]">
+              {formatLastScan(health.lastScan)}
+            </div>
+          </div>
+          <div>
+            <span className="text-[var(--text-muted)]">Age</span>
+            <div className={cn(
+              'font-mono',
+              health.ageMinutes < 2 ? 'text-green-500' : 'text-red-500'
+            )}>
+              {health.ageMinutes.toFixed(1)}m ago
+            </div>
+          </div>
+          <div>
+            <span className="text-[var(--text-muted)]">Signals Detected</span>
+            <div className="text-[var(--text-high)] font-mono">
+              {health.signalsDetected}
+            </div>
+          </div>
+          <div>
+            <span className="text-[var(--text-muted)]">Worker Status</span>
+            <div className="text-[var(--text-high)] font-mono text-[9px]">
+              {health.status || 'unknown'}
+            </div>
+          </div>
+        </div>
+
+        {/* Warning if unhealthy */}
+        {!isHealthy && (
+          <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/20">
+            <div className="text-[9px] font-bold text-red-500 mb-1">⚠️ Scanner Not Running</div>
+            <div className="text-[8px] text-red-400">
+              Last scan was {health.ageMinutes.toFixed(0)} minutes ago. Expected: &lt;2 minutes.
+            </div>
           </div>
         )}
       </div>
