@@ -6,6 +6,7 @@
  */
 
 import { MassiveTokenManager } from './token-manager';
+import { getMetricsService } from '../../services/monitoring';
 
 const WS_BASE =
   typeof window !== 'undefined'
@@ -164,6 +165,14 @@ export class MassiveWebSocket {
         this.reconnectAttempts[endpoint] = 0;
         this.isAuthenticated[endpoint] = true;
 
+        // Update monitoring
+        try {
+          const isConnected = this.isConnected('options') || this.isConnected('indices');
+          getMetricsService().setWebSocketStatus(isConnected);
+        } catch (e) {
+          // Ignore monitoring errors
+        }
+
         // Subscribe based on endpoint
         if (endpoint === 'options') {
           this.subscribeOptionsWatchlist();
@@ -176,11 +185,24 @@ export class MassiveWebSocket {
       };
 
       socket.onmessage = (event) => {
-        this.lastMessageTime[endpoint] = Date.now();
+        const now = Date.now();
+        this.lastMessageTime[endpoint] = now;
+
         try {
           const data = JSON.parse(event.data);
           const messages = Array.isArray(data) ? data : [data];
           messages.forEach((msg: any) => this.handleMessage(msg, endpoint));
+
+          // Update monitoring latency (estimate as time since last message)
+          try {
+            const lastTime = this.lastMessageTime[endpoint === 'options' ? 'indices' : 'options'];
+            const latency = lastTime ? now - lastTime : 0;
+            if (latency > 0 && latency < 60000) { // Only if reasonable (< 1 min)
+              getMetricsService().setWebSocketStatus(true, latency);
+            }
+          } catch (e) {
+            // Ignore monitoring errors
+          }
         } catch (err) {
           console.error(`[MassiveWS] Failed to parse ${endpoint} message:`, err);
         }
@@ -191,6 +213,15 @@ export class MassiveWebSocket {
           `[MassiveWS] ${endpoint} connection closed (code: ${event.code}, reason: ${event.reason || 'none'})`
         );
         this.isAuthenticated[endpoint] = false;
+
+        // Update monitoring
+        try {
+          const isConnected = this.isConnected('options') || this.isConnected('indices');
+          getMetricsService().setWebSocketStatus(isConnected);
+        } catch (e) {
+          // Ignore monitoring errors
+        }
+
         this.cleanup(endpoint);
         this.attemptReconnect(endpoint);
       };
