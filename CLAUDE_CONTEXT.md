@@ -407,7 +407,7 @@ This automated script will:
                     📊 SESSION END REPORT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-✅ Tests: 115/115 passing (100%)
+✅ Tests: 115/115 passing
 ⚠️  TypeScript: 391 errors (non-blocking)
 ✅ Build: Success
 ✅ Git: All changes committed
