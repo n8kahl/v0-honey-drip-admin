@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
 import { DesktopHistory } from './components/DesktopHistory';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -9,8 +10,6 @@ import { VoiceCommandDemo } from './components/VoiceCommandDemo';
 import { TraderHeader } from './components/Header/TraderHeader';
 import { LiveStatusBar } from './components/LiveStatusBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
-import { useAppNavigation } from './hooks/useAppNavigation';
-import { useNavigationRouter } from './hooks/useNavigationRouter';
 import { HDDialogDiscordSettings } from './components/hd/forms/HDDialogDiscordSettings';
 import { HDDialogAddTicker } from './components/hd/forms/HDDialogAddTicker';
 import { HDDialogAddChallenge } from './components/hd/forms/HDDialogAddChallenge';
@@ -27,20 +26,33 @@ import { KeyboardShortcutsDialog } from './components/shortcuts/KeyboardShortcut
 import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard';
 import './styles/globals.css';
 
-interface AppProps {
-  initialTab?: 'live' | 'active' | 'history' | 'settings' | 'monitoring';
+type AppTab = 'live' | 'active' | 'history' | 'settings' | 'monitoring';
+
+/**
+ * Derive the active tab from the current route
+ */
+function getActiveTabFromPath(pathname: string): AppTab {
+  if (pathname === '/active') return 'active';
+  if (pathname === '/history') return 'history';
+  if (pathname === '/settings') return 'settings';
+  if (pathname === '/monitoring') return 'monitoring';
+  return 'live'; // Default to live for '/' and unknown routes
 }
 
-export default function App({ initialTab = 'live' }: AppProps) {
+export default function App() {
   const { user, loading } = useAuth();
   const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
+
+  // React Router hooks - single source of truth for navigation
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = useMemo(() => getActiveTabFromPath(location.pathname), [location.pathname]);
 
   // Zustand stores
   const { loadTrades, activeTrades, historyTrades, updatedTradeIds } = useTradeStore();
   const { watchlist, loadWatchlist, updateQuotes, getWatchlistSymbols } = useMarketStore();
   const {
-    activeTab,
     showDiscordDialog,
     showAddTickerDialog,
     showAddChallengeDialog,
@@ -48,22 +60,17 @@ export default function App({ initialTab = 'live' }: AppProps) {
     voiceActive,
     focusedTrade,
     flashTradeTab,
-    setActiveTab,
     toggleVoice,
-    focusTradeInLive,
-    navigateToActive,
-    navigateToHistory,
-    navigateToMonitoring,
+    setFocusedTrade,
+    setFlashTradeTab,
   } = useUIStore();
 
-  // Navigation hooks
-  const nav = useAppNavigation();
-  const router = useNavigationRouter();
-  const { 
-    discordChannels, 
-    challenges, 
-    loadDiscordChannels, 
-    loadChallenges 
+  // Settings store
+  const {
+    discordChannels,
+    challenges,
+    loadDiscordChannels,
+    loadChallenges
   } = useSettingsStore();
   
   // Market session actions
@@ -98,41 +105,35 @@ export default function App({ initialTab = 'live' }: AppProps) {
       {
         key: '1',
         description: 'Go to Watch tab (Live)',
-        action: () => {
-          setActiveTab('live');
-        },
+        action: () => navigate('/'),
         category: 'navigation',
       },
       {
         key: '2',
         description: 'Go to Trade tab (Active)',
         action: () => {
-          setActiveTab('active');
+          navigate('/active');
+          setFlashTradeTab(true);
+          setTimeout(() => setFlashTradeTab(false), 2000);
         },
         category: 'navigation',
       },
       {
         key: '3',
         description: 'Go to Review tab (History)',
-        action: () => {
-          setActiveTab('history');
-        },
+        action: () => navigate('/history'),
         category: 'navigation',
       },
       {
         key: '4',
         description: 'Go to Settings',
-        action: () => {
-          setActiveTab('settings');
-        },
+        action: () => navigate('/settings'),
         category: 'navigation',
       },
       {
         key: '5',
         description: 'Go to Monitoring',
-        action: () => {
-          setActiveTab('monitoring');
-        },
+        action: () => navigate('/monitoring'),
         category: 'navigation',
       },
       {
@@ -154,7 +155,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
         category: 'help',
       },
     ],
-    [setActiveTab]
+    [navigate, setFlashTradeTab]
   );
 
   // Register keyboard shortcuts
@@ -215,13 +216,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
 
-  // Initialize active tab based on route (from initialTab prop)
-  useEffect(() => {
-    if (initialTab && initialTab !== activeTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab]);
-
   if (loading) {
     return (
       <div className="min-h-screen w-full bg-[var(--bg-base)] flex items-center justify-center">
@@ -234,9 +228,24 @@ export default function App({ initialTab = 'live' }: AppProps) {
     return <AuthPage />;
   }
 
+  // Helper function to navigate to active tab with flash effect
+  const navigateToActive = () => {
+    navigate('/active');
+    setFlashTradeTab(true);
+    setTimeout(() => setFlashTradeTab(false), 2000);
+  };
+
+  // Helper function to focus a trade in the live view
+  const focusTradeInLive = (trade: any) => {
+    navigate('/');
+    setFocusedTrade(trade);
+    // Clear focus after a brief moment to allow component to react
+    setTimeout(() => setFocusedTrade(null), 100);
+  };
+
   const handleExitedTrade = (trade: any) => {
     console.log('Trade exited:', trade);
-    setTimeout(() => navigateToHistory(), 100);
+    setTimeout(() => navigate('/history'), 100);
   };
 
   return (
@@ -248,33 +257,22 @@ export default function App({ initialTab = 'live' }: AppProps) {
         <TabButton
           label="Watch"
           active={activeTab === 'live'}
-          onClick={() => {
-            setActiveTab('live');
-            router.goToLive();
-          }}
+          onClick={() => navigate('/')}
         />
         <TabButton
           label="Trade"
           active={activeTab === 'active'}
-          onClick={() => {
-            navigateToActive();
-            router.goToActiveTrades();
-          }}
+          onClick={navigateToActive}
         />
         <TabButton
           label="Review"
           active={activeTab === 'history'}
-          onClick={() => {
-            navigateToHistory();
-            router.goToTradeHistory();
-          }}
+          onClick={() => navigate('/history')}
         />
         <TabButton
           label="Monitoring"
           active={activeTab === 'monitoring'}
-          onClick={() => {
-            navigateToMonitoring();
-          }}
+          onClick={() => navigate('/monitoring')}
         />
       </nav>
 
@@ -293,7 +291,14 @@ export default function App({ initialTab = 'live' }: AppProps) {
             onTradesChange={() => {}} // Not needed anymore, store handles it
             channels={discordChannels}
             focusedTrade={focusedTrade}
-            onMobileTabChange={(tab) => setActiveTab(tab)}
+            onMobileTabChange={(tab) => {
+              // Map tab names to routes
+              if (tab === 'live') navigate('/');
+              else if (tab === 'active') navigateToActive();
+              else if (tab === 'history') navigate('/history');
+              else if (tab === 'settings') navigate('/settings');
+              else if (tab === 'monitoring') navigate('/monitoring');
+            }}
             hideDesktopPanels={activeTab === 'active'}
             hideMobilePanelsOnActiveTab={activeTab === 'active'}
             updatedTradeIds={updatedTradeIds}
@@ -301,7 +306,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
               const trade = activeTrades.find((t) => t.id === tradeId);
               if (trade) focusTradeInLive(trade);
             }}
-            onOpenReviewTrade={navigateToHistory}
+            onOpenReviewTrade={() => navigate('/history')}
             onExitedTrade={handleExitedTrade}
             activeTab={activeTab}
             compositeSignals={activeSignals}
@@ -329,7 +334,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
         {activeTab === 'settings' && (
           <SettingsPage
             onOpenDiscordSettings={() => useUIStore.getState().setShowDiscordDialog(true)}
-            onClose={() => setActiveTab('live')}
+            onClose={() => navigate('/')}
           />
         )}
 
@@ -376,12 +381,11 @@ export default function App({ initialTab = 'live' }: AppProps) {
         <MobileBottomNav
           activeTab={activeTab as any}
           onTabChange={(tab) => {
-            setActiveTab(tab as any);
-            // Update URL based on tab
-            if (tab === 'live') router.goToLive();
-            else if (tab === 'active') router.goToActiveTrades();
-            else if (tab === 'history') router.goToTradeHistory();
-            else if (tab === 'settings') router.goToSettings();
+            // Navigate using React Router
+            if (tab === 'live') navigate('/');
+            else if (tab === 'active') navigateToActive();
+            else if (tab === 'history') navigate('/history');
+            else if (tab === 'settings') navigate('/settings');
           }}
           hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
           flashTradeTab={flashTradeTab}

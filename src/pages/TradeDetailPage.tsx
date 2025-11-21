@@ -1,7 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useParams } from 'next/navigation';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useTradeStore } from '../stores/tradeStore';
 import { AppLayout } from '../components/layouts/AppLayout';
@@ -12,7 +11,7 @@ import { Suspense } from 'react';
 /**
  * TradeDetailPage - View details for a specific trade
  *
- * Route: /trades/[id]
+ * Route: /trades/:id
  *
  * Shows:
  * - Full trade information
@@ -22,9 +21,8 @@ import { Suspense } from 'react';
  * - Option to close trade
  */
 export default function TradeDetailPage() {
-  const params = useParams();
-  const tradeId = params?.id as string;
-  const router = useRouter();
+  const { id: tradeId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { activeTrades, historyTrades } = useTradeStore();
 
   // Find the trade from either active or history trades
@@ -39,7 +37,7 @@ export default function TradeDetailPage() {
             <h1 className="text-[var(--text-high)] text-xl mb-2">Trade not found</h1>
             <p className="text-[var(--text-muted)] mb-4">Trade ID: {tradeId}</p>
             <button
-              onClick={() => router.back()}
+              onClick={() => navigate(-1)}
               className="px-4 py-2 bg-[var(--brand-primary)] text-[var(--bg-base)] rounded-[var(--radius)] hover:opacity-90 transition-opacity"
             >
               Go Back
@@ -71,7 +69,7 @@ export default function TradeDetailPage() {
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => router.back()}
+                onClick={() => navigate(-1)}
                 className="p-2 rounded-[var(--radius)] hover:bg-[var(--surface-2)] transition-colors"
                 title="Go back"
               >

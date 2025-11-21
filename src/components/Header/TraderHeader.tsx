@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTradeStore } from '../../stores/tradeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMarketStore } from '../../stores/marketStore';
-import { useUIStore } from '../../stores/uiStore';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
-import { useNavigationRouter } from '../../hooks/useNavigationRouter';
 import { Activity, Moon, Sun, User, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
@@ -309,8 +309,8 @@ export const TraderHeader: React.FC = () => {
   const challenges = useSettingsStore((s) => s.challenges);
   const watchlist = useMarketStore((s) => s.watchlist);
   const enrichedSession = useEnrichedMarketSession();
-  const { setActiveTab } = useUIStore();
-  const router = useNavigationRouter();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   // Get active challenge (first active one)
   const activeChallenge = challenges.find((c) => c.isActive);
@@ -377,17 +377,23 @@ export const TraderHeader: React.FC = () => {
   const handleProfileClick = () => {
     console.log('[v0] Profile clicked');
     // TODO: Implement profile page
+    // navigate('/profile');
   };
 
   const handleSettingsClick = () => {
     console.log('[v0] Settings clicked');
-    setActiveTab('settings');
-    router.goToSettings();
+    navigate('/settings');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     console.log('[v0] Logout clicked');
-    // TODO: Implement logout
+    try {
+      await signOut();
+      // Navigation to auth page will happen automatically via AuthContext
+      console.log('[v0] Logged out successfully');
+    } catch (error) {
+      console.error('[v0] Logout error:', error);
+    }
   };
 
   // Default session if enrichedSession is not yet loaded
