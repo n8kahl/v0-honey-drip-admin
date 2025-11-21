@@ -6,8 +6,8 @@ import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Edit2 } from 'lucide-react';
-import { HDCalculatorModal } from './HDCalculatorModal';
-import { HDTradeShareCard } from './HDTradeShareCard';
+import { HDCalculatorModal } from '../forms/HDCalculatorModal';
+import { HDTradeShareCard } from '../cards/HDTradeShareCard';
 
 interface HDAlertComposerProps {
   trade: Trade;

@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Ticker, Trade, TradeState } from '../types';
-import { HDRowWatchlist } from './hd/HDRowWatchlist';
+import { HDRowWatchlist } from './hd/cards/HDRowWatchlist';
 import { MobileNowPlaying } from './MobileNowPlaying';
-import { HDContractGrid } from './hd/HDContractGrid';
-import { HDMobileSparklinePreview } from './hd/HDMobileSparklinePreview';
-import { HDMobileChartModal } from './hd/HDMobileChartModal';
+import { HDContractGrid } from './hd/common/HDContractGrid';
+import { HDMobileSparklinePreview } from './hd/charts/HDMobileSparklinePreview';
+import { HDMobileChartModal } from './hd/charts/HDMobileChartModal';
 import { Plus } from 'lucide-react';
 import { useMassiveData } from '../hooks/useMassiveData';
 import { useAppToast } from '../hooks/useAppToast';

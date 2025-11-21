@@ -1,5 +1,5 @@
 import { Trade } from '../../types';
-import { HDTagTradeType } from './HDTagTradeType';
+import { HDTagTradeType } from '../common/HDTagTradeType';
 import { formatPercent, cn } from '../../lib/utils';
 import { X } from 'lucide-react';
 

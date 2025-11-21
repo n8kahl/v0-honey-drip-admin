@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Activity } from 'lucide-react';
-import { HDCard } from '../hd/HDCard';
+import { HDCard } from '../hd/common/HDCard';
 
 export function LiveDataBehaviorSettings() {
   const [atrMultiTimeframe, setAtrMultiTimeframe] = useState(false);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { HDVoiceHUD, VoiceCommand } from './hd/HDVoiceHUD';
-import { HDVoiceDrawer } from './hd/HDVoiceDrawer';
-import { HDHeader } from './hd/HDHeader';
+import { HDVoiceHUD, VoiceCommand } from './hd/voice/HDVoiceHUD';
+import { HDVoiceDrawer } from './hd/voice/HDVoiceDrawer';
+import { HDHeader } from './hd/layout/HDHeader';
 
 /**
  * Voice Command Demo Component

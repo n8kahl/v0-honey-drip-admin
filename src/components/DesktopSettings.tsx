@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { HDInput } from './hd/HDInput';
-import { HDButton } from './hd/HDButton';
-import { HDCard } from './hd/HDCard';
+import { HDInput } from './hd/common/HDInput';
+import { HDButton } from './hd/common/HDButton';
+import { HDCard } from './hd/common/HDCard';
 import { Settings, Mic, MicOff, Activity, Info, User } from 'lucide-react';
 import { MobileWatermark } from './MobileWatermark';
 import { useAuth } from '../contexts/AuthContext';

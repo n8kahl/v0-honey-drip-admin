@@ -1,6 +1,6 @@
 import { Info, Settings } from 'lucide-react';
-import { HDCard } from '../hd/HDCard';
-import { HDButton } from '../hd/HDButton';
+import { HDCard } from '../hd/common/HDCard';
+import { HDButton } from '../hd/common/HDButton';
 
 interface DiscordNotificationSettingsProps {
   onOpenDiscordSettings?: () => void;

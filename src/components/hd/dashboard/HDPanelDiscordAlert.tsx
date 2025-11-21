@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { HDShareCard } from './HDShareCard';
+import { HDShareCard } from '../cards/HDShareCard';
 
 interface HDPanelDiscordAlertProps {
   trade: Trade | null;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Trade } from '../../types';
-import { HDTagTradeType } from '../hd/HDTagTradeType';
+import { HDTagTradeType } from '../hd/common/HDTagTradeType';
 import { formatPercent, formatPrice, cn } from '../../lib/utils';
 import { focusRing } from '../../lib/a11y';
 import { TrendingUp, TrendingDown, ChevronRight } from 'lucide-react';

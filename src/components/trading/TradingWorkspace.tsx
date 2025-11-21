@@ -1,12 +1,12 @@
 import React from 'react';
 import { Ticker, Contract, Trade, TradeState, AlertType } from '../../types';
 import type { CompositeSignal } from '../../lib/composite/CompositeSignal';
-import { HDLiveChart } from '../hd/HDLiveChart';
-import { HDContractGrid } from '../hd/HDContractGrid';
-import { HDLoadedTradeCard } from '../hd/HDLoadedTradeCard';
-import { HDEnteredTradeCard } from '../hd/HDEnteredTradeCard';
-import { HDPanelFocusedTrade } from '../hd/HDPanelFocusedTrade';
-import { HDPriceSparkline } from '../hd/HDPriceSparkline';
+import { HDLiveChart } from '../hd/charts/HDLiveChart';
+import { HDContractGrid } from '../hd/common/HDContractGrid';
+import { HDLoadedTradeCard } from '../hd/cards/HDLoadedTradeCard';
+import { HDEnteredTradeCard } from '../hd/cards/HDEnteredTradeCard';
+import { HDPanelFocusedTrade } from '../hd/dashboard/HDPanelFocusedTrade';
+import { HDPriceSparkline } from '../hd/charts/HDPriceSparkline';
 import { MobileWatermark } from '../MobileWatermark';
 import { useMemo } from 'react';
 import { useKeyLevels } from '../../hooks/useKeyLevels';

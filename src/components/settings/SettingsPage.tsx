@@ -1,5 +1,5 @@
 import { MobileWatermark } from '../MobileWatermark';
-import { HDButton } from '../hd/HDButton';
+import { HDButton } from '../hd/common/HDButton';
 import { TakeProfitSettings } from './TakeProfitSettings';
 import { VoiceCommandsSettings } from './VoiceCommandsSettings';
 import { LiveDataBehaviorSettings } from './LiveDataBehaviorSettings';

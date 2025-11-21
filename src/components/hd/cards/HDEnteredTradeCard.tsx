@@ -1,7 +1,7 @@
 import { Trade } from '../../types';
-import { HDTagTradeType } from './HDTagTradeType';
-import { HDCard } from './HDCard';
-import { HDChip } from './HDChip';
+import { HDTagTradeType } from '../common/HDTagTradeType';
+import { HDCard } from '../common/HDCard';
+import { HDChip } from '../common/HDChip';
 import { formatPrice, formatPercent, formatTime, cn } from '../../lib/utils';
 import { TrendingUp, TrendingDown, Wifi } from 'lucide-react';
 import {
@@ -14,8 +14,8 @@ import { useTPProximity } from '../../hooks/useTPProximity';
 import { useTPSettings } from '../../hooks/useTPSettings';
 import { useAppToast } from '../../hooks/useAppToast';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
-import { HDConfluenceChips } from './HDConfluenceChips';
-import { HDConfluenceDetailPanel } from './HDConfluenceDetailPanel';
+import { HDConfluenceChips } from '../signals/HDConfluenceChips';
+import { HDConfluenceDetailPanel } from '../dashboard/HDConfluenceDetailPanel';
 import { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { addTradeUpdate } from '../../lib/supabase/database';

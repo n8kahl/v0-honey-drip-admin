@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Trade, DiscordChannel, Challenge } from '../types';
-import { HDTagTradeType } from './hd/HDTagTradeType';
-import { HDInput } from './hd/HDInput';
-import { HDButton } from './hd/HDButton';
-import { HDCard } from './hd/HDCard';
+import { HDTagTradeType } from './hd/common/HDTagTradeType';
+import { HDInput } from './hd/common/HDInput';
+import { HDButton } from './hd/common/HDButton';
+import { HDCard } from './hd/common/HDCard';
 import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
 import { Search, Share2, Download, ChevronDown, X, Filter, History } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
-import { HDPanelDiscordAlert } from './hd/HDPanelDiscordAlert';
+import { HDPanelDiscordAlert } from './hd/dashboard/HDPanelDiscordAlert';
 import { EmptyState } from './ui/EmptyState';
 import { useAppToast } from '../hooks/useAppToast';
 import { MobileWatermark } from './MobileWatermark';

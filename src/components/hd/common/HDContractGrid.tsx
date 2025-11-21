@@ -3,7 +3,7 @@ import { Contract } from '../../types';
 import { cn } from '../../lib/utils';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
-import { HDConfluenceChips } from './HDConfluenceChips';
+import { HDConfluenceChips } from '../signals/HDConfluenceChips';
 
 type VirtualRow = 
   | { type: 'dateHeader'; dateKey: string; daysToExpiry: number; contractCount: number }

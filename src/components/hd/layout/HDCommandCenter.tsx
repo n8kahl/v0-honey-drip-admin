@@ -11,9 +11,9 @@
  */
 
 import { useState } from 'react';
-import { HDAlertFeed } from './HDAlertFeed';
-import { HDPortfolioHealth } from './HDPortfolioHealth';
-import { HDAIRecommendations } from './HDAIRecommendations';
+import { HDAlertFeed } from '../alerts/HDAlertFeed';
+import { HDPortfolioHealth } from '../dashboard/HDPortfolioHealth';
+import { HDAIRecommendations } from '../common/HDAIRecommendations';
 import { useCommandCenter } from '../../hooks/useCommandCenter';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';

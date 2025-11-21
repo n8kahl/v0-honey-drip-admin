@@ -4,7 +4,7 @@ import { useSymbolData, useCandles, useMarketDataStore } from '../../stores/mark
 import { useUIStore } from '../../stores/uiStore';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { HDStrategyMiniChart } from '../hd/HDStrategyMiniChart';
+import { HDStrategyMiniChart } from '../hd/charts/HDStrategyMiniChart';
 import { calculateEMA } from '../../lib/indicators';
 import { cardHover, colorTransition } from '../../lib/animations';
 
