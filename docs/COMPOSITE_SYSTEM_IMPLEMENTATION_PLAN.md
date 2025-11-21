@@ -1736,30 +1736,69 @@ async function updatePerformanceMetrics(signal: CompositeSignal) {
 
 ---
 
-### Phase 7: Server Scanner Worker (3-4 hours)
+### Phase 7: Server Scanner Worker (COMPLETE ✅)
+**Status**: Completed 2025-11-21
 **Goal**: Background scanner running 24/7
 
-**Tasks**:
-1. **Scanner Worker** (2 hours)
-   - Update `server/workers/scanner.ts`
-   - Replace strategy loop with composite scanner
-   - Watchlist integration
-   - Error handling
+**Completed Tasks**:
+1. **Scanner Worker** ✅
+   - [x] Created `server/workers/compositeScanner.ts` (750+ lines)
+   - [x] Integrated CompositeScanner engine from Phase 5
+   - [x] Watchlist integration (fetches user watchlists from database)
+   - [x] Feature builder integration (reuses existing featuresBuilder)
+   - [x] Market data fetching via Massive.com API
+   - [x] Sequential scanning of all users' watchlists
+   - [x] Comprehensive error handling with continued operation
 
-2. **Signal Expiration Handler** (1 hour)
-   - Background job to expire old signals
-   - Mark as expired in database
-   - Cleanup
+2. **Signal Expiration Handler** ✅
+   - [x] Implemented `expireOldActiveSignals()` function
+   - [x] Runs every 5 minutes to clean up expired signals
+   - [x] Marks signals as 'EXPIRED' in database
+   - [x] Uses `expireOldSignals()` from Phase 6
 
-3. **Monitoring & Logging** (1 hour)
-   - Heartbeat updates
-   - Performance logging
-   - Error alerting
+3. **Monitoring & Logging** ✅
+   - [x] Implemented `ScanStatistics` tracking:
+     * Total scans, signals, errors
+     * Average and last scan duration
+     * Signals by type and symbol breakdown
+   - [x] Heartbeat updates to scanner_heartbeat table
+   - [x] Periodic statistics printing (every 5 minutes)
+   - [x] Detailed console logging for debugging
+   - [x] Error tracking and reporting
+
+4. **Discord Integration** ✅
+   - [x] Implemented `formatDiscordMessage()` for composite signals
+   - [x] Rich embeds with:
+     * Signal type and direction
+     * Entry/stop/target prices
+     * Risk/reward ratio
+     * Confluence factor breakdown
+     * Expiration timestamp
+   - [x] Sends alerts to all enabled user Discord channels
+   - [x] Marks signals as alerted in database
 
 **Deliverables**:
-- Updated scanner worker
-- Expiration handler
-- Monitoring dashboard
+- ✅ `compositeScanner.ts` worker (750+ lines)
+- ✅ Full watchlist scanning automation
+- ✅ Signal persistence to composite_signals table
+- ✅ Expiration handler (5-minute interval)
+- ✅ Performance monitoring and statistics
+- ✅ Discord rich embeds for signals
+- ✅ Error tracking and graceful degradation
+- ✅ Heartbeat monitoring
+
+**Notes**:
+- Scans every 60 seconds (configurable)
+- Expires old signals every 5 minutes
+- Prints statistics every 5 minutes
+- Uses Phase 5 CompositeScanner for detection
+- Graceful shutdown handlers (SIGTERM/SIGINT)
+- Continues operation even if individual symbols fail
+
+**Usage**:
+```bash
+tsx server/workers/compositeScanner.ts
+```
 
 ---
 

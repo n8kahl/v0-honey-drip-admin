@@ -1,0 +1,757 @@
+/**
+ * Composite Scanner Worker
+ * Phase 7: Server Scanner Worker
+ *
+ * Runs independently as a background process to continuously monitor watchlists
+ * and detect composite trading signals 24/7 using the new Phase 5 CompositeScanner.
+ *
+ * Features:
+ * - Scans all active users' watchlists every 60 seconds
+ * - Uses CompositeScanner for high-quality signal detection
+ * - Fetches live market data from Massive.com REST API
+ * - Inserts detected signals to composite_signals table
+ * - Sends Discord notifications automatically
+ * - Expires old signals
+ * - Graceful error handling with continued operation
+ * - Performance monitoring and logging
+ */
+
+import { createClient } from '@supabase/supabase-js';
+import { CompositeScanner } from '../../src/lib/composite/CompositeScanner.js';
+import type { CompositeSignal } from '../../src/lib/composite/CompositeSignal.js';
+import { buildSymbolFeatures, type TimeframeKey } from '../../src/lib/strategy/featuresBuilder.js';
+import { getIndexAggregates } from '../massive/client.js';
+import { insertCompositeSignal, expireOldSignals } from '../../src/lib/supabase/compositeSignals.js';
+import type { Bar } from '../../src/lib/strategy/patternDetection.js';
+
+// Configuration
+const SCAN_INTERVAL = 60000; // 1 minute
+const BARS_TO_FETCH = 200; // Fetch last 200 bars for pattern detection
+const PRIMARY_TIMEFRAME: TimeframeKey = '5m';
+const EXPIRE_SIGNALS_INTERVAL = 5 * 60 * 1000; // Expire old signals every 5 minutes
+
+// Supabase client with service role key for server-side operations
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('[Composite Scanner] Missing required environment variables:');
+  if (!SUPABASE_URL) console.error('  - VITE_SUPABASE_URL');
+  if (!SUPABASE_SERVICE_ROLE_KEY) console.error('  - SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+/**
+ * Performance statistics
+ */
+interface ScanStatistics {
+  totalScans: number;
+  totalSignals: number;
+  totalErrors: number;
+  lastScanDuration: number;
+  avgScanDuration: number;
+  lastScanTime: Date;
+  signalsByType: Record<string, number>;
+  signalsBySymbol: Record<string, number>;
+}
+
+const stats: ScanStatistics = {
+  totalScans: 0,
+  totalSignals: 0,
+  totalErrors: 0,
+  lastScanDuration: 0,
+  avgScanDuration: 0,
+  lastScanTime: new Date(),
+  signalsByType: {},
+  signalsBySymbol: {},
+};
+
+/**
+ * Helper to determine if a symbol is an index vs equity
+ */
+function isIndexSymbol(symbol: string): boolean {
+  const normalized = symbol.toUpperCase().replace(/^I:/, '');
+  return /^(SPX|NDX|DJI|VIX|RUT|RVX)$/.test(normalized);
+}
+
+/**
+ * Helper to normalize symbol for Massive API calls
+ */
+function normalizeSymbol(symbol: string): string {
+  // Remove I: prefix if present
+  return symbol.replace(/^I:/, '').toUpperCase();
+}
+
+/**
+ * Calculate indicator values from bars (simplified version for server-side)
+ */
+function calculateIndicators(bars: Bar[]) {
+  if (bars.length === 0) return { ema: {}, rsi: {}, atr: 0 };
+
+  // Simple EMA calculation
+  function calculateEMA(data: number[], period: number): number {
+    if (data.length < period) return data[data.length - 1] || 0;
+    const multiplier = 2 / (period + 1);
+    let ema = data.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+    for (let i = period; i < data.length; i++) {
+      ema = (data[i] - ema) * multiplier + ema;
+    }
+    return ema;
+  }
+
+  // Simple RSI calculation
+  function calculateRSI(data: number[], period: number = 14): number {
+    if (data.length < period + 1) return 50; // Neutral default
+
+    const changes = [];
+    for (let i = 1; i < data.length; i++) {
+      changes.push(data[i] - data[i - 1]);
+    }
+
+    let gains = 0;
+    let losses = 0;
+
+    for (let i = 0; i < period; i++) {
+      if (changes[i] > 0) gains += changes[i];
+      else losses -= changes[i];
+    }
+
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+
+    for (let i = period; i < changes.length; i++) {
+      const change = changes[i];
+      avgGain = (avgGain * (period - 1) + (change > 0 ? change : 0)) / period;
+      avgLoss = (avgLoss * (period - 1) + (change < 0 ? -change : 0)) / period;
+    }
+
+    if (avgLoss === 0) return 100;
+    const rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
+  }
+
+  // Simple ATR calculation
+  function calculateATR(bars: Bar[], period: number = 14): number {
+    if (bars.length < period + 1) return 0;
+
+    const trueRanges = [];
+    for (let i = 1; i < bars.length; i++) {
+      const high = bars[i].high;
+      const low = bars[i].low;
+      const prevClose = bars[i - 1].close;
+      const tr = Math.max(
+        high - low,
+        Math.abs(high - prevClose),
+        Math.abs(low - prevClose)
+      );
+      trueRanges.push(tr);
+    }
+
+    return trueRanges.slice(-period).reduce((sum, tr) => sum + tr, 0) / period;
+  }
+
+  const closePrices = bars.map(b => b.close);
+
+  return {
+    ema: {
+      '9': calculateEMA(closePrices, 9),
+      '20': calculateEMA(closePrices, 20),
+      '50': calculateEMA(closePrices, 50),
+      '200': calculateEMA(closePrices, 200),
+    },
+    rsi: {
+      '14': calculateRSI(closePrices, 14),
+    },
+    atr: calculateATR(bars, 14),
+  };
+}
+
+/**
+ * Calculate VWAP from bars
+ */
+function calculateVWAP(bars: Bar[]): number {
+  if (bars.length === 0) return 0;
+
+  let cumulativePV = 0;
+  let cumulativeVolume = 0;
+
+  for (const bar of bars) {
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    cumulativePV += typicalPrice * bar.volume;
+    cumulativeVolume += bar.volume;
+  }
+
+  return cumulativeVolume > 0 ? cumulativePV / cumulativeVolume : 0;
+}
+
+/**
+ * Fetch market data and build features for a symbol
+ */
+async function fetchSymbolFeatures(symbol: string): Promise<ReturnType<typeof buildSymbolFeatures> | null> {
+  try {
+    const normalized = normalizeSymbol(symbol);
+    const isIndex = isIndexSymbol(symbol);
+
+    // Fetch bars (last 200 5-minute bars = ~16 hours of trading)
+    const to = new Date().toISOString().split('T')[0]; // Today
+    const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 7 days ago
+
+    let rawBars: any[] = [];
+
+    if (isIndex) {
+      // Fetch index aggregates
+      const ticker = `I:${normalized}`;
+      rawBars = await getIndexAggregates(ticker, 5, 'minute', from, to);
+    } else {
+      // For equities, try index aggregates
+      try {
+        rawBars = await getIndexAggregates(normalized, 5, 'minute', from, to);
+      } catch (err) {
+        console.warn(`[Composite Scanner] Could not fetch bars for ${symbol}, skipping`);
+        return null;
+      }
+    }
+
+    if (rawBars.length < 20) {
+      console.warn(`[Composite Scanner] Insufficient data for ${symbol} (${rawBars.length} bars)`);
+      return null;
+    }
+
+    // Convert to Bar format
+    const bars: Bar[] = rawBars.map(b => ({
+      time: Math.floor(b.t / 1000), // Convert ms to seconds
+      open: b.o,
+      high: b.h,
+      low: b.l,
+      close: b.c,
+      volume: b.v || 0,
+    }));
+
+    // Get latest bar
+    const latestBar = bars[bars.length - 1];
+    const prevBar = bars.length > 1 ? bars[bars.length - 2] : latestBar;
+
+    // Calculate indicators
+    const indicators = calculateIndicators(bars);
+    const vwap = calculateVWAP(bars);
+    const vwapDistancePct = vwap > 0 ? ((latestBar.close - vwap) / vwap) * 100 : 0;
+
+    // Build multi-timeframe context (for now, just 5m)
+    const mtf = {
+      [PRIMARY_TIMEFRAME]: {
+        price: {
+          current: latestBar.close,
+          open: latestBar.open,
+          high: latestBar.high,
+          low: latestBar.low,
+          prevClose: prevBar.close,
+          prev: prevBar.close,
+        },
+        vwap: {
+          value: vwap,
+          distancePct: vwapDistancePct,
+          prev: calculateVWAP(bars.slice(0, -1)),
+        },
+        ema: indicators.ema,
+        rsi: indicators.rsi,
+        atr: indicators.atr,
+      },
+    } as any; // Type assertion needed for RawMTFContext compatibility
+
+    // Build features
+    const features = buildSymbolFeatures({
+      symbol,
+      timeISO: new Date(latestBar.time * 1000).toISOString(),
+      primaryTf: PRIMARY_TIMEFRAME,
+      mtf,
+      bars,
+      timezone: 'America/New_York',
+    });
+
+    return features;
+  } catch (error) {
+    console.error(`[Composite Scanner] Error fetching features for ${symbol}:`, error);
+    stats.totalErrors++;
+    return null;
+  }
+}
+
+/**
+ * Format Discord message for composite signal
+ */
+function formatDiscordMessage(signal: CompositeSignal): any {
+  const emoji = signal.direction === 'LONG' ? '🟢' : '🔴';
+  const color = signal.direction === 'LONG' ? 0x00ff00 : 0xff0000;
+
+  // Format opportunity type
+  const typeDisplay = signal.opportunityType
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
+  // Format confluence breakdown
+  const confluenceLines = Object.entries(signal.confluence)
+    .map(([factor, score]) => `• ${factor}: ${score.toFixed(0)}/100`)
+    .join('\n');
+
+  return {
+    embeds: [
+      {
+        title: `${emoji} ${signal.symbol} - ${typeDisplay}`,
+        description: `**${signal.direction}** Setup (Score: ${signal.baseScore.toFixed(0)}/100)`,
+        color,
+        fields: [
+          {
+            name: 'Recommended Style',
+            value: signal.recommendedStyle.toUpperCase(),
+            inline: true,
+          },
+          {
+            name: 'Entry',
+            value: `$${signal.entryPrice.toFixed(2)}`,
+            inline: true,
+          },
+          {
+            name: 'Stop',
+            value: `$${signal.stopPrice.toFixed(2)}`,
+            inline: true,
+          },
+          {
+            name: 'Target T1',
+            value: `$${signal.targets.T1.toFixed(2)}`,
+            inline: true,
+          },
+          {
+            name: 'Target T2',
+            value: `$${signal.targets.T2.toFixed(2)}`,
+            inline: true,
+          },
+          {
+            name: 'Target T3',
+            value: `$${signal.targets.T3.toFixed(2)}`,
+            inline: true,
+          },
+          {
+            name: 'Risk/Reward',
+            value: `${signal.riskReward.toFixed(1)}:1`,
+            inline: true,
+          },
+          {
+            name: 'Expires',
+            value: `<t:${Math.floor(signal.expiresAt.getTime() / 1000)}:R>`,
+            inline: true,
+          },
+          {
+            name: 'Confluence Factors',
+            value: confluenceLines || 'N/A',
+            inline: false,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+        footer: {
+          text: `${signal.assetClass} • ${signal.detectorVersion}`,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Send Discord alerts for newly detected signals
+ */
+async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promise<void> {
+  try {
+    // Fetch user's Discord channels
+    const { data: channels, error: channelsErr } = await supabase
+      .from('discord_channels')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('enabled', true);
+
+    if (channelsErr) {
+      console.error(`[Composite Scanner] Error fetching Discord channels for user ${userId}:`, channelsErr);
+      return;
+    }
+
+    if (!channels || channels.length === 0) {
+      console.log(`[Composite Scanner] No Discord channels configured for user ${userId}`);
+      return;
+    }
+
+    const webhookUrls = channels.map(ch => ch.webhook_url).filter(Boolean);
+
+    if (webhookUrls.length === 0) {
+      console.log(`[Composite Scanner] No valid webhook URLs for user ${userId}`);
+      return;
+    }
+
+    // Format message
+    const message = formatDiscordMessage(signal);
+
+    // Send to each webhook
+    for (const webhookUrl of webhookUrls) {
+      try {
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(message),
+        });
+
+        if (!response.ok) {
+          console.error(`[Composite Scanner] Discord webhook error: ${response.status} ${response.statusText}`);
+        } else {
+          console.log(`[Composite Scanner] ✅ Discord alert sent for ${signal.symbol} (${signal.opportunityType})`);
+        }
+      } catch (err) {
+        console.error(`[Composite Scanner] Error sending to webhook:`, err);
+      }
+    }
+  } catch (error) {
+    console.error(`[Composite Scanner] Error in sendDiscordAlerts:`, error);
+  }
+}
+
+/**
+ * Scan a single user's watchlist
+ */
+async function scanUserWatchlist(userId: string): Promise<number> {
+  try {
+    // Fetch user's watchlist
+    const { data: watchlist, error: watchlistErr } = await supabase
+      .from('watchlist')
+      .select('ticker')
+      .eq('user_id', userId);
+
+    if (watchlistErr) {
+      console.error(`[Composite Scanner] Error fetching watchlist for user ${userId}:`, watchlistErr);
+      stats.totalErrors++;
+      return 0;
+    }
+
+    if (!watchlist || watchlist.length === 0) {
+      console.log(`[Composite Scanner] Empty watchlist for user ${userId}`);
+      return 0;
+    }
+
+    const symbols = watchlist.map(w => w.ticker);
+    console.log(`[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(', ')}`);
+
+    // Create scanner instance for this user
+    const scanner = new CompositeScanner({
+      owner: userId,
+    });
+
+    let signalsGenerated = 0;
+
+    // Scan each symbol
+    for (const symbol of symbols) {
+      try {
+        // Fetch features
+        const features = await fetchSymbolFeatures(symbol);
+        if (!features) {
+          continue;
+        }
+
+        // Scan symbol
+        const result = await scanner.scanSymbol(symbol, features);
+
+        if (result.filtered) {
+          console.log(`[Composite Scanner] ${symbol}: Filtered (${result.filterReason})`);
+          continue;
+        }
+
+        if (result.signal) {
+          // Insert signal to database
+          try {
+            const inserted = await insertCompositeSignal(result.signal);
+            console.log(
+              `[Composite Scanner] 🎯 NEW SIGNAL: ${symbol} ${result.signal.opportunityType} (${result.signal.baseScore.toFixed(0)}/100)`
+            );
+
+            // Send Discord alert
+            await sendDiscordAlerts(userId, inserted);
+
+            // Update stats
+            stats.totalSignals++;
+            stats.signalsByType[result.signal.opportunityType] =
+              (stats.signalsByType[result.signal.opportunityType] || 0) + 1;
+            stats.signalsBySymbol[symbol] = (stats.signalsBySymbol[symbol] || 0) + 1;
+
+            signalsGenerated++;
+          } catch (insertErr: any) {
+            if (insertErr.message?.includes('Duplicate signal')) {
+              console.log(`[Composite Scanner] ${symbol}: Duplicate signal (skipped)`);
+            } else {
+              console.error(`[Composite Scanner] Error inserting signal:`, insertErr);
+              stats.totalErrors++;
+            }
+          }
+        }
+      } catch (scanErr) {
+        console.error(`[Composite Scanner] Error scanning ${symbol}:`, scanErr);
+        stats.totalErrors++;
+      }
+    }
+
+    return signalsGenerated;
+  } catch (error) {
+    console.error(`[Composite Scanner] Error scanning user ${userId}:`, error);
+    stats.totalErrors++;
+    return 0;
+  }
+}
+
+/**
+ * Scan all users' watchlists
+ */
+async function scanAllUsers(): Promise<void> {
+  const startTime = Date.now();
+  console.log(`[Composite Scanner] ====== Starting scan at ${new Date().toISOString()} ======`);
+
+  try {
+    // Fetch all user IDs
+    const { data: profiles, error: profilesErr } = await supabase
+      .from('profiles')
+      .select('id');
+
+    if (profilesErr) {
+      console.error('[Composite Scanner] Error fetching profiles:', profilesErr);
+      stats.totalErrors++;
+      return;
+    }
+
+    if (!profiles || profiles.length === 0) {
+      console.log('[Composite Scanner] No users found');
+      return;
+    }
+
+    console.log(`[Composite Scanner] Scanning ${profiles.length} users`);
+
+    let totalSignals = 0;
+
+    // Scan each user sequentially
+    for (const profile of profiles) {
+      const signalCount = await scanUserWatchlist(profile.id);
+      totalSignals += signalCount;
+    }
+
+    const duration = Date.now() - startTime;
+    stats.totalScans++;
+    stats.lastScanDuration = duration;
+    stats.avgScanDuration =
+      (stats.avgScanDuration * (stats.totalScans - 1) + duration) / stats.totalScans;
+    stats.lastScanTime = new Date();
+
+    console.log(`[Composite Scanner] ====== Scan complete in ${duration}ms - ${totalSignals} signals ======`);
+    console.log(`[Composite Scanner] Stats: ${stats.totalScans} scans, ${stats.totalSignals} total signals, ${stats.totalErrors} errors\n`);
+
+    // Update heartbeat
+    await updateHeartbeat(totalSignals);
+  } catch (error) {
+    console.error('[Composite Scanner] Error in scanAllUsers:', error);
+    stats.totalErrors++;
+  }
+}
+
+/**
+ * Expire old active signals
+ */
+async function expireOldActiveSignals(): Promise<void> {
+  try {
+    console.log('[Composite Scanner] Expiring old signals...');
+    const count = await expireOldSignals();
+    if (count > 0) {
+      console.log(`[Composite Scanner] ✅ Expired ${count} old signals`);
+    }
+  } catch (error) {
+    console.error('[Composite Scanner] Error expiring old signals:', error);
+    stats.totalErrors++;
+  }
+}
+
+/**
+ * Update heartbeat table to track worker health
+ */
+async function updateHeartbeat(signalsDetected: number): Promise<void> {
+  try {
+    // Upsert heartbeat record
+    const { error } = await supabase
+      .from('scanner_heartbeat')
+      .upsert(
+        {
+          id: 'composite_scanner',
+          last_scan: new Date().toISOString(),
+          signals_detected: signalsDetected,
+          status: 'healthy',
+        },
+        {
+          onConflict: 'id',
+        }
+      );
+
+    if (error) {
+      console.error('[Composite Scanner] Error updating heartbeat:', error);
+      stats.totalErrors++;
+    }
+  } catch (error) {
+    console.error('[Composite Scanner] Error in updateHeartbeat:', error);
+    stats.totalErrors++;
+  }
+}
+
+/**
+ * Print performance statistics
+ */
+function printStatistics(): void {
+  console.log('[Composite Scanner] ====== Performance Statistics ======');
+  console.log(`Total Scans: ${stats.totalScans}`);
+  console.log(`Total Signals: ${stats.totalSignals}`);
+  console.log(`Total Errors: ${stats.totalErrors}`);
+  console.log(`Last Scan: ${stats.lastScanTime.toISOString()}`);
+  console.log(`Last Duration: ${stats.lastScanDuration}ms`);
+  console.log(`Avg Duration: ${stats.avgScanDuration.toFixed(0)}ms`);
+  console.log(`Signals per Scan: ${(stats.totalSignals / Math.max(1, stats.totalScans)).toFixed(1)}`);
+  console.log('\nSignals by Type:');
+  Object.entries(stats.signalsByType)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([type, count]) => {
+      console.log(`  ${type}: ${count}`);
+    });
+  console.log('\nSignals by Symbol:');
+  Object.entries(stats.signalsBySymbol)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .forEach(([symbol, count]) => {
+      console.log(`  ${symbol}: ${count}`);
+    });
+  console.log('===========================================\n');
+}
+
+/**
+ * Main worker class
+ */
+export class CompositeScannerWorker {
+  private scanTimer?: NodeJS.Timeout;
+  private expireTimer?: NodeJS.Timeout;
+  private statsTimer?: NodeJS.Timeout;
+  private isRunning = false;
+
+  /**
+   * Start the scanner worker
+   */
+  async start(): Promise<void> {
+    if (this.isRunning) {
+      console.warn('[Composite Scanner] Already running');
+      return;
+    }
+
+    this.isRunning = true;
+    console.log('[Composite Scanner] ======================================');
+    console.log('[Composite Scanner] Starting Composite Signal Scanner');
+    console.log('[Composite Scanner] Scan interval: 60 seconds');
+    console.log('[Composite Scanner] Primary timeframe: 5m');
+    console.log('[Composite Scanner] Using Phase 5 CompositeScanner');
+    console.log('[Composite Scanner] ======================================\n');
+
+    // Run initial scan immediately
+    await scanAllUsers();
+
+    // Run initial signal expiration
+    await expireOldActiveSignals();
+
+    // Schedule recurring scans
+    this.scanTimer = setInterval(async () => {
+      await scanAllUsers();
+    }, SCAN_INTERVAL);
+
+    // Schedule recurring signal expiration
+    this.expireTimer = setInterval(async () => {
+      await expireOldActiveSignals();
+    }, EXPIRE_SIGNALS_INTERVAL);
+
+    // Schedule periodic stats printing (every 5 minutes)
+    this.statsTimer = setInterval(() => {
+      printStatistics();
+    }, 5 * 60 * 1000);
+
+    console.log('[Composite Scanner] Worker started successfully\n');
+  }
+
+  /**
+   * Stop the scanner worker
+   */
+  stop(): void {
+    if (this.scanTimer) {
+      clearInterval(this.scanTimer);
+      this.scanTimer = undefined;
+    }
+    if (this.expireTimer) {
+      clearInterval(this.expireTimer);
+      this.expireTimer = undefined;
+    }
+    if (this.statsTimer) {
+      clearInterval(this.statsTimer);
+      this.statsTimer = undefined;
+    }
+    this.isRunning = false;
+    console.log('[Composite Scanner] Stopped');
+    printStatistics();
+  }
+
+  /**
+   * Check if worker is running
+   */
+  isActive(): boolean {
+    return this.isRunning;
+  }
+
+  /**
+   * Get current statistics
+   */
+  getStatistics(): ScanStatistics {
+    return { ...stats };
+  }
+}
+
+// ============================================================================
+// Main Entry Point (when run directly)
+// ============================================================================
+
+if (require.main === module) {
+  const worker = new CompositeScannerWorker();
+
+  // Start worker
+  worker.start().catch(err => {
+    console.error('[Composite Scanner] Fatal error during startup:', err);
+    process.exit(1);
+  });
+
+  // Graceful shutdown handlers
+  process.on('SIGTERM', () => {
+    console.log('[Composite Scanner] Received SIGTERM, shutting down gracefully...');
+    worker.stop();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', () => {
+    console.log('[Composite Scanner] Received SIGINT, shutting down gracefully...');
+    worker.stop();
+    process.exit(0);
+  });
+
+  // Handle uncaught errors
+  process.on('uncaughtException', (error) => {
+    console.error('[Composite Scanner] Uncaught exception:', error);
+    worker.stop();
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Composite Scanner] Unhandled rejection at:', promise, 'reason:', reason);
+    // Don't exit on unhandled rejection, just log it
+  });
+}
