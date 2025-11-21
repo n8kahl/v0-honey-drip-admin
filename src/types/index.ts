@@ -1,11 +1,19 @@
-export type ChallengeScope = 'admin' | 'honeydrip-wide';
+export type ChallengeScope = "admin" | "honeydrip-wide";
 
-export type TradeState = 'WATCHING' | 'LOADED' | 'ENTERED' | 'EXITED';
-export type SessionStatus = 'premarket' | 'open' | 'afterhours' | 'closed';
-export type OptionType = 'C' | 'P';
-export type TradeType = 'Scalp' | 'Day' | 'Swing' | 'LEAP';
-export type AlertType = 'load' | 'enter' | 'update' | 'trail-stop' | 'update-sl' | 'trim' | 'add' | 'exit';
-export type StopMode = 'fixed' | 'trailing';
+export type TradeState = "WATCHING" | "LOADED" | "ENTERED" | "EXITED";
+export type SessionStatus = "premarket" | "open" | "afterhours" | "closed";
+export type OptionType = "C" | "P";
+export type TradeType = "Scalp" | "Day" | "Swing" | "LEAP";
+export type AlertType =
+  | "load"
+  | "enter"
+  | "update"
+  | "trail-stop"
+  | "update-sl"
+  | "trim"
+  | "add"
+  | "exit";
+export type StopMode = "fixed" | "trailing";
 
 export interface DiscordChannel {
   id: string;
@@ -31,6 +39,7 @@ export interface Contract {
   id: string;
   strike: number;
   expiry: string;
+  expiration?: string; // Alternative property name used in some components
   expiryDate: Date;
   daysToExpiry: number;
   type: OptionType;
@@ -57,6 +66,7 @@ export interface Challenge {
   endDate: string;
   isActive: boolean;
   createdAt: Date;
+  scope?: ChallengeScope;
 }
 
 export interface Trade {
@@ -72,16 +82,23 @@ export interface Trade {
   stopLoss?: number;
   stopMode?: StopMode;
   movePercent?: number;
+  movePrice?: number;
   exitPrice?: number;
   exitTime?: Date;
   updates: TradeUpdate[];
   discordChannels: string[];
   challenges: string[];
+  confluence?: {
+    trend?: string;
+    volatility?: string;
+    liquidity?: string;
+    strength?: string;
+  };
 }
 
 export interface TradeUpdate {
   id: string;
-  type: 'enter' | 'trim' | 'update' | 'update-sl' | 'trail-stop' | 'add' | 'exit' | 'tp_near';
+  type: "enter" | "trim" | "update" | "update-sl" | "trail-stop" | "add" | "exit" | "tp_near";
   timestamp: Date;
   message: string;
   price: number;
@@ -89,7 +106,7 @@ export interface TradeUpdate {
 }
 
 export interface TradeEvent {
-  type: 'load' | 'enter' | 'trim' | 'update' | 'exit';
+  type: "load" | "enter" | "trim" | "update" | "exit";
   timestamp: number;
   price: number;
   label: string;
