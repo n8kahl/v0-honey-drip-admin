@@ -483,7 +483,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
         if (result.signal) {
           // Insert signal to database
           try {
-            const inserted = await insertCompositeSignal(result.signal);
+            const inserted = await insertCompositeSignal(result.signal, supabase);
             console.log(
               `[Composite Scanner] 🎯 NEW SIGNAL: ${symbol} ${result.signal.opportunityType} (${result.signal.baseScore.toFixed(0)}/100)`
             );
@@ -581,7 +581,7 @@ async function scanAllUsers(): Promise<void> {
 async function expireOldActiveSignals(): Promise<void> {
   try {
     console.log("[Composite Scanner] Expiring old signals...");
-    const count = await expireOldSignals();
+    const count = await expireOldSignals(undefined, supabase);
     if (count > 0) {
       console.log(`[Composite Scanner] ✅ Expired ${count} old signals`);
     }

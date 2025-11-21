@@ -5,9 +5,15 @@
  * Functions for persisting and querying composite trade signals
  */
 
-import { createClient } from './client.js';
-import type { CompositeSignal } from '../composite/CompositeSignal.js';
-import type { OpportunityType } from '../composite/OpportunityDetector.js';
+import type { CompositeSignal } from "../composite/CompositeSignal.js";
+import type { OpportunityType } from "../composite/OpportunityDetector.js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+// Lazy import of browser client to avoid import.meta.env issues in Node.js
+async function getDefaultClient(): Promise<SupabaseClient> {
+  const { createClient } = await import("./client.js");
+  return createClient();
+}
 
 /**
  * Database row type for composite_signals table
@@ -101,7 +107,9 @@ export interface SignalPerformanceMetricsRow {
 /**
  * Convert CompositeSignal to database row
  */
-function signalToRow(signal: CompositeSignal): Omit<CompositeSignalRow, 'id' | 'created_at' | 'updated_at'> {
+function signalToRow(
+  signal: CompositeSignal
+): Omit<CompositeSignalRow, "id" | "created_at" | "updated_at"> {
   return {
     owner: signal.owner,
     symbol: signal.symbol,
@@ -153,13 +161,13 @@ function rowToSignal(row: CompositeSignalRow): CompositeSignal {
     owner: row.owner,
     symbol: row.symbol,
     opportunityType: row.opportunity_type as OpportunityType,
-    direction: row.direction as 'LONG' | 'SHORT',
+    direction: row.direction as "LONG" | "SHORT",
     assetClass: row.asset_class as any,
     baseScore: row.base_score,
     scalpScore: row.scalp_score,
     dayTradeScore: row.day_trade_score,
     swingScore: row.swing_score,
-    recommendedStyle: row.recommended_style as 'scalp' | 'day_trade' | 'swing',
+    recommendedStyle: row.recommended_style as "scalp" | "day_trade" | "swing",
     recommendedStyleScore: row.recommended_style_score,
     confluence: row.confluence,
     entryPrice: row.entry_price,
@@ -198,20 +206,19 @@ function rowToSignal(row: CompositeSignalRow): CompositeSignal {
  * @param signal - Signal to insert
  * @returns Inserted signal with ID
  */
-export async function insertCompositeSignal(signal: CompositeSignal): Promise<CompositeSignal> {
-  const supabase = createClient();
+export async function insertCompositeSignal(
+  signal: CompositeSignal,
+  client?: SupabaseClient
+): Promise<CompositeSignal> {
+  const supabase = client || (await getDefaultClient());
 
   const row = signalToRow(signal);
 
-  const { data, error } = await supabase
-    .from('composite_signals')
-    .insert(row)
-    .select()
-    .single();
+  const { data, error } = await supabase.from("composite_signals").insert(row).select().single();
 
   if (error) {
     // Check for duplicate bar_time_key
-    if (error.code === '23505' && error.message?.includes('bar_time_key')) {
+    if (error.code === "23505" && error.message?.includes("bar_time_key")) {
       throw new Error(`Duplicate signal: ${signal.barTimeKey}`);
     }
     throw error;
@@ -229,7 +236,7 @@ export async function insertCompositeSignal(signal: CompositeSignal): Promise<Co
  */
 export async function updateCompositeSignal(
   id: string,
-  updates: Partial<Omit<CompositeSignal, 'id' | 'createdAt' | 'updatedAt' | 'timestamp'>>
+  updates: Partial<Omit<CompositeSignal, "id" | "createdAt" | "updatedAt" | "timestamp">>
 ): Promise<CompositeSignal> {
   const supabase = createClient();
 
@@ -238,7 +245,8 @@ export async function updateCompositeSignal(
 
   if (updates.status !== undefined) rowUpdates.status = updates.status;
   if (updates.alertedAt !== undefined) rowUpdates.alerted_at = updates.alertedAt.toISOString();
-  if (updates.dismissedAt !== undefined) rowUpdates.dismissed_at = updates.dismissedAt.toISOString();
+  if (updates.dismissedAt !== undefined)
+    rowUpdates.dismissed_at = updates.dismissedAt.toISOString();
   if (updates.filledAt !== undefined) rowUpdates.filled_at = updates.filledAt.toISOString();
   if (updates.exitedAt !== undefined) rowUpdates.exited_at = updates.exitedAt.toISOString();
   if (updates.fillPrice !== undefined) rowUpdates.fill_price = updates.fillPrice;
@@ -248,13 +256,15 @@ export async function updateCompositeSignal(
   if (updates.realizedPnl !== undefined) rowUpdates.realized_pnl = updates.realizedPnl;
   if (updates.realizedPnlPct !== undefined) rowUpdates.realized_pnl_pct = updates.realizedPnlPct;
   if (updates.holdTimeMinutes !== undefined) rowUpdates.hold_time_minutes = updates.holdTimeMinutes;
-  if (updates.maxFavorableExcursion !== undefined) rowUpdates.max_favorable_excursion = updates.maxFavorableExcursion;
-  if (updates.maxAdverseExcursion !== undefined) rowUpdates.max_adverse_excursion = updates.maxAdverseExcursion;
+  if (updates.maxFavorableExcursion !== undefined)
+    rowUpdates.max_favorable_excursion = updates.maxFavorableExcursion;
+  if (updates.maxAdverseExcursion !== undefined)
+    rowUpdates.max_adverse_excursion = updates.maxAdverseExcursion;
 
   const { data, error } = await supabase
-    .from('composite_signals')
+    .from("composite_signals")
     .update(rowUpdates)
-    .eq('id', id)
+    .eq("id", id)
     .select()
     .single();
 
@@ -274,15 +284,18 @@ export async function updateCompositeSignal(
  * @param limit - Max number of signals to return
  * @returns Active signals
  */
-export async function getActiveSignals(userId: string, limit: number = 50): Promise<CompositeSignal[]> {
+export async function getActiveSignals(
+  userId: string,
+  limit: number = 50
+): Promise<CompositeSignal[]> {
   const supabase = createClient();
 
   const { data, error } = await supabase
-    .from('composite_signals')
-    .select('*')
-    .eq('owner', userId)
-    .eq('status', 'ACTIVE')
-    .order('created_at', { ascending: false })
+    .from("composite_signals")
+    .select("*")
+    .eq("owner", userId)
+    .eq("status", "ACTIVE")
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) throw error;
@@ -311,36 +324,33 @@ export async function getSignals(
 ): Promise<CompositeSignal[]> {
   const supabase = createClient();
 
-  let query = supabase
-    .from('composite_signals')
-    .select('*')
-    .eq('owner', userId);
+  let query = supabase.from("composite_signals").select("*").eq("owner", userId);
 
   if (filters.status && filters.status.length > 0) {
-    query = query.in('status', filters.status);
+    query = query.in("status", filters.status);
   }
 
   if (filters.symbol) {
-    query = query.eq('symbol', filters.symbol);
+    query = query.eq("symbol", filters.symbol);
   }
 
   if (filters.opportunityType) {
-    query = query.eq('opportunity_type', filters.opportunityType);
+    query = query.eq("opportunity_type", filters.opportunityType);
   }
 
   if (filters.recommendedStyle) {
-    query = query.eq('recommended_style', filters.recommendedStyle);
+    query = query.eq("recommended_style", filters.recommendedStyle);
   }
 
   if (filters.fromDate) {
-    query = query.gte('created_at', filters.fromDate.toISOString());
+    query = query.gte("created_at", filters.fromDate.toISOString());
   }
 
   if (filters.toDate) {
-    query = query.lte('created_at', filters.toDate.toISOString());
+    query = query.lte("created_at", filters.toDate.toISOString());
   }
 
-  query = query.order('created_at', { ascending: false });
+  query = query.order("created_at", { ascending: false });
 
   if (filters.limit) {
     query = query.limit(filters.limit);
@@ -363,13 +373,13 @@ export async function getSignalById(id: string): Promise<CompositeSignal | null>
   const supabase = createClient();
 
   const { data, error } = await supabase
-    .from('composite_signals')
-    .select('*')
-    .eq('id', id)
+    .from("composite_signals")
+    .select("*")
+    .eq("id", id)
     .single();
 
   if (error) {
-    if (error.code === 'PGRST116') return null; // Not found
+    if (error.code === "PGRST116") return null; // Not found
     throw error;
   }
 
@@ -396,7 +406,7 @@ export async function markSignalAlerted(id: string): Promise<CompositeSignal> {
  */
 export async function dismissSignal(id: string): Promise<CompositeSignal> {
   return updateCompositeSignal(id, {
-    status: 'DISMISSED',
+    status: "DISMISSED",
     dismissedAt: new Date(),
   });
 }
@@ -415,7 +425,7 @@ export async function fillSignal(
   contractsTraded: number = 1
 ): Promise<CompositeSignal> {
   return updateCompositeSignal(id, {
-    status: 'FILLED',
+    status: "FILLED",
     filledAt: new Date(),
     fillPrice,
     contractsTraded,
@@ -433,21 +443,19 @@ export async function fillSignal(
 export async function exitSignal(
   id: string,
   exitPrice: number,
-  exitReason: 'STOP' | 'T1' | 'T2' | 'T3' | 'MANUAL' | 'EXPIRED'
+  exitReason: "STOP" | "T1" | "T2" | "T3" | "MANUAL" | "EXPIRED"
 ): Promise<CompositeSignal> {
   // Get current signal to calculate P&L
   const signal = await getSignalById(id);
-  if (!signal) throw new Error('Signal not found');
+  if (!signal) throw new Error("Signal not found");
 
   if (!signal.fillPrice || !signal.filledAt) {
-    throw new Error('Cannot exit signal that was not filled');
+    throw new Error("Cannot exit signal that was not filled");
   }
 
   // Calculate P&L
   const pnlPerContract =
-    signal.direction === 'LONG'
-      ? exitPrice - signal.fillPrice
-      : signal.fillPrice - exitPrice;
+    signal.direction === "LONG" ? exitPrice - signal.fillPrice : signal.fillPrice - exitPrice;
 
   const realizedPnl = pnlPerContract * (signal.contractsTraded || 1);
   const realizedPnlPct = (pnlPerContract / signal.fillPrice) * 100;
@@ -457,7 +465,7 @@ export async function exitSignal(
   const holdTimeMinutes = Math.floor(holdTimeMs / 60000);
 
   // Determine final status
-  const status = exitReason === 'STOP' ? 'STOPPED' : 'TARGET_HIT';
+  const status = exitReason === "STOP" ? "STOPPED" : "TARGET_HIT";
 
   return updateCompositeSignal(id, {
     status,
@@ -482,22 +490,20 @@ export async function updateSignalExcursions(
   currentPrice: number
 ): Promise<CompositeSignal> {
   const signal = await getSignalById(id);
-  if (!signal || signal.status !== 'FILLED') {
-    throw new Error('Can only update excursions for filled signals');
+  if (!signal || signal.status !== "FILLED") {
+    throw new Error("Can only update excursions for filled signals");
   }
 
   const fillPrice = signal.fillPrice || signal.entryPrice;
-  const currentExcursion = signal.direction === 'LONG'
-    ? currentPrice - fillPrice
-    : fillPrice - currentPrice;
+  const currentExcursion =
+    signal.direction === "LONG" ? currentPrice - fillPrice : fillPrice - currentPrice;
 
   const updates: any = {};
 
   // Update MFE (max favorable excursion)
   if (
     currentExcursion > 0 &&
-    (signal.maxFavorableExcursion === undefined ||
-      currentExcursion > signal.maxFavorableExcursion)
+    (signal.maxFavorableExcursion === undefined || currentExcursion > signal.maxFavorableExcursion)
   ) {
     updates.maxFavorableExcursion = currentExcursion;
   }
@@ -505,8 +511,7 @@ export async function updateSignalExcursions(
   // Update MAE (max adverse excursion)
   if (
     currentExcursion < 0 &&
-    (signal.maxAdverseExcursion === undefined ||
-      currentExcursion < signal.maxAdverseExcursion)
+    (signal.maxAdverseExcursion === undefined || currentExcursion < signal.maxAdverseExcursion)
   ) {
     updates.maxAdverseExcursion = currentExcursion;
   }
@@ -524,17 +529,17 @@ export async function updateSignalExcursions(
  * @param userId - User ID (optional, if not provided expires for all users)
  * @returns Number of signals expired
  */
-export async function expireOldSignals(userId?: string): Promise<number> {
-  const supabase = createClient();
+export async function expireOldSignals(userId?: string, client?: SupabaseClient): Promise<number> {
+  const supabase = client || (await getDefaultClient());
 
   let query = supabase
-    .from('composite_signals')
-    .update({ status: 'EXPIRED' })
-    .eq('status', 'ACTIVE')
-    .lt('expires_at', new Date().toISOString());
+    .from("composite_signals")
+    .update({ status: "EXPIRED" })
+    .eq("status", "ACTIVE")
+    .lt("expires_at", new Date().toISOString());
 
   if (userId) {
-    query = query.eq('owner', userId);
+    query = query.eq("owner", userId);
   }
 
   const { data, error } = await query.select();
@@ -567,32 +572,29 @@ export async function getPerformanceMetrics(
 ): Promise<SignalPerformanceMetricsRow[]> {
   const supabase = createClient();
 
-  let query = supabase
-    .from('signal_performance_metrics')
-    .select('*')
-    .eq('owner', userId);
+  let query = supabase.from("signal_performance_metrics").select("*").eq("owner", userId);
 
   if (filters.fromDate) {
-    query = query.gte('date', filters.fromDate.toISOString().split('T')[0]);
+    query = query.gte("date", filters.fromDate.toISOString().split("T")[0]);
   }
 
   if (filters.toDate) {
-    query = query.lte('date', filters.toDate.toISOString().split('T')[0]);
+    query = query.lte("date", filters.toDate.toISOString().split("T")[0]);
   }
 
   if (filters.symbol) {
-    query = query.eq('symbol', filters.symbol);
+    query = query.eq("symbol", filters.symbol);
   }
 
   if (filters.opportunityType) {
-    query = query.eq('opportunity_type', filters.opportunityType);
+    query = query.eq("opportunity_type", filters.opportunityType);
   }
 
   if (filters.recommendedStyle) {
-    query = query.eq('recommended_style', filters.recommendedStyle);
+    query = query.eq("recommended_style", filters.recommendedStyle);
   }
 
-  query = query.order('date', { ascending: false });
+  query = query.order("date", { ascending: false });
 
   const { data, error } = await query;
 
@@ -609,14 +611,14 @@ export async function getPerformanceMetrics(
  * @returns Updated metrics
  */
 export async function upsertPerformanceMetrics(
-  metrics: Omit<SignalPerformanceMetricsRow, 'id' | 'created_at' | 'updated_at'>
+  metrics: Omit<SignalPerformanceMetricsRow, "id" | "created_at" | "updated_at">
 ): Promise<SignalPerformanceMetricsRow> {
   const supabase = createClient();
 
   const { data, error } = await supabase
-    .from('signal_performance_metrics')
+    .from("signal_performance_metrics")
     .upsert(metrics, {
-      onConflict: 'date,owner,symbol,opportunity_type,recommended_style',
+      onConflict: "date,owner,symbol,opportunity_type,recommended_style",
     })
     .select()
     .single();
