@@ -380,6 +380,62 @@ Before merging any PR, ensure ALL checks pass:
 
 ---
 
+## 🔄 Session Workflow
+
+### End of Session Checklist
+
+Run this command after every Claude Code session:
+
+```bash
+pnpm run session-check
+```
+
+This automated script will:
+
+- ✅ Run all tests and report pass rate
+- ✅ Check TypeScript errors (non-blocking)
+- ✅ Verify build works
+- ✅ Show git status (uncommitted changes)
+- ✅ Display recent commits
+- ✅ Update CLAUDE_CONTEXT.md with latest stats
+- ✅ Provide a clear status report
+
+**Example Output**:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    📊 SESSION END REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Tests: 115/115 passing
+⚠️  TypeScript: 391 errors (non-blocking)
+✅ Build: Success
+✅ Git: All changes committed
+
+🚀 Status: READY FOR NEXT SESSION
+```
+
+### Quick Commands
+
+```bash
+# Run tests only
+pnpm test
+
+# Run tests in watch mode
+pnpm test:watch
+
+# Check TypeScript
+pnpm run typecheck
+
+# Run linter
+pnpm run lint
+
+# Format code
+pnpm run format
+```
+
+---
+
 ## 🆘 Getting Help
 
 ### Internal Resources
