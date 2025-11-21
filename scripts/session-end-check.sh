@@ -31,21 +31,31 @@ echo -e "${BLUE}${BOLD}1. Running Test Suite...${NC}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if TEST_OUTPUT=$(pnpm test 2>&1); then
-    # Extract test results
-    PASSED=$(echo "$TEST_OUTPUT" | grep -oP '\d+(?= passed)' | tail -1 || echo "0")
-    TOTAL=$(echo "$TEST_OUTPUT" | grep -oP 'Tests.*\d+ passed' | grep -oP '\d+' | head -1 || echo "$PASSED")
+    # Extract test results from vitest output
+    # Look for pattern like "Tests  115 passed (115)"
+    PASSED=$(echo "$TEST_OUTPUT" | grep -E "Tests.*passed" | grep -oP '\d+(?= passed)' | tail -1 || echo "0")
 
-    if [ "$PASSED" = "$TOTAL" ] && [ "$PASSED" != "0" ]; then
+    # Total is same as passed if all passed
+    TOTAL="$PASSED"
+
+    if [ "$PASSED" != "0" ]; then
         echo -e "${GREEN}${CHECK} Tests: ${PASSED}/${TOTAL} passing (100%)${NC}"
         TEST_STATUS="passing"
     else
-        echo -e "${YELLOW}${WARN}Tests: ${PASSED}/${TOTAL} passing${NC}"
+        echo -e "${YELLOW}${WARN}Tests: Unable to parse results${NC}"
         TEST_STATUS="warning"
     fi
 else
-    FAILED=$(echo "$TEST_OUTPUT" | grep -oP '\d+(?= failed)' | tail -1 || echo "?")
-    PASSED=$(echo "$TEST_OUTPUT" | grep -oP '\d+(?= passed)' | tail -1 || echo "?")
-    echo -e "${RED}${ERROR} Tests: ${FAILED} failed, ${PASSED} passed${NC}"
+    # Tests failed - extract both failed and passed counts
+    FAILED=$(echo "$TEST_OUTPUT" | grep -E "Tests.*failed" | grep -oP '\d+ failed' | grep -oP '\d+' | head -1 || echo "?")
+    PASSED=$(echo "$TEST_OUTPUT" | grep -E "Tests.*passed" | grep -oP '\d+ passed' | grep -oP '\d+' | head -1 || echo "0")
+
+    if [ "$FAILED" != "?" ] && [ "$PASSED" != "0" ]; then
+        TOTAL=$((FAILED + PASSED))
+        echo -e "${RED}${ERROR} Tests: ${FAILED} failed, ${PASSED} passed (${TOTAL} total)${NC}"
+    else
+        echo -e "${RED}${ERROR} Tests: Failed (check output)${NC}"
+    fi
     TEST_STATUS="failing"
 fi
 
@@ -56,11 +66,12 @@ echo -e "${BLUE}${BOLD}2. Checking TypeScript...${NC}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 TS_OUTPUT=$(pnpm exec tsc --noEmit 2>&1 || true)
-TS_ERRORS=$(echo "$TS_OUTPUT" | grep -oP '\d+(?= errors?)' | tail -1 || echo "0")
+TS_ERRORS=$(echo "$TS_OUTPUT" | grep -E "Found [0-9]+ error" | grep -oP '\d+' | head -1 || echo "0")
 
-if [ "$TS_ERRORS" = "0" ]; then
+if [ "$TS_ERRORS" = "0" ] || [ -z "$TS_ERRORS" ]; then
     echo -e "${GREEN}${CHECK} TypeScript: No errors${NC}"
     TS_STATUS="clean"
+    TS_ERRORS="0"
 else
     echo -e "${YELLOW}${WARN}TypeScript: ${TS_ERRORS} errors (non-blocking)${NC}"
     TS_STATUS="errors"
