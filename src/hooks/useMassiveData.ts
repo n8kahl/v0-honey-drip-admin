@@ -5,6 +5,7 @@ import { createTransport } from '../lib/massive/transport-policy';
 import type { Contract } from '../types';
 import { fetchNormalizedChain } from '../services/options';
 import { fetchQuotes as fetchUnifiedQuotes } from '../services/quotes';
+import { useMarketDataStore } from '../stores/marketDataStore';
 
 // Group contracts by expiration for backwards compatibility with old MassiveOptionsChain format
 function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain {
@@ -76,7 +77,8 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
         const USE_UNIFIED = ((import.meta as any)?.env?.VITE_USE_UNIFIED_CHAIN ?? 'true') === 'true';
         let contracts: Contract[] = [];
         if (USE_UNIFIED) {
-          const normalized = await fetchNormalizedChain(symbol, window);
+          const tokenManager = massive.getTokenManager();
+          const normalized = await fetchNormalizedChain(symbol, { window, tokenManager });
           contracts = normalized;
         } else {
           const data = await massive.getOptionsChain(symbol);
@@ -119,6 +121,10 @@ export function useQuotes(symbols: string[]) {
   const [quotes, setQuotes] = useState<Map<string, MassiveQuote & { asOf: number; source: 'websocket' | 'rest' }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Get marketDataStore setter to keep symbol timestamps in sync
+  const setSymbolTimestamp = useMarketDataStore(state => state.symbols);
+
   const handleUpdate = useCallback(
     (update?: MassiveQuote | null, source: 'websocket' | 'rest' = 'rest', timestamp = Date.now()) => {
       if (!update) return;
@@ -136,9 +142,28 @@ export function useQuotes(symbols: string[]) {
         });
         return next;
       });
+
+      // Update marketDataStore timestamp to prevent "stale" status
+      try {
+        const symbolData = setSymbolTimestamp[update.symbol];
+        if (symbolData) {
+          useMarketDataStore.setState((state) => ({
+            symbols: {
+              ...state.symbols,
+              [update.symbol]: {
+                ...symbolData,
+                lastUpdated: Date.now(),
+              },
+            },
+          }));
+        }
+      } catch (e) {
+        // Ignore if symbol not in store
+      }
+
       setError(null);
     },
-    []
+    [setSymbolTimestamp]
   );
 
   useEffect(() => {
@@ -154,7 +179,8 @@ export function useQuotes(symbols: string[]) {
     // 1) Immediate batched REST fill for all symbols
     (async () => {
       try {
-        const unified = await fetchUnifiedQuotes(symbols);
+        const tokenManager = massive.getTokenManager();
+        const unified = await fetchUnifiedQuotes(symbols, tokenManager);
         const now = Date.now();
         unified.forEach((q) =>
           handleUpdate(
