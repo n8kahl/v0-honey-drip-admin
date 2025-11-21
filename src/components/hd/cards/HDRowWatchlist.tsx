@@ -78,8 +78,8 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
     }
   };
   
-  // Staleness check: stale if lastUpdated > 10s ago
-  const isStale = lastUpdated ? (Date.now() - lastUpdated > 10000) : true;
+  // Staleness check: stale if lastUpdated > 30s ago (aligned with marketDataStore)
+  const isStale = lastUpdated ? (Date.now() - lastUpdated > 30000) : true;
 
   // Defensive: fallback for missing price
   const priceDisplay = typeof currentPrice === 'number' && !isNaN(currentPrice)
