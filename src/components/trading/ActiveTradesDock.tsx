@@ -174,7 +174,7 @@ export const ActiveTradesDock: React.FC = () => {
   return (
     <div
       className={cn(
-        'fixed left-0 right-0 bottom-0 z-40 bg-[var(--surface-1)] border-t border-[var(--border-hairline)]',
+        'fixed left-0 right-0 bottom-14 lg:bottom-0 z-40 bg-[var(--surface-1)] border-t border-[var(--border-hairline)]',
         'shadow-[0_-2px_6px_-2px_rgba(0,0,0,0.4)]',
         'backdrop-blur-sm'
       )}
@@ -199,7 +199,7 @@ export const ActiveTradesDock: React.FC = () => {
       <div
         className={cn(
           'transition-all duration-200',
-          collapsedMobile ? 'max-h-0 lg:max-h-full overflow-hidden lg:overflow-visible' : 'max-h-[340px]'
+          collapsedMobile ? 'max-h-0 lg:max-h-full overflow-hidden lg:overflow-visible' : 'max-h-[240px] lg:max-h-[340px]'
         )}
       >
         <div className="px-2 pt-2 pb-2 flex flex-wrap gap-2 lg:max-h-[180px] lg:overflow-y-auto">

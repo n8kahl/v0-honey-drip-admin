@@ -1,4 +1,5 @@
 import { cn } from '../../../lib/utils';
+import { Z_INDEX } from '../../../lib/zIndex';
 import { AlertTriangle } from 'lucide-react';
 
 interface HDConfirmDialogProps {
@@ -31,12 +32,12 @@ export function HDConfirmDialog({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/60 z-[200] animate-in fade-in duration-200"
+        className={cn("fixed inset-0 bg-black/60 animate-in fade-in duration-200", Z_INDEX.CRITICAL_DIALOG_BACKDROP)}
         onClick={onClose}
       />
 
       {/* Dialog */}
-      <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
+      <div className={cn("fixed inset-0 flex items-center justify-center p-4 pointer-events-none", Z_INDEX.CRITICAL_DIALOG_CONTENT)}>
         <div
           className="bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-6 max-w-md w-full pointer-events-auto animate-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
