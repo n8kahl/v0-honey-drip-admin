@@ -8,9 +8,7 @@ import { classifyVIXLevel, clearVIXCache, getVIXStrategyAdjustments } from './vi
 // Mock the massive API
 vi.mock('../massive/index.js', () => ({
   massive: {
-    rest: {
-      getIndicesSnapshot: vi.fn(),
-    },
+    getIndices: vi.fn(),
   },
 }));
 
@@ -25,9 +23,9 @@ describe('VIX Classifier', () => {
 
   describe('classifyVIXLevel', () => {
     it('should classify low VIX (< 15)', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 12.5 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 12.5 }
+      ]);
 
       const result = await classifyVIXLevel();
 
@@ -39,9 +37,9 @@ describe('VIX Classifier', () => {
     });
 
     it('should classify medium VIX (15-25)', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 20 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 20 }
+      ]);
 
       const result = await classifyVIXLevel();
 
@@ -51,9 +49,9 @@ describe('VIX Classifier', () => {
     });
 
     it('should classify high VIX (25-35)', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 30 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 30 }
+      ]);
 
       const result = await classifyVIXLevel();
 
@@ -63,9 +61,9 @@ describe('VIX Classifier', () => {
     });
 
     it('should classify extreme VIX (> 35)', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 45 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 45 }
+      ]);
 
       const result = await classifyVIXLevel();
 
@@ -75,23 +73,23 @@ describe('VIX Classifier', () => {
     });
 
     it('should use cache on subsequent calls', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 20 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 20 }
+      ]);
 
       // First call - should hit API
       const result1 = await classifyVIXLevel();
       expect(result1.value).toBe(20);
-      expect(massive.rest.getIndicesSnapshot).toHaveBeenCalledTimes(1);
+      expect(massive.getIndices).toHaveBeenCalledTimes(1);
 
       // Second call - should use cache
       const result2 = await classifyVIXLevel();
       expect(result2.value).toBe(20);
-      expect(massive.rest.getIndicesSnapshot).toHaveBeenCalledTimes(1); // Still 1
+      expect(massive.getIndices).toHaveBeenCalledTimes(1); // Still 1
     });
 
     it('should handle API errors gracefully', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockRejectedValue(
+      (massive.getIndices as any).mockRejectedValue(
         new Error('API error')
       );
 
@@ -103,9 +101,7 @@ describe('VIX Classifier', () => {
     });
 
     it('should handle missing data gracefully', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [],
-      });
+      (massive.getIndices as any).mockResolvedValue([]);
 
       const result = await classifyVIXLevel();
 
@@ -116,9 +112,9 @@ describe('VIX Classifier', () => {
 
     it('should use stale cache when API fails', async () => {
       // First call succeeds
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 25 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 25 }
+      ]);
 
       const result1 = await classifyVIXLevel();
       expect(result1.value).toBe(25);
@@ -130,7 +126,7 @@ describe('VIX Classifier', () => {
       await classifyVIXLevel(); // Populate cache
 
       // Now fail the API
-      (massive.rest.getIndicesSnapshot as any).mockRejectedValue(
+      (massive.getIndices as any).mockRejectedValue(
         new Error('API down')
       );
 
@@ -183,24 +179,24 @@ describe('VIX Classifier', () => {
 
   describe('clearVIXCache', () => {
     it('should clear the cache', async () => {
-      (massive.rest.getIndicesSnapshot as any).mockResolvedValue({
-        results: [{ value: 20 }],
-      });
+      (massive.getIndices as any).mockResolvedValue([
+        { value: 20 }
+      ]);
 
       // First call
       await classifyVIXLevel();
-      expect(massive.rest.getIndicesSnapshot).toHaveBeenCalledTimes(1);
+      expect(massive.getIndices).toHaveBeenCalledTimes(1);
 
       // Second call should use cache
       await classifyVIXLevel();
-      expect(massive.rest.getIndicesSnapshot).toHaveBeenCalledTimes(1);
+      expect(massive.getIndices).toHaveBeenCalledTimes(1);
 
       // Clear cache
       clearVIXCache();
 
       // Third call should hit API again
       await classifyVIXLevel();
-      expect(massive.rest.getIndicesSnapshot).toHaveBeenCalledTimes(2);
+      expect(massive.getIndices).toHaveBeenCalledTimes(2);
     });
   });
 });

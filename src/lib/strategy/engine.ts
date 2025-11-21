@@ -58,7 +58,7 @@ export interface SymbolFeatures {
     ema?: Record<string, number>;
     rsi?: Record<string, number>;
   }>;
-  pattern?: Record<string, boolean | number>;
+  pattern?: Record<string, boolean | number | string>;
   prev?: Record<string, any>; // generic previous snapshot fields if available
   [key: string]: any;
 }

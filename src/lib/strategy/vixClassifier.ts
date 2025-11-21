@@ -45,10 +45,10 @@ async function fetchVIX(): Promise<number> {
 
   try {
     // Fetch VIX snapshot from Polygon Indices API
-    const snapshot = await massive.rest.getIndicesSnapshot(['VIX']);
+    const indices = await massive.getIndices(['VIX']);
 
-    if (snapshot?.results?.[0]?.value) {
-      const vixValue = snapshot.results[0].value;
+    if (indices && indices.length > 0 && indices[0].value) {
+      const vixValue = indices[0].value;
 
       // Update cache
       vixCache = {
