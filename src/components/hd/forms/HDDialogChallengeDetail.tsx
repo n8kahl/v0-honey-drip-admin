@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AppSheet } from '../../../ui/AppSheet';
+import { AppSheet } from '../../ui/AppSheet';
 import { Challenge, Trade, DiscordChannel } from '../../../types';
 import { formatPrice, formatPercent, cn } from '../../../lib/utils';
 import { Download, Share2, TrendingUp, TrendingDown } from 'lucide-react';

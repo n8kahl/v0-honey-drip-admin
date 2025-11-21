@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Trade, Challenge, DiscordChannel, AlertType } from '../../../types';
 import { cn, formatPrice } from '../../../lib/utils';
-import { Button } from '../../../ui/button';
-import { Checkbox } from '../../../ui/checkbox';
-import { Label } from '../../../ui/label';
-import { Textarea } from '../../../ui/textarea';
+import { Button } from '../../ui/button';
+import { Checkbox } from '../../ui/checkbox';
+import { Label } from '../../ui/label';
+import { Textarea } from '../../ui/textarea';
 import { HDShareCard } from '../cards/HDShareCard';
 
 interface HDPanelDiscordAlertProps {

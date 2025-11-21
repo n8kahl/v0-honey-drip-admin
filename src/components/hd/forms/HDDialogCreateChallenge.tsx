@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../ui/dialog';
-import { Label } from '../../../ui/label';
-import { Input } from '../../../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
-import { RadioGroup, RadioGroupItem } from '../../../ui/radio-group';
-import { Button } from '../../../ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
+import { Label } from '../../ui/label';
+import { Input } from '../../ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import { RadioGroup, RadioGroupItem } from '../../ui/radio-group';
+import { Button } from '../../ui/button';
 import { ChallengeScope, DiscordChannel } from '../../../types';
 
 interface HDDialogCreateChallengeProps {
