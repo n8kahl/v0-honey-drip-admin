@@ -1597,36 +1597,71 @@ async function updatePerformanceMetrics(signal: CompositeSignal) {
 
 ---
 
-### Phase 5: Composite Scanner Engine (6-8 hours)
+### Phase 5: Composite Scanner Engine (COMPLETE ✅)
+**Status**: Completed 2025-11-21
 **Goal**: Main scanner that orchestrates everything
 
-**Tasks**:
-1. **Scanner Core** (3-4 hours)
-   - Create `src/lib/composite/CompositeScanner.ts`
-   - Universal pre-filtering
-   - Opportunity detection orchestration
-   - Scoring and ranking
-   - Signal generation
+**Completed Tasks**:
+1. **Scanner Core** ✅
+   - [x] Created `src/lib/composite/CompositeScanner.ts` (main orchestration engine)
+   - [x] Universal pre-filtering (market hours, RVOL, spread, blacklist)
+   - [x] Opportunity detection orchestration (runs all 17 detectors)
+   - [x] Scoring and ranking (base scores + style-specific scores)
+   - [x] Signal generation with full metadata
 
-2. **Threshold Management** (1 hour)
-   - Configurable thresholds
-   - Per-symbol overrides (SPX/NDX)
-   - Cooldown tracking
+2. **Threshold Management** ✅
+   - [x] Created `src/lib/composite/ScannerConfig.ts`
+   - [x] Configurable thresholds (base score, style score, risk/reward)
+   - [x] Per-asset-class overrides (SPX/NDX stricter thresholds)
+   - [x] Per-opportunity-type overrides (gamma strategies require higher scores)
+   - [x] Universal filters (market hours, liquidity, spread)
 
-3. **Signal Deduplication** (1 hour)
-   - Bar-time-key generation
-   - Recent signal tracking
-   - Cooldown enforcement
+3. **Signal Deduplication** ✅
+   - [x] Created `src/lib/composite/SignalDeduplication.ts`
+   - [x] Bar-time-key generation for idempotent signals
+   - [x] Recent signal tracking with in-memory cache
+   - [x] Cooldown enforcement (15 minutes default)
+   - [x] Max signals per hour limit (2 default)
+   - [x] Automatic cleanup of old signals
 
-4. **Testing** (2 hours)
-   - End-to-end scanner test
-   - Backtest against historical data
-   - Performance benchmarks
+4. **Signal Interface** ✅
+   - [x] Created `src/lib/composite/CompositeSignal.ts`
+   - [x] Complete signal type definitions
+   - [x] Risk/reward calculation types
+   - [x] Style scoring result types
+   - [x] Helper functions (formatOpportunityType, formatConfluence)
+
+5. **Testing** ✅
+   - [x] Created `CompositeScanner.test.ts` (comprehensive scanner tests)
+   - [x] Created `SignalDeduplication.test.ts` (cooldown and dedup tests)
+   - [x] Test coverage for filtering, detection, scoring, deduplication
+   - [x] Mock data helpers for testing
+   - ⏳ Backtest against historical data (deferred to Phase 6)
+   - ⏳ Performance benchmarks (deferred to Phase 6)
 
 **Deliverables**:
-- `CompositeScanner` class
-- Configuration management
-- Comprehensive tests
+- ✅ `CompositeScanner` class (407 lines)
+- ✅ `CompositeSignal` interface (179 lines)
+- ✅ `ScannerConfig` with thresholds (246 lines)
+- ✅ `SignalDeduplication` manager (315 lines)
+- ✅ Comprehensive test suite (400+ lines)
+- ✅ Full integration with Phase 3 detectors
+- ✅ Updated `src/lib/composite/index.ts` exports
+
+**Notes**:
+- Scanner processes symbols through 8-step pipeline:
+  1. Universal pre-filtering
+  2. Options data fetch (if needed)
+  3. Opportunity detection
+  4. Scoring and ranking
+  5. Risk/reward calculation
+  6. Threshold validation
+  7. Deduplication check
+  8. Signal generation
+- Default thresholds: 70/100 base score, 75/100 style score, 1.5:1 R:R
+- SPX/NDX thresholds: 75/100 base score, 80/100 style score, 1.8:1 R:R
+- Placeholder trading style profiles (Phase 4 will implement full profiles)
+- Ready for Phase 6 (Database & Backend integration)
 
 ---
 
