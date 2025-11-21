@@ -7,8 +7,8 @@ import { formatPercent, cn } from '../../../lib/utils';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { CompositeSignal } from '../../../lib/composite/CompositeSignal';
-import { WatchlistRecapCard } from '../WatchlistRecapCard';
-import MobileWatchlist from '../Watchlist/MobileWatchlist';
+import { WatchlistRecapCard } from '../../WatchlistRecapCard';
+import MobileWatchlist from '../../Watchlist/MobileWatchlist';
 import { useEnrichedMarketSession } from '../../../stores/marketDataStore';
 
 interface HDPanelWatchlistProps {
