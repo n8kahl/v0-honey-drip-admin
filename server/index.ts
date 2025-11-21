@@ -161,7 +161,7 @@ app.get('/api/health', async (_req: Request, res: Response) => {
       const { data, error } = await supabase
         .from('scanner_heartbeat')
         .select('*')
-        .eq('id', 'main_scanner')
+        .eq('id', 'composite_scanner')
         .maybeSingle();
 
       if (!error && data) {

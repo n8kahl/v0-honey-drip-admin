@@ -8,17 +8,40 @@
  * - Total symbols being scanned
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useMarketDataStore } from '../stores/marketDataStore';
 import { cn } from '../lib/utils';
+import { Activity } from 'lucide-react';
 
 export function LiveStatusBar() {
   // Get WebSocket connection status
   const wsStatus = useMarketDataStore((state) => state.wsConnection.status);
   const wsConnected = wsStatus === 'connected' || wsStatus === 'authenticated';
-  
+
   // Get market status
   const marketStatus = useMarketDataStore((state) => state.marketStatus);
+
+  // Scanner health monitoring
+  const [scannerHealthy, setScannerHealthy] = useState(false);
+
+  useEffect(() => {
+    const checkScanner = async () => {
+      try {
+        const res = await fetch('/api/health');
+        const health = await res.json();
+        setScannerHealthy(health.services.scanner);
+      } catch (err) {
+        setScannerHealthy(false);
+      }
+    };
+
+    // Check immediately
+    checkScanner();
+
+    // Check every minute
+    const interval = setInterval(checkScanner, 60000);
+    return () => clearInterval(interval);
+  }, []);
   
   // Get all symbols and calculate active setups
   const symbols = useMarketDataStore((state) => state.symbols);
@@ -126,6 +149,25 @@ export function LiveStatusBar() {
             {stats.totalSymbols}
           </span>
           <span>{stats.totalSymbols === 1 ? 'symbol' : 'symbols'}</span>
+        </div>
+
+        {/* Separator */}
+        <div className="w-px h-3 bg-[var(--border-hairline)]" />
+
+        {/* Scanner Status */}
+        <div className="flex items-center gap-1.5">
+          <Activity className={cn(
+            'w-3 h-3',
+            scannerHealthy ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
+          )} />
+          <span className="text-[10px] font-mono">
+            Scanner: <span className={cn(
+              'font-medium',
+              scannerHealthy ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
+            )}>
+              {scannerHealthy ? 'Active' : 'Down'}
+            </span>
+          </span>
         </div>
       </div>
     </div>

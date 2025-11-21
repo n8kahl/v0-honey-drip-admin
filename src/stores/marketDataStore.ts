@@ -243,7 +243,10 @@ interface MarketDataStore {
   
   /** Handle aggregate bar message */
   handleAggregateBar: (msg: MassiveAggregateMessage) => void;
-  
+
+  /** Handle real-time quote update (price changes without bar close) */
+  handleQuoteUpdate: (symbol: string, price: number) => void;
+
   /** Subscribe to additional symbol */
   subscribe: (symbol: string) => void;
   
@@ -323,7 +326,7 @@ interface MarketDataStore {
 const MACRO_SYMBOLS = ['SPX', 'NDX', 'VIX'];
 const DEFAULT_PRIMARY_TIMEFRAME: Timeframe = '1m';
 const MAX_CANDLES_PER_TIMEFRAME = 500; // Memory limit
-const STALE_THRESHOLD_MS = 10000; // 10 seconds
+const STALE_THRESHOLD_MS = 30000; // 30 seconds
 const MAX_RECONNECT_ATTEMPTS = 10;
 const INITIAL_RECONNECT_DELAY = 1000; // 1 second
 const MAX_RECONNECT_DELAY = 30000; // 30 seconds
@@ -580,7 +583,30 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Merge bar into store
         get().mergeBar(symbol, timeframe, bar);
       },
-      
+
+      /**
+       * Handle real-time quote updates (price changes without bar close)
+       * Updates lastUpdated timestamp to prevent false "stale" indicators
+       */
+      handleQuoteUpdate: (symbol: string, price: number) => {
+        const normalized = symbol.toUpperCase();
+
+        set(
+          produce((draft) => {
+            // Create symbol data if doesn't exist
+            if (!draft.symbols[normalized]) {
+              draft.symbols[normalized] = createEmptySymbolData(normalized);
+            }
+
+            // Update last price and timestamp
+            if (draft.symbols[normalized]) {
+              draft.symbols[normalized].lastPrice = price;
+              draft.symbols[normalized].lastUpdated = Date.now();
+            }
+          })
+        );
+      },
+
       subscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const { symbols, subscribedSymbols } = get();
@@ -814,7 +840,17 @@ export const useMarketDataStore = create<MarketDataStore>()(
         const threshold = is0DTE ? 0.002 : 0.005; // 0.2% for 0DTE, 0.5% for others
         const significantMove = priceChange > threshold;
 
-        // Skip if neither condition met
+        // Always update timestamp to prevent false "stale" indicators
+        // even if we skip heavy recomputation
+        set(
+          produce((draft) => {
+            if (draft.symbols[normalized]) {
+              draft.symbols[normalized].lastUpdated = Date.now();
+            }
+          })
+        );
+
+        // Skip heavy recomputation if neither condition met
         if (!isNewBar && !significantMove) {
           return;
         }
