@@ -7,6 +7,7 @@
 
 import { MassiveTokenManager } from './token-manager';
 import { MassiveCache } from './cache';
+import { getMetricsService } from '../../services/monitoring';
 import type {
   MassiveQuote,
   MassiveOption,
@@ -622,11 +623,20 @@ export class MassiveREST {
         const data = await response.json();
 
         // Update health metrics (success)
+        const responseTime = Date.now() - startTime;
         this.health.healthy = true;
         this.health.lastSuccess = Date.now();
         this.health.lastError = null;
         this.health.consecutiveErrors = 0;
-        this.health.responseTimeMs = Date.now() - startTime;
+        this.health.responseTimeMs = responseTime;
+
+        // Record monitoring metrics
+        try {
+          getMetricsService().recordApiRequest('massive', responseTime, true);
+          getMetricsService().recordResponseTime(responseTime);
+        } catch (e) {
+          // Ignore monitoring errors
+        }
 
         return data;
       } catch (error) {
@@ -637,6 +647,17 @@ export class MassiveREST {
         this.health.consecutiveErrors++;
         if (this.health.consecutiveErrors >= 3) {
           this.health.healthy = false;
+        }
+
+        // Record monitoring metrics (only on final failure)
+        if (attempt >= 2) {
+          try {
+            const responseTime = Date.now() - startTime;
+            getMetricsService().recordApiRequest('massive', responseTime, false);
+            getMetricsService().recordError('MassiveREST', lastError.message);
+          } catch (e) {
+            // Ignore monitoring errors
+          }
         }
 
         if (attempt < 2) {

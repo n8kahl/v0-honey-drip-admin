@@ -5,6 +5,7 @@ import { createTransport } from '../lib/massive/transport-policy';
 import type { Contract } from '../types';
 import { fetchNormalizedChain } from '../services/options';
 import { fetchQuotes as fetchUnifiedQuotes } from '../services/quotes';
+import { useMarketDataStore } from '../stores/marketDataStore';
 
 // Group contracts by expiration for backwards compatibility with old MassiveOptionsChain format
 function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain {
@@ -120,6 +121,10 @@ export function useQuotes(symbols: string[]) {
   const [quotes, setQuotes] = useState<Map<string, MassiveQuote & { asOf: number; source: 'websocket' | 'rest' }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Get marketDataStore setter to keep symbol timestamps in sync
+  const setSymbolTimestamp = useMarketDataStore(state => state.symbols);
+
   const handleUpdate = useCallback(
     (update?: MassiveQuote | null, source: 'websocket' | 'rest' = 'rest', timestamp = Date.now()) => {
       if (!update) return;
@@ -137,9 +142,28 @@ export function useQuotes(symbols: string[]) {
         });
         return next;
       });
+
+      // Update marketDataStore timestamp to prevent "stale" status
+      try {
+        const symbolData = setSymbolTimestamp[update.symbol];
+        if (symbolData) {
+          useMarketDataStore.setState((state) => ({
+            symbols: {
+              ...state.symbols,
+              [update.symbol]: {
+                ...symbolData,
+                lastUpdated: Date.now(),
+              },
+            },
+          }));
+        }
+      } catch (e) {
+        // Ignore if symbol not in store
+      }
+
       setError(null);
     },
-    []
+    [setSymbolTimestamp]
   );
 
   useEffect(() => {
