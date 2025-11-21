@@ -249,7 +249,10 @@ interface MarketDataStore {
   
   /** Unsubscribe from symbol */
   unsubscribe: (symbol: string) => void;
-  
+
+  /** Flush pending watchlist updates (debounced batch update) */
+  flushWatchlistUpdate: () => void;
+
   /** Update candles for a symbol/timeframe */
   updateCandles: (symbol: string, timeframe: Timeframe, candles: Candle[]) => void;
   
