@@ -19,8 +19,6 @@ import { HDConfluenceDetailPanel } from '../dashboard/HDConfluenceDetailPanel';
 import { useEffect } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { addTradeUpdate } from '../../../lib/supabase/database';
-import { StrategySignalBadge } from './StrategySignalBadge';
-import type { SymbolSignals } from '../../../hooks/useStrategyScanner';
 import { useMacroContext } from '../../../hooks/useIndicesAdvanced';
 
 interface HDEnteredTradeCardProps {
@@ -34,10 +32,9 @@ interface HDEnteredTradeCardProps {
     liquidity?: MassiveLiquidityMetrics;
   };
   onAutoTrim?: () => void;
-  signals?: SymbolSignals;
 }
 
-export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, signals }: HDEnteredTradeCardProps) {
+export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim }: HDEnteredTradeCardProps) {
   const toast = useAppToast();
   const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
     trade.contract.id,
@@ -52,7 +49,7 @@ export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, s
     if (tp.justCrossed && trade) {
       const pct = Math.min(99, Math.round(tp.progress * 100));
   const dte = trade.contract.daysToExpiry ?? Math.max(0, Math.ceil((new Date(trade.contract.expiry).getTime() - Date.now()) / (1000*60*60*24)));
-      const confidence = signals?.latestConfidence ?? undefined;
+      const confidence = undefined; // Removed: old signal system
       const macroSummary = macro
         ? `${macro.marketRegime} • ${macro.riskBias} bias • VIX ${macro.vix.level}`
         : undefined;
@@ -151,8 +148,6 @@ export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim, s
         
         {/* Right-side badges: P&L and TP proximity */}
         <div className="flex flex-col items-end gap-1">
-          {/* Strategy Signals badge (if any) */}
-          <StrategySignalBadge symbolSignals={signals} compact className="self-end" />
           <div className={cn(
             'flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] flex-shrink-0',
             isPositive ? 'bg-[var(--accent-positive)]/10' : 'bg-[var(--accent-negative)]/10'
