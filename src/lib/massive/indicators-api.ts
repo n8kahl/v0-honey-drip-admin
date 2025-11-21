@@ -170,26 +170,6 @@ export async function fetchIndicators(
   }
 }
 
-// CENTRALIZED - REMOVE: Duplicate EMA calculation, use src/lib/indicators.ts instead
-// Original function temporarily disabled - ALL CODE REMOVED to stop flood
-// Helper indicator calculations
-// function calculateEMA(data: number[], period: number): number[] {
-//   const result: number[] = [];
-//   const multiplier = 2 / (period + 1);
-//   
-//   // Start with SMA
-//   let ema = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
-//   result.push(ema);
-//   
-//   // Calculate EMA for rest of data
-//   for (let i = period; i < data.length; i++) {
-//     ema = (data[i] - ema) * multiplier + ema;
-//     result.push(ema);
-//   }
-//   
-//   return result;
-// }
-
 function calculateSMA(data: number[], period: number): number[] {
   const result: number[] = [];
   

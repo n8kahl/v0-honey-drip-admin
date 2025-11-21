@@ -222,36 +222,6 @@ export default function App({ initialTab = 'live' }: AppProps) {
     }
   }, [initialTab]);
 
-  // CENTRALIZED - REMOVE: Simulated price updates replaced by real-time marketDataStore quotes
-  // useEffect(() => {
-  //   const interval = setInterval(() => {
-  //     const enteredTrades = activeTrades.filter((t) => t.state === 'ENTERED');
-  //     if (enteredTrades.length === 0) return;
-  //     
-  //     enteredTrades.forEach((trade) => {
-  //       if (!trade.currentPrice || !trade.entryPrice) return;
-  //       
-  //       const priceChange = (Math.random() - 0.5) * 0.04;
-  //       const newCurrentPrice = trade.currentPrice * (1 + priceChange);
-  //       const newMovePercent = ((newCurrentPrice - trade.entryPrice) / trade.entryPrice) * 100;
-  //       
-  //       // Update trade in store
-  //       useTradeStore.getState().updateTrade(trade.id, {
-  //         currentPrice: newCurrentPrice,
-  //         movePercent: newMovePercent,
-  //       });
-  //       
-  //       // Mark as updated for flash effect
-  //       useTradeStore.getState().markTradeAsUpdated(trade.id);
-  //     });
-  //     
-  //     // Clear flash after brief moment
-  //     setTimeout(() => useTradeStore.getState().clearUpdatedFlags(), 300);
-  //   }, 2000);
-  //   
-  //   return () => clearInterval(interval);
-  // }, [activeTrades]);
-
   if (loading) {
     return (
       <div className="min-h-screen w-full bg-[var(--bg-base)] flex items-center justify-center">

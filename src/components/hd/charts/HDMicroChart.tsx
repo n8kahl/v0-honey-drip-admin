@@ -77,25 +77,6 @@ async function fetchReal5MinData(ticker: string): Promise<ChartDataPoint[]> {
   });
 }
 
-// CENTRALIZED - REMOVE: Duplicate EMA calculation, use src/lib/indicators.ts instead
-// Helper function to calculate simple EMA
-// function calculateEMA(prices: number[], period: number): number {
-//   if (prices.length === 0) return 0;
-//   if (prices.length < period) {
-//     // Use simple average if not enough data
-//     return prices.reduce((sum, price) => sum + price, 0) / prices.length;
-//   }
-//   
-//   const multiplier = 2 / (period + 1);
-//   let ema = prices[0];
-//   
-//   for (let i = 1; i < prices.length; i++) {
-//     ema = (prices[i] - ema) * multiplier + ema;
-//   }
-//   
-//   return ema;
-// }
-
 export function HDMicroChart({ 
   ticker, 
   currentPrice, 

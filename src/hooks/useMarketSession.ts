@@ -32,18 +32,10 @@ export function useMarketSession() {
       setLoading(false);
     }
   };
-  
-  // CENTRALIZED - REMOVE: Market session polling replaced by marketDataStore
+
   useEffect(() => {
     // Fetch immediately
     fetchSession();
-    
-    // DEPRECATED: Poll at interval - use marketDataStore.marketStatus instead
-    // const interval = setInterval(fetchSession, POLL_INTERVAL);
-    
-    return () => {
-      // clearInterval(interval);
-    };
   }, []);
   
   // Check if data is stale
