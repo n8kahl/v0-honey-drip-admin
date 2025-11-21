@@ -1,5 +1,5 @@
 import { formatTime } from '../../lib/utils';
-import { HDBadgeFreshness } from './HDBadgeFreshness';
+import { HDBadgeFreshness } from '../signals/HDBadgeFreshness';
 
 interface HDDataAsOfProps {
   timestamp: Date;

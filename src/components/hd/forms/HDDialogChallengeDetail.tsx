@@ -3,7 +3,7 @@ import { AppSheet } from '../ui/AppSheet';
 import { Challenge, Trade, DiscordChannel } from '../../types';
 import { formatPrice, formatPercent, cn } from '../../lib/utils';
 import { Download, Share2, TrendingUp, TrendingDown } from 'lucide-react';
-import { HDButton } from './HDButton';
+import { HDButton } from '../common/HDButton';
 import { formatChallengeDiscordExport } from '../../lib/discordFormatter';
 import { useAppToast } from '../../hooks/useAppToast';
 

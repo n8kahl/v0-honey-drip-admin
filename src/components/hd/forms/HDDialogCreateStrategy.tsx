@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AppSheet } from '../ui/AppSheet';
 import { Label } from '../ui/label';
-import { HDButton } from './HDButton';
+import { HDButton } from '../common/HDButton';
 import type { StrategyDefinition, StrategyCategory, EntrySide } from '../../types/strategy';
 
 interface HDDialogCreateStrategyProps {

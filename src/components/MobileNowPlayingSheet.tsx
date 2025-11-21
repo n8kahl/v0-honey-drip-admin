@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Trade, TradeState } from '../types';
-import { HDTagTradeType } from './hd/HDTagTradeType';
-import { HDStrategyBadge } from './hd/HDStrategyBadge';
+import { HDTagTradeType } from './hd/common/HDTagTradeType';
 import { formatPercent, formatPrice, cn } from '../lib/utils';
 import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, X } from 'lucide-react';
 import { useSymbolData } from '../stores/marketDataStore';
@@ -43,19 +42,6 @@ export function MobileNowPlayingSheet({
   const __DEV__ = typeof window !== 'undefined' && (import.meta as any)?.env?.DEV;
 
   const [expanded, setExpanded] = useState(state === 'LOADED' || state === 'ENTERED');
-  
-  // Get chart scroll function from uiStore
-  const scrollChartToBar = useUIStore((state) => state.scrollChartToBar);
-  
-  // Handle badge click - scroll chart to signal bar
-  const handleBadgeClick = (signal: any) => {
-    if (signal.barTimeKey) {
-      console.log('[v0] Mobile: Strategy badge clicked, scrolling to bar:', signal.barTimeKey);
-      scrollChartToBar(signal.barTimeKey);
-    } else {
-      console.warn('[v0] Mobile: Signal missing barTimeKey, cannot scroll chart');
-    }
-  };
 
   if (__DEV__) {
     console.debug('MobileNowPlayingSheet init', {
@@ -192,23 +178,6 @@ export function MobileNowPlayingSheet({
                   Watching
                 </span>
               </div>
-              {(() => {
-                const symbolData = useSymbolData(ticker);
-                const activeSignals = symbolData?.strategySignals?.filter(s => s.status === 'ACTIVE') || [];
-                return activeSignals.length > 0 ? (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs text-[var(--text-muted)]">Active setups:</span>
-                    {activeSignals.map((signal) => (
-                      <HDStrategyBadge
-                        key={signal.id}
-                        signal={signal}
-                        size="sm"
-                        onClick={() => handleBadgeClick(signal)}
-                      />
-                    ))}
-                  </div>
-                ) : null;
-              })()}
             </div>
             <p className="text-center text-xs text-[var(--text-muted)] mt-8">
               Browse contracts to load a trade idea
@@ -232,23 +201,6 @@ export function MobileNowPlayingSheet({
                   Loaded at {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
-              {(() => {
-                const symbolData = useSymbolData(trade.ticker);
-                const activeSignals = symbolData?.strategySignals?.filter(s => s.status === 'ACTIVE') || [];
-                return activeSignals.length > 0 ? (
-                  <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                    <span className="text-xs text-[var(--text-muted)]">Active setups:</span>
-                    {activeSignals.map((signal) => (
-                      <HDStrategyBadge
-                        key={signal.id}
-                        signal={signal}
-                        size="sm"
-                        onClick={() => handleBadgeClick(signal)}
-                      />
-                    ))}
-                  </div>
-                ) : null;
-              })()}
             </div>
 
             <div className="space-y-3 mb-4">

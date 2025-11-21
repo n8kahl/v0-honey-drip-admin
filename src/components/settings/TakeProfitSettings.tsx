@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react';
-import { HDCard } from '../hd/HDCard';
+import { HDCard } from '../hd/common/HDCard';
 import { useTPSettings, saveTPSettings } from '../../hooks/useTPSettings';
 import { useAuth } from '../../contexts/AuthContext';
 

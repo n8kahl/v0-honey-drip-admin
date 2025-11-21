@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Mic, MicOff } from 'lucide-react';
-import { HDCard } from '../hd/HDCard';
+import { HDCard } from '../hd/common/HDCard';
 
 export function VoiceCommandsSettings() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);

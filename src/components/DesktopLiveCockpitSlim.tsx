@@ -1,11 +1,11 @@
 import React, { useEffect } from 'react';
 import { Trade, Ticker, Challenge, DiscordChannel } from '../types';
-import { HDPanelWatchlist } from './hd/HDPanelWatchlist';
-import { HDVoiceHUD } from './hd/HDVoiceHUD';
-import { HDDialogChallengeDetail } from './hd/HDDialogChallengeDetail';
-import { HDMacroPanel } from './hd/HDMacroPanel';
-import { HDCommandRail } from './hd/HDCommandRail';
-import { HDActiveTradesPanel } from './hd/HDActiveTradesPanel';
+import { HDPanelWatchlist } from './hd/dashboard/HDPanelWatchlist';
+import { HDVoiceHUD } from './hd/voice/HDVoiceHUD';
+import { HDDialogChallengeDetail } from './hd/forms/HDDialogChallengeDetail';
+import { HDMacroPanel } from './hd/dashboard/HDMacroPanel';
+import { HDCommandRail } from './hd/layout/HDCommandRail';
+import { HDActiveTradesPanel } from './hd/dashboard/HDActiveTradesPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
 

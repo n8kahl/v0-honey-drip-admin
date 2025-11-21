@@ -1,8 +1,8 @@
 import { Ticker, Trade, Challenge } from '../../types';
-import { HDRowWatchlist } from './HDRowWatchlist';
-import { HDRowTrade } from './HDRowTrade';
-import { HDRowChallenge } from './HDRowChallenge';
-import { HDConfirmDialog } from './HDConfirmDialog';
+import { HDRowWatchlist } from '../cards/HDRowWatchlist';
+import { HDRowTrade } from '../cards/HDRowTrade';
+import { HDRowChallenge } from '../cards/HDRowChallenge';
+import { HDConfirmDialog } from '../forms/HDConfirmDialog';
 import { formatPercent, cn } from '../../lib/utils';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';

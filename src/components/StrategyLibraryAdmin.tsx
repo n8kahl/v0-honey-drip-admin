@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { HDCard } from './hd/HDCard';
-import { HDButton } from './hd/HDButton';
-import { HDDialogEditStrategy } from './hd/HDDialogEditStrategy';
-import { HDDialogCreateStrategy } from './hd/HDDialogCreateStrategy';
+import { HDCard } from './hd/common/HDCard';
+import { HDButton } from './hd/common/HDButton';
+import { HDDialogEditStrategy } from './hd/forms/HDDialogEditStrategy';
+import { HDDialogCreateStrategy } from './hd/forms/HDDialogCreateStrategy';
 import { useAppToast } from '../hooks/useAppToast';
 import { RefreshCw, Database, TrendingUp } from 'lucide-react';
 import { seedCoreStrategies } from '../lib/strategy/seedStrategies';

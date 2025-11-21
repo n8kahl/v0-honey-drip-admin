@@ -3,7 +3,7 @@ import { Ticker } from '../../types';
 import { AppSheet } from '../ui/AppSheet';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { HDButton } from './HDButton';
+import { HDButton } from '../common/HDButton';
 
 interface HDDialogAddTickerProps {
   open: boolean;

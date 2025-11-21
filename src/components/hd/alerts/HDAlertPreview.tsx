@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertChannels } from '../../types';
-import { HDButton } from './HDButton';
+import { HDButton } from '../common/HDButton';
 import { Check } from 'lucide-react';
 import { cn } from '../../lib/utils';
 

@@ -1,6 +1,6 @@
 import { useMarketStore, useTradeStore, useSettingsStore } from '../../stores';
-import { HDRowWatchlist } from './HDRowWatchlist';
-import { HDMacroPanel } from './HDMacroPanel';
+import { HDRowWatchlist } from '../cards/HDRowWatchlist';
+import { HDMacroPanel } from '../dashboard/HDMacroPanel';
 import { HDCommandCenter } from './HDCommandCenter';
 import { Ticker } from '../../types';
 import { Plus, TrendingUp } from 'lucide-react';

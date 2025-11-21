@@ -2,7 +2,6 @@ import { Ticker } from '../../types';
 import { formatPrice, cn } from '../../lib/utils';
 import { X, Wifi, Zap } from 'lucide-react';
 import { useSymbolData } from '../../stores/marketDataStore';
-import { HDStrategyBadge } from './HDStrategyBadge';
 import { useUIStore } from '../../stores';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { useRef, useEffect } from 'react';

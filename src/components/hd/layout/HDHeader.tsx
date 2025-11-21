@@ -1,5 +1,5 @@
 import { SessionStatus } from '../../types';
-import { HDPill } from './HDPill';
+import { HDPill } from '../common/HDPill';
 import { Settings, Mic, User, LogOut, WifiOff, Wifi } from 'lucide-react';
 import { cn } from '../../lib/utils';
 const honeyDripLogo = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/hdn-l492QBW7lTUL3waoOAnhU3p8Ep7YNp.png';

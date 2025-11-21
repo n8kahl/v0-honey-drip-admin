@@ -1,4 +1,4 @@
-import { HDChip } from './HDChip';
+import { HDChip } from '../common/HDChip';
 import { cn } from '../../lib/utils';
 import { useMarketDataStore } from '../../stores/marketDataStore';
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trade, TradeState, AlertType, DiscordChannel, Challenge } from '../../types';
-import { HDAlertComposer } from '../hd/HDAlertComposer';
-import { HDQuickActions } from '../hd/HDQuickActions';
+import { HDAlertComposer } from '../hd/alerts/HDAlertComposer';
+import { HDQuickActions } from '../hd/common/HDQuickActions';
 
 interface ActiveTradesPanelProps {
   tradeState: TradeState;
