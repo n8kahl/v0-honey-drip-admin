@@ -25,8 +25,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log('[v0] autoLogin computed as:', autoLogin);
   
   // Initialize with test user if auto-login enabled
+  // Use a valid UUID for test mode to match database schema expectations
   const [user, setUser] = useState<User | null>(
-    autoLogin ? ({ id: 'test-user', email: 'test@example.com' } as any) : null
+    autoLogin ? ({ id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com' } as any) : null
   );
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(!autoLogin); // Start not loading if auto-login

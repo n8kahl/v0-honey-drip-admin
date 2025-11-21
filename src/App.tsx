@@ -93,7 +93,7 @@ export default function App() {
     activeSignals,
     loading: signalsLoading
   } = useCompositeSignals({
-    userId: user?.id || 'test-user',
+    userId: user?.id || '00000000-0000-0000-0000-000000000001',
     autoSubscribe: !!user, // Only subscribe when authenticated
     autoExpire: true, // Auto-expire old signals
   });
@@ -176,10 +176,10 @@ export default function App() {
       console.log('[v0] Loading user data from Supabase...');
       try {
         await Promise.all([
-          loadDiscordChannels((user?.id || 'test-user') as string),
-          loadChallenges((user?.id || 'test-user') as string),
-          loadWatchlist((user?.id || 'test-user') as string),
-          loadTrades((user?.id || 'test-user') as string),
+          loadDiscordChannels((user?.id || '00000000-0000-0000-0000-000000000001') as string),
+          loadChallenges((user?.id || '00000000-0000-0000-0000-000000000001') as string),
+          loadWatchlist((user?.id || '00000000-0000-0000-0000-000000000001') as string),
+          loadTrades((user?.id || '00000000-0000-0000-0000-000000000001') as string),
         ]);
       } catch (error) {
         console.error('[v0] Failed to load user data:', error);

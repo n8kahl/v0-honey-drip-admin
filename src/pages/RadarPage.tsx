@@ -13,7 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
  */
 export default function RadarPage() {
   const { user } = useAuth();
-  const userId = user?.id || 'test-user';
+  const userId = user?.id || '00000000-0000-0000-0000-000000000001';
 
   return (
     <RadarLayout>
