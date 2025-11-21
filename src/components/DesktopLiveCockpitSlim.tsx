@@ -17,8 +17,7 @@ import { TradingWorkspace } from './trading/TradingWorkspace';
 import { ActiveTradesPanel } from './trading/ActiveTradesPanel';
 import { useStreamingOptionsChain } from '../hooks/useStreamingOptionsChain';
 import { Contract, OptionType } from '../types';
-
-import type { SymbolSignals } from '../hooks/useStrategyScanner';
+import type { CompositeSignal } from '../lib/composite/CompositeSignal';
 
 interface DesktopLiveCockpitSlimProps {
   watchlist: Ticker[];
@@ -41,7 +40,7 @@ interface DesktopLiveCockpitSlimProps {
   onOpenActiveTrade?: (tradeId: string) => void;
   onOpenReviewTrade?: (tradeId: string) => void;
   activeTab?: 'live' | 'active' | 'history' | 'settings';
-  signalsBySymbol?: Map<string, SymbolSignals>; // Strategy signals
+  compositeSignals?: CompositeSignal[]; // Composite trade signals
 }
 
 export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
@@ -53,7 +52,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onAddTicker,
     onRemoveTicker,
     onAddChallenge,
-    signalsBySymbol,
+    compositeSignals,
     onRemoveChallenge,
     onTradesChange,
     onExitedTrade,
@@ -172,7 +171,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onRemoveLoadedTrade={(trade: Trade) => actions.setActiveTrades(prev => prev.filter(t => t.id !== trade.id))}
             onOpenActiveTrade={onOpenActiveTrade}
             onOpenReviewTrade={onOpenReviewTrade}
-            signalsBySymbol={signalsBySymbol}
+            compositeSignals={compositeSignals}
           />
         </div>
         {/* Options chain area */}
@@ -208,13 +207,13 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               showAlert={showAlert}
               confluence={undefined}
               alertType={alertType}
-              onContractSelect={(contract, confluenceData) => 
+              onContractSelect={(contract, confluenceData) =>
                 actions.handleContractSelect(contract, confluenceData)
               }
               onEnterTrade={actions.handleEnterTrade}
               onDiscard={actions.handleDiscard}
               onAutoTrim={() => actions.handleTrim()}
-              signalsBySymbol={signalsBySymbol}
+              compositeSignals={compositeSignals}
             />
           )}
         </div>
