@@ -1,5 +1,4 @@
-const MASSIVE_PROXY_TOKEN = import.meta.env.VITE_MASSIVE_PROXY_TOKEN;
-let warnedAboutMissingToken = false;
+import { massive } from './index';
 
 export class MassiveError extends Error {
   status: number;
@@ -12,30 +11,29 @@ export class MassiveError extends Error {
   }
 }
 
-function buildHeaders(init?: RequestInit): Headers {
+async function buildHeaders(init?: RequestInit): Promise<Headers> {
   const headers = new Headers(init?.headers ?? {});
 
-  if (MASSIVE_PROXY_TOKEN) {
-    headers.set('x-massive-proxy-token', MASSIVE_PROXY_TOKEN);
-  } else if (!warnedAboutMissingToken) {
-    warnedAboutMissingToken = true;
-    console.warn(
-      '[v0] VITE_MASSIVE_PROXY_TOKEN is not set, /api/massive requests will 403 until the token is provided.'
-    );
+  try {
+    const tokenManager = massive.getTokenManager();
+    const token = await tokenManager.getToken();
+    headers.set('x-massive-proxy-token', token);
+  } catch (error) {
+    console.error('[v0] Failed to get ephemeral token:', error);
   }
 
   return headers;
 }
 
-export function withMassiveProxyInit(init?: RequestInit): RequestInit {
+export async function withMassiveProxyInit(init?: RequestInit): Promise<RequestInit> {
   return {
     ...init,
-    headers: buildHeaders(init),
+    headers: await buildHeaders(init),
   };
 }
 
 export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit) {
-  const response = await fetch(input, withMassiveProxyInit(init));
+  const response = await fetch(input, await withMassiveProxyInit(init));
 
   if (!response.ok) {
     const text = await response.text();
@@ -77,7 +75,7 @@ export async function massiveFetch(input: RequestInfo | URL, init?: RequestInit)
 const API_BASE = '/api/massive';
 
 async function fetchJSON(url: string) {
-  const response = await fetch(url, withMassiveProxyInit());
+  const response = await fetch(url, await withMassiveProxyInit());
   if (!response.ok) {
     throw new Error(`Massive ${response.status}: ${await response.text()}`);
   }
