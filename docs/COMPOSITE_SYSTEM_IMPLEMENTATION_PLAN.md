@@ -1665,36 +1665,74 @@ async function updatePerformanceMetrics(signal: CompositeSignal) {
 
 ---
 
-### Phase 6: Database & Backend (4-6 hours)
+### Phase 6: Database & Backend (COMPLETE ✅)
+**Status**: Completed 2025-11-21
 **Goal**: Persist signals and track performance
 
-**Tasks**:
-1. **Database Migration** (1 hour)
-   - Create migration SQL for `composite_signals` table
-   - Create migration SQL for `signal_performance_metrics` table
-   - Run migrations in Supabase
+**Completed Tasks**:
+1. **Database Migration** ✅
+   - [x] Created `scripts/006_add_composite_signals.sql` (600+ lines)
+   - [x] Defined `composite_signals` table with full lifecycle tracking
+   - [x] Defined `signal_performance_metrics` table for analytics
+   - [x] Added indexes for optimal query performance
+   - [x] Implemented RLS policies for security
+   - [x] Added triggers for auto-updating timestamps
+   - ⏳ Run migrations in Supabase (manual step for deployment)
 
-2. **Signal Persistence** (2 hours)
-   - Create `src/lib/supabase/compositeSi gnals.ts`
-   - Insert signal function
-   - Update signal status function
-   - Query functions
+2. **Signal Persistence** ✅
+   - [x] Created `src/lib/supabase/compositeSignals.ts` (630+ lines)
+   - [x] Implemented `insertCompositeSignal()` with duplicate detection
+   - [x] Implemented `updateCompositeSignal()` for status changes
+   - [x] Implemented query functions: `getActiveSignals()`, `getSignals()`, `getSignalById()`
+   - [x] Implemented trade lifecycle functions: `fillSignal()`, `exitSignal()`, `dismissSignal()`
+   - [x] Implemented `updateSignalExcursions()` for MFE/MAE tracking
+   - [x] Implemented `expireOldSignals()` for cleanup
+   - [x] Type-safe row/signal conversions
 
-3. **Performance Analytics** (2 hours)
-   - Implement `updatePerformanceMetrics()`
-   - Daily aggregation
-   - Win rate calculation
-   - P&L tracking
+3. **Performance Analytics** ✅
+   - [x] Created `src/lib/supabase/performanceAnalytics.ts` (450+ lines)
+   - [x] Implemented `calculatePerformanceMetrics()` for daily aggregation
+   - [x] Implemented `aggregateSignalMetrics()` helper with full statistics
+   - [x] Implemented `updatePerformanceMetricsForSignal()` auto-update on exit
+   - [x] Implemented `recalculatePerformanceMetrics()` for backfilling
+   - [x] Implemented `getPerformanceSummary()` for dashboard stats
+   - [x] Win rate, P&L, profit factor, MFE/MAE calculation
+   - [x] Exit distribution tracking (T1/T2/T3/STOP/MANUAL/EXPIRED)
 
-4. **Realtime Subscriptions** (1 hour)
-   - Setup Supabase realtime for `composite_signals`
-   - Client subscription hooks
+4. **Realtime Subscriptions** ✅
+   - [x] Created `src/hooks/useCompositeSignals.ts` (330+ lines)
+   - [x] Implemented Supabase realtime subscription for composite_signals
+   - [x] Auto-update state on INSERT/UPDATE/DELETE events
+   - [x] Implemented actions: addSignal, dismiss, fill, exit, markAlerted
+   - [x] Auto-expire old signals on mount
+   - [x] Loading and error states
+   - [x] Type-safe signal transformations
 
 **Deliverables**:
-- Database migrations
-- Signal persistence layer
-- Performance analytics
-- Realtime subscriptions
+- ✅ Database migration SQL (600+ lines)
+- ✅ `compositeSignals.ts` persistence layer (630+ lines)
+- ✅ `performanceAnalytics.ts` aggregation engine (450+ lines)
+- ✅ `useCompositeSignals.ts` React hook (330+ lines)
+- ✅ Complete CRUD operations for signals
+- ✅ Real-time subscription support
+- ✅ Performance metrics calculation
+- ✅ Zero TypeScript compilation errors
+- ⏳ Database migration execution (deployment step)
+
+**Notes**:
+- Database schema supports full trade lifecycle:
+  - Signal generation (ACTIVE)
+  - Trade entry (FILLED)
+  - Trade management (MFE/MAE tracking)
+  - Trade exit (STOPPED/TARGET_HIT)
+  - Signal expiration/dismissal
+- Performance metrics aggregated by:
+  - Date (daily rollup)
+  - User/Symbol/OpportunityType/Style combinations
+  - Enables detailed performance analysis
+- RLS policies ensure users only see their own signals
+- Realtime subscriptions enable instant UI updates
+- Ready for Phase 7 (Server Scanner Worker)
 
 ---
 
