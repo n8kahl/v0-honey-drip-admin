@@ -20,7 +20,6 @@ import { immer } from 'zustand/middleware/immer';
 import { produce } from 'immer';
 import { Bar } from '../types/shared';
 import { massive } from '../lib/massive';
-import { StrategySignal } from '../types/strategy';
 import { 
   calculateEMA, 
   calculateVWAP, 
@@ -148,9 +147,6 @@ export interface SymbolData {
   // Confluence scoring
   confluence: ConfluenceScore;
 
-  // Strategy signals
-  strategySignals: StrategySignal[];
-
   // Greeks for tracked contract (if monitoring one)
   greeks?: Greeks;
 
@@ -249,9 +245,6 @@ interface MarketDataStore {
   
   /** Update confluence score */
   updateConfluence: (symbol: string, confluence: Partial<ConfluenceScore>) => void;
-  
-  /** Add strategy signal */
-  addStrategySignal: (symbol: string, signal: StrategySignal) => void;
 
   /** Update Greeks for a symbol */
   updateGreeks: (symbol: string, greeks: Greeks) => void;
@@ -286,9 +279,6 @@ interface MarketDataStore {
   
   /** Get confluence score */
   getConfluence: (symbol: string) => ConfluenceScore | undefined;
-  
-  /** Get strategy signals */
-  getStrategySignals: (symbol: string) => StrategySignal[];
 
   /** Get MTF trend analysis */
   getMTFTrend: (symbol: string) => Record<Timeframe, MTFTrend>;
@@ -403,7 +393,6 @@ function createEmptySymbolData(symbol: string): SymbolData {
       },
       lastUpdated: Date.now(),
     },
-    strategySignals: [],
     lastUpdated: Date.now(),
     isSubscribed: false,
     primaryTimeframe: DEFAULT_PRIMARY_TIMEFRAME,
@@ -805,112 +794,6 @@ function calculateAdvancedConfluence(
     },
     lastUpdated: Date.now(),
   };
-}
-
-/** Run strategy signals (placeholder - integrate with actual strategy engine) */
-function runStrategySignals(
-  symbol: string,
-  symbolData: SymbolData,
-  indicators: Indicators,
-  confluence: ConfluenceScore
-): StrategySignal[] {
-  const signals: StrategySignal[] = [];
-  
-  // Simple pattern detection for immediate feedback (useStrategyScanner handles full strategies)
-  const { ema9, ema20, rsi14 } = indicators;
-  const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
-  const strategyDebug = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
-  const log = (msg: string, extra?: any) => {
-    // Logging disabled in production
-  };
-
-  const startTs = Date.now();
-  log(`Checking signals for ${symbol}` , {
-    candleCount: primaryCandles.length,
-    lastClose: primaryCandles[primaryCandles.length - 1]?.close,
-    ema9: ema9?.toFixed(4),
-    ema20: ema20?.toFixed(4),
-    rsi14: rsi14?.toFixed(2),
-    confluenceOverall: confluence.overall,
-    confluenceComponents: confluence.components,
-    hasEnoughData: primaryCandles.length >= 2 && !!ema9 && !!ema20,
-  });
-  
-  if (primaryCandles.length >= 2 && ema9 && ema20) {
-    const lastCandle = primaryCandles[primaryCandles.length - 1];
-    const prevCandle = primaryCandles[primaryCandles.length - 2];
-    
-    // Calculate previous EMAs properly
-    const prevCloses = primaryCandles.slice(0, -1).map(c => c.close);
-    const prevEma9Values = calculateEMA(prevCloses, 9);
-    const prevEma20Values = calculateEMA(prevCloses, 20);
-    const prevEma9 = prevEma9Values[prevEma9Values.length - 1];
-    const prevEma20 = prevEma20Values[prevEma20Values.length - 1];
-    
-    const bullishCross = prevEma9 < prevEma20 && ema9 > ema20;
-    const bearishCross = prevEma9 > prevEma20 && ema9 < ema20;
-    const emaGap = Math.abs(ema9 - ema20);
-    const prevEmaGap = Math.abs(prevEma9 - prevEma20);
-    log(`EMA state ${symbol}`, {
-      prevEma9: prevEma9?.toFixed(4),
-      prevEma20: prevEma20?.toFixed(4),
-      currentEma9: ema9.toFixed(4),
-      currentEma20: ema20.toFixed(4),
-      prevEmaGap: prevEmaGap.toFixed(4),
-      emaGap: emaGap.toFixed(4),
-      bullishCross,
-      bearishCross,
-      lastCandleTime: new Date(lastCandle.time || Date.now()).toISOString(),
-      lastClose: lastCandle.close,
-      prevClose: prevCandle.close,
-      candleVol: lastCandle.volume,
-    });
-    
-    // TEMPORARILY LOWER THRESHOLD TO 30% for testing
-    const minConfluence = 30;
-    
-    // Bullish crossover with confluence confirmation
-    if (bullishCross && confluence.overall >= minConfluence) {
-      signals.push({
-        id: `${symbol}-ema-cross-bull-${lastCandle.time}`,
-        symbol,
-        strategy: 'EMA Crossover',
-        signal: 'BUY',
-        confidence: Math.min(confluence.overall, 79), // Cap at "setup" level
-        timestamp: lastCandle.time || Date.now(),
-        reason: `EMA 9/20 bullish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
-        price: lastCandle.close,
-      } as any);
-      log(`SETUP DETECTED bullish crossover ${symbol} @${lastCandle.close.toFixed(2)} conf=${confluence.overall}`);
-    }
-    
-    // Bearish crossover with confluence confirmation
-    if (bearishCross && confluence.overall >= minConfluence) {
-      signals.push({
-        id: `${symbol}-ema-cross-bear-${lastCandle.time}`,
-        symbol,
-        strategy: 'EMA Crossover',
-        signal: 'SELL',
-        confidence: Math.min(confluence.overall, 79),
-        timestamp: lastCandle.time || Date.now(),
-        reason: `EMA 9/20 bearish cross | Conf: ${confluence.overall}% | RSI: ${rsi14?.toFixed(1) || 'N/A'}`,
-        price: lastCandle.close,
-      } as any);
-      log(`SETUP DETECTED bearish crossover ${symbol} @${lastCandle.close.toFixed(2)} conf=${confluence.overall}`);
-    }
-    
-    if (signals.length === 0) {
-      const reason = bullishCross || bearishCross
-        ? `cross detected but confluence ${confluence.overall} < ${minConfluence}`
-        : 'no valid EMA cross pattern';
-      log(`No signals for ${symbol}: ${reason}`);
-    }
-  } else {
-    log(`Not enough data: candles=${primaryCandles.length} ema9=${!!ema9} ema20=${!!ema20}`);
-  }
-  const duration = Date.now() - startTs;
-  log(`Finished evaluation for ${symbol} in ${duration}ms (signals=${signals.length})`);
-  return signals;
 }
 
 // ============================================================================
@@ -1332,11 +1215,8 @@ export const useMarketDataStore = create<MarketDataStore>()(
         
         // ===== Step 3: Calculate enhanced confluence score =====
         const confluence = calculateAdvancedConfluence(normalized, symbolData, indicators, mtfTrend);
-        
-        // ===== Step 4: Run strategy signals =====
-        const newSignals = runStrategySignals(normalized, symbolData, indicators, confluence);
-        
-        // ===== Step 5: Update state immutably using immer =====
+
+        // ===== Step 4: Update state immutably using immer =====
         set(
           produce((draft) => {
             const sym = draft.symbols[normalized];
@@ -1350,12 +1230,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
             
             // Update confluence
             sym.confluence = confluence;
-            
-            // Update strategy signals (keep last 10)
-            if (newSignals.length > 0) {
-              sym.strategySignals = [...newSignals, ...sym.strategySignals].slice(0, 10);
-            }
-            
+
             // Update timestamp
             sym.lastUpdated = Date.now();
           })
@@ -1379,27 +1254,6 @@ export const useMarketDataStore = create<MarketDataStore>()(
                 ...confluenceUpdate,
                 lastUpdated: Date.now(),
               },
-            },
-          },
-        });
-      },
-      
-      addStrategySignal: (symbol: string, signal: StrategySignal) => {
-        const normalized = symbol.toUpperCase();
-        const { symbols } = get();
-        const symbolData = symbols[normalized];
-
-        if (!symbolData) return;
-
-        // Add signal and keep only last 10
-        const updatedSignals = [signal, ...symbolData.strategySignals].slice(0, 10);
-
-        set({
-          symbols: {
-            ...symbols,
-            [normalized]: {
-              ...symbolData,
-              strategySignals: updatedSignals,
             },
           },
         });
@@ -1569,13 +1423,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
         const symbolData = get().symbols[normalized];
         return symbolData?.confluence;
       },
-      
-      getStrategySignals: (symbol: string) => {
-        const normalized = symbol.toUpperCase();
-        const symbolData = get().symbols[normalized];
-        return symbolData?.strategySignals || [];
-      },
-      
+
       getMTFTrend: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
@@ -1638,11 +1486,6 @@ export function useIndicators(symbol: string) {
 /** Get confluence score */
 export function useConfluence(symbol: string) {
   return useMarketDataStore(state => state.getConfluence(symbol));
-}
-
-/** Get strategy signals */
-export function useStrategySignals(symbol: string) {
-  return useMarketDataStore(state => state.getStrategySignals(symbol));
 }
 
 /** Get MTF trend analysis */
