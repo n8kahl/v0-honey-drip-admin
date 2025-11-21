@@ -428,3 +428,45 @@ export function detectPriceVolumeDivergence(
 
   return { type: 'none', confidence: 0 };
 }
+
+/**
+ * Detect multi-timeframe divergence from RSI snapshots
+ * Simplified version that works with pre-calculated RSI values across timeframes
+ *
+ * @param mtfRsiData Map of timeframe to RSI and price data
+ * @returns aligned: true if RSI is aligned across timeframes (all oversold or all overbought)
+ */
+export function detectMTFDivergenceFromRSI(
+  mtfRsiData: Record<string, { rsi: number; price: number }>
+): { aligned: boolean; direction: 'bullish' | 'bearish' | null } {
+  const timeframes = Object.keys(mtfRsiData);
+
+  if (timeframes.length < 2) {
+    return { aligned: false, direction: null };
+  }
+
+  const rsiValues = timeframes.map(tf => mtfRsiData[tf].rsi);
+  const avgRSI = rsiValues.reduce((sum, rsi) => sum + rsi, 0) / rsiValues.length;
+
+  // Check if all RSI values are in same zone
+  const allOversold = rsiValues.every(rsi => rsi < 35); // All oversold
+  const allOverbought = rsiValues.every(rsi => rsi > 65); // All overbought
+
+  if (allOversold) {
+    return { aligned: true, direction: 'bullish' };
+  }
+
+  if (allOverbought) {
+    return { aligned: true, direction: 'bearish' };
+  }
+
+  // Check for general alignment (all RSI values within 15 points of average)
+  const isAligned = rsiValues.every(rsi => Math.abs(rsi - avgRSI) < 15);
+
+  if (isAligned) {
+    if (avgRSI < 40) return { aligned: true, direction: 'bullish' };
+    if (avgRSI > 60) return { aligned: true, direction: 'bearish' };
+  }
+
+  return { aligned: false, direction: null };
+}
