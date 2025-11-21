@@ -1,6 +1,6 @@
 import React from 'react';
 import { Ticker, Contract, Trade, TradeState, AlertType } from '../../types';
-import type { SymbolSignals } from '../../hooks/useStrategyScanner';
+import type { CompositeSignal } from '../../lib/composite/CompositeSignal';
 import { HDLiveChart } from '../hd/HDLiveChart';
 import { HDContractGrid } from '../hd/HDContractGrid';
 import { HDLoadedTradeCard } from '../hd/HDLoadedTradeCard';
@@ -27,7 +27,7 @@ interface TradingWorkspaceProps {
   onEnterTrade: () => void;
   onDiscard: () => void;
   onAutoTrim?: () => void;
-  signalsBySymbol?: Map<string, SymbolSignals>;
+  compositeSignals?: CompositeSignal[];
 }
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
@@ -43,7 +43,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onEnterTrade,
   onDiscard,
   onAutoTrim,
-  signalsBySymbol,
+  compositeSignals,
 }) => {
   const currentPrice = activeTicker ? (watchlist.find(t => t.symbol === activeTicker.symbol)?.last || activeTicker.last) : 0;
 
@@ -200,7 +200,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
             underlyingPrice={activeTicker?.last}
             underlyingChange={activeTicker?.changePercent}
             confluence={confluence}
-            signals={signalsBySymbol?.get(currentTrade.ticker)}
+            signals={compositeSignals?.filter(s => s.symbol === currentTrade.ticker)}
           />
         </div>
       ) : showAlert ? (

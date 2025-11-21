@@ -6,7 +6,7 @@ import { HDConfirmDialog } from './HDConfirmDialog';
 import { formatPercent, cn } from '../../lib/utils';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import type { SymbolSignals } from '../../hooks/useStrategyScanner';
+import type { CompositeSignal } from '../../lib/composite/CompositeSignal';
 import { WatchlistRecapCard } from '../WatchlistRecapCard';
 import MobileWatchlist from '../Watchlist/MobileWatchlist';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
@@ -29,7 +29,7 @@ interface HDPanelWatchlistProps {
   onRemoveChallenge?: (challenge: Challenge) => void;
   onOpenActiveTrade?: (tradeId: string) => void; // Navigate to active trade
   onOpenReviewTrade?: (tradeId: string) => void; // Navigate to review trade
-  signalsBySymbol?: Map<string, SymbolSignals>; // Strategy signals
+  compositeSignals?: CompositeSignal[]; // Composite trade signals
   className?: string;
 }
 
@@ -43,7 +43,7 @@ export function HDPanelWatchlist({
   expandLoadedList,
   onTickerClick,
   onHotTradeClick,
-  signalsBySymbol,
+  compositeSignals,
   onChallengeClick,
   onAddTicker,
   onRemoveTicker,

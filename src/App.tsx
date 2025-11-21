@@ -19,7 +19,7 @@ import { useAuth } from './contexts/AuthContext';
 import { AuthPage } from './pages/AuthPage';
 import { useQuotes } from './hooks/useMassiveData';
 import { useDiscord } from './hooks/useDiscord';
-import { useStrategyScanner } from './hooks/useStrategyScanner';
+import { useCompositeSignals } from './hooks/useCompositeSignals';
 import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './stores';
 import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
 import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
@@ -79,12 +79,16 @@ export default function App({ initialTab = 'live' }: AppProps) {
   // Streaming-first with initial batched REST fill
   const watchlistSymbols = useMemo(() => getWatchlistSymbols(), [watchlist]);
   const { quotes } = useQuotes(watchlistSymbols);
-  
-  // Strategy scanner - monitors watchlist for strategy signals
-  const { signalsBySymbol, scanning } = useStrategyScanner({
-    symbols: watchlistSymbols,
-    enabled: !!user, // Only scan when authenticated
-    scanInterval: 60000, // Scan every 1 minute
+
+  // Composite signals - monitors for trade setup signals
+  const {
+    signals: compositeSignals,
+    activeSignals,
+    loading: signalsLoading
+  } = useCompositeSignals({
+    userId: user?.id || 'test-user',
+    autoSubscribe: !!user, // Only subscribe when authenticated
+    autoExpire: true, // Auto-expire old signals
   });
 
   // Define keyboard shortcuts
@@ -330,7 +334,7 @@ export default function App({ initialTab = 'live' }: AppProps) {
             onOpenReviewTrade={navigateToHistory}
             onExitedTrade={handleExitedTrade}
             activeTab={activeTab}
-            signalsBySymbol={signalsBySymbol}
+            compositeSignals={activeSignals}
           />
         )}
 
