@@ -23,6 +23,7 @@ import { buildSymbolFeatures, type TimeframeKey } from '../../src/lib/strategy/f
 import { getIndexAggregates } from '../massive/client.js';
 import { insertCompositeSignal, expireOldSignals } from '../../src/lib/supabase/compositeSignals.js';
 import type { Bar } from '../../src/lib/strategy/patternDetection.js';
+import { fileURLToPath } from 'url';
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -721,7 +722,10 @@ export class CompositeScannerWorker {
 // Main Entry Point (when run directly)
 // ============================================================================
 
-if (require.main === module) {
+// ES module entry point detection
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isMainModule) {
   const worker = new CompositeScannerWorker();
 
   // Start worker
