@@ -1,15 +1,15 @@
-import { Ticker, Trade, Challenge } from '../../types';
+import { Ticker, Trade, Challenge } from '../../../types';
 import { HDRowWatchlist } from '../cards/HDRowWatchlist';
 import { HDRowTrade } from '../cards/HDRowTrade';
 import { HDRowChallenge } from '../cards/HDRowChallenge';
 import { HDConfirmDialog } from '../forms/HDConfirmDialog';
-import { formatPercent, cn } from '../../lib/utils';
+import { formatPercent, cn } from '../../../lib/utils';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import type { CompositeSignal } from '../../lib/composite/CompositeSignal';
+import type { CompositeSignal } from '../../../lib/composite/CompositeSignal';
 import { WatchlistRecapCard } from '../WatchlistRecapCard';
 import MobileWatchlist from '../Watchlist/MobileWatchlist';
-import { useEnrichedMarketSession } from '../../stores/marketDataStore';
+import { useEnrichedMarketSession } from '../../../stores/marketDataStore';
 
 interface HDPanelWatchlistProps {
   watchlist: Ticker[];

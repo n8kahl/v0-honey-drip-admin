@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { cn } from '../../lib/utils';
-import { massive } from '../../lib/massive';
+import { cn } from '../../../lib/utils';
+import { massive } from '../../../lib/massive';
 
 interface PricePoint {
   time: number;

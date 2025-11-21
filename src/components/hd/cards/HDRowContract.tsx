@@ -1,5 +1,5 @@
-import { Contract } from '../../types';
-import { formatPrice, cn } from '../../lib/utils';
+import { Contract } from '../../../types';
+import { formatPrice, cn } from '../../../lib/utils';
 
 interface HDRowContractProps {
   contract: Contract;

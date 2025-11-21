@@ -10,12 +10,12 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useTradeStore } from '../../stores/tradeStore';
-import { useMarketDataStore, useGreeks, useAreGreeksStale } from '../../stores/marketDataStore';
-import { getIVStats, getIVHistory } from '../../lib/greeks/ivHistory';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
-import { Badge } from '../../ui/badge';
-import { Separator } from '../../ui/separator';
+import { useTradeStore } from '../../../stores/tradeStore';
+import { useMarketDataStore, useGreeks, useAreGreeksStale } from '../../../stores/marketDataStore';
+import { getIVStats, getIVHistory } from '../../../lib/greeks/ivHistory';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../ui/card';
+import { Badge } from '../../../ui/badge';
+import { Separator } from '../../../ui/separator';
 import { Activity, TrendingUp, TrendingDown, Zap, Clock, AlertTriangle } from 'lucide-react';
 
 interface PortfolioGreeks {

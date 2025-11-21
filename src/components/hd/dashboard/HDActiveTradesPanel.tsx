@@ -1,7 +1,7 @@
-import { useTradeStore } from '../../stores';
-import { Trade } from '../../types';
+import { useTradeStore } from '../../../stores';
+import { Trade } from '../../../types';
 import { TrendingUp, TrendingDown, MoveUp, X, Scissors } from 'lucide-react';
-import { cn, formatPrice, formatPercent } from '../../lib/utils';
+import { cn, formatPrice, formatPercent } from '../../../lib/utils';
 
 interface HDActiveTradesPanelProps {
   onTradeClick?: (trade: Trade) => void;

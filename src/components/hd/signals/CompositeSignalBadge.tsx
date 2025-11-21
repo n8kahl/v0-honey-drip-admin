@@ -9,9 +9,9 @@
  */
 
 import { useState } from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 import { TrendingUp, Target, Sparkles } from 'lucide-react';
-import type { CompositeSignal } from '../../lib/composite/CompositeSignal';
+import type { CompositeSignal } from '../../../lib/composite/CompositeSignal';
 
 interface CompositeSignalBadgeProps {
   symbol: string;

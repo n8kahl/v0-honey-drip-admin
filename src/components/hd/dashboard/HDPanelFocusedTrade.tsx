@@ -1,6 +1,6 @@
-import { Trade, TradeState, Contract } from '../../types';
+import { Trade, TradeState, Contract } from '../../../types';
 import { HDTagTradeType } from '../common/HDTagTradeType';
-import { formatPrice, formatPercent, formatTime, cn } from '../../lib/utils';
+import { formatPrice, formatPercent, formatTime, cn } from '../../../lib/utils';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 interface HDPanelFocusedTradeProps {

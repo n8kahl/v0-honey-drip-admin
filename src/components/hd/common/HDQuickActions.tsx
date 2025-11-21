@@ -1,4 +1,4 @@
-import { TradeState } from '../../types';
+import { TradeState } from '../../../types';
 import { HDButton } from './HDButton';
 
 interface HDQuickActionsProps {

@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { AppSheet } from '../../ui/AppSheet';
-import { Challenge, Trade, DiscordChannel } from '../../types';
-import { formatPrice, formatPercent, cn } from '../../lib/utils';
+import { AppSheet } from '../../../ui/AppSheet';
+import { Challenge, Trade, DiscordChannel } from '../../../types';
+import { formatPrice, formatPercent, cn } from '../../../lib/utils';
 import { Download, Share2, TrendingUp, TrendingDown } from 'lucide-react';
 import { HDButton } from '../common/HDButton';
-import { formatChallengeDiscordExport } from '../../lib/discordFormatter';
-import { useAppToast } from '../../hooks/useAppToast';
+import { formatChallengeDiscordExport } from '../../../lib/discordFormatter';
+import { useAppToast } from '../../../hooks/useAppToast';
 
 interface HDDialogChallengeDetailProps {
   open: boolean;

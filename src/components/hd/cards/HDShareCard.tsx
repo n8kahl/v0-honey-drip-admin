@@ -1,5 +1,5 @@
-import { Trade, Challenge } from '../../types';
-import { formatPrice, formatPercent, cn } from '../../lib/utils';
+import { Trade, Challenge } from '../../../types';
+import { formatPrice, formatPercent, cn } from '../../../lib/utils';
 
 interface HDShareCardProps {
   trade: Trade;

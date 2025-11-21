@@ -1,27 +1,27 @@
-import { Trade } from '../../types';
+import { Trade } from '../../../types';
 import { HDTagTradeType } from '../common/HDTagTradeType';
 import { HDCard } from '../common/HDCard';
 import { HDChip } from '../common/HDChip';
-import { formatPrice, formatPercent, formatTime, cn } from '../../lib/utils';
+import { formatPrice, formatPercent, formatTime, cn } from '../../../lib/utils';
 import { TrendingUp, TrendingDown, Wifi } from 'lucide-react';
 import {
   MassiveTrendMetrics,
   MassiveVolatilityMetrics,
   MassiveLiquidityMetrics,
-} from '../../services/massive';
-import { useActiveTradePnL } from '../../hooks/useMassiveData';
-import { useTPProximity } from '../../hooks/useTPProximity';
-import { useTPSettings } from '../../hooks/useTPSettings';
-import { useAppToast } from '../../hooks/useAppToast';
-import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
+} from '../../../services/massive';
+import { useActiveTradePnL } from '../../../hooks/useMassiveData';
+import { useTPProximity } from '../../../hooks/useTPProximity';
+import { useTPSettings } from '../../../hooks/useTPSettings';
+import { useAppToast } from '../../../hooks/useAppToast';
+import { useOptionTrades, useOptionQuote } from '../../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from '../signals/HDConfluenceChips';
 import { HDConfluenceDetailPanel } from '../dashboard/HDConfluenceDetailPanel';
 import { useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { addTradeUpdate } from '../../lib/supabase/database';
+import { useAuth } from '../../../contexts/AuthContext';
+import { addTradeUpdate } from '../../../lib/supabase/database';
 import { StrategySignalBadge } from './StrategySignalBadge';
-import type { SymbolSignals } from '../../hooks/useStrategyScanner';
-import { useMacroContext } from '../../hooks/useIndicesAdvanced';
+import type { SymbolSignals } from '../../../hooks/useStrategyScanner';
+import { useMacroContext } from '../../../hooks/useIndicesAdvanced';
 
 interface HDEnteredTradeCardProps {
   trade: Trade;

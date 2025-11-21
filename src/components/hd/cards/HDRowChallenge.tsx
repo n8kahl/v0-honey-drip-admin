@@ -1,5 +1,5 @@
-import { Challenge } from '../../types';
-import { cn } from '../../lib/utils';
+import { Challenge } from '../../../types';
+import { cn } from '../../../lib/utils';
 import { X } from 'lucide-react';
 
 interface HDRowChallengeProps {

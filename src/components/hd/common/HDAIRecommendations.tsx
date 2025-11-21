@@ -6,8 +6,8 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useTradeStore } from '../../stores/tradeStore';
-import { useMarketDataStore } from '../../stores/marketDataStore';
+import { useTradeStore } from '../../../stores/tradeStore';
+import { useMarketDataStore } from '../../../stores/marketDataStore';
 import {
   getTradeRecommendations,
   approveRecommendation,
@@ -15,11 +15,11 @@ import {
   ProfitRecommendation,
   generateProfitRecommendations,
   calculateTechnicalLevels,
-} from '../../services/profitOptimizationService';
-import { analyzeAndAlertFlow } from '../../services/flowAnalysisService';
-import { getTradeGreeks } from '../../services/greeksMonitorService';
+} from '../../../services/profitOptimizationService';
+import { analyzeAndAlertFlow } from '../../../services/flowAnalysisService';
+import { getTradeGreeks } from '../../../services/greeksMonitorService';
 import { Lightbulb, TrendingUp, TrendingDown, Target, ShieldAlert, Check, X } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDAIRecommendationsProps {
   maxRecommendations?: number;

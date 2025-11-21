@@ -1,11 +1,11 @@
-import { Trade } from '../../types';
+import { Trade } from '../../../types';
 import { HDTagTradeType } from '../common/HDTagTradeType';
 import { HDConfluenceDetailPanel } from '../dashboard/HDConfluenceDetailPanel';
 import { HDCard } from '../common/HDCard';
 import { HDButton } from '../common/HDButton';
-import { formatPrice } from '../../lib/utils';
+import { formatPrice } from '../../../lib/utils';
 import { StrategySignalBadge } from './StrategySignalBadge';
-import type { SymbolSignals } from '../../hooks/useStrategyScanner';
+import type { SymbolSignals } from '../../../hooks/useStrategyScanner';
 
 interface HDLoadedTradeCardProps {
   trade: Trade;

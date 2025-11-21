@@ -1,6 +1,6 @@
-import { TradeType } from '../../types';
+import { TradeType } from '../../../types';
 import { HDChip } from './HDChip';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDTagTradeTypeProps {
   type: TradeType;

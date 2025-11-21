@@ -1,6 +1,6 @@
-import { useMarketSession } from '../../hooks/useMarketSession';
-import { getSessionColor, getSessionDescription } from '../../lib/marketSession';
-import { cn } from '../../lib/utils';
+import { useMarketSession } from '../../../hooks/useMarketSession';
+import { getSessionColor, getSessionDescription } from '../../../lib/marketSession';
+import { cn } from '../../../lib/utils';
 import { Clock, AlertCircle } from 'lucide-react';
 
 interface HDMarketSessionBannerProps {

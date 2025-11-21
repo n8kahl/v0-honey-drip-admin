@@ -1,5 +1,5 @@
-import { SessionStatus } from '../../types';
-import { cn } from '../../lib/utils';
+import { SessionStatus } from '../../../types';
+import { cn } from '../../../lib/utils';
 
 interface HDPillProps {
   status: SessionStatus;

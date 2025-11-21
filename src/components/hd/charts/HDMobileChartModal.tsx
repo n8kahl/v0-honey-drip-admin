@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { AppSheet } from '../../ui/AppSheet';
+import { AppSheet } from '../../../ui/AppSheet';
 import { cn } from '@/lib/utils';
 
 interface HDMobileChartModalProps {

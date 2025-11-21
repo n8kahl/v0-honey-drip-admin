@@ -1,5 +1,5 @@
-import { cn } from '../../lib/utils';
-import { useMarketDataStore } from '../../stores/marketDataStore';
+import { cn } from '../../../lib/utils';
+import { useMarketDataStore } from '../../../stores/marketDataStore';
 
 interface HDConfluenceDetailPanelProps {
   ticker: string;

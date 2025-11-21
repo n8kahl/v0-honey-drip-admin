@@ -10,8 +10,8 @@
 
 import { HDMicroChart } from './HDMicroChart';
 import { HDStrategyMiniChart } from './HDStrategyMiniChart';
-import { useMarketDataStore } from '../../stores/marketDataStore';
-import { calculateEMA } from '../../lib/indicators';
+import { useMarketDataStore } from '../../../stores/marketDataStore';
+import { calculateEMA } from '../../../lib/indicators';
 
 interface Props {
   symbol: string;

@@ -6,9 +6,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useAlertEscalationStore, getSeverityColor, getSeverityEmoji } from '../../stores/alertEscalationStore';
+import { useAlertEscalationStore, getSeverityColor, getSeverityEmoji } from '../../../stores/alertEscalationStore';
 import { Bell, X, Check, AlertTriangle } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDAlertFeedProps {
   maxAlerts?: number;

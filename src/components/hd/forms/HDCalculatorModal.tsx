@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Delete, X } from 'lucide-react';
 import { HDButton } from '../common/HDButton';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDCalculatorModalProps {
   isOpen: boolean;
