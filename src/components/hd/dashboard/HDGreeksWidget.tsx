@@ -10,8 +10,8 @@
 
 import { useGreeks, useAreGreeksStale } from '../../../stores/marketDataStore';
 import { getIVStats } from '../../../lib/greeks/ivHistory';
-import { Badge } from '../../../ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../ui/tooltip';
+import { Badge } from '../../ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { Activity, AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

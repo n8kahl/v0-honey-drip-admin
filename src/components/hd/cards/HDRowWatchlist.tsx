@@ -3,7 +3,7 @@ import { formatPrice, cn } from '../../../lib/utils';
 import { X, Wifi, Zap } from 'lucide-react';
 import { useSymbolData } from '../../../stores/marketDataStore';
 import { useUIStore } from '../../../stores';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip';
 import { useRef, useEffect } from 'react';
 
 interface HDRowWatchlistProps {
