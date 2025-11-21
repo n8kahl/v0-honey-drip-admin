@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Trade } from '../types';
 
-type AppTab = 'live' | 'active' | 'history' | 'settings' | 'monitoring';
 type VoiceState = 'idle' | 'listening' | 'processing';
 type ChartViewportMode = 'AUTO' | 'MANUAL';
 
@@ -11,9 +10,12 @@ interface LogicalRange {
   to: number;
 }
 
+/**
+ * UIStore manages UI-specific state (modals, dialogs, voice, chart viewport).
+ * Navigation is handled by React Router - this store does NOT manage routing.
+ */
 interface UIStore {
   // State
-  activeTab: AppTab;
   mainCockpitSymbol: string | null; // When set, shows full cockpit for this symbol
   showDiscordDialog: boolean;
   showAddTickerDialog: boolean;
@@ -22,16 +24,15 @@ interface UIStore {
   voiceState: VoiceState;
   focusedTrade: Trade | null;
   flashTradeTab: boolean;
-  
+
   // Chart viewport management
   chartViewportMode: ChartViewportMode;
   savedRanges: Record<string, LogicalRange>; // key: "symbol:timeframe"
-  
+
   // Chart navigation callbacks
   chartScrollToBar: ((barTimeKey: string) => void) | null;
-  
+
   // Actions
-  setActiveTab: (tab: AppTab) => void;
   setMainCockpitSymbol: (symbol: string | null) => void;
   registerChartScrollCallback: (callback: (barTimeKey: string) => void) => void;
   unregisterChartScrollCallback: () => void;
@@ -43,7 +44,7 @@ interface UIStore {
   setVoiceState: (state: VoiceState) => void;
   setFocusedTrade: (trade: Trade | null) => void;
   setFlashTradeTab: (flash: boolean) => void;
-  
+
   // Compound actions
   toggleVoice: () => void;
   openDiscordSettings: () => void;
@@ -53,21 +54,13 @@ interface UIStore {
   openAddChallenge: () => void;
   closeAddChallenge: () => void;
   closeAllDialogs: () => void;
-  
-  // Navigation helpers
-  navigateToLive: () => void;
-  navigateToActive: () => void;
-  navigateToHistory: () => void;
-  navigateToSettings: () => void;
-  navigateToMonitoring: () => void;
-  focusTradeInLive: (trade: Trade) => void;
-  
+
   // Chart viewport management
   setChartViewportMode: (mode: ChartViewportMode) => void;
   saveChartRange: (key: string, range: LogicalRange) => void;
   getChartRange: (key: string) => LogicalRange | undefined;
   clearChartRange: (key: string) => void;
-  
+
   // Reset
   reset: () => void;
 }
@@ -76,7 +69,6 @@ export const useUIStore = create<UIStore>()(
   devtools(
     (set, get) => ({
       // Initial state
-      activeTab: 'live',
       mainCockpitSymbol: null,
       showDiscordDialog: false,
       showAddTickerDialog: false,
@@ -90,7 +82,6 @@ export const useUIStore = create<UIStore>()(
       chartScrollToBar: null,
 
       // Simple setters
-      setActiveTab: (tab) => set({ activeTab: tab }),
       setMainCockpitSymbol: (symbol) => set({ mainCockpitSymbol: symbol }),
       registerChartScrollCallback: (callback) => set({ chartScrollToBar: callback }),
       unregisterChartScrollCallback: () => set({ chartScrollToBar: null }),
@@ -122,13 +113,13 @@ export const useUIStore = create<UIStore>()(
 
       openDiscordSettings: () => set({ showDiscordDialog: true }),
       closeDiscordSettings: () => set({ showDiscordDialog: false }),
-      
+
       openAddTicker: () => set({ showAddTickerDialog: true }),
       closeAddTicker: () => set({ showAddTickerDialog: false }),
-      
+
       openAddChallenge: () => set({ showAddChallengeDialog: true }),
       closeAddChallenge: () => set({ showAddChallengeDialog: false }),
-      
+
       closeAllDialogs: () =>
         set({
           showDiscordDialog: false,
@@ -136,37 +127,16 @@ export const useUIStore = create<UIStore>()(
           showAddChallengeDialog: false,
         }),
 
-      // Navigation helpers
-      navigateToLive: () => set({ activeTab: 'live', focusedTrade: null }),
-
-      navigateToActive: () => {
-        set({ activeTab: 'active', flashTradeTab: true });
-        setTimeout(() => set({ flashTradeTab: false }), 2000);
-      },
-
-      navigateToHistory: () => set({ activeTab: 'history' }),
-      navigateToSettings: () => set({ activeTab: 'settings' }),
-      navigateToMonitoring: () => set({ activeTab: 'monitoring' }),
-
-      focusTradeInLive: (trade) => {
-        set({
-          activeTab: 'live',
-          focusedTrade: trade,
-        });
-        // Clear focus after a brief moment to allow component to react
-        setTimeout(() => set({ focusedTrade: null }), 100);
-      },
-      
       // Chart viewport management
       setChartViewportMode: (mode) => set({ chartViewportMode: mode }),
-      
+
       saveChartRange: (key, range) =>
         set((state) => ({
           savedRanges: { ...state.savedRanges, [key]: range },
         })),
-      
+
       getChartRange: (key) => get().savedRanges[key],
-      
+
       clearChartRange: (key) => {
         const { savedRanges } = get();
         const { [key]: _, ...rest } = savedRanges;
@@ -176,7 +146,6 @@ export const useUIStore = create<UIStore>()(
       // Reset
       reset: () =>
         set({
-          activeTab: 'live',
           mainCockpitSymbol: null,
           showDiscordDialog: false,
           showAddTickerDialog: false,

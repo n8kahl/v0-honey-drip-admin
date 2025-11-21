@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import App from './App';
+import { lazy, Suspense } from 'react';
 
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen bg-[var(--bg-base)]">
@@ -7,33 +8,62 @@ const PageLoader = () => (
   </div>
 );
 
+// Lazy load secondary pages
+const TradeDetailPage = lazy(() => import('./pages/TradeDetailPage'));
+const RadarPage = lazy(() => import('./pages/RadarPage'));
+
 /**
  * Router Configuration for Vite App
  *
- * This router handles all client-side navigation:
+ * This router handles all client-side navigation.
+ * React Router is the single source of truth for routing.
+ * The App component derives its active tab from the current location.
+ *
+ * Routes:
  * - / → Live view (default)
  * - /active → Active Trades view
  * - /history → Trade History view
  * - /settings → Settings page
- *
- * The App component handles tab-based rendering based on the current route.
+ * - /monitoring → Monitoring view
+ * - /radar → Composite Signal Radar
+ * - /trades/:id → Trade detail page
  */
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <App initialTab="live" />,
+    element: <App />,
   },
   {
     path: '/active',
-    element: <App initialTab="active" />,
+    element: <App />,
   },
   {
     path: '/history',
-    element: <App initialTab="history" />,
+    element: <App />,
   },
   {
     path: '/settings',
-    element: <App initialTab="settings" />,
+    element: <App />,
+  },
+  {
+    path: '/monitoring',
+    element: <App />,
+  },
+  {
+    path: '/radar',
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <RadarPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/trades/:id',
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <TradeDetailPage />
+      </Suspense>
+    ),
   },
 ]);
 
