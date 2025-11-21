@@ -25,7 +25,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"server/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"server/**/*.ts\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "session-check": "bash scripts/session-end-check.sh"
   },
   "dependencies": {
     "@edge-runtime/vm": "latest",
