@@ -218,6 +218,9 @@ interface MarketDataStore {
 
   /** Unsubscribe fns for active WS subscriptions */
   unsubscribers: Array<() => void>;
+
+  /** Pending subscription changes (for batching) */
+  pendingWatchlistUpdate: ReturnType<typeof setTimeout> | null;
   
   // ========================================================================
   // Actions
@@ -398,7 +401,8 @@ export const useMarketDataStore = create<MarketDataStore>()(
       error: null,
       heartbeatInterval: null,
       unsubscribers: [],
-      
+      pendingWatchlistUpdate: null,
+
       // ======================================================================
       // Actions
       // ======================================================================
@@ -521,7 +525,32 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // No-op: massiveWS handles its own reconnection
         return;
       },
-      
+
+      /**
+       * Flush pending watchlist updates to massive.com API (debounced)
+       * This batches rapid subscription changes into a single WebSocket update
+       */
+      flushWatchlistUpdate: () => {
+        const { pendingWatchlistUpdate, subscribedSymbols } = get();
+
+        // Cancel any pending update
+        if (pendingWatchlistUpdate) {
+          clearTimeout(pendingWatchlistUpdate);
+        }
+
+        // Schedule debounced update (250ms)
+        const timer = setTimeout(() => {
+          const symbols = Array.from(subscribedSymbols);
+          if (symbols.length > 0) {
+            console.log('[v0] marketDataStore: Flushing watchlist update:', symbols.length, 'symbols');
+            massive.updateWatchlist(symbols);
+          }
+          set({ pendingWatchlistUpdate: null });
+        }, 250);
+
+        set({ pendingWatchlistUpdate: timer });
+      },
+
       subscribeToSymbols: () => {
         const { subscribedSymbols } = get();
 
@@ -557,43 +586,46 @@ export const useMarketDataStore = create<MarketDataStore>()(
           return;
         }
 
-        // Create data structure if doesn't exist
-        if (!symbols[normalized]) {
-          set({
-            symbols: {
-              ...symbols,
-              [normalized]: createEmptySymbolData(normalized),
-            },
-          });
-        }
+        // Use Immer's produce for efficient state updates
+        set(
+          produce((draft) => {
+            // Create data structure if doesn't exist
+            if (!draft.symbols[normalized]) {
+              draft.symbols[normalized] = createEmptySymbolData(normalized);
+            }
 
-        // Add to subscribed set
-        const newSubscribed = new Set<string>();
-        Array.from(subscribedSymbols).forEach(s => newSubscribed.add(s));
-        newSubscribed.add(normalized);
-        set({ subscribedSymbols: newSubscribed });
+            // Add to subscribed set (Immer supports Set mutations)
+            draft.subscribedSymbols.add(normalized);
+          })
+        );
 
-        // Update WebSocket watchlist using unified massive API
-        massive.updateWatchlist(Array.from(newSubscribed));
+        // Debounced watchlist update (batches rapid subscriptions)
+        get().flushWatchlistUpdate();
       },
 
       unsubscribe: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { subscribedSymbols, macroSymbols } = get();
+        const { macroSymbols, subscribedSymbols } = get();
 
         // Don't unsubscribe from macro symbols
         if (macroSymbols.includes(normalized)) {
           return;
         }
 
-        const newSubscribed = new Set<string>();
-        Array.from(subscribedSymbols).forEach(s => {
-          if (s !== normalized) newSubscribed.add(s);
-        });
-        set({ subscribedSymbols: newSubscribed });
+        if (!subscribedSymbols.has(normalized)) {
+          return;
+        }
 
-        // Update WebSocket watchlist using unified massive API
-        massive.updateWatchlist(Array.from(newSubscribed));
+        // Use Immer's produce for efficient state updates
+        set(
+          produce((draft) => {
+            // Remove from subscribed set (Immer supports Set mutations)
+            draft.subscribedSymbols.delete(normalized);
+          })
+        );
+
+        // Debounced watchlist update (batches rapid unsubscriptions)
+        get().flushWatchlistUpdate();
       },
       
       updateCandles: (symbol: string, timeframe: Timeframe, candles: Candle[]) => {
@@ -950,7 +982,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
       
       cleanup: () => {
-        const { heartbeatInterval } = get();
+        const { heartbeatInterval, pendingWatchlistUpdate } = get();
 
         // Note: massive singleton handles its own connection lifecycle
         // We don't call massive.disconnect() here as it's globally managed
@@ -958,6 +990,11 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Clear heartbeat
         if (heartbeatInterval) {
           clearInterval(heartbeatInterval);
+        }
+
+        // Clear pending watchlist update
+        if (pendingWatchlistUpdate) {
+          clearTimeout(pendingWatchlistUpdate);
         }
 
         set({
@@ -969,6 +1006,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
           },
           isConnected: false,
           heartbeatInterval: null,
+          pendingWatchlistUpdate: null,
           subscribedSymbols: new Set(),
           unsubscribers: [],
         });
