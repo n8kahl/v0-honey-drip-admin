@@ -1,14 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 import {
   calculateATR,
   calculateVWAP,
   calculateBollingerBands,
   calculateORB,
   calculatePreMarketLevels,
-} from '../indicators';
-import { Bar } from '../types';
+} from "../indicators";
+import { Bar } from "../types";
 
-describe('Risk Engine Indicators', () => {
+describe("Risk Engine Indicators", () => {
   const mockBars: Bar[] = [
     { timestamp: 1000, open: 100, high: 105, low: 98, close: 103, volume: 1000 },
     { timestamp: 2000, open: 103, high: 107, low: 102, close: 106, volume: 1200 },
@@ -27,29 +27,29 @@ describe('Risk Engine Indicators', () => {
     { timestamp: 15000, open: 129, high: 131, low: 128, close: 130, volume: 1250 },
   ];
 
-  describe('calculateATR', () => {
-    it('should calculate ATR correctly', () => {
+  describe("calculateATR", () => {
+    it("should calculate ATR correctly", () => {
       const atr = calculateATR(mockBars, 14);
       expect(atr).toBeGreaterThan(0);
       expect(atr).toBeLessThan(10); // Reasonable range for these bars
     });
 
-    it('should return 0 for insufficient data', () => {
+    it("should return 0 for insufficient data", () => {
       const atr = calculateATR(mockBars.slice(0, 5), 14);
       expect(atr).toBe(0);
     });
   });
 
-  describe('calculateVWAP', () => {
-    it('should calculate VWAP and bands correctly', () => {
+  describe("calculateVWAP", () => {
+    it("should calculate VWAP and bands correctly", () => {
       const { vwap, upperBand, lowerBand } = calculateVWAP(mockBars);
-      
+
       expect(vwap).toBeGreaterThan(0);
       expect(upperBand).toBeGreaterThan(vwap);
       expect(lowerBand).toBeLessThan(vwap);
     });
 
-    it('should handle empty bars', () => {
+    it("should handle empty bars", () => {
       const { vwap, upperBand, lowerBand } = calculateVWAP([]);
       expect(vwap).toBe(0);
       expect(upperBand).toBe(0);
@@ -57,16 +57,17 @@ describe('Risk Engine Indicators', () => {
     });
   });
 
-  describe('calculateBollingerBands', () => {
-    it('should calculate Bollinger Bands correctly', () => {
-      const { middle, upper, lower } = calculateBollingerBands(mockBars, 20, 2);
-      
+  describe("calculateBollingerBands", () => {
+    it("should calculate Bollinger Bands correctly", () => {
+      // Use period=10 since we have 15 bars (need at least 10)
+      const { middle, upper, lower } = calculateBollingerBands(mockBars, 10, 2);
+
       expect(middle).toBeGreaterThan(0);
       expect(upper).toBeGreaterThan(middle);
       expect(lower).toBeLessThan(middle);
     });
 
-    it('should return 0 for insufficient data', () => {
+    it("should return 0 for insufficient data", () => {
       const { middle, upper, lower } = calculateBollingerBands(mockBars.slice(0, 5), 20, 2);
       expect(middle).toBe(0);
       expect(upper).toBe(0);
@@ -74,30 +75,30 @@ describe('Risk Engine Indicators', () => {
     });
   });
 
-  describe('calculateORB', () => {
-    it('should calculate ORB high/low correctly', () => {
+  describe("calculateORB", () => {
+    it("should calculate ORB high/low correctly", () => {
       const { high, low } = calculateORB(mockBars, 5);
-      
+
       expect(high).toBe(115); // Max high of first 5 bars
-      expect(low).toBe(98);   // Min low of first 5 bars
+      expect(low).toBe(98); // Min low of first 5 bars
     });
 
-    it('should handle empty bars', () => {
+    it("should handle empty bars", () => {
       const { high, low } = calculateORB([], 5);
       expect(high).toBe(0);
       expect(low).toBe(0);
     });
   });
 
-  describe('calculatePreMarketLevels', () => {
-    it('should calculate pre-market high/low correctly', () => {
+  describe("calculatePreMarketLevels", () => {
+    it("should calculate pre-market high/low correctly", () => {
       const { high, low } = calculatePreMarketLevels(mockBars);
-      
+
       expect(high).toBe(131); // Max high of all bars
-      expect(low).toBe(98);   // Min low of all bars
+      expect(low).toBe(98); // Min low of all bars
     });
 
-    it('should handle empty bars', () => {
+    it("should handle empty bars", () => {
       const { high, low } = calculatePreMarketLevels([]);
       expect(high).toBe(0);
       expect(low).toBe(0);
