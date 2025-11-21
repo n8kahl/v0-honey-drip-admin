@@ -90,7 +90,7 @@ let pendingMacroFetch: Promise<MacroContext> | null = null;
 const MACRO_CACHE_TTL = 30_000; // 30 seconds
 
 // Global refresh interval - shared across ALL hook instances
-let globalRefreshInterval: any = null;
+let globalRefreshInterval: ReturnType<typeof setInterval> | null = null;
 let subscriberCount = 0;
 
 async function refreshMacroContext() {
@@ -121,26 +121,6 @@ async function refreshMacroContext() {
     throw err;
   } finally {
     pendingMacroFetch = null;
-  }
-}
-
-// CENTRALIZED - REMOVE: Global refresh replaced by marketDataStore indices subscriptions
-function startGlobalRefresh() {
-  if (globalRefreshInterval) return; // Already running
-  
-  console.log('[useMacroContext] DEPRECATED: Global 30s refresh interval (use marketDataStore)');
-  // globalRefreshInterval = setInterval(() => {
-  //   refreshMacroContext().catch(err => {
-  //     console.error('[useMacroContext] Global refresh failed:', err);
-  //   });
-  // }, 30000);
-}
-
-function stopGlobalRefresh() {
-  if (globalRefreshInterval) {
-    console.log('[useMacroContext] Stopping global refresh interval');
-    clearInterval(globalRefreshInterval);
-    globalRefreshInterval = null;
   }
 }
 
@@ -179,28 +159,9 @@ export function useMacroContext(refreshInterval: number = 30000): {
         });
     }
 
-    // Start global interval if this is the first subscriber
-    startGlobalRefresh();
-
-    // CENTRALIZED - REMOVE: Local polling for shared state replaced by marketDataStore
-    // const pollInterval = setInterval(() => {
-    //   if (sharedMacroContext !== macro) {
-    //     setMacro(sharedMacroContext);
-    //   }
-    //   if (sharedMacroError !== error) {
-    //     setError(sharedMacroError);
-    //   }
-    // }, 1000); // Check every second for updates
-
     return () => {
       subscriberCount--;
       console.log(`[useMacroContext] Subscriber count: ${subscriberCount}`);
-      // clearInterval(pollInterval);
-      
-      // Stop global interval if no more subscribers
-      if (subscriberCount === 0) {
-        stopGlobalRefresh();
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount/unmount
@@ -211,8 +172,9 @@ export function useMacroContext(refreshInterval: number = 30000): {
       const data = await refreshMacroContext();
       setMacro(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setIsLoading(false);
     }

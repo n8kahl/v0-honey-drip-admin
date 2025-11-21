@@ -56,19 +56,6 @@ export function useStreamingQuote(symbol: string | null) {
     };
   }, [symbol]);
 
-  // CENTRALIZED - REMOVE: Staleness tracking now handled by marketDataStore
-  // useEffect(() => {
-  //   if (!symbol) return;
-  //
-  //   const staleCheckInterval = setInterval(() => {
-  //     const secondsAgo = (Date.now() - asOfRef.current) / 1000;
-  //     const threshold = sourceRef.current === 'websocket' ? 5 : 6;
-  //     setIsStale(secondsAgo > threshold);
-  //   }, 5000);
-  //
-  //   return () => clearInterval(staleCheckInterval);
-  // }, [symbol]);
-  
   return { quote, asOf, source, isStale };
 }
 
@@ -99,20 +86,10 @@ export function useOptionTrades(ticker: string | null) {
     const unsubQuotes = optionsAdvanced.subscribeQuotes(ticker, (newQuote) => {
       setQuote(newQuote);
     });
-    
-    // CENTRALIZED - REMOVE: Tape analysis now handled by marketDataStore
-    // const analyzeInterval = setInterval(() => {
-    //   if (quote && tradeBuffer.length > 0) {
-    //     const tape = analyzeTradeTape(tradeBuffer, quote);
-    //     setTradeTape(tape);
-    //   }
-    // }, 2000);
-    
-    // CENTRALIZED - REMOVE: Cleanup for deprecated polling
+
     return () => {
       unsubTrades();
       unsubQuotes();
-      // clearInterval(analyzeInterval);
     };
   }, [ticker]);
   

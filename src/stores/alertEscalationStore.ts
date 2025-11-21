@@ -29,6 +29,44 @@ export type AlertCategory =
   | 'profit-optimization'
   | 'position-management';
 
+/**
+ * Action payload types for different alert actions
+ */
+export interface TrimActionPayload {
+  trimPercent: number;
+}
+
+export interface MoveStopLossActionPayload {
+  newStopLoss: number;
+}
+
+export interface ExitActionPayload {
+  reason: string;
+}
+
+export interface AddActionPayload {
+  symbol: string;
+  quantity?: number;
+}
+
+export type AlertActionPayload =
+  | TrimActionPayload
+  | MoveStopLossActionPayload
+  | ExitActionPayload
+  | AddActionPayload
+  | Record<string, unknown>;
+
+/**
+ * Metadata that can be attached to alerts
+ */
+export interface AlertMetadata {
+  pnlPercent?: number;
+  confluence?: number;
+  flowVelocity?: number;
+  distanceToStop?: number;
+  [key: string]: string | number | boolean | undefined;
+}
+
 export interface Alert {
   id: string;
   tradeId: string;
@@ -43,8 +81,8 @@ export interface Alert {
   isActionable: boolean; // Can user take immediate action?
   actionLabel?: string; // e.g., "Trim 25%", "Exit Now", "Move SL"
   actionType?: 'trim' | 'exit' | 'move-sl' | 'add' | 'custom';
-  actionPayload?: any; // Data for the action
-  metadata?: Record<string, any>; // Additional context
+  actionPayload?: AlertActionPayload;
+  metadata?: AlertMetadata;
 }
 
 export interface EscalationRule {
@@ -57,7 +95,7 @@ export interface EscalationRule {
   isActionable?: boolean;
   actionLabel?: string;
   actionType?: 'trim' | 'exit' | 'move-sl' | 'add' | 'custom';
-  actionPayload?: (context: EscalationContext) => any;
+  actionPayload?: (context: EscalationContext) => AlertActionPayload;
 }
 
 export interface EscalationContext {
@@ -78,7 +116,7 @@ export interface EscalationContext {
   distanceToStopPercent?: number;
   distanceToTargetPercent?: number;
   volumeRatio?: number; // Current volume vs average
-  [key: string]: any;
+  [key: string]: string | number | boolean | undefined;
 }
 
 interface AlertEscalationStore {
