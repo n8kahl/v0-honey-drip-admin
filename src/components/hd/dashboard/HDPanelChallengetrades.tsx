@@ -1,6 +1,6 @@
-import { Trade, Challenge } from '../../types';
-import { formatPercent, formatDate, formatTime, cn } from '../../lib/utils';
-import { getTradesForChallenge } from '../../lib/challengeHelpers';
+import { Trade, Challenge } from '../../../types';
+import { formatPercent, formatDate, formatTime, cn } from '../../../lib/utils';
+import { getTradesForChallenge } from '../../../lib/challengeHelpers';
 import { TrendingUp, TrendingDown, Minus, Clock, X } from 'lucide-react';
 
 interface HDPanelChallengeTradesProps {

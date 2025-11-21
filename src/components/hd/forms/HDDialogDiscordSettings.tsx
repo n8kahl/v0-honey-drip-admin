@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { AppSheet } from '../../ui/AppSheet';
-import { Label } from '../../ui/label';
-import { Input } from '../../ui/input';
+import { AppSheet } from '../../../ui/AppSheet';
+import { Label } from '../../../ui/label';
+import { Input } from '../../../ui/input';
 import { HDButton } from '../common/HDButton';
-import { DiscordChannel } from '../../types';
+import { DiscordChannel } from '../../../types';
 import { Trash2, Plus, Check, AlertCircle } from 'lucide-react';
-import { useAppToast } from '../../hooks/useAppToast';
+import { useAppToast } from '../../../hooks/useAppToast';
 
 interface HDDialogDiscordSettingsProps {
   open: boolean;

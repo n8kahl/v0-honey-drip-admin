@@ -1,10 +1,10 @@
-import { useMarketStore, useTradeStore, useSettingsStore } from '../../stores';
+import { useMarketStore, useTradeStore, useSettingsStore } from '../../../stores';
 import { HDRowWatchlist } from '../cards/HDRowWatchlist';
 import { HDMacroPanel } from '../dashboard/HDMacroPanel';
 import { HDCommandCenter } from './HDCommandCenter';
-import { Ticker } from '../../types';
+import { Ticker } from '../../../types';
 import { Plus, TrendingUp } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDCommandRailProps {
   onTickerClick?: (ticker: Ticker) => void;

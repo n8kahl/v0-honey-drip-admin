@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, Time } from 'lightweight-charts';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 import { Target, TrendingUp, AlertTriangle } from 'lucide-react';
 
 interface StrategyMarker {

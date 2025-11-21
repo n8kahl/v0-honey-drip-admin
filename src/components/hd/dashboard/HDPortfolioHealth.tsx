@@ -8,10 +8,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useTradeStore } from '../../stores/tradeStore';
-import { getPortfolioGreeks, PortfolioGreeks } from '../../services/greeksMonitorService';
+import { useTradeStore } from '../../../stores/tradeStore';
+import { getPortfolioGreeks, PortfolioGreeks } from '../../../services/greeksMonitorService';
 import { TrendingUp, TrendingDown, Activity, Zap, Wind, Clock } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 export function HDPortfolioHealth() {
   const activeTrades = useTradeStore((state) => state.activeTrades);

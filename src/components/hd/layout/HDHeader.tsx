@@ -1,15 +1,15 @@
-import { SessionStatus } from '../../types';
+import { SessionStatus } from '../../../types';
 import { HDPill } from '../common/HDPill';
 import { Settings, Mic, User, LogOut, WifiOff, Wifi } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 const honeyDripLogo = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/hdn-l492QBW7lTUL3waoOAnhU3p8Ep7YNp.png';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../contexts/AuthContext';
 import { useState, useEffect, useRef } from 'react';
-import { useMarketDataConnection } from '../../hooks/useMassiveData';
-import { massive } from '../../lib/massive';
-import { useStreamingIndex } from '../../hooks/useIndicesAdvanced';
-import { useMarketSession } from '../../hooks/useMarketSession';
-import { getSessionColor } from '../../lib/marketSession';
+import { useMarketDataConnection } from '../../../hooks/useMassiveData';
+import { massive } from '../../../lib/massive';
+import { useStreamingIndex } from '../../../hooks/useIndicesAdvanced';
+import { useMarketSession } from '../../../hooks/useMarketSession';
+import { getSessionColor } from '../../../lib/marketSession';
 
 export type VoiceState = 'idle' | 'listening' | 'processing';
 

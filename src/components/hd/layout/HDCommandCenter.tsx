@@ -14,9 +14,9 @@ import { useState } from 'react';
 import { HDAlertFeed } from '../alerts/HDAlertFeed';
 import { HDPortfolioHealth } from '../dashboard/HDPortfolioHealth';
 import { HDAIRecommendations } from '../common/HDAIRecommendations';
-import { useCommandCenter } from '../../hooks/useCommandCenter';
+import { useCommandCenter } from '../../../hooks/useCommandCenter';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface Section {
   id: string;

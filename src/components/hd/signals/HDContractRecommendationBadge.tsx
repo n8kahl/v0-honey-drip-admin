@@ -4,14 +4,14 @@
  */
 
 import React from 'react';
-import type { ContractScore } from '../../lib/massive/contract-recommendations';
-import { Badge } from '../../ui/badge';
+import type { ContractScore } from '../../../lib/massive/contract-recommendations';
+import { Badge } from '../../../ui/badge';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '../../ui/tooltip';
+} from '../../../ui/tooltip';
 import { TrendingUp, TrendingDown, AlertTriangle, Zap, Activity } from 'lucide-react';
 
 interface HDContractRecommendationBadgeProps {

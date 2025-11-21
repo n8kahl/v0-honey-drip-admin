@@ -1,6 +1,6 @@
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 import { TrendingUp, TrendingDown, Minus, Activity, DollarSign } from 'lucide-react';
-import { TradeTape } from '../../lib/massive/options-advanced';
+import { TradeTape } from '../../../lib/massive/options-advanced';
 
 interface HDConfluenceChipsProps {
   tradeTape?: TradeTape | null;

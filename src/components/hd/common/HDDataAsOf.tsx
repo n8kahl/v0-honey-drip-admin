@@ -1,4 +1,4 @@
-import { formatTime } from '../../lib/utils';
+import { formatTime } from '../../../lib/utils';
 import { HDBadgeFreshness } from '../signals/HDBadgeFreshness';
 
 interface HDDataAsOfProps {

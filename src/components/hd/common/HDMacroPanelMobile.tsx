@@ -1,6 +1,6 @@
-import { useMacroContext } from '../../hooks/useIndicesAdvanced';
+import { useMacroContext } from '../../../hooks/useIndicesAdvanced';
 import { TrendingUp, TrendingDown, Minus, Activity } from 'lucide-react';
-import { formatPrice, formatPercent, cn } from '../../lib/utils';
+import { formatPrice, formatPercent, cn } from '../../../lib/utils';
 
 export function HDMacroPanelMobile() {
   const macroContext = useMacroContext();

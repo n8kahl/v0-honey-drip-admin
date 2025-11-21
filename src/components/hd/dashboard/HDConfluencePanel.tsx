@@ -1,6 +1,6 @@
 import { HDChip } from '../common/HDChip';
-import { cn } from '../../lib/utils';
-import { useMarketDataStore } from '../../stores/marketDataStore';
+import { cn } from '../../../lib/utils';
+import { useMarketDataStore } from '../../../stores/marketDataStore';
 
 interface HDConfluencePanelProps {
   ticker: string;

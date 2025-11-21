@@ -1,5 +1,5 @@
-import { Trade } from '../../types';
-import { formatPrice, formatPercent, cn } from '../../lib/utils';
+import { Trade } from '../../../types';
+import { formatPrice, formatPercent, cn } from '../../../lib/utils';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 interface HDTradeShareCardProps {

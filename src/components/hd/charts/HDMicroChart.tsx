@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { massive } from '../../lib/massive';
-import { getIndexBars, getOptionBars, MassiveError } from '../../lib/massive/proxy';
-import { calculateEMA } from '../../lib/indicators';
+import { massive } from '../../../lib/massive';
+import { getIndexBars, getOptionBars, MassiveError } from '../../../lib/massive/proxy';
+import { calculateEMA } from '../../../lib/indicators';
 
 interface HDMicroChartProps {
   ticker: string;

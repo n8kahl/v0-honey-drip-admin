@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { AlertChannels } from '../../types';
+import { AlertChannels } from '../../../types';
 import { HDButton } from '../common/HDButton';
 import { Check } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDAlertPreviewProps {
   message: string;

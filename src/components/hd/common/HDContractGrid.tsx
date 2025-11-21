@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
-import { Contract } from '../../types';
-import { cn } from '../../lib/utils';
+import { Contract } from '../../../types';
+import { cn } from '../../../lib/utils';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useOptionTrades, useOptionQuote } from '../../hooks/useOptionsAdvanced';
+import { useOptionTrades, useOptionQuote } from '../../../hooks/useOptionsAdvanced';
 import { HDConfluenceChips } from '../signals/HDConfluenceChips';
 
 type VirtualRow = 

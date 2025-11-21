@@ -1,5 +1,5 @@
 import { HTMLAttributes, forwardRef } from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface HDChipProps extends HTMLAttributes<HTMLDivElement> {
   variant?: 'positive' | 'negative' | 'neutral' | 'scalp' | 'day' | 'swing' | 'leap' | 'custom';

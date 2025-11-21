@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickData, LineData } from 'lightweight-charts';
-import { massive } from '../../lib/massive';
-import { MassiveError, getIndexBars, getOptionBars, getTradierStockBars } from '../../lib/massive/proxy';
-import { massive } from '../../lib/massive';
-import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../lib/indicators';
+import { massive } from '../../../lib/massive';
+import { MassiveError, getIndexBars, getOptionBars, getTradierStockBars } from '../../../lib/massive/proxy';
+import { massive } from '../../../lib/massive';
+import { calculateEMA, calculateVWAP, calculateBollingerBands, downsampleBars, Bar, IndicatorConfig } from '../../../lib/indicators';
 import { Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react';
-import { ChartLevel } from '../../types/tradeLevels';
+import { ChartLevel } from '../../../types/tradeLevels';
 
 const formatIsoDate = (date: Date) => date.toISOString().split('T')[0];
 const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
