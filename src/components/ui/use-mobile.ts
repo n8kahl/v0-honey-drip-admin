@@ -1,6 +1,12 @@
 import * as React from "react";
 
-const MOBILE_BREAKPOINT = 768;
+/**
+ * Mobile breakpoint aligned with Tailwind's lg: breakpoint (1024px)
+ * This ensures consistency between useIsMobile() and CSS media queries
+ * - Mobile: < 1024px (matches lg:hidden)
+ * - Desktop: >= 1024px (matches hidden lg:flex)
+ */
+const MOBILE_BREAKPOINT = 1024;
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(
