@@ -19,6 +19,9 @@ test-results/
 .vite/
 .vitest/
 
+# TypeScript
+*.tsbuildinfo
+
 # Env & local
 .env
 .env.*

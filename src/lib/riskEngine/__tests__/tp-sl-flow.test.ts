@@ -1,18 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { calculateRisk } from '../calculator';
-import { buildChartLevelsForTrade } from '../chartLevels';
-import { inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS } from '../profiles';
-import { Trade, Contract } from '../../../types';
+import { describe, it, expect } from "vitest";
+import { calculateRisk } from "../calculator";
+import { buildChartLevelsForTrade } from "../chartLevels";
+import { inferTradeTypeByDTE, DEFAULT_DTE_THRESHOLDS } from "../profiles";
+import { Trade, Contract } from "../../../types";
 
 /**
  * End-to-End TP/SL Flow Tests
- * 
+ *
  * These tests verify that TP/SL calculations happen correctly:
  * 1. When a contract is selected (LOADED state)
  * 2. When a trade is entered (ENTERED state)
  * 3. Chart levels are generated with correct TP/SL
  */
-describe('TP/SL Calculation Flow', () => {
+describe("TP/SL Calculation Flow", () => {
   const mockKeyLevels = {
     preMarketHigh: 105,
     preMarketLow: 95,
@@ -35,20 +35,20 @@ describe('TP/SL Calculation Flow', () => {
     yearlyLow: 70,
   };
 
-  describe('LOADED State - Contract Selection', () => {
-    it('should calculate TP/SL for a scalp trade (DTE < 1)', () => {
+  describe("LOADED State - Contract Selection", () => {
+    it("should calculate TP/SL for a scalp trade (DTE < 1)", () => {
       // Expiration today (0 DTE)
       const expiry = new Date();
       expiry.setHours(16, 0, 0, 0);
       const expirationISO = expiry.toISOString();
 
       const tradeType = inferTradeTypeByDTE(expirationISO, new Date(), DEFAULT_DTE_THRESHOLDS);
-      expect(tradeType).toBe('SCALP');
+      expect(tradeType).toBe("SCALP");
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         atr: 2.5,
         expirationISO,
@@ -56,7 +56,7 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -64,28 +64,28 @@ describe('TP/SL Calculation Flow', () => {
       });
 
       // Scalp should have tight TP/SL
-      expect(result.targetPrice).toBeGreaterThan(5.00);
-      expect(result.targetPrice).toBeLessThan(7.50); // Not more than 50% gain typically
-      expect(result.stopLoss).toBeLessThan(5.00);
-      expect(result.stopLoss).toBeGreaterThan(3.50); // Not more than 30% loss typically
-      expect(result.tradeType).toBe('SCALP');
-      expect(result.reasoning).toContain('SCALP');
+      expect(result.targetPrice).toBeGreaterThan(5.0);
+      expect(result.targetPrice).toBeLessThan(7.5); // Not more than 50% gain typically
+      expect(result.stopLoss).toBeLessThan(5.0);
+      expect(result.stopLoss).toBeGreaterThan(3.5); // Not more than 30% loss typically
+      expect(result.tradeType).toBe("SCALP");
+      expect(result.reasoning).toContain("SCALP");
     });
 
-    it('should calculate TP/SL for a day trade (1 <= DTE < 5)', () => {
-      // Expiration tomorrow (1 DTE)
+    it("should calculate TP/SL for a day trade (3 <= DTE <= 14)", () => {
+      // Expiration 5 days out (5 DTE)
       const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 1);
+      expiry.setDate(expiry.getDate() + 5);
       expiry.setHours(16, 0, 0, 0);
       const expirationISO = expiry.toISOString();
 
       const tradeType = inferTradeTypeByDTE(expirationISO, new Date(), DEFAULT_DTE_THRESHOLDS);
-      expect(tradeType).toBe('DAY');
+      expect(tradeType).toBe("DAY");
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         atr: 2.5,
         expirationISO,
@@ -93,32 +93,32 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
         },
       });
 
-      expect(result.targetPrice).toBeGreaterThan(5.00);
-      expect(result.stopLoss).toBeLessThan(5.00);
-      expect(result.tradeType).toBe('DAY');
+      expect(result.targetPrice).toBeGreaterThan(5.0);
+      expect(result.stopLoss).toBeLessThan(5.0);
+      expect(result.tradeType).toBe("DAY");
     });
 
-    it('should calculate TP/SL for a swing trade (5 <= DTE < 30)', () => {
-      // Expiration in 10 days
+    it("should calculate TP/SL for a swing trade (15 <= DTE <= 60)", () => {
+      // Expiration in 30 days
       const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 10);
+      expiry.setDate(expiry.getDate() + 30);
       expiry.setHours(16, 0, 0, 0);
       const expirationISO = expiry.toISOString();
 
       const tradeType = inferTradeTypeByDTE(expirationISO, new Date(), DEFAULT_DTE_THRESHOLDS);
-      expect(tradeType).toBe('SWING');
+      expect(tradeType).toBe("SWING");
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         atr: 2.5,
         expirationISO,
@@ -126,32 +126,32 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
         },
       });
 
-      expect(result.targetPrice).toBeGreaterThan(5.00);
-      expect(result.stopLoss).toBeLessThan(5.00);
-      expect(result.tradeType).toBe('SWING');
+      expect(result.targetPrice).toBeGreaterThan(5.0);
+      expect(result.stopLoss).toBeLessThan(5.0);
+      expect(result.tradeType).toBe("SWING");
     });
 
-    it('should calculate TP/SL for a LEAP (DTE >= 30)', () => {
-      // Expiration in 60 days
+    it("should calculate TP/SL for a LEAP (DTE >= 61)", () => {
+      // Expiration in 90 days
       const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 60);
+      expiry.setDate(expiry.getDate() + 90);
       expiry.setHours(16, 0, 0, 0);
       const expirationISO = expiry.toISOString();
 
       const tradeType = inferTradeTypeByDTE(expirationISO, new Date(), DEFAULT_DTE_THRESHOLDS);
-      expect(tradeType).toBe('LEAP');
+      expect(tradeType).toBe("LEAP");
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         atr: 2.5,
         expirationISO,
@@ -159,7 +159,7 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -167,30 +167,30 @@ describe('TP/SL Calculation Flow', () => {
       });
 
       // LEAP should have wider TP/SL
-      expect(result.targetPrice).toBeGreaterThan(5.00);
-      expect(result.stopLoss).toBeLessThan(5.00);
-      expect(result.tradeType).toBe('LEAP');
+      expect(result.targetPrice).toBeGreaterThan(5.0);
+      expect(result.stopLoss).toBeLessThan(5.0);
+      expect(result.tradeType).toBe("LEAP");
     });
   });
 
-  describe('ENTERED State - Trade Entry with Recalculation', () => {
-    it('should recalculate TP/SL when entering at a different price', () => {
+  describe("ENTERED State - Trade Entry with Recalculation", () => {
+    it("should recalculate TP/SL when entering at a different price", () => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
       const expirationISO = expiry.toISOString();
 
       // Initial calculation at contract mid $5.00
       const loadedResult = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         atr: 2.5,
         expirationISO,
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -199,16 +199,16 @@ describe('TP/SL Calculation Flow', () => {
 
       // Recalculate at actual entry $4.50 (better price)
       const enteredResult = calculateRisk({
-        entryPrice: 4.50,
+        entryPrice: 4.5,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 4.50,
+        currentOptionMid: 4.5,
         keyLevels: mockKeyLevels,
         atr: 2.5,
         expirationISO,
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -218,18 +218,18 @@ describe('TP/SL Calculation Flow', () => {
       // TP/SL should be different based on entry price
       expect(enteredResult.targetPrice).not.toBe(loadedResult.targetPrice);
       expect(enteredResult.stopLoss).not.toBe(loadedResult.stopLoss);
-      
+
       // Verify TP is higher and SL is lower than entry
-      expect(enteredResult.targetPrice).toBeGreaterThan(4.50);
-      expect(enteredResult.stopLoss).toBeLessThan(4.50);
+      expect(enteredResult.targetPrice).toBeGreaterThan(4.5);
+      expect(enteredResult.stopLoss).toBeLessThan(4.5);
     });
 
-    it('should preserve TP/SL when entering at contract mid price', () => {
+    it("should preserve TP/SL when entering at contract mid price", () => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
       const expirationISO = expiry.toISOString();
 
-      const entryPrice = 5.00;
+      const entryPrice = 5.0;
 
       const result1 = calculateRisk({
         entryPrice,
@@ -241,7 +241,7 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -258,7 +258,7 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -271,29 +271,29 @@ describe('TP/SL Calculation Flow', () => {
     });
   });
 
-  describe('Chart Levels Generation', () => {
+  describe("Chart Levels Generation", () => {
     const createMockTrade = (entryPrice: number, targetPrice: number, stopLoss: number): Trade => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
 
       return {
-        id: 'test-trade-1',
-        ticker: 'SPY',
+        id: "test-trade-1",
+        ticker: "SPY",
         contract: {
-          id: 'SPY-500C-2024-11-20',
+          id: "SPY-500C-2024-11-20",
           strike: 500,
-          expiry: expiry.toISOString().split('T')[0],
+          expiry: expiry.toISOString().split("T")[0],
           expiryDate: expiry,
           daysToExpiry: 1,
-          type: 'C',
+          type: "C",
           mid: entryPrice,
           bid: entryPrice - 0.05,
           ask: entryPrice + 0.05,
           volume: 1000,
           openInterest: 5000,
         } as Contract,
-        tradeType: 'Day',
-        state: 'ENTERED',
+        tradeType: "Day",
+        state: "ENTERED",
         entryPrice,
         targetPrice,
         stopLoss,
@@ -305,63 +305,70 @@ describe('TP/SL Calculation Flow', () => {
       };
     };
 
-    it('should generate chart levels with TP and SL', () => {
-      const trade = createMockTrade(5.00, 6.50, 4.00);
+    it("should generate chart levels with TP and SL", () => {
+      const trade = createMockTrade(5.0, 6.5, 4.0);
 
       const levels = buildChartLevelsForTrade(trade, mockKeyLevels);
 
       // Find TP and SL levels
-      const tpLevels = levels.filter(l => l.type === 'TP');
-      const slLevels = levels.filter(l => l.type === 'SL');
+      const tpLevels = levels.filter((l) => l.type === "TP");
+      const slLevels = levels.filter((l) => l.type === "SL");
 
       expect(tpLevels.length).toBeGreaterThan(0);
       expect(slLevels.length).toBeGreaterThan(0);
 
       // Verify TP price
-      const tp1 = tpLevels.find(l => l.label === 'TP1');
+      const tp1 = tpLevels.find((l) => l.label === "TP1");
       expect(tp1).toBeDefined();
-      expect(tp1?.price).toBe(6.50);
+      expect(tp1?.price).toBe(6.5);
 
       // Verify SL price
-      const sl = slLevels.find(l => l.label === 'SL');
+      const sl = slLevels.find((l) => l.label === "SL");
       expect(sl).toBeDefined();
-      expect(sl?.price).toBe(4.00);
+      expect(sl?.price).toBe(4.0);
     });
 
-    it('should include Entry level for ENTERED trades', () => {
-      const trade = createMockTrade(5.00, 6.50, 4.00);
+    it("should include Entry level for ENTERED trades", () => {
+      const trade = createMockTrade(5.0, 6.5, 4.0);
 
       const levels = buildChartLevelsForTrade(trade, mockKeyLevels);
 
-      const entryLevel = levels.find(l => l.type === 'ENTRY');
+      const entryLevel = levels.find((l) => l.type === "ENTRY");
       expect(entryLevel).toBeDefined();
-      expect(entryLevel?.price).toBe(5.00);
+      expect(entryLevel?.price).toBe(5.0);
     });
 
-    it('should generate key levels (VWAP, ORB, etc.)', () => {
-      const trade = createMockTrade(5.00, 6.50, 4.00);
+    it("should generate key levels (VWAP, ORB, etc.)", () => {
+      const trade = createMockTrade(5.0, 6.5, 4.0);
 
       const levels = buildChartLevelsForTrade(trade, mockKeyLevels);
 
       // Should have various key levels (VWAP, ORB, Prior Day)
-      const keyLevelTypes = ['PREMARKET_HIGH', 'PREMARKET_LOW', 'ORB_HIGH', 'ORB_LOW', 
-                             'PREV_DAY_HIGH', 'PREV_DAY_LOW', 'VWAP'];
-      const keyLevelsFound = levels.filter(l => keyLevelTypes.includes(l.type));
+      const keyLevelTypes = [
+        "PREMARKET_HIGH",
+        "PREMARKET_LOW",
+        "ORB_HIGH",
+        "ORB_LOW",
+        "PREV_DAY_HIGH",
+        "PREV_DAY_LOW",
+        "VWAP",
+      ];
+      const keyLevelsFound = levels.filter((l) => keyLevelTypes.includes(l.type));
 
       expect(keyLevelsFound.length).toBeGreaterThan(0);
     });
   });
 
-  describe('Edge Cases', () => {
-    it('should handle missing keyLevels gracefully', () => {
+  describe("Edge Cases", () => {
+    it("should handle missing keyLevels gracefully", () => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
       const expirationISO = expiry.toISOString();
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: {
           preMarketHigh: 0,
           preMarketLow: 0,
@@ -388,7 +395,7 @@ describe('TP/SL Calculation Flow', () => {
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -396,26 +403,26 @@ describe('TP/SL Calculation Flow', () => {
       });
 
       // Should still calculate TP/SL using ATR-based fallback
-      expect(result.targetPrice).toBeGreaterThan(5.00);
-      expect(result.stopLoss).toBeLessThan(5.00);
+      expect(result.targetPrice).toBeGreaterThan(5.0);
+      expect(result.stopLoss).toBeLessThan(5.0);
     });
 
-    it('should handle missing ATR gracefully', () => {
+    it("should handle missing ATR gracefully", () => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
       const expirationISO = expiry.toISOString();
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         atr: 0, // No ATR data
         expirationISO,
         delta: 0.5,
         gamma: 0.02,
         defaults: {
-          mode: 'calculated',
+          mode: "calculated",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -423,23 +430,23 @@ describe('TP/SL Calculation Flow', () => {
       });
 
       // Should still calculate using key levels
-      expect(result.targetPrice).toBeGreaterThan(5.00);
-      expect(result.stopLoss).toBeLessThan(5.00);
+      expect(result.targetPrice).toBeGreaterThan(5.0);
+      expect(result.stopLoss).toBeLessThan(5.0);
     });
 
-    it('should handle percent mode fallback', () => {
+    it("should handle percent mode fallback", () => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
       const expirationISO = expiry.toISOString();
 
       const result = calculateRisk({
-        entryPrice: 5.00,
+        entryPrice: 5.0,
         currentUnderlyingPrice: 100,
-        currentOptionMid: 5.00,
+        currentOptionMid: 5.0,
         keyLevels: mockKeyLevels,
         expirationISO,
         defaults: {
-          mode: 'percent',
+          mode: "percent",
           tpPercent: 50,
           slPercent: 30,
           dteThresholds: DEFAULT_DTE_THRESHOLDS,
@@ -447,8 +454,8 @@ describe('TP/SL Calculation Flow', () => {
       });
 
       // Percent mode: +50% TP, -30% SL
-      expect(result.targetPrice).toBe(7.50); // 5.00 * 1.5
-      expect(result.stopLoss).toBe(3.50); // 5.00 * 0.7
+      expect(result.targetPrice).toBe(7.5); // 5.00 * 1.5
+      expect(result.stopLoss).toBe(3.5); // 5.00 * 0.7
     });
   });
 });

@@ -1,0 +1,5 @@
+# Run lint-staged to check and fix staged files
+pnpm exec lint-staged
+
+# Run type checking (uncomment once all TS errors are fixed)
+# pnpm run typecheck
