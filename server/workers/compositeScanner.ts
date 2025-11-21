@@ -483,9 +483,14 @@ async function scanUserWatchlist(userId: string): Promise<number> {
         if (result.signal) {
           // Insert signal to database
           try {
-            const inserted = await insertCompositeSignal(result.signal, supabase);
             console.log(
-              `[Composite Scanner] 🎯 NEW SIGNAL: ${symbol} ${result.signal.opportunityType} (${result.signal.baseScore.toFixed(0)}/100)`
+              `[Composite Scanner] Attempting to insert signal: ${symbol} ${result.signal.opportunityType}`
+            );
+
+            const inserted = await insertCompositeSignal(result.signal, supabase);
+
+            console.log(
+              `[Composite Scanner] 🎯 NEW SIGNAL SAVED: ${symbol} ${result.signal.opportunityType} (${result.signal.baseScore.toFixed(0)}/100) ID: ${inserted.id}`
             );
 
             // Send Discord alert
@@ -502,7 +507,12 @@ async function scanUserWatchlist(userId: string): Promise<number> {
             if (insertErr.message?.includes("Duplicate signal")) {
               console.log(`[Composite Scanner] ${symbol}: Duplicate signal (skipped)`);
             } else {
-              console.error(`[Composite Scanner] Error inserting signal:`, insertErr);
+              console.error(`[Composite Scanner] ❌ Error inserting signal for ${symbol}:`, {
+                message: insertErr.message,
+                details: insertErr.details || insertErr.toString(),
+                code: insertErr.code,
+                opportunityType: result.signal.opportunityType,
+              });
               stats.totalErrors++;
             }
           }
@@ -596,25 +606,37 @@ async function expireOldActiveSignals(): Promise<void> {
  */
 async function updateHeartbeat(signalsDetected: number): Promise<void> {
   try {
+    console.log(`[Composite Scanner] Attempting heartbeat update... (signals: ${signalsDetected})`);
+
     // Upsert heartbeat record
-    const { error } = await supabase.from("scanner_heartbeat").upsert(
-      {
-        id: "composite_scanner",
-        last_scan: new Date().toISOString(),
-        signals_detected: signalsDetected,
-        status: "healthy",
-      },
-      {
-        onConflict: "id",
-      }
-    );
+    const { data, error } = await supabase
+      .from("scanner_heartbeat")
+      .upsert(
+        {
+          id: "composite_scanner",
+          last_scan: new Date().toISOString(),
+          signals_detected: signalsDetected,
+          status: "healthy",
+        },
+        {
+          onConflict: "id",
+        }
+      )
+      .select();
 
     if (error) {
-      console.error("[Composite Scanner] Error updating heartbeat:", error);
+      console.error("[Composite Scanner] ❌ Heartbeat update failed:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       stats.totalErrors++;
+    } else {
+      console.log("[Composite Scanner] ✅ Heartbeat updated successfully:", data);
     }
   } catch (error) {
-    console.error("[Composite Scanner] Error in updateHeartbeat:", error);
+    console.error("[Composite Scanner] ❌ Heartbeat update exception:", error);
     stats.totalErrors++;
   }
 }
