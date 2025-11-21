@@ -236,9 +236,10 @@ export async function insertCompositeSignal(
  */
 export async function updateCompositeSignal(
   id: string,
-  updates: Partial<Omit<CompositeSignal, "id" | "createdAt" | "updatedAt" | "timestamp">>
+  updates: Partial<Omit<CompositeSignal, "id" | "createdAt" | "updatedAt" | "timestamp">>,
+  client?: SupabaseClient
 ): Promise<CompositeSignal> {
-  const supabase = createClient();
+  const supabase = client || (await getDefaultClient());
 
   // Convert updates to row format
   const rowUpdates: any = {};
@@ -286,9 +287,10 @@ export async function updateCompositeSignal(
  */
 export async function getActiveSignals(
   userId: string,
-  limit: number = 50
+  limit: number = 50,
+  client?: SupabaseClient
 ): Promise<CompositeSignal[]> {
-  const supabase = createClient();
+  const supabase = client || (await getDefaultClient());
 
   const { data, error } = await supabase
     .from("composite_signals")
@@ -320,9 +322,10 @@ export async function getSignals(
     fromDate?: Date;
     toDate?: Date;
     limit?: number;
-  } = {}
+  } = {},
+  client?: SupabaseClient
 ): Promise<CompositeSignal[]> {
-  const supabase = createClient();
+  const supabase = client || (await getDefaultClient());
 
   let query = supabase.from("composite_signals").select("*").eq("owner", userId);
 
@@ -369,8 +372,11 @@ export async function getSignals(
  * @param id - Signal ID
  * @returns Signal or null
  */
-export async function getSignalById(id: string): Promise<CompositeSignal | null> {
-  const supabase = createClient();
+export async function getSignalById(
+  id: string,
+  client?: SupabaseClient
+): Promise<CompositeSignal | null> {
+  const supabase = client || (await getDefaultClient());
 
   const { data, error } = await supabase
     .from("composite_signals")
@@ -568,9 +574,10 @@ export async function getPerformanceMetrics(
     symbol?: string;
     opportunityType?: string;
     recommendedStyle?: string;
-  } = {}
+  } = {},
+  client?: SupabaseClient
 ): Promise<SignalPerformanceMetricsRow[]> {
-  const supabase = createClient();
+  const supabase = client || (await getDefaultClient());
 
   let query = supabase.from("signal_performance_metrics").select("*").eq("owner", userId);
 
@@ -611,9 +618,10 @@ export async function getPerformanceMetrics(
  * @returns Updated metrics
  */
 export async function upsertPerformanceMetrics(
-  metrics: Omit<SignalPerformanceMetricsRow, "id" | "created_at" | "updated_at">
+  metrics: Omit<SignalPerformanceMetricsRow, "id" | "created_at" | "updated_at">,
+  client?: SupabaseClient
 ): Promise<SignalPerformanceMetricsRow> {
-  const supabase = createClient();
+  const supabase = client || (await getDefaultClient());
 
   const { data, error } = await supabase
     .from("signal_performance_metrics")
