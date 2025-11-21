@@ -1,0 +1,119 @@
+import type { SymbolFeatures } from '../../strategy/engine.js';
+import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
+
+/**
+ * Mean Reversion Long Detector
+ *
+ * Detects oversold conditions with VWAP deviation, looking for bounce opportunities.
+ * RSI extreme + stretched below VWAP + volume confirmation.
+ *
+ * Expected Frequency: 3-5 signals/day per symbol
+ */
+export const meanReversionLongDetector: OpportunityDetector = createDetector({
+  type: 'mean_reversion_long',
+  direction: 'LONG',
+  assetClass: ['EQUITY_ETF', 'STOCK'],
+  requiresOptionsData: false,
+
+  detect: (features: SymbolFeatures) => {
+    // 1. RSI oversold (< 35)
+    const rsi = features.rsi?.['14'];
+    if (!rsi || rsi >= 35) return false;
+
+    // 2. Below VWAP (stretched)
+    const vwapDist = features.vwap?.distancePct;
+    if (!vwapDist || vwapDist >= -0.3) return false; // Must be at least -0.3% below VWAP
+
+    // 3. During regular hours
+    const regularHours = features.session?.isRegularHours === true;
+    if (!regularHours) return false;
+
+    // 4. Not in a strong downtrend (optional: check if choppy or ranging regime)
+    const regime = features.pattern?.market_regime;
+    if (regime === 'trending_down') return false; // Avoid catching falling knives
+
+    return true;
+  },
+
+  scoreFactors: [
+    {
+      name: 'rsi_extreme',
+      weight: 0.35,
+      evaluate: (features) => {
+        const rsi = features.rsi?.['14'] || 50;
+
+        // More oversold = higher score
+        // RSI 30 = 60, RSI 25 = 80, RSI 20 = 100
+        if (rsi <= 20) return 100;
+        if (rsi <= 25) return 85;
+        if (rsi <= 30) return 70;
+        if (rsi <= 35) return 55;
+
+        return Math.max(0, 100 - (rsi * 2));
+      }
+    },
+    {
+      name: 'vwap_deviation',
+      weight: 0.30,
+      evaluate: (features) => {
+        const vwapDist = features.vwap?.distancePct || 0;
+
+        // More stretched below VWAP = higher mean reversion potential
+        // -0.5% = 60, -1.0% = 80, -1.5%+ = 100
+        if (vwapDist <= -1.5) return 100;
+        if (vwapDist <= -1.0) return 85;
+        if (vwapDist <= -0.5) return 70;
+        if (vwapDist <= -0.3) return 55;
+
+        return Math.max(0, Math.abs(vwapDist) * 40);
+      }
+    },
+    {
+      name: 'volume_profile',
+      weight: 0.20,
+      evaluate: (features) => {
+        const rvol = features.volume?.relativeToAvg || 1.0;
+
+        // Higher volume on the dip = stronger reversal potential
+        // 1.0x = 50, 1.5x = 70, 2.0x+ = 100
+        if (rvol >= 2.0) return 100;
+        if (rvol >= 1.5) return 80;
+        if (rvol >= 1.2) return 65;
+
+        return Math.min(100, rvol * 50);
+      }
+    },
+    {
+      name: 'market_regime_suitability',
+      weight: 0.10,
+      evaluate: (features) => {
+        const regime = features.pattern?.market_regime;
+
+        // Mean reversion works best in ranging/choppy markets
+        if (regime === 'ranging') return 100;
+        if (regime === 'choppy') return 90;
+        if (regime === 'volatile') return 70;
+        if (regime === 'trending_up') return 60;
+        if (regime === 'trending_down') return 20; // Risky in downtrends
+
+        return 50;
+      }
+    },
+    {
+      name: 'reversal_confirmation',
+      weight: 0.05,
+      evaluate: (features) => {
+        // Check for early reversal signs
+        const hasPatientCandle = features.pattern?.patient_candle === true;
+        const hasBullishDivergence = features.pattern?.rsi_bullish_divergence === true;
+
+        let score = 50; // Base
+
+        if (hasBullishDivergence) score += 30;
+        if (hasPatientCandle) score += 20;
+
+        return Math.min(100, score);
+      }
+    }
+  ]
+});
