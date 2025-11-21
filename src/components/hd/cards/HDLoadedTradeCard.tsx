@@ -4,8 +4,6 @@ import { HDConfluenceDetailPanel } from '../dashboard/HDConfluenceDetailPanel';
 import { HDCard } from '../common/HDCard';
 import { HDButton } from '../common/HDButton';
 import { formatPrice } from '../../../lib/utils';
-import { StrategySignalBadge } from './StrategySignalBadge';
-import type { SymbolSignals } from '../../../hooks/useStrategyScanner';
 
 interface HDLoadedTradeCardProps {
   trade: Trade;
@@ -20,10 +18,9 @@ interface HDLoadedTradeCardProps {
     volatility?: any;
     liquidity?: any;
   };
-  signals?: SymbolSignals;
 }
 
-export function HDLoadedTradeCard({ trade, onEnter, onDiscard, underlyingPrice, underlyingChange, confluence, signals }: HDLoadedTradeCardProps) {
+export function HDLoadedTradeCard({ trade, onEnter, onDiscard, underlyingPrice, underlyingChange, confluence }: HDLoadedTradeCardProps) {
   // Log confluence data for debugging
   console.log('[v0] HDLoadedTradeCard confluence:', {
     loading: confluence?.loading,
@@ -51,9 +48,6 @@ export function HDLoadedTradeCard({ trade, onEnter, onDiscard, underlyingPrice, 
             <div className="text-[var(--text-muted)] text-xs">
               ${trade.contract.strike}{trade.contract.type} • {new Date(trade.contract.expiry).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • {trade.contract.daysToExpiry}DTE
             </div>
-          </div>
-          <div className="flex-shrink-0">
-            <StrategySignalBadge symbolSignals={signals} compact />
           </div>
         </div>
 
