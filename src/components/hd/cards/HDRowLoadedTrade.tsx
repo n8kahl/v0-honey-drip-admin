@@ -17,7 +17,8 @@ export function HDRowLoadedTrade({ trade, active, onClick, onRemove }: HDRowLoad
   const symbolData = useSymbolData(trade.ticker);
   const confluence = symbolData?.confluence;
 
-  const currentPrice = symbolData?.lastPrice ?? trade.contract.mid ?? 0;
+  // Prefer live market data, fall back to contract data
+  const currentPrice = symbolData?.lastPrice ?? trade.currentPrice ?? trade.contract.mid ?? 0;
   const daysToExpiry = trade.contract.daysToExpiry ?? 0;
 
   // Color code DTE

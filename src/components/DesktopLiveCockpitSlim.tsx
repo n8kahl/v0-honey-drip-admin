@@ -114,10 +114,14 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     );
     return () => handles.forEach((h) => streamingManager.unsubscribe(h));
   }, [watchlist]);
+
+  // Subscribe to loaded and entered trades for real-time pricing
   useEffect(() => {
-    const entered = activeTrades.filter((t) => t.state === "ENTERED");
-    const handles = entered.map((trade) =>
-      streamingManager.subscribe(trade.contract.id, ["quotes"], () => {})
+    const tradesToSubscribe = activeTrades.filter(
+      (t) => t.state === "LOADED" || t.state === "ENTERED"
+    );
+    const handles = tradesToSubscribe.map((trade) =>
+      streamingManager.subscribe(trade.ticker, ["quotes"], () => {})
     );
     return () => handles.forEach((h) => streamingManager.unsubscribe(h));
   }, [activeTrades]);
@@ -152,11 +156,18 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onLoadedTradeClick={(trade) => {
               actions.setCurrentTrade(trade);
               actions.setTradeState(trade.state);
+              // Set active ticker so middle column updates with contract data
+              const ticker = watchlist.find((w) => w.symbol === trade.ticker);
+              if (ticker) {
+                actions.setActiveTicker(ticker);
+              }
             }}
             onRemoveLoadedTrade={(trade) => {
               actions.setActiveTrades((prev) => prev.filter((t) => t.id !== trade.id));
+              // If this was the current trade, clear it
               if (currentTrade?.id === trade.id) {
                 actions.setCurrentTrade(null);
+                actions.setTradeState("WATCHING");
               }
             }}
             activeTicker={activeTicker?.symbol}
