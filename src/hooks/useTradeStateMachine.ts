@@ -633,10 +633,137 @@ export function useTradeStateMachine({
   );
 
   const handleEnterAndAlert = useCallback(
-    (channelIds: string[], challengeIds: string[], comment?: string, entryPrice?: number) => {
-      handleEnterTrade(channelIds, challengeIds, comment, entryPrice);
+    async (channelIds: string[], challengeIds: string[], comment?: string, entryPrice?: number) => {
+      if (!currentTrade) return;
+
+      const finalEntryPrice = entryPrice || currentTrade.contract.mid;
+
+      // Recalculate TP/SL with actual entry price
+      let targetPrice = finalEntryPrice * 1.5;
+      let stopLoss = finalEntryPrice * 0.5;
+
+      try {
+        const tradeType = inferTradeTypeByDTE(
+          currentTrade.contract.expiry,
+          new Date(),
+          DEFAULT_DTE_THRESHOLDS
+        );
+
+        const risk = calculateRisk({
+          entryPrice: finalEntryPrice,
+          currentUnderlyingPrice: finalEntryPrice,
+          currentOptionMid: finalEntryPrice,
+          keyLevels: {
+            preMarketHigh: 0,
+            preMarketLow: 0,
+            orbHigh: 0,
+            orbLow: 0,
+            priorDayHigh: 0,
+            priorDayLow: 0,
+            vwap: 0,
+            vwapUpperBand: 0,
+            vwapLowerBand: 0,
+            bollingerUpper: 0,
+            bollingerLower: 0,
+            weeklyHigh: 0,
+            weeklyLow: 0,
+            monthlyHigh: 0,
+            monthlyLow: 0,
+            quarterlyHigh: 0,
+            quarterlyLow: 0,
+            yearlyHigh: 0,
+            yearlyLow: 0,
+          },
+          expirationISO: currentTrade.contract.expiry,
+          tradeType,
+          delta: currentTrade.contract.delta ?? 0.5,
+          gamma: currentTrade.contract.gamma ?? 0,
+          defaults: {
+            mode: "percent",
+            tpPercent: 50,
+            slPercent: 50,
+            dteThresholds: DEFAULT_DTE_THRESHOLDS,
+          },
+        });
+
+        if (risk.targetPrice) targetPrice = risk.targetPrice;
+        if (risk.stopLoss) stopLoss = risk.stopLoss;
+      } catch (error) {
+        console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
+      }
+
+      const enteredTrade: Trade = {
+        ...currentTrade,
+        state: "ENTERED",
+        entryPrice: finalEntryPrice,
+        currentPrice: finalEntryPrice,
+        targetPrice,
+        stopLoss,
+        movePercent: 0,
+        discordChannels: channelIds || [],
+        challenges: challengeIds || [],
+        updates: [
+          ...(currentTrade.updates || []),
+          {
+            id: crypto.randomUUID(),
+            type: "enter",
+            timestamp: new Date(),
+            price: finalEntryPrice,
+            message: comment || "",
+          },
+        ],
+      };
+
+      // Update local state
+      setActiveTrades((prev) => {
+        const existing = prev.find((t) => t.id === currentTrade.id);
+        if (existing) {
+          return prev.map((t) => (t.id === currentTrade.id ? enteredTrade : t));
+        } else {
+          return [...prev, enteredTrade];
+        }
+      });
+      setCurrentTrade(enteredTrade);
+      setTradeState("ENTERED");
+      setShowAlert(false);
+
+      // Send Discord alerts
+      const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
+      const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+
+      if (discordAlertsEnabled && channels.length > 0) {
+        try {
+          await discord.sendEntryAlert(channels, enteredTrade, comment);
+          console.log("[Discord] ENTER alert sent successfully");
+        } catch (error) {
+          console.error("[Discord] Failed to send ENTER alert:", error);
+          toast.error("Discord alert failed", {
+            description: "Check console for details",
+          } as any);
+        }
+      }
+
+      // Mobile UX: navigate to active tab
+      if (isMobile && onMobileTabChange) {
+        onMobileTabChange("active");
+      }
+
+      // Show success toast
+      showAlertToast("enter", enteredTrade.ticker, channels);
     },
-    [handleEnterTrade]
+    [
+      currentTrade,
+      discord,
+      getDiscordChannelsForAlert,
+      setActiveTrades,
+      setCurrentTrade,
+      setTradeState,
+      setShowAlert,
+      showAlertToast,
+      toast,
+      isMobile,
+      onMobileTabChange,
+    ]
   );
 
   const handleCancelAlert = useCallback(() => {
