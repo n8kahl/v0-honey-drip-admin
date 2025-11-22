@@ -80,6 +80,58 @@ function validateTradeUpdateInput(update: any): { valid: boolean; error?: string
   return { valid: true };
 }
 
+/**
+ * Type definitions for database operations
+ * These bypass Supabase type inference limitations
+ */
+interface TradeInsert {
+  user_id: string;
+  ticker: string;
+  contract_type?: string | null;
+  strike?: number | null;
+  expiration?: string | null;
+  quantity?: number;
+  status?: string;
+  entry_price?: number | null;
+  target_price?: number | null;
+  stop_loss?: number | null;
+  entry_time?: string | null;
+  notes?: string | null;
+}
+
+interface TradeUpdate {
+  status?: string;
+  entry_price?: number;
+  entry_time?: string;
+  exit_price?: number;
+  exit_time?: string;
+  target_price?: number;
+  stop_loss?: number;
+  current_price?: number;
+  move_percent?: number;
+  notes?: string;
+  updated_at?: string;
+}
+
+interface TradeUpdateInsert {
+  trade_id: string;
+  user_id: string;
+  action: string;
+  price?: number;
+  quantity?: number;
+  notes?: string | null;
+}
+
+interface DiscordChannelLink {
+  trade_id: string;
+  discord_channel_id: string;
+}
+
+interface ChallengeLink {
+  trade_id: string;
+  challenge_id: string;
+}
+
 // ============================================================================
 // POST /api/trades - Create a new trade
 // ============================================================================
@@ -104,24 +156,24 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     console.log(`[Trades API] Creating trade for user ${userId}:`, trade.ticker);
 
     // Create trade in database
+    const tradeData: TradeInsert = {
+      user_id: userId,
+      ticker: trade.ticker,
+      contract_type: trade.contract?.type || null,
+      strike: trade.contract?.strike || null,
+      expiration: trade.contract?.expiry || null,
+      quantity: trade.quantity || 1,
+      status: trade.status || "loaded",
+      entry_price: trade.entry_price || null,
+      target_price: trade.targetPrice || null,
+      stop_loss: trade.stopLoss || null,
+      entry_time: trade.entryTime || null,
+      notes: trade.notes || null,
+    };
+
     const { data, error } = await getSupabaseClient()
       .from("trades")
-      .insert([
-        {
-          user_id: userId,
-          ticker: trade.ticker,
-          contract_type: trade.contract?.type || null,
-          strike: trade.contract?.strike || null,
-          expiration: trade.contract?.expiry || null,
-          quantity: trade.quantity || 1,
-          status: trade.status || "loaded",
-          entry_price: trade.entry_price || null,
-          target_price: trade.targetPrice || null,
-          stop_loss: trade.stopLoss || null,
-          entry_time: trade.entryTime || null,
-          notes: trade.notes || null,
-        },
-      ])
+      .insert([tradeData] as any)
       .select("*")
       .single();
 
@@ -145,7 +197,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
 
       const { error: channelError } = await getSupabaseClient()
         .from("trades_discord_channels")
-        .insert(channelLinks);
+        .insert(channelLinks as any);
 
       if (channelError) {
         console.warn("[Trades API] Warning: Failed to link Discord channels:", channelError);
@@ -162,7 +214,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
 
       const { error: challengeError } = await getSupabaseClient()
         .from("trades_challenges")
-        .insert(challengeLinks);
+        .insert(challengeLinks as any);
 
       if (challengeError) {
         console.warn("[Trades API] Warning: Failed to link challenges:", challengeError);
@@ -202,21 +254,22 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
     }
 
     // Update trade
-    const { data, error } = await getSupabaseClient()
-      .from("trades")
-      .update({
-        status: updates.status,
-        entry_price: updates.entry_price,
-        entry_time: updates.entry_time,
-        exit_price: updates.exit_price,
-        exit_time: updates.exit_time,
-        target_price: updates.targetPrice || updates.target_price,
-        stop_loss: updates.stopLoss || updates.stop_loss,
-        current_price: updates.currentPrice || updates.current_price,
-        move_percent: updates.movePercent || updates.move_percent,
-        notes: updates.notes,
-        updated_at: new Date().toISOString(),
-      })
+    const updateData: TradeUpdate = {
+      status: updates.status,
+      entry_price: updates.entry_price,
+      entry_time: updates.entry_time,
+      exit_price: updates.exit_price,
+      exit_time: updates.exit_time,
+      target_price: updates.targetPrice || updates.target_price,
+      stop_loss: updates.stopLoss || updates.stop_loss,
+      current_price: updates.currentPrice || updates.current_price,
+      move_percent: updates.movePercent || updates.move_percent,
+      notes: updates.notes,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await (getSupabaseClient().from("trades") as any)
+      .update(updateData)
       .eq("id", tradeId)
       .eq("user_id", userId) // RLS: only own trades
       .select("*")
@@ -303,18 +356,18 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
     console.log(`[Trades API] Creating trade update for trade ${tradeId}: action=${action}`);
 
     // Create trade update
+    const updateRecord: TradeUpdateInsert = {
+      trade_id: tradeId,
+      user_id: userId,
+      action,
+      price,
+      quantity: quantity || 1,
+      notes: notes || null,
+    };
+
     const { data, error } = await getSupabaseClient()
       .from("trade_updates")
-      .insert([
-        {
-          trade_id: tradeId,
-          user_id: userId,
-          action,
-          price,
-          quantity: quantity || 1,
-          notes: notes || null,
-        },
-      ])
+      .insert([updateRecord] as any)
       .select("*")
       .single();
 
@@ -352,14 +405,14 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
     console.log(`[Trades API] Linking channel ${channelId} to trade ${tradeId}`);
 
     // Insert or ignore if already exists (UNIQUE constraint)
+    const channelLink: DiscordChannelLink = {
+      trade_id: tradeId,
+      discord_channel_id: channelId,
+    };
+
     const { data, error } = await getSupabaseClient()
       .from("trades_discord_channels")
-      .insert([
-        {
-          trade_id: tradeId,
-          discord_channel_id: channelId,
-        },
-      ])
+      .insert([channelLink] as any)
       .select("*")
       .single();
 
@@ -443,14 +496,14 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
 
     console.log(`[Trades API] Linking challenge ${challengeId} to trade ${tradeId}`);
 
+    const challengeLink: ChallengeLink = {
+      trade_id: tradeId,
+      challenge_id: challengeId,
+    };
+
     const { data, error } = await getSupabaseClient()
       .from("trades_challenges")
-      .insert([
-        {
-          trade_id: tradeId,
-          challenge_id: challengeId,
-        },
-      ])
+      .insert([challengeLink] as any)
       .select("*")
       .single();
 
