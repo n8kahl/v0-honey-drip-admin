@@ -342,11 +342,11 @@ export function HDAlertComposer({
         
         {/* Field Checkboxes - Collapsible */}
         <div>
-          <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-3 block">
+          <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-2 block">
             Include in Alert
           </Label>
-          <details className="group" open>
-            <summary className="cursor-pointer flex items-center justify-between p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors mb-2">
+          <details className="group">
+            <summary className="cursor-pointer flex items-center justify-between p-2 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors mb-1.5">
               <span className="text-xs text-[var(--text-high)]">
                 {[showEntry, showCurrent, showTarget, showStopLoss, showPnL, showConfluence].filter(Boolean).length} field{[showEntry, showCurrent, showTarget, showStopLoss, showPnL, showConfluence].filter(Boolean).length !== 1 ? 's' : ''} selected
               </span>
@@ -354,9 +354,9 @@ export function HDAlertComposer({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </summary>
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 mt-2">
-              <div className="flex items-center justify-between p-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-                <div className="flex items-center gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-1.5 mt-1.5">
+              <div className="flex items-center justify-between p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="field-entry"
                     checked={showEntry}
@@ -379,8 +379,8 @@ export function HDAlertComposer({
                 </div>
               </div>
               
-              <div className="flex items-center justify-between p-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="field-current"
                     checked={showCurrent}
@@ -403,8 +403,8 @@ export function HDAlertComposer({
                 </div>
               </div>
               
-              <div className="flex items-center justify-between p-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="field-target"
                     checked={showTarget}
@@ -427,8 +427,8 @@ export function HDAlertComposer({
                 </div>
               </div>
               
-              <div className="flex items-center justify-between p-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="field-stop"
                     checked={showStopLoss}
@@ -492,8 +492,8 @@ export function HDAlertComposer({
               )}
 
               {/* Confluence Metrics - Optional */}
-              <div className="flex items-center justify-between p-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="field-confluence"
                     checked={showConfluence}

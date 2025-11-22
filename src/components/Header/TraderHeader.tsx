@@ -529,20 +529,6 @@ export const TraderHeader: React.FC = () => {
           <ActiveSetups />
         </div>
 
-        {/* Center: Challenge Progress Ring */}
-        <div className="hidden md:flex items-center justify-center flex-1">
-          {activeChallenge ? (
-            <ChallengeRing
-              completed={completedInChallenge.length}
-              target={10} // Default target, should come from challenge
-              rMultiple={todayRMultiple}
-              winRate={winRate}
-            />
-          ) : (
-            <div className="text-xs text-[var(--text-muted)] italic">No active challenge</div>
-          )}
-        </div>
-
         {/* Right: Mobile Menu + Dark Mode + User Menu */}
         <div className="flex items-center gap-3">
           {/* Mobile hamburger menu (only on mobile) */}
