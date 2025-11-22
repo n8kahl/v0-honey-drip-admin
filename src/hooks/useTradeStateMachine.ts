@@ -410,6 +410,22 @@ export function useTradeStateMachine({
             await Promise.all(persistencePromises);
           }
 
+          // Send Discord LOAD alert
+          const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
+          const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+
+          if (discordAlertsEnabled && channels.length > 0) {
+            try {
+              await discord.sendLoadAlert(channels, updatedTrade);
+              console.log("[Discord] LOAD alert sent successfully");
+            } catch (error) {
+              console.error("[Discord] Failed to send LOAD alert:", error);
+              toast.error("Discord alert failed", {
+                description: "Check console for details",
+              } as any);
+            }
+          }
+
           showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
         } catch (error) {
           console.error("[v0] Failed to persist load alert to database:", error);
@@ -598,6 +614,70 @@ export function useTradeStateMachine({
 
         if (persistencePromises.length > 0) {
           await Promise.all(persistencePromises);
+        }
+
+        // Send Discord alerts
+        const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
+        const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+
+        if (discordAlertsEnabled && channels.length > 0) {
+          try {
+            switch (alertType) {
+              case "enter":
+                await discord.sendEntryAlert(channels, newTrade, comment);
+                console.log("[Discord] ENTER alert sent successfully");
+                break;
+              case "trim":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  "trim",
+                  comment || "Position trimmed"
+                );
+                console.log("[Discord] TRIM alert sent successfully");
+                break;
+              case "update":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  alertOptions.updateKind === "sl" ? "update-sl" : "generic",
+                  comment || "Position updated"
+                );
+                console.log("[Discord] UPDATE alert sent successfully");
+                break;
+              case "update-sl":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  "update-sl",
+                  comment || "Stop loss updated"
+                );
+                console.log("[Discord] UPDATE-SL alert sent successfully");
+                break;
+              case "trail-stop":
+                await discord.sendTrailingStopAlert(channels, newTrade);
+                console.log("[Discord] TRAIL-STOP alert sent successfully");
+                break;
+              case "add":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  "generic",
+                  comment || "Added to position"
+                );
+                console.log("[Discord] ADD alert sent successfully");
+                break;
+              case "exit":
+                await discord.sendExitAlert(channels, newTrade, comment);
+                console.log("[Discord] EXIT alert sent successfully");
+                break;
+            }
+          } catch (error) {
+            console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
+            toast.error("Discord alert failed", {
+              description: "Check console for details",
+            } as any);
+          }
         }
 
         showAlertToast(alertType, newTrade.ticker, selectedChannels as DiscordChannel[]);
