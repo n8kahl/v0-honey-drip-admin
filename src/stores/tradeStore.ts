@@ -218,15 +218,21 @@ export const useTradeStore = create<TradeStore>()(
           console.warn('[TradeStore] Cannot transition to LOADED: no current trade');
           return;
         }
-        
-        set({
-          currentTrade: {
-            ...currentTrade,
-            contract,
-            state: 'LOADED',
-          },
+
+        const loadedTrade: Trade = {
+          ...currentTrade,
+          contract,
+          state: 'LOADED',
+        };
+
+        set((state) => ({
+          currentTrade: loadedTrade,
           tradeState: 'LOADED',
-        });
+          activeTrades: [
+            ...state.activeTrades.filter((t) => t.id !== loadedTrade.id),
+            loadedTrade,
+          ],
+        }));
       },
 
       transitionToEntered: (entryPrice, _quantity) => {

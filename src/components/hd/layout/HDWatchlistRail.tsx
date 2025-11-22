@@ -16,12 +16,21 @@ interface HDWatchlistRailProps {
 /**
  * SectionHeader - Yellow/black gradient header for rail sections
  */
-function SectionHeader({ title }: { title: string }) {
+function SectionHeader({ title, onAdd }: { title: string; onAdd?: () => void }) {
   return (
-    <div className="px-3 py-2 bg-gradient-to-r from-yellow-500/10 to-transparent border-l-2 border-yellow-500">
+    <div className="px-3 py-2 bg-gradient-to-r from-yellow-500/10 to-transparent border-l-2 border-yellow-500 flex items-center justify-between">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-yellow-500">
         {title}
       </h3>
+      {onAdd && (
+        <button
+          onClick={onAdd}
+          className="p-1 rounded hover:bg-yellow-500/20 transition-colors"
+          title={`Add ${title.toLowerCase()}`}
+        >
+          <Plus className="w-3.5 h-3.5 text-yellow-500" />
+        </button>
+      )}
     </div>
   );
 }
@@ -45,18 +54,6 @@ export function HDWatchlistRail({
 
   return (
     <div className="w-full lg:w-80 border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
-      {/* Header */}
-      <div className="p-3 border-b border-[var(--border-hairline)] flex items-center justify-between">
-        <h2 className="text-sm font-medium text-[var(--text-high)]">Watchlist</h2>
-        <button
-          onClick={onAddTicker}
-          className="p-1.5 rounded hover:bg-[var(--surface-3)] transition-colors"
-          title="Add ticker to watchlist"
-        >
-          <Plus className="w-4 h-4 text-[var(--text-muted)]" />
-        </button>
-      </div>
-
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Macro Context Panel */}
@@ -66,7 +63,7 @@ export function HDWatchlistRail({
 
         {/* Watchlist Section */}
         <div>
-          <SectionHeader title="Watchlist" />
+          <SectionHeader title="Watchlist" onAdd={onAddTicker} />
           <div className="divide-y divide-[var(--border-hairline)]">
             {watchlist.length === 0 ? (
               <div className="p-8 text-center">
@@ -139,9 +136,12 @@ export function HDWatchlistRail({
         )}
 
         {/* Challenges Section */}
-        {activeChallenges.length > 0 && (
-          <div className="mt-4">
-            <SectionHeader title="Challenges" />
+        <div className="mt-4">
+          <SectionHeader
+            title="Challenges"
+            onAdd={() => console.log('[v0] Add challenge clicked - TODO: implement dialog')}
+          />
+          {activeChallenges.length > 0 ? (
             <div className="p-3 space-y-2">
               {activeChallenges.map((challenge) => {
                 const completedTrades = activeTrades.filter(
@@ -178,8 +178,12 @@ export function HDWatchlistRail({
                 );
               })}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="p-6 text-center">
+              <p className="text-xs text-[var(--text-muted)]">No active challenges</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

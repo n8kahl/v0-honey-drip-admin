@@ -149,43 +149,30 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   return (
     <div className="flex-1 overflow-y-auto bg-[#0a0a0a] relative">
       <MobileWatermark />
-      {/* Chart area - full chart for WATCHING/LOADED, sparkline for ENTERED */}
-      {chartTicker && tradeState !== 'ENTERED' && (
+      {/* Chart area - full chart for WATCHING/LOADED/ENTERED */}
+      {chartTicker && (
         <div className="p-4 lg:p-6 pointer-events-auto relative z-20 sticky top-0 bg-[#0a0a0a]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0a0a0a]/80">
           <HDLiveChart
             ticker={chartTicker}
             initialTimeframe="5"
             indicators={{ ema: { periods: [8,21,50,200] }, vwap: { enabled: true, bands: false }, bollinger: { period: 20, stdDev: 2 } }}
-            events={[]}
-            levels={tradeState === 'LOADED' ? loadedChartLevels : []}
+            events={tradeState === 'ENTERED' ? enteredTradeEvents : []}
+            levels={tradeState === 'LOADED' ? loadedChartLevels : tradeState === 'ENTERED' ? enteredChartLevels : []}
             height={chartHeight}
             stickyHeader
           />
         </div>
       )}
-      {/* Lightweight sparkline for active trades */}
+      {/* Entered Trade Card with details */}
       {tradeState === 'ENTERED' && currentTrade && (
-        <>
-          <div className="p-4 lg:p-6 pointer-events-auto relative z-20">
-            <HDPriceSparkline
-              ticker={currentTrade.ticker}
-              entryPrice={currentTrade.entryPrice}
-              targetPrice={currentTrade.targetPrice}
-              stopLoss={currentTrade.stopLoss}
-              currentPrice={currentTrade.currentPrice}
-              height={140}
-            />
-          </div>
-          {/* Entered Trade Card with details */}
-          <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
-            <HDEnteredTradeCard
-              trade={currentTrade}
-              onTrim={onAutoTrim || (() => {})}
-              onMoveSL={() => {}}
-              onExit={() => {}}
-            />
-          </div>
-        </>
+        <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
+          <HDEnteredTradeCard
+            trade={currentTrade}
+            direction={currentTrade.contract.type === 'C' ? 'call' : 'put'}
+            confluence={confluence}
+            onAutoTrim={onAutoTrim}
+          />
+        </div>
       )}
       {tradeState === 'WATCHING' && activeTicker ? (
         <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
