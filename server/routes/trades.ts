@@ -3,11 +3,27 @@ import { createClient } from "@supabase/supabase-js";
 
 const router = express.Router();
 
-// Initialize Supabase client with service role for backend operations
-const supabase = createClient(
-  process.env.SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+// Lazy initialization of Supabase client
+// This prevents crashes when env vars are missing at module load time
+let supabase: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabase) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!url || !key) {
+      throw new Error(
+        "Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. " +
+          "Please set these in your .env.local or Railway Variables."
+      );
+    }
+
+    supabase = createClient(url, key);
+  }
+
+  return supabase;
+}
 
 /**
  * Helper: Extract user ID from request (via RLS context or JWT)
@@ -88,7 +104,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     console.log(`[Trades API] Creating trade for user ${userId}:`, trade.ticker);
 
     // Create trade in database
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from("trades")
       .insert([
         {
@@ -127,7 +143,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
         discord_channel_id: channelId,
       }));
 
-      const { error: channelError } = await supabase
+      const { error: channelError } = await getSupabaseClient()
         .from("trades_discord_channels")
         .insert(channelLinks);
 
@@ -144,7 +160,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
         challenge_id: challengeId,
       }));
 
-      const { error: challengeError } = await supabase
+      const { error: challengeError } = await getSupabaseClient()
         .from("trades_challenges")
         .insert(challengeLinks);
 
@@ -186,7 +202,7 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
     }
 
     // Update trade
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from("trades")
       .update({
         status: updates.status,
@@ -242,7 +258,7 @@ router.delete("/api/trades/:tradeId", async (req: Request, res: Response) => {
     console.log(`[Trades API] Deleting trade ${tradeId}`);
 
     // Delete trade (cascade deletes will remove links automatically)
-    const { error } = await supabase
+    const { error } = await getSupabaseClient()
       .from("trades")
       .delete()
       .eq("id", tradeId)
@@ -287,7 +303,7 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
     console.log(`[Trades API] Creating trade update for trade ${tradeId}: action=${action}`);
 
     // Create trade update
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from("trade_updates")
       .insert([
         {
@@ -336,7 +352,7 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
     console.log(`[Trades API] Linking channel ${channelId} to trade ${tradeId}`);
 
     // Insert or ignore if already exists (UNIQUE constraint)
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from("trades_discord_channels")
       .insert([
         {
@@ -387,7 +403,7 @@ router.delete("/api/trades/:tradeId/channels/:channelId", async (req: Request, r
 
     console.log(`[Trades API] Unlinking channel ${channelId} from trade ${tradeId}`);
 
-    const { error } = await supabase
+    const { error } = await getSupabaseClient()
       .from("trades_discord_channels")
       .delete()
       .eq("trade_id", tradeId)
@@ -427,7 +443,7 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
 
     console.log(`[Trades API] Linking challenge ${challengeId} to trade ${tradeId}`);
 
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from("trades_challenges")
       .insert([
         {
@@ -479,7 +495,7 @@ router.delete(
 
       console.log(`[Trades API] Unlinking challenge ${challengeId} from trade ${tradeId}`);
 
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from("trades_challenges")
         .delete()
         .eq("trade_id", tradeId)
