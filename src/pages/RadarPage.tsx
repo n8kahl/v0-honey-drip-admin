@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
-import { RadarLayout } from '../components/layouts/RadarLayout';
+import { AppLayout } from '../components/layouts/AppLayout';
 import { HDRadarScanner } from '../components/hd/dashboard/HDRadarScanner';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -16,12 +16,12 @@ export default function RadarPage() {
   const userId = user?.id || '00000000-0000-0000-0000-000000000001';
 
   return (
-    <RadarLayout>
+    <AppLayout>
       <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading radar...</div>}>
         <div className="p-4 max-w-7xl mx-auto">
           <HDRadarScanner userId={userId} />
         </div>
       </Suspense>
-    </RadarLayout>
+    </AppLayout>
   );
 }

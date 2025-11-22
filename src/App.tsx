@@ -264,24 +264,14 @@ export default function App() {
           onClick={() => navigate('/')}
         />
         <TabButton
-          label="Trade"
-          active={activeTab === 'active'}
-          onClick={navigateToActive}
-        />
-        <TabButton
-          label="Review"
-          active={activeTab === 'history'}
-          onClick={() => navigate('/history')}
-        />
-        <TabButton
           label="Radar"
           active={location.pathname === '/radar'}
           onClick={() => navigate('/radar')}
         />
         <TabButton
-          label="Monitoring"
-          active={activeTab === 'monitoring'}
-          onClick={() => navigate('/monitoring')}
+          label="Review"
+          active={activeTab === 'history'}
+          onClick={() => navigate('/history')}
         />
       </nav>
 

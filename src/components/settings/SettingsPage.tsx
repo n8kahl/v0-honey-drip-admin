@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { MobileWatermark } from '../MobileWatermark';
 import { HDButton } from '../hd/common/HDButton';
 import { TakeProfitSettings } from './TakeProfitSettings';
@@ -14,6 +15,7 @@ interface SettingsPageProps {
 
 export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPageProps) {
   const toast = useAppToast();
+  const navigate = useNavigate();
 
   const handleSaveAll = () => {
     toast.success('Settings saved successfully');
@@ -46,6 +48,17 @@ export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPagePro
           {/* Advanced */}
           <section>
             <StrategyLibraryAdmin />
+          </section>
+
+          {/* System Monitoring */}
+          <section className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4">
+            <h3 className="text-sm font-medium text-[var(--text-high)] mb-2">System Monitoring</h3>
+            <p className="text-xs text-[var(--text-muted)] mb-3">
+              View real-time system health, API performance, data quality metrics, and scanner status
+            </p>
+            <HDButton variant="secondary" onClick={() => navigate('/monitoring')}>
+              Open Monitoring Dashboard
+            </HDButton>
           </section>
         </div>
       </div>

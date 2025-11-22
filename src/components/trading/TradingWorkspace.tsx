@@ -165,16 +165,27 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
       )}
       {/* Lightweight sparkline for active trades */}
       {tradeState === 'ENTERED' && currentTrade && (
-        <div className="p-4 lg:p-6 pointer-events-auto relative z-20">
-          <HDPriceSparkline
-            ticker={currentTrade.ticker}
-            entryPrice={currentTrade.entryPrice}
-            targetPrice={currentTrade.targetPrice}
-            stopLoss={currentTrade.stopLoss}
-            currentPrice={currentTrade.currentPrice}
-            height={140}
-          />
-        </div>
+        <>
+          <div className="p-4 lg:p-6 pointer-events-auto relative z-20">
+            <HDPriceSparkline
+              ticker={currentTrade.ticker}
+              entryPrice={currentTrade.entryPrice}
+              targetPrice={currentTrade.targetPrice}
+              stopLoss={currentTrade.stopLoss}
+              currentPrice={currentTrade.currentPrice}
+              height={140}
+            />
+          </div>
+          {/* Entered Trade Card with details */}
+          <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
+            <HDEnteredTradeCard
+              trade={currentTrade}
+              onTrim={onAutoTrim || (() => {})}
+              onMoveSL={() => {}}
+              onExit={() => {}}
+            />
+          </div>
+        </>
       )}
       {tradeState === 'WATCHING' && activeTicker ? (
         <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
