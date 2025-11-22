@@ -1,5 +1,4 @@
 import React, { ReactNode } from 'react';
-import { LiveStatusBar } from '../LiveStatusBar';
 import { TraderHeader } from '../Header/TraderHeader';
 import { MobileBottomNav } from '../MobileBottomNav';
 import { useUIStore } from '../../stores/uiStore';
@@ -44,14 +43,11 @@ export function AppLayout({
 
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 lg:pb-0">
-      {/* Status bar - always visible */}
-      <LiveStatusBar />
-
-      {/* Trader Header with navigation */}
+      {/* Trader Header with status bar and navigation */}
       <TraderHeader />
 
-      {/* Spacer for fixed header */}
-      <div className="h-16" />
+      {/* Spacer for fixed header (80px for status bar + nav) */}
+      <div className="h-20" />
 
       {/* Main content area */}
       <main className={cn('flex-1 w-full bg-[var(--bg-base)]', className)}>

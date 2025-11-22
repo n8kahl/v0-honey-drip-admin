@@ -1,14 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTradeStore } from '../../stores/tradeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMarketStore } from '../../stores/marketStore';
-import { useEnrichedMarketSession } from '../../stores/marketDataStore';
+import { useEnrichedMarketSession, useMarketDataStore } from '../../stores/marketDataStore';
 import { Activity, Moon, Sun, User, ChevronDown, Menu, Settings, Radar, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
-import { useMarketDataStore } from '../../stores/marketDataStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { colorTransition, buttonHoverColor, focusStateSmooth } from '../../lib/animations';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet';
@@ -403,39 +402,106 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout, onPr
   );
 };
 
+/**
+ * TabButton - Navigation tab component
+ */
+interface TabButtonProps {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}
+
+const TabButton: React.FC<TabButtonProps> = ({ label, active, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-3 md:px-4 py-1.5 md:py-2 rounded-md text-xs md:text-sm font-medium transition-all duration-200 whitespace-nowrap',
+        active
+          ? 'bg-[var(--brand-primary)] text-white shadow-sm'
+          : 'text-[var(--text-med)] hover:text-[var(--text-high)] hover:bg-[var(--surface-2)]',
+        colorTransition
+      )}
+    >
+      {label}
+    </button>
+  );
+};
+
 export const TraderHeader: React.FC = () => {
   const [darkMode, setDarkMode] = useState(true);
-  const [wsLatency, setWsLatency] = useState(0);
+  const [scannerHealthy, setScannerHealthy] = useState(false);
 
   const activeTrades = useTradeStore((s) => s.activeTrades);
   const challenges = useSettingsStore((s) => s.challenges);
   const watchlist = useMarketStore((s) => s.watchlist);
   const enrichedSession = useEnrichedMarketSession();
   const navigate = useNavigate();
+  const location = useLocation();
   const { signOut } = useAuth();
 
-  // Get active challenge (first active one)
-  const activeChallenge = challenges.find((c) => c.isActive);
+  // Get WebSocket and market data store state
+  const wsStatus = useMarketDataStore((state) => state.wsConnection.status);
+  const wsConnected = wsStatus === 'connected' || wsStatus === 'authenticated';
+  const marketStatus = useMarketDataStore((state) => state.marketStatus);
+  const symbols = useMarketDataStore((state) => state.symbols);
 
-  // Calculate challenge stats
-  const exitedTrades = activeTrades.filter((t) => t.state === 'EXITED');
-  const completedInChallenge = activeChallenge
-    ? exitedTrades.filter((t) => t.challenges.includes(activeChallenge.id))
-    : [];
+  // Calculate LiveStatusBar stats
+  const liveStats = useMemo(() => {
+    const symbolsList = Object.values(symbols);
+    const totalSymbols = symbolsList.length;
 
-  const todayRMultiple = completedInChallenge.reduce((sum, trade) => {
-    // Simplified R calculation: (exit - entry) / (entry - stop)
-    if (!trade.entryPrice || !trade.exitPrice || !trade.stopLoss) return sum;
-    const riskPerShare = trade.entryPrice - trade.stopLoss;
-    if (riskPerShare === 0) return sum;
-    const gainPerShare = trade.exitPrice - trade.entryPrice;
-    return sum + (gainPerShare / riskPerShare);
-  }, 0);
+    // Count all active strategy signals
+    const activeSetups = symbolsList.reduce((count, symbolData) => {
+      const activeSignals = symbolData.strategySignals?.filter(s => s.status === 'ACTIVE') || [];
+      return count + activeSignals.length;
+    }, 0);
 
-  const winningTrades = completedInChallenge.filter((t) => t.exitPrice && t.entryPrice && t.exitPrice > t.entryPrice);
-  const winRate = completedInChallenge.length > 0 ? (winningTrades.length / completedInChallenge.length) * 100 : 0;
+    // Calculate average data delay
+    const now = Date.now();
+    const delays = symbolsList
+      .filter(s => s.lastUpdated > 0)
+      .map(s => (now - s.lastUpdated) / 1000);
 
-  // Active setups shown via ActiveSetups component
+    const avgDelay = delays.length > 0
+      ? delays.reduce((sum, d) => sum + d, 0) / delays.length
+      : 0;
+
+    return { totalSymbols, activeSetups, avgDelay };
+  }, [symbols]);
+
+  // Format market status text
+  const marketStatusText = useMemo(() => {
+    switch (marketStatus) {
+      case 'premarket': return 'Pre-market';
+      case 'open': return 'Market open';
+      case 'afterhours': return 'After hours';
+      case 'closed': return 'Market closed';
+      default: return 'Unknown';
+    }
+  }, [marketStatus]);
+
+  // Format delay
+  const delayText = liveStats.avgDelay < 1
+    ? `${(liveStats.avgDelay * 1000).toFixed(0)}ms`
+    : `${liveStats.avgDelay.toFixed(1)}s`;
+
+  // Scanner health monitoring
+  useEffect(() => {
+    const checkScanner = async () => {
+      try {
+        const res = await fetch('/api/health');
+        const health = await res.json();
+        setScannerHealthy(health.services.scanner);
+      } catch (err) {
+        setScannerHealthy(false);
+      }
+    };
+
+    checkScanner();
+    const interval = setInterval(checkScanner, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load theme preference from localStorage on mount
   useEffect(() => {
@@ -449,15 +515,6 @@ export const TraderHeader: React.FC = () => {
     } else {
       document.documentElement.classList.add('light-mode');
     }
-  }, []);
-
-  useEffect(() => {
-    // Mock WebSocket latency (replace with actual WS ping from marketDataStore)
-    const interval = setInterval(() => {
-      setWsLatency(Math.floor(Math.random() * 150) + 50); // 50-200ms
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const handleDarkModeToggle = () => {
@@ -508,37 +565,99 @@ export const TraderHeader: React.FC = () => {
     navigate('/monitoring');
   };
 
-  // Default session if enrichedSession is not yet loaded
-  const session = enrichedSession?.session || 'CLOSED';
-  const isWeekend = enrichedSession?.isWeekend || false;
-  const nextOpen = enrichedSession?.nextOpen || Date.now() + 86400000; // +24h fallback
-  const nextClose = enrichedSession?.nextClose || Date.now() + 3600000; // +1h fallback
-
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-[var(--surface-1)] border-b border-[var(--border-hairline)] backdrop-blur-sm">
-      <div className="h-full px-4 flex items-center justify-between gap-6">
-        {/* Left: Market Status + Active Setups */}
-        <div className="flex items-center gap-4">
-          <MarketStatus
-            session={session}
-            isWeekend={isWeekend}
-            nextOpen={nextOpen}
-            nextClose={nextClose}
-            latency={wsLatency}
-          />
-          <ActiveSetups />
-        </div>
+    <header className="fixed top-0 left-0 right-0 z-50 bg-[var(--surface-1)] border-b border-[var(--border-hairline)] backdrop-blur-sm">
+      {/* Top Row: Live Status Bar */}
+      <div className="px-4 py-1.5 border-b border-[var(--border-hairline)]">
+        <div className="flex items-center gap-3 text-[10px] md:text-xs text-[var(--text-muted)]">
+          {/* WebSocket Status */}
+          <div className="flex items-center gap-1.5">
+            <div className={cn(
+              'w-2 h-2 rounded-full transition-colors duration-300',
+              wsConnected ? 'bg-[var(--accent-positive)] animate-pulse' : 'bg-[var(--accent-negative)]'
+            )} />
+            <span className={cn(
+              'font-medium',
+              wsConnected ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
+            )}>
+              {wsConnected ? 'Live' : 'Disconnected'}
+            </span>
+          </div>
 
-        {/* Right: Mobile Menu + Dark Mode + User Menu */}
-        <div className="flex items-center gap-3">
-          {/* Mobile hamburger menu (only on mobile) */}
+          <div className="hidden md:block w-px h-3 bg-[var(--border-hairline)]" />
+
+          {/* Market Status + Delay */}
+          <div className="hidden md:flex items-center gap-1.5">
+            <span>{marketStatusText}</span>
+            <span className="text-[var(--text-faint)]">•</span>
+            <span>Delay: <span className={cn(
+              'font-medium tabular-nums',
+              liveStats.avgDelay < 2 ? 'text-[var(--accent-positive)]' :
+              liveStats.avgDelay < 5 ? 'text-amber-400' :
+              'text-[var(--accent-negative)]'
+            )}>{delayText}</span></span>
+          </div>
+
+          <div className="hidden md:block w-px h-3 bg-[var(--border-hairline)]" />
+
+          {/* Scanning */}
+          <div className="hidden lg:flex items-center gap-1.5">
+            <span>Scanning</span>
+            <span className="font-medium text-[var(--text-high)] tabular-nums">{liveStats.totalSymbols}</span>
+            <span>symbols</span>
+          </div>
+
+          <div className="hidden lg:block w-px h-3 bg-[var(--border-hairline)]" />
+
+          {/* Scanner Status */}
+          <div className="hidden lg:flex items-center gap-1.5">
+            <Activity className={cn(
+              'w-3 h-3',
+              scannerHealthy ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
+            )} />
+            <span>Scanner: <span className={cn(
+              'font-medium',
+              scannerHealthy ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
+            )}>
+              {scannerHealthy ? 'Active' : 'Down'}
+            </span></span>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Row: Navigation + User Menu */}
+      <div className="h-12 px-4 flex items-center justify-between gap-6">
+        {/* Left: Mobile Menu (mobile only) */}
+        <div className="md:hidden">
           <MobileMenu
             onSettingsClick={handleSettingsClick}
             onRadarClick={handleRadarClick}
             onMonitoringClick={handleMonitoringClick}
             onLogout={handleLogout}
           />
+        </div>
 
+        {/* Center: Navigation Tabs (desktop only) */}
+        <nav className="hidden md:flex gap-2 lg:gap-3">
+          <TabButton
+            label="Watch"
+            active={location.pathname === '/'}
+            onClick={() => navigate('/')}
+          />
+          <TabButton
+            label="Radar"
+            active={location.pathname === '/radar'}
+            onClick={() => navigate('/radar')}
+          />
+          <TabButton
+            label="Review"
+            active={location.pathname === '/history'}
+            onClick={() => navigate('/history')}
+          />
+        </nav>
+
+        {/* Right: Theme Toggle + User Menu */}
+        <div className="flex items-center gap-3">
           <button
             onClick={handleDarkModeToggle}
             className={cn(

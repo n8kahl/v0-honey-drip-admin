@@ -174,7 +174,21 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           />
         </div>
       )}
-      {tradeState === 'WATCHING' && activeTicker ? (
+      {/* Loaded Trade Card with details */}
+      {tradeState === 'LOADED' && currentTrade && (
+        <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
+          <HDLoadedTradeCard
+            trade={currentTrade}
+            onEnter={onEnterTrade}
+            onDiscard={onDiscard}
+            underlyingPrice={activeTicker?.last}
+            underlyingChange={activeTicker?.changePercent}
+            confluence={confluence}
+            signals={compositeSignals?.filter(s => s.symbol === currentTrade.ticker)}
+          />
+        </div>
+      )}
+      {tradeState === 'WATCHING' && activeTicker && (
         <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
           {contracts.length > 0 ? (
             <HDContractGrid
@@ -189,29 +203,8 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
             </div>
           )}
         </div>
-      ) : tradeState === 'LOADED' && currentTrade && !showAlert ? (
-        <div className="p-4 lg:p-6 pointer-events-auto space-y-3">
-          <HDLoadedTradeCard
-            trade={currentTrade}
-            onEnter={onEnterTrade}
-            onDiscard={onDiscard}
-            underlyingPrice={activeTicker?.last}
-            underlyingChange={activeTicker?.changePercent}
-            confluence={confluence}
-            signals={compositeSignals?.filter(s => s.symbol === currentTrade.ticker)}
-          />
-        </div>
-      ) : showAlert ? (
-        <div className="hidden lg:block p-4 lg:p-6 pointer-events-auto">
-          {currentTrade && (
-            <HDPanelFocusedTrade
-              trade={currentTrade}
-              ticker={activeTicker?.symbol}
-              state={tradeState}
-            />
-          )}
-        </div>
-      ) : (
+      )}
+      {!currentTrade && !activeTicker && (
         <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
           <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
             <img src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png" alt="Honey Drip" className="w-auto h-[50vh] max-w-[60vw] object-contain" />
