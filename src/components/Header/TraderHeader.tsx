@@ -5,12 +5,13 @@ import { useTradeStore } from '../../stores/tradeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMarketStore } from '../../stores/marketStore';
 import { useEnrichedMarketSession } from '../../stores/marketDataStore';
-import { Activity, Moon, Sun, User, ChevronDown } from 'lucide-react';
+import { Activity, Moon, Sun, User, ChevronDown, Menu, Settings, Radar, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DESIGN_TOKENS } from '../../lib/designTokens';
 import { useMarketDataStore } from '../../stores/marketDataStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { colorTransition, buttonHoverColor, focusStateSmooth } from '../../lib/animations';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet';
 
 interface MarketStatusProps {
   session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
@@ -229,6 +230,107 @@ const ChallengeRing: React.FC<ChallengeRingProps> = ({ completed, target, rMulti
   );
 };
 
+interface MobileMenuProps {
+  onSettingsClick?: () => void;
+  onRadarClick?: () => void;
+  onMonitoringClick?: () => void;
+  onLogout?: () => void;
+}
+
+const MobileMenu: React.FC<MobileMenuProps> = ({ onSettingsClick, onRadarClick, onMonitoringClick, onLogout }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleSettingsClick = () => {
+    setIsOpen(false);
+    onSettingsClick?.();
+  };
+
+  const handleRadarClick = () => {
+    setIsOpen(false);
+    onRadarClick?.();
+  };
+
+  const handleMonitoringClick = () => {
+    setIsOpen(false);
+    onMonitoringClick?.();
+  };
+
+  const handleLogoutClick = () => {
+    setIsOpen(false);
+    onLogout?.();
+  };
+
+  return (
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetTrigger asChild>
+        <button
+          className={cn(
+            'lg:hidden flex items-center justify-center w-9 h-9 rounded-md hover:bg-[var(--surface-2)]',
+            colorTransition,
+            buttonHoverColor,
+            focusStateSmooth
+          )}
+          aria-label="Open menu"
+        >
+          <Menu className="w-5 h-5 text-[var(--text-high)]" />
+        </button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-64 bg-[var(--surface-1)] border-r border-[var(--border-hairline)]">
+        <SheetHeader>
+          <SheetTitle className="text-[var(--text-high)]">Menu</SheetTitle>
+        </SheetHeader>
+        <div className="mt-6 space-y-1">
+          <button
+            onClick={handleSettingsClick}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-2)] rounded-md',
+              colorTransition,
+              focusStateSmooth
+            )}
+          >
+            <Settings className="w-4 h-4" />
+            <span>Settings</span>
+          </button>
+          <button
+            onClick={handleRadarClick}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-2)] rounded-md',
+              colorTransition,
+              focusStateSmooth
+            )}
+          >
+            <Radar className="w-4 h-4" />
+            <span>Radar</span>
+          </button>
+          <button
+            onClick={handleMonitoringClick}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-2)] rounded-md',
+              colorTransition,
+              focusStateSmooth
+            )}
+          >
+            <Activity className="w-4 h-4" />
+            <span>Monitoring</span>
+          </button>
+          <div className="h-px bg-[var(--border-hairline)] my-2" />
+          <button
+            onClick={handleLogoutClick}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm text-[var(--accent-negative)] hover:bg-[var(--surface-3)] rounded-md',
+              colorTransition,
+              focusStateSmooth
+            )}
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+};
+
 interface UserMenuProps {
   userName?: string;
   onLogout?: () => void;
@@ -255,7 +357,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout, onPr
   };
 
   return (
-    <div className="relative">
+    <div className="relative hidden lg:block">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -396,6 +498,16 @@ export const TraderHeader: React.FC = () => {
     }
   };
 
+  const handleRadarClick = () => {
+    console.log('[v0] Radar clicked');
+    navigate('/radar');
+  };
+
+  const handleMonitoringClick = () => {
+    console.log('[v0] Monitoring clicked');
+    navigate('/monitoring');
+  };
+
   // Default session if enrichedSession is not yet loaded
   const session = enrichedSession?.session || 'CLOSED';
   const isWeekend = enrichedSession?.isWeekend || false;
@@ -431,8 +543,16 @@ export const TraderHeader: React.FC = () => {
           )}
         </div>
 
-        {/* Right: Dark Mode + User Menu */}
+        {/* Right: Mobile Menu + Dark Mode + User Menu */}
         <div className="flex items-center gap-3">
+          {/* Mobile hamburger menu (only on mobile) */}
+          <MobileMenu
+            onSettingsClick={handleSettingsClick}
+            onRadarClick={handleRadarClick}
+            onMonitoringClick={handleMonitoringClick}
+            onLogout={handleLogout}
+          />
+
           <button
             onClick={handleDarkModeToggle}
             className={cn(
@@ -450,6 +570,7 @@ export const TraderHeader: React.FC = () => {
             )}
           </button>
 
+          {/* User menu (desktop only, has its own mobile handling) */}
           <UserMenu
             userName="Trader"
             onLogout={handleLogout}
