@@ -2,6 +2,7 @@ import { Trade } from '../../../types';
 import { HDTagTradeType } from '../common/HDTagTradeType';
 import { formatPercent, cn } from '../../../lib/utils';
 import { X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface HDRowTradeProps {
   trade: Trade;
@@ -11,8 +12,17 @@ interface HDRowTradeProps {
 }
 
 export function HDRowTrade({ trade, active, onClick, onRemove }: HDRowTradeProps) {
+  const navigate = useNavigate();
   const isPositive = (trade.movePercent || 0) >= 0;
   const isLoaded = trade.state === 'LOADED';
+
+  const handleClick = () => {
+    if (onClick) {
+      onClick();
+    } else {
+      navigate(`/trades/${trade.id}`);
+    }
+  };
   
   return (
     <div
@@ -24,7 +34,7 @@ export function HDRowTrade({ trade, active, onClick, onRemove }: HDRowTradeProps
       )}
     >
       <button
-        onClick={onClick}
+        onClick={handleClick}
         className="flex-1 min-w-0 text-left"
       >
         <div className="flex items-center gap-2 mb-1">

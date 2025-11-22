@@ -249,11 +249,15 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 lg:pb-0">
+    <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 md:pb-0">
       <TraderHeader />
+
+      {/* Spacer for fixed header - h-16 matches TraderHeader height */}
+      <div className="h-16" />
+
       <LiveStatusBar />
 
-      <nav className="hidden lg:flex gap-4 lg:gap-6 px-4 lg:px-6 py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
+      <nav className="hidden md:flex gap-3 md:gap-4 lg:gap-6 px-3 md:px-4 lg:px-6 py-2.5 md:py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
         <TabButton
           label="Watch"
           active={activeTab === 'live'}
@@ -268,6 +272,11 @@ export default function App() {
           label="Review"
           active={activeTab === 'history'}
           onClick={() => navigate('/history')}
+        />
+        <TabButton
+          label="Radar"
+          active={location.pathname === '/radar'}
+          onClick={() => navigate('/radar')}
         />
         <TabButton
           label="Monitoring"
@@ -299,8 +308,6 @@ export default function App() {
               else if (tab === 'settings') navigate('/settings');
               else if (tab === 'monitoring') navigate('/monitoring');
             }}
-            hideDesktopPanels={activeTab === 'active'}
-            hideMobilePanelsOnActiveTab={activeTab === 'active'}
             updatedTradeIds={updatedTradeIds}
             onOpenActiveTrade={(tradeId) => {
               const trade = activeTrades.find((t) => t.id === tradeId);
@@ -377,7 +384,7 @@ export default function App() {
         }}
       />
 
-      <div className="lg:hidden">
+      <div className="md:hidden">
         <MobileBottomNav
           activeTab={activeTab as any}
           onTabChange={(tab) => {
