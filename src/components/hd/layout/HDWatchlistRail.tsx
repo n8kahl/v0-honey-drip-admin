@@ -1,5 +1,6 @@
 import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../../../stores";
 import { HDRowWatchlist } from "../cards/HDRowWatchlist";
+import { HDRowLoadedTrade } from "../cards/HDRowLoadedTrade";
 import { HDMacroPanel } from "../dashboard/HDMacroPanel";
 import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
 import { HDDialogEditChallenge } from "../forms/HDDialogEditChallenge";
@@ -14,6 +15,8 @@ interface HDWatchlistRailProps {
   onTickerClick?: (ticker: Ticker) => void;
   onAddTicker?: () => void;
   onRemoveTicker?: (ticker: Ticker) => void;
+  onLoadedTradeClick?: (trade: Trade) => void;
+  onRemoveLoadedTrade?: (trade: Trade) => void;
   activeTicker?: string;
 }
 
@@ -41,6 +44,8 @@ export function HDWatchlistRail({
   onTickerClick,
   onAddTicker,
   onRemoveTicker,
+  onLoadedTradeClick,
+  onRemoveLoadedTrade,
   activeTicker,
 }: HDWatchlistRailProps) {
   const watchlist = useMarketStore((state) => state.watchlist);
@@ -190,25 +195,19 @@ export function HDWatchlistRail({
         {loadedTrades.length > 0 && (
           <div className="mt-4">
             <SectionHeader title="Loaded" />
-            <div className="p-3 space-y-2">
-              {loadedTrades.map((trade) => (
-                <button
-                  key={trade.id}
-                  onClick={() => useTradeStore.setState({ currentTrade: trade })}
-                  className="w-full p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] text-sm hover:bg-[var(--surface-3)] cursor-pointer transition-colors text-left"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-[var(--text-high)]">{trade.ticker}</span>
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {trade.contract.strike}
-                      {trade.contract.type}
-                    </span>
-                  </div>
-                  <div className="text-xs text-[var(--text-muted)] mt-1">
-                    {trade.contract.daysToExpiry}DTE
-                  </div>
-                </button>
-              ))}
+            <div className="divide-y divide-[var(--border-hairline)]">
+              {loadedTrades.map((trade) => {
+                const currentTrade = useTradeStore.getState().currentTrade;
+                return (
+                  <HDRowLoadedTrade
+                    key={trade.id}
+                    trade={trade}
+                    active={currentTrade?.id === trade.id}
+                    onClick={() => onLoadedTradeClick?.(trade)}
+                    onRemove={() => onRemoveLoadedTrade?.(trade)}
+                  />
+                );
+              })}
             </div>
           </div>
         )}
