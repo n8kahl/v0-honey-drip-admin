@@ -65,7 +65,7 @@ export default function App() {
   } = useUIStore();
 
   // Settings store
-  const { discordChannels, challenges, loadDiscordChannels, loadChallenges } = useSettingsStore();
+  const { discordChannels, challenges, loadDiscordChannels, loadChallenges, discordAlertsEnabled } = useSettingsStore();
 
   // Market session actions
   const { fetchMarketSession } = useMarketSessionActions();
@@ -329,7 +329,7 @@ export default function App() {
         onTestWebhook={async (channel) => {
           return await discord.testWebhook(channel);
         }}
-        discordAlertsEnabled={useSettingsStore((state) => state.discordAlertsEnabled)}
+        discordAlertsEnabled={discordAlertsEnabled}
         onToggleAlertsEnabled={(enabled) =>
           useSettingsStore.getState().setDiscordAlertsEnabled(enabled)
         }
