@@ -4,7 +4,7 @@ import { HDPanelWatchlist } from './hd/dashboard/HDPanelWatchlist';
 import { HDVoiceHUD } from './hd/voice/HDVoiceHUD';
 import { HDDialogChallengeDetail } from './hd/forms/HDDialogChallengeDetail';
 import { HDMacroPanel } from './hd/dashboard/HDMacroPanel';
-import { HDCommandRail } from './hd/layout/HDCommandRail';
+import { HDWatchlistRail } from './hd/layout/HDWatchlistRail';
 import { HDActiveTradesPanel } from './hd/dashboard/HDActiveTradesPanel';
 import { MobileNowPlayingSheet } from './MobileNowPlayingSheet';
 import { MobileWatermark } from './MobileWatermark';
@@ -34,8 +34,6 @@ interface DesktopLiveCockpitSlimProps {
   channels: DiscordChannel[];
   focusedTrade?: Trade | null;
   onMobileTabChange?: (tab: 'live' | 'active' | 'history' | 'settings') => void;
-  hideDesktopPanels?: boolean;
-  hideMobilePanelsOnActiveTab?: boolean;
   updatedTradeIds?: Set<string>;
   onOpenActiveTrade?: (tradeId: string) => void;
   onOpenReviewTrade?: (tradeId: string) => void;
@@ -59,8 +57,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     channels,
     focusedTrade,
     onMobileTabChange,
-    hideDesktopPanels,
-    hideMobilePanelsOnActiveTab,
     onOpenActiveTrade,
     onOpenReviewTrade,
   } = props;
@@ -123,7 +119,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
 
   return (
     <>
-      <div className={cn('relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden', hideMobilePanelsOnActiveTab ? 'hidden lg:flex' : '')}>
+      <div className="relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden">
         {voice.hudState && (
           <div className="hidden lg:block">
             <HDVoiceHUD
@@ -137,9 +133,9 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             />
           </div>
         )}
-        {/* Command Center: Left Rail */}
-        <div className={cn('hidden lg:flex', hideDesktopPanels && 'lg:hidden', hideMobilePanelsOnActiveTab && 'lg:hidden')}>
-          <HDCommandRail
+        {/* Watchlist: Left Rail */}
+        <div className="hidden lg:flex">
+          <HDWatchlistRail
             onTickerClick={handleTickerClick}
             onAddTicker={onAddTicker}
             onRemoveTicker={onRemoveTicker}
@@ -148,7 +144,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
         </div>
 
         {/* Legacy Mobile: Show full panel on mobile only */}
-        <div className={cn('w-full lg:hidden border-b border-[var(--border-hairline)] overflow-y-auto', hideMobilePanelsOnActiveTab && 'hidden')}>
+        <div className="w-full lg:hidden border-b border-[var(--border-hairline)] overflow-y-auto">
           <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]"><HDMacroPanel /></div>
           <HDPanelWatchlist
             watchlist={watchlist}
@@ -270,7 +266,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
       {showAlert && currentTrade && (
         <div className="lg:hidden fixed inset-0 z-[100] bg-[var(--bg-base)] flex flex-col">
           {/* Command Center: Right Panel (Desktop only) */}
-          <div className={cn('hidden lg:flex', hideDesktopPanels && 'lg:hidden')}>
+          <div className="hidden lg:flex">
             <HDActiveTradesPanel
               onTradeClick={(trade) => {
                 actions.setCurrentTrade(trade);
