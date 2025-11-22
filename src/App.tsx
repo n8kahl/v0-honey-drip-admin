@@ -8,7 +8,6 @@ import { SettingsPage } from "./components/settings/SettingsPage";
 import { MobileActive } from "./components/MobileActive";
 import { VoiceCommandDemo } from "./components/VoiceCommandDemo";
 import { TraderHeader } from "./components/Header/TraderHeader";
-import { LiveStatusBar } from "./components/LiveStatusBar";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { HDDialogDiscordSettings } from "./components/hd/forms/HDDialogDiscordSettings";
 import { HDDialogAddTicker } from "./components/hd/forms/HDDialogAddTicker";
@@ -245,26 +244,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 md:pb-0">
+      {/* Trader Header with status bar and navigation */}
       <TraderHeader />
 
-      {/* Spacer for fixed header - h-16 matches TraderHeader height */}
-      <div className="h-16" />
-
-      <LiveStatusBar />
-
-      <nav className="hidden md:flex gap-3 md:gap-4 lg:gap-6 px-3 md:px-4 lg:px-6 py-2.5 md:py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
-        <TabButton label="Watch" active={activeTab === "live"} onClick={() => navigate("/")} />
-        <TabButton
-          label="Radar"
-          active={location.pathname === "/radar"}
-          onClick={() => navigate("/radar")}
-        />
-        <TabButton
-          label="Review"
-          active={activeTab === "history"}
-          onClick={() => navigate("/history")}
-        />
-      </nav>
+      {/* Spacer for fixed header (80px for status bar + nav) */}
+      <div className="h-20" />
 
       <main className="flex-1 w-full bg-[var(--bg-base)]">
         {(activeTab === "live" || activeTab === "active") && (
@@ -393,31 +377,5 @@ export default function App() {
 
       <Toaster />
     </div>
-  );
-}
-
-interface TabButtonProps {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}
-
-function TabButton({ label, active, onClick }: TabButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "relative px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap rounded-[var(--radius)]",
-        active
-          ? "text-[var(--text-high)] bg-[var(--surface-2)]"
-          : "text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-2)]",
-      ].join(" ")}
-    >
-      {label}
-      {active && (
-        <span className="absolute left-0 right-0 -bottom-1 h-0.5 bg-[var(--brand-primary)]" />
-      )}
-    </button>
   );
 }

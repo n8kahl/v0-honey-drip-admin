@@ -1,10 +1,11 @@
-import { useMarketStore, useTradeStore, useSettingsStore } from '../../../stores';
-import { HDRowWatchlist } from '../cards/HDRowWatchlist';
-import { HDMacroPanel } from '../dashboard/HDMacroPanel';
-import { HDEnteredTradeCard } from '../cards/HDEnteredTradeCard';
-import { Ticker, Trade } from '../../../types';
-import { Plus } from 'lucide-react';
-import { cn } from '../../../lib/utils';
+import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../../../stores";
+import { HDRowWatchlist } from "../cards/HDRowWatchlist";
+import { HDMacroPanel } from "../dashboard/HDMacroPanel";
+import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
+import { Ticker, Trade } from "../../../types";
+import { Plus, Trash2, Edit } from "lucide-react";
+import { cn } from "../../../lib/utils";
+import { useState } from "react";
 
 interface HDWatchlistRailProps {
   onTickerClick?: (ticker: Ticker) => void;
@@ -19,9 +20,7 @@ interface HDWatchlistRailProps {
 function SectionHeader({ title, onAdd }: { title: string; onAdd?: () => void }) {
   return (
     <div className="px-3 py-2 bg-gradient-to-r from-yellow-500/10 to-transparent border-l-2 border-yellow-500 flex items-center justify-between">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-yellow-500">
-        {title}
-      </h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-yellow-500">{title}</h3>
       {onAdd && (
         <button
           onClick={onAdd}
@@ -44,13 +43,33 @@ export function HDWatchlistRail({
   const watchlist = useMarketStore((state) => state.watchlist);
   const activeTrades = useTradeStore((state) => state.activeTrades);
   const challenges = useSettingsStore((state) => state.challenges);
+  const removeChallenge = useSettingsStore((state) => state.removeChallenge);
+  const setShowAddChallengeDialog = useUIStore((state) => state.setShowAddChallengeDialog);
+  const [deletingChallengeId, setDeletingChallengeId] = useState<string | null>(null);
 
   // Filter trades by state
-  const loadedTrades = activeTrades.filter((t) => t.state === 'LOADED');
-  const enteredTrades = activeTrades.filter((t) => t.state === 'ENTERED');
+  const loadedTrades = activeTrades.filter((t) => t.state === "LOADED");
+  const enteredTrades = activeTrades.filter((t) => t.state === "ENTERED");
 
   // Calculate challenge progress
   const activeChallenges = challenges.filter((c) => c.isActive);
+
+  const handleDeleteChallenge = async (challengeId: string) => {
+    if (deletingChallengeId === challengeId) {
+      // Confirm delete
+      try {
+        await removeChallenge(challengeId);
+        setDeletingChallengeId(null);
+      } catch (error) {
+        console.error("[HDWatchlistRail] Failed to delete challenge:", error);
+      }
+    } else {
+      // First click - show confirmation
+      setDeletingChallengeId(challengeId);
+      // Auto-cancel after 3 seconds
+      setTimeout(() => setDeletingChallengeId(null), 3000);
+    }
+  };
 
   return (
     <div className="w-full lg:w-80 border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
@@ -101,11 +120,10 @@ export function HDWatchlistRail({
                   className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] text-sm"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-[var(--text-high)]">
-                      {trade.ticker}
-                    </span>
+                    <span className="font-medium text-[var(--text-high)]">{trade.ticker}</span>
                     <span className="text-xs text-[var(--text-muted)]">
-                      {trade.contract.strike}{trade.contract.type}
+                      {trade.contract.strike}
+                      {trade.contract.type}
                     </span>
                   </div>
                   <div className="text-xs text-[var(--text-muted)] mt-1">
@@ -137,39 +155,51 @@ export function HDWatchlistRail({
 
         {/* Challenges Section */}
         <div className="mt-4">
-          <SectionHeader
-            title="Challenges"
-            onAdd={() => console.log('[v0] Add challenge clicked - TODO: implement dialog')}
-          />
+          <SectionHeader title="Challenges" onAdd={() => setShowAddChallengeDialog(true)} />
           {activeChallenges.length > 0 ? (
             <div className="p-3 space-y-2">
               {activeChallenges.map((challenge) => {
                 const completedTrades = activeTrades.filter(
-                  (t) => t.challenges.includes(challenge.id) && t.state === 'EXITED'
+                  (t) => t.challenges.includes(challenge.id) && t.state === "EXITED"
                 ).length;
                 const totalTrades = 10; // Default target, can be enhanced later
                 const progress = totalTrades > 0 ? (completedTrades / totalTrades) * 100 : 0;
+                const isDeleting = deletingChallengeId === challenge.id;
 
                 return (
                   <div
                     key={challenge.id}
-                    className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)]"
+                    className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] group"
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-sm font-medium text-[var(--text-high)] truncate">
                         {challenge.name}
                       </span>
-                      <span className="text-xs text-[var(--text-muted)] whitespace-nowrap ml-2">
-                        {completedTrades}/{totalTrades}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
+                          {completedTrades}/{totalTrades}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteChallenge(challenge.id)}
+                          className={cn(
+                            "p-1 rounded transition-colors",
+                            isDeleting
+                              ? "bg-[var(--accent-negative)] text-white"
+                              : "opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-3)]"
+                          )}
+                          title={isDeleting ? "Click again to confirm delete" : "Delete challenge"}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                     <div className="w-full h-1.5 bg-[var(--surface-3)] rounded-full overflow-hidden">
                       <div
                         className={cn(
-                          'h-full transition-all duration-300 rounded-full',
+                          "h-full transition-all duration-300 rounded-full",
                           progress >= 100
-                            ? 'bg-[var(--accent-positive)]'
-                            : 'bg-[var(--brand-primary)]'
+                            ? "bg-[var(--accent-positive)]"
+                            : "bg-[var(--brand-primary)]"
                         )}
                         style={{ width: `${Math.min(progress, 100)}%` }}
                       />
@@ -180,7 +210,13 @@ export function HDWatchlistRail({
             </div>
           ) : (
             <div className="p-6 text-center">
-              <p className="text-xs text-[var(--text-muted)]">No active challenges</p>
+              <p className="text-xs text-[var(--text-muted)] mb-2">No active challenges</p>
+              <button
+                onClick={() => setShowAddChallengeDialog(true)}
+                className="text-xs text-[var(--brand-primary)] hover:underline"
+              >
+                Create your first challenge
+              </button>
             </div>
           )}
         </div>
