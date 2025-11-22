@@ -251,6 +251,10 @@ export default function App() {
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 lg:pb-0">
       <TraderHeader />
+
+      {/* Spacer for fixed header - h-16 matches TraderHeader height */}
+      <div className="h-16" />
+
       <LiveStatusBar />
 
       <nav className="hidden lg:flex gap-4 lg:gap-6 px-4 lg:px-6 py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
@@ -268,6 +272,11 @@ export default function App() {
           label="Review"
           active={activeTab === 'history'}
           onClick={() => navigate('/history')}
+        />
+        <TabButton
+          label="Radar"
+          active={location.pathname === '/radar'}
+          onClick={() => navigate('/radar')}
         />
         <TabButton
           label="Monitoring"

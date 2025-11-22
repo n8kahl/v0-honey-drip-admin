@@ -20,6 +20,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { addTradeUpdate } from '../../../lib/supabase/database';
 import { useMacroContext } from '../../../hooks/useIndicesAdvanced';
+import { useNavigate } from 'react-router-dom';
 
 interface HDEnteredTradeCardProps {
   trade: Trade;
@@ -36,6 +37,7 @@ interface HDEnteredTradeCardProps {
 
 export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim }: HDEnteredTradeCardProps) {
   const toast = useAppToast();
+  const navigate = useNavigate();
   const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
     trade.contract.id,
     trade.entryPrice || trade.contract.mid
@@ -131,7 +133,10 @@ export function HDEnteredTradeCard({ trade, direction, confluence, onAutoTrim }:
   // Chart is now rendered globally in the middle pane.
   
   return (
-    <div className="bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-3 lg:p-4 space-y-3">
+    <div
+      onClick={() => navigate(`/trades/${trade.id}`)}
+      className="bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-3 lg:p-4 space-y-3 cursor-pointer hover:bg-[var(--surface-3)] transition-colors"
+    >
       {/* Header Row - Compact */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">

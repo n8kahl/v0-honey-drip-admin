@@ -51,7 +51,7 @@ export default function TradeDetailPage() {
   // Determine if trade is active or historical for breadcrumb navigation
   const isActiveTrade = activeTrades.some((t) => t.id === tradeId);
   const breadcrumbItems = [
-    { label: 'Trades', href: isActiveTrade ? '/trades/active' : '/trades/history' },
+    { label: 'Trades', href: isActiveTrade ? '/active' : '/history' },
     {
       label: `${trade.ticker} ${trade.contract.strike}${trade.contract.type}`,
       isActive: true,
