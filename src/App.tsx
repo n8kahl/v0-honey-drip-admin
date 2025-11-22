@@ -1,47 +1,47 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { DesktopLiveCockpitSlim } from './components/DesktopLiveCockpitSlim';
-import { DesktopHistory } from './components/DesktopHistory';
-import { SettingsPage } from './components/settings/SettingsPage';
-import { MobileActive } from './components/MobileActive';
-import { VoiceCommandDemo } from './components/VoiceCommandDemo';
-import { TraderHeader } from './components/Header/TraderHeader';
-import { LiveStatusBar } from './components/LiveStatusBar';
-import { MobileBottomNav } from './components/MobileBottomNav';
-import { HDDialogDiscordSettings } from './components/hd/forms/HDDialogDiscordSettings';
-import { HDDialogAddTicker } from './components/hd/forms/HDDialogAddTicker';
-import { HDDialogAddChallenge } from './components/hd/forms/HDDialogAddChallenge';
-import { Toaster } from './components/ui/sonner';
-import { useAuth } from './contexts/AuthContext';
-import { AuthPage } from './pages/AuthPage';
-import { useQuotes } from './hooks/useMassiveData';
-import { useDiscord } from './hooks/useDiscord';
-import { useCompositeSignals } from './hooks/useCompositeSignals';
-import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from './stores';
-import { useMarketSessionActions, useMarketDataStore } from './stores/marketDataStore';
-import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
-import { KeyboardShortcutsDialog } from './components/shortcuts/KeyboardShortcutsDialog';
-import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard';
-import './styles/globals.css';
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { DesktopLiveCockpitSlim } from "./components/DesktopLiveCockpitSlim";
+import { DesktopHistory } from "./components/DesktopHistory";
+import { SettingsPage } from "./components/settings/SettingsPage";
+import { MobileActive } from "./components/MobileActive";
+import { VoiceCommandDemo } from "./components/VoiceCommandDemo";
+import { TraderHeader } from "./components/Header/TraderHeader";
+import { LiveStatusBar } from "./components/LiveStatusBar";
+import { MobileBottomNav } from "./components/MobileBottomNav";
+import { HDDialogDiscordSettings } from "./components/hd/forms/HDDialogDiscordSettings";
+import { HDDialogAddTicker } from "./components/hd/forms/HDDialogAddTicker";
+import { HDDialogAddChallenge } from "./components/hd/forms/HDDialogAddChallenge";
+import { Toaster } from "./components/ui/sonner";
+import { useAuth } from "./contexts/AuthContext";
+import { AuthPage } from "./pages/AuthPage";
+import { useQuotes } from "./hooks/useMassiveData";
+import { useDiscord } from "./hooks/useDiscord";
+import { useCompositeSignals } from "./hooks/useCompositeSignals";
+import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from "./stores";
+import { useMarketSessionActions, useMarketDataStore } from "./stores/marketDataStore";
+import { useKeyboardShortcuts, type KeyboardShortcut } from "./hooks/useKeyboardShortcuts";
+import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcutsDialog";
+import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
+import "./styles/globals.css";
 
-type AppTab = 'live' | 'active' | 'history' | 'settings' | 'monitoring';
+type AppTab = "live" | "active" | "history" | "settings" | "monitoring";
 
 /**
  * Derive the active tab from the current route
  */
 function getActiveTabFromPath(pathname: string): AppTab {
-  if (pathname === '/active') return 'active';
-  if (pathname === '/history') return 'history';
-  if (pathname === '/settings') return 'settings';
-  if (pathname === '/monitoring') return 'monitoring';
-  return 'live'; // Default to live for '/' and unknown routes
+  if (pathname === "/active") return "active";
+  if (pathname === "/history") return "history";
+  if (pathname === "/settings") return "settings";
+  if (pathname === "/monitoring") return "monitoring";
+  return "live"; // Default to live for '/' and unknown routes
 }
 
 export default function App() {
   const { user, loading } = useAuth();
-  const isTestAuto = ((import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === 'true');
+  const isTestAuto = (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === "true";
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
 
   // React Router hooks - single source of truth for navigation
@@ -66,16 +66,11 @@ export default function App() {
   } = useUIStore();
 
   // Settings store
-  const {
-    discordChannels,
-    challenges,
-    loadDiscordChannels,
-    loadChallenges
-  } = useSettingsStore();
-  
+  const { discordChannels, challenges, loadDiscordChannels, loadChallenges } = useSettingsStore();
+
   // Market session actions
   const { fetchMarketSession } = useMarketSessionActions();
-  
+
   // Market data store - for WebSocket management
   const initializeMarketData = useMarketDataStore((state) => state.initialize);
   const marketDataCleanup = useMarketDataStore((state) => state.cleanup);
@@ -91,9 +86,9 @@ export default function App() {
   const {
     signals: compositeSignals,
     activeSignals,
-    loading: signalsLoading
+    loading: signalsLoading,
   } = useCompositeSignals({
-    userId: user?.id || '00000000-0000-0000-0000-000000000001',
+    userId: user?.id || "00000000-0000-0000-0000-000000000001",
     autoSubscribe: !!user, // Only subscribe when authenticated
     autoExpire: true, // Auto-expire old signals
   });
@@ -103,56 +98,56 @@ export default function App() {
     () => [
       // Navigation shortcuts
       {
-        key: '1',
-        description: 'Go to Watch tab (Live)',
-        action: () => navigate('/'),
-        category: 'navigation',
+        key: "1",
+        description: "Go to Watch tab (Live)",
+        action: () => navigate("/"),
+        category: "navigation",
       },
       {
-        key: '2',
-        description: 'Go to Trade tab (Active)',
+        key: "2",
+        description: "Go to Trade tab (Active)",
         action: () => {
-          navigate('/active');
+          navigate("/active");
           setFlashTradeTab(true);
           setTimeout(() => setFlashTradeTab(false), 2000);
         },
-        category: 'navigation',
+        category: "navigation",
       },
       {
-        key: '3',
-        description: 'Go to Review tab (History)',
-        action: () => navigate('/history'),
-        category: 'navigation',
+        key: "3",
+        description: "Go to Review tab (History)",
+        action: () => navigate("/history"),
+        category: "navigation",
       },
       {
-        key: '4',
-        description: 'Go to Settings',
-        action: () => navigate('/settings'),
-        category: 'navigation',
+        key: "4",
+        description: "Go to Settings",
+        action: () => navigate("/settings"),
+        category: "navigation",
       },
       {
-        key: '5',
-        description: 'Go to Monitoring',
-        action: () => navigate('/monitoring'),
-        category: 'navigation',
+        key: "5",
+        description: "Go to Monitoring",
+        action: () => navigate("/monitoring"),
+        category: "navigation",
       },
       {
-        key: 'Escape',
-        description: 'Close shortcuts dialog',
+        key: "Escape",
+        description: "Close shortcuts dialog",
         action: () => setShowShortcutsDialog(false),
-        category: 'general',
+        category: "general",
       },
       {
-        key: 'Ctrl+?',
-        description: 'Show keyboard shortcuts',
+        key: "Ctrl+?",
+        description: "Show keyboard shortcuts",
         action: () => setShowShortcutsDialog(true),
-        category: 'help',
+        category: "help",
       },
       {
-        key: 'Cmd+?',
-        description: 'Show keyboard shortcuts (Mac)',
+        key: "Cmd+?",
+        description: "Show keyboard shortcuts (Mac)",
         action: () => setShowShortcutsDialog(true),
-        category: 'help',
+        category: "help",
       },
     ],
     [navigate, setFlashTradeTab]
@@ -173,45 +168,45 @@ export default function App() {
     if (!user && !isTestAuto) return;
 
     const loadUserData = async () => {
-      console.log('[v0] Loading user data from Supabase...');
+      console.log("[v0] Loading user data from Supabase...");
       try {
         await Promise.all([
-          loadDiscordChannels((user?.id || '00000000-0000-0000-0000-000000000001') as string),
-          loadChallenges((user?.id || '00000000-0000-0000-0000-000000000001') as string),
-          loadWatchlist((user?.id || '00000000-0000-0000-0000-000000000001') as string),
-          loadTrades((user?.id || '00000000-0000-0000-0000-000000000001') as string),
+          loadDiscordChannels((user?.id || "00000000-0000-0000-0000-000000000001") as string),
+          loadChallenges((user?.id || "00000000-0000-0000-0000-000000000001") as string),
+          loadWatchlist((user?.id || "00000000-0000-0000-0000-000000000001") as string),
+          loadTrades((user?.id || "00000000-0000-0000-0000-000000000001") as string),
         ]);
       } catch (error) {
-        console.error('[v0] Failed to load user data:', error);
+        console.error("[v0] Failed to load user data:", error);
       }
     };
 
     loadUserData();
   }, [user, isTestAuto, loadDiscordChannels, loadChallenges, loadWatchlist, loadTrades]);
-  
+
   // Initialize market session and poll every minute
   useEffect(() => {
     // Fetch immediately
     fetchMarketSession();
-    
+
     // Poll every 60 seconds to keep session data fresh
     const interval = setInterval(() => {
       fetchMarketSession();
     }, 60_000);
-    
+
     return () => clearInterval(interval);
   }, [fetchMarketSession]);
-  
+
   // Initialize market data WebSocket when watchlist is loaded
   useEffect(() => {
     if (watchlistSymbols.length > 0) {
-      console.log('[v0] App: Initializing marketDataStore with watchlist:', watchlistSymbols);
+      console.log("[v0] App: Initializing marketDataStore with watchlist:", watchlistSymbols);
       initializeMarketData(watchlistSymbols);
     }
 
     // Cleanup on unmount
     return () => {
-      console.log('[v0] App: Cleaning up marketDataStore');
+      console.log("[v0] App: Cleaning up marketDataStore");
       marketDataCleanup();
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
@@ -230,22 +225,22 @@ export default function App() {
 
   // Helper function to navigate to active tab with flash effect
   const navigateToActive = () => {
-    navigate('/active');
+    navigate("/active");
     setFlashTradeTab(true);
     setTimeout(() => setFlashTradeTab(false), 2000);
   };
 
   // Helper function to focus a trade in the live view
   const focusTradeInLive = (trade: any) => {
-    navigate('/');
+    navigate("/");
     setFocusedTrade(trade);
     // Clear focus after a brief moment to allow component to react
     setTimeout(() => setFocusedTrade(null), 100);
   };
 
   const handleExitedTrade = (trade: any) => {
-    console.log('Trade exited:', trade);
-    setTimeout(() => navigate('/history'), 100);
+    console.log("Trade exited:", trade);
+    setTimeout(() => navigate("/history"), 100);
   };
 
   return (
@@ -258,25 +253,21 @@ export default function App() {
       <LiveStatusBar />
 
       <nav className="hidden md:flex gap-3 md:gap-4 lg:gap-6 px-3 md:px-4 lg:px-6 py-2.5 md:py-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-x-auto">
-        <TabButton
-          label="Watch"
-          active={activeTab === 'live'}
-          onClick={() => navigate('/')}
-        />
+        <TabButton label="Watch" active={activeTab === "live"} onClick={() => navigate("/")} />
         <TabButton
           label="Radar"
-          active={location.pathname === '/radar'}
-          onClick={() => navigate('/radar')}
+          active={location.pathname === "/radar"}
+          onClick={() => navigate("/radar")}
         />
         <TabButton
           label="Review"
-          active={activeTab === 'history'}
-          onClick={() => navigate('/history')}
+          active={activeTab === "history"}
+          onClick={() => navigate("/history")}
         />
       </nav>
 
       <main className="flex-1 w-full bg-[var(--bg-base)]">
-        {(activeTab === 'live' || activeTab === 'active') && (
+        {(activeTab === "live" || activeTab === "active") && (
           <DesktopLiveCockpitSlim
             watchlist={watchlist}
             hotTrades={activeTrades}
@@ -286,31 +277,33 @@ export default function App() {
             onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
             onRemoveTicker={(ticker) => useMarketStore.getState().removeTicker(ticker.id)}
             onAddChallenge={() => useUIStore.getState().setShowAddChallengeDialog(true)}
-            onRemoveChallenge={(challenge) => useSettingsStore.getState().removeChallenge(challenge.id)}
+            onRemoveChallenge={(challenge) =>
+              useSettingsStore.getState().removeChallenge(challenge.id)
+            }
             onTradesChange={() => {}} // Not needed anymore, store handles it
             channels={discordChannels}
             focusedTrade={focusedTrade}
             onMobileTabChange={(tab) => {
               // Map tab names to routes
-              if (tab === 'live') navigate('/');
-              else if (tab === 'active') navigateToActive();
-              else if (tab === 'history') navigate('/history');
-              else if (tab === 'settings') navigate('/settings');
-              else if (tab === 'monitoring') navigate('/monitoring');
+              if (tab === "live") navigate("/");
+              else if (tab === "active") navigateToActive();
+              else if (tab === "history") navigate("/history");
+              else if (tab === "settings") navigate("/settings");
+              else if (tab === "monitoring") navigate("/monitoring");
             }}
             updatedTradeIds={updatedTradeIds}
             onOpenActiveTrade={(tradeId) => {
               const trade = activeTrades.find((t) => t.id === tradeId);
               if (trade) focusTradeInLive(trade);
             }}
-            onOpenReviewTrade={() => navigate('/history')}
+            onOpenReviewTrade={() => navigate("/history")}
             onExitedTrade={handleExitedTrade}
             activeTab={activeTab}
             compositeSignals={activeSignals}
           />
         )}
 
-        {activeTab === 'active' && (
+        {activeTab === "active" && (
           <div className="lg:hidden">
             <MobileActive
               trades={activeTrades}
@@ -320,24 +313,22 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'history' && (
-          <DesktopHistory 
-            trades={historyTrades} 
+        {activeTab === "history" && (
+          <DesktopHistory
+            trades={historyTrades}
             channels={discordChannels}
             challenges={challenges}
           />
         )}
 
-        {activeTab === 'settings' && (
+        {activeTab === "settings" && (
           <SettingsPage
             onOpenDiscordSettings={() => useUIStore.getState().setShowDiscordDialog(true)}
-            onClose={() => navigate('/')}
+            onClose={() => navigate("/")}
           />
         )}
 
-        {activeTab === 'monitoring' && (
-          <MonitoringDashboard />
-        )}
+        {activeTab === "monitoring" && <MonitoringDashboard />}
       </main>
 
       <HDDialogDiscordSettings
@@ -354,6 +345,10 @@ export default function App() {
         onTestWebhook={async (channel) => {
           return await discord.testWebhook(channel);
         }}
+        discordAlertsEnabled={useSettingsStore((state) => state.discordAlertsEnabled)}
+        onToggleAlertsEnabled={(enabled) =>
+          useSettingsStore.getState().setDiscordAlertsEnabled(enabled)
+        }
       />
 
       <HDDialogAddTicker
@@ -379,12 +374,12 @@ export default function App() {
           activeTab={activeTab as any}
           onTabChange={(tab) => {
             // Navigate using React Router
-            if (tab === 'live') navigate('/');
-            else if (tab === 'active') navigateToActive();
-            else if (tab === 'history') navigate('/history');
-            else if (tab === 'settings') navigate('/settings');
+            if (tab === "live") navigate("/");
+            else if (tab === "active") navigateToActive();
+            else if (tab === "history") navigate("/history");
+            else if (tab === "settings") navigate("/settings");
           }}
-          hasActiveTrades={activeTrades.filter((t) => t.state === 'ENTERED').length > 0}
+          hasActiveTrades={activeTrades.filter((t) => t.state === "ENTERED").length > 0}
           flashTradeTab={flashTradeTab}
         />
       </div>
@@ -413,11 +408,11 @@ function TabButton({ label, active, onClick }: TabButtonProps) {
       type="button"
       onClick={onClick}
       className={[
-        'relative px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap rounded-[var(--radius)]',
-        active 
-          ? 'text-[var(--text-high)] bg-[var(--surface-2)]' 
-          : 'text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-2)]',
-      ].join(' ')}
+        "relative px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap rounded-[var(--radius)]",
+        active
+          ? "text-[var(--text-high)] bg-[var(--surface-2)]"
+          : "text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-2)]",
+      ].join(" ")}
     >
       {label}
       {active && (
