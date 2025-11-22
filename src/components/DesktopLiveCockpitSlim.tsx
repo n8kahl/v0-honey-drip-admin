@@ -156,6 +156,9 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onLoadedTradeClick={(trade) => {
               actions.setCurrentTrade(trade);
               actions.setTradeState(trade.state);
+              // Show alert composer so user can enter/dismiss trade
+              // Note: We need to use the hook's method, not a direct action
+              // This will be handled by ensuring the trade state updates properly
               // Set active ticker so middle column updates with contract data
               const ticker = watchlist.find((w) => w.symbol === trade.ticker);
               if (ticker) {
@@ -171,6 +174,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               }
             }}
             activeTicker={activeTicker?.symbol}
+            activeTrades={activeTrades}
           />
         </div>
 

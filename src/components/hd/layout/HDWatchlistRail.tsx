@@ -18,6 +18,7 @@ interface HDWatchlistRailProps {
   onLoadedTradeClick?: (trade: Trade) => void;
   onRemoveLoadedTrade?: (trade: Trade) => void;
   activeTicker?: string;
+  activeTrades?: Trade[]; // Add this prop
 }
 
 /**
@@ -47,9 +48,12 @@ export function HDWatchlistRail({
   onLoadedTradeClick,
   onRemoveLoadedTrade,
   activeTicker,
+  activeTrades: propActiveTrades,
 }: HDWatchlistRailProps) {
   const watchlist = useMarketStore((state) => state.watchlist);
-  const activeTrades = useTradeStore((state) => state.activeTrades);
+  // Use prop if provided, otherwise fall back to store (for backward compatibility)
+  const storeActiveTrades = useTradeStore((state) => state.activeTrades);
+  const activeTrades = propActiveTrades ?? storeActiveTrades;
   const challenges = useSettingsStore((state) => state.challenges);
   const discordChannels = useSettingsStore((state) => state.discordChannels);
   const removeChallenge = useSettingsStore((state) => state.removeChallenge);
