@@ -39,23 +39,39 @@ export const DISCORD_COLORS = {
 };
 
 class DiscordWebhookClient {
-  async sendMessage(webhookUrl: string, message: DiscordMessage): Promise<boolean> {
-    try {
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(message),
-      });
+  private async sendMessageOnce(webhookUrl: string, message: DiscordMessage): Promise<boolean> {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
 
-      if (!response.ok) {
-        throw new Error(`Discord webhook failed: ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`Discord webhook failed: ${response.statusText}`);
+    }
+
+    return true;
+  }
+
+  async sendMessage(webhookUrl: string, message: DiscordMessage, retries = 1): Promise<boolean> {
+    try {
+      return await this.sendMessageOnce(webhookUrl, message);
+    } catch (error) {
+      console.error("[Discord] First attempt failed:", error);
+
+      // Retry once if retries > 0
+      if (retries > 0) {
+        console.log("[Discord] Retrying...");
+        try {
+          return await this.sendMessageOnce(webhookUrl, message);
+        } catch (retryError) {
+          console.error("[Discord] Retry failed:", retryError);
+          return false;
+        }
       }
 
-      return true;
-    } catch (error) {
-      console.error("Failed to send Discord message:", error);
       return false;
     }
   }
