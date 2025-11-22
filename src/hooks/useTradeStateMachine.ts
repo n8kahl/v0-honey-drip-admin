@@ -271,6 +271,9 @@ export function useTradeStateMachine({
         setAlertType("load");
         setShowAlert(true);
 
+        // Add trade to activeTrades immediately (optimistic update)
+        setActiveTrades((prev) => [...prev, localTrade]);
+
         // Persist to database
         try {
           const dbTrade = await createTradeApi(userId, {
