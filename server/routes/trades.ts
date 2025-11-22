@@ -182,7 +182,12 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to create trade", details: error.message });
     }
 
-    console.log(`[Trades API] Trade created successfully with ID: ${data.id}`);
+    if (!data) {
+      return res.status(500).json({ error: "Failed to create trade: no data returned" });
+    }
+
+    const tradeData_ = data as unknown as { id: string };
+    console.log(`[Trades API] Trade created successfully with ID: ${tradeData_.id}`);
 
     // Link Discord channels if provided
     if (
@@ -191,7 +196,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       trade.discordChannelIds.length > 0
     ) {
       const channelLinks = trade.discordChannelIds.map((channelId: string) => ({
-        trade_id: data.id,
+        trade_id: tradeData_.id,
         discord_channel_id: channelId,
       }));
 
@@ -208,7 +213,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     // Link challenges if provided
     if (trade.challengeIds && Array.isArray(trade.challengeIds) && trade.challengeIds.length > 0) {
       const challengeLinks = trade.challengeIds.map((challengeId: string) => ({
-        trade_id: data.id,
+        trade_id: tradeData_.id,
         challenge_id: challengeId,
       }));
 
@@ -378,7 +383,12 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
         .json({ error: "Failed to create trade update", details: error.message });
     }
 
-    console.log(`[Trades API] Trade update created successfully with ID: ${data.id}`);
+    if (!data) {
+      return res.status(500).json({ error: "Failed to create trade update: no data returned" });
+    }
+
+    const updateData_ = data as unknown as { id: string };
+    console.log(`[Trades API] Trade update created successfully with ID: ${updateData_.id}`);
     res.status(201).json(data);
   } catch (error: any) {
     console.error("[Trades API] Unexpected error in POST /api/trades/:tradeId/updates:", error);
