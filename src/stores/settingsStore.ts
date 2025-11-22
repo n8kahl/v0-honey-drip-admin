@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { DiscordChannel, Challenge } from '../types';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { DiscordChannel, Challenge } from "../types";
 import {
   getDiscordChannels,
   addDiscordChannel,
@@ -10,7 +10,7 @@ import {
   addChallenge,
   deleteChallenge,
   updateChallenge,
-} from '../lib/supabase/database';
+} from "../lib/supabase/database";
 
 interface SettingsStore {
   // State
@@ -18,32 +18,48 @@ interface SettingsStore {
   challenges: Challenge[];
   isLoading: boolean;
   error: string | null;
+  discordAlertsEnabled: boolean;
 
   // Actions
   setDiscordChannels: (channels: DiscordChannel[]) => void;
   setChallenges: (challenges: Challenge[]) => void;
-  
+  setDiscordAlertsEnabled: (enabled: boolean) => void;
+
   // Discord operations
   loadDiscordChannels: (userId: string) => Promise<void>;
   createDiscordChannel: (userId: string, name: string, webhookUrl: string) => Promise<void>;
   removeDiscordChannel: (channelId: string) => Promise<void>;
-  updateDiscordChannelSettings: (channelId: string, updates: Partial<DiscordChannel>) => Promise<void>;
-  
+  updateDiscordChannelSettings: (
+    channelId: string,
+    updates: Partial<DiscordChannel>
+  ) => Promise<void>;
+
   // Challenge operations
   loadChallenges: (userId: string) => Promise<void>;
   createChallenge: (userId: string, challenge: Partial<Challenge>) => Promise<void>;
   removeChallenge: (challengeId: string) => Promise<void>;
   updateChallengeSettings: (challengeId: string, updates: Partial<Challenge>) => Promise<void>;
-  
+
   // Utilities
   getChannelById: (channelId: string) => DiscordChannel | undefined;
   getChallengeById: (challengeId: string) => Challenge | undefined;
-  getDefaultChannels: (type: 'load' | 'enter' | 'exit' | 'update') => DiscordChannel[];
+  getDefaultChannels: (type: "load" | "enter" | "exit" | "update") => DiscordChannel[];
   getActiveChallenges: () => Challenge[];
-  
+
   // Reset
   reset: () => void;
 }
+
+// Initialize from localStorage
+const getInitialDiscordAlertsEnabled = (): boolean => {
+  if (typeof window === "undefined") return true;
+  try {
+    const stored = localStorage.getItem("discordAlertsEnabled");
+    return stored !== null ? JSON.parse(stored) : true;
+  } catch {
+    return true;
+  }
+};
 
 export const useSettingsStore = create<SettingsStore>()(
   devtools(
@@ -53,10 +69,18 @@ export const useSettingsStore = create<SettingsStore>()(
       challenges: [],
       isLoading: false,
       error: null,
+      discordAlertsEnabled: getInitialDiscordAlertsEnabled(),
 
       // Simple setters
       setDiscordChannels: (channels) => set({ discordChannels: channels }),
       setChallenges: (challenges) => set({ challenges }),
+      setDiscordAlertsEnabled: (enabled) => {
+        // Persist to localStorage
+        if (typeof window !== "undefined") {
+          localStorage.setItem("discordAlertsEnabled", JSON.stringify(enabled));
+        }
+        set({ discordAlertsEnabled: enabled });
+      },
 
       // Discord operations
       loadDiscordChannels: async (userId) => {
@@ -74,11 +98,11 @@ export const useSettingsStore = create<SettingsStore>()(
             isDefaultExit: ch.is_default_exit,
             isDefaultUpdate: ch.is_default_update,
           }));
-          
+
           set({ discordChannels: mappedChannels, isLoading: false });
         } catch (error) {
-          console.error('[SettingsStore] Failed to load Discord channels:', error);
-          set({ error: 'Failed to load Discord channels', isLoading: false });
+          console.error("[SettingsStore] Failed to load Discord channels:", error);
+          set({ error: "Failed to load Discord channels", isLoading: false });
         }
       },
 
@@ -98,11 +122,11 @@ export const useSettingsStore = create<SettingsStore>()(
             isDefaultExit: ch.is_default_exit,
             isDefaultUpdate: ch.is_default_update,
           }));
-          
+
           set({ discordChannels: mappedChannels, isLoading: false });
         } catch (error) {
-          console.error('[SettingsStore] Failed to create Discord channel:', error);
-          set({ error: 'Failed to create Discord channel', isLoading: false });
+          console.error("[SettingsStore] Failed to create Discord channel:", error);
+          set({ error: "Failed to create Discord channel", isLoading: false });
         }
       },
 
@@ -110,14 +134,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ isLoading: true, error: null });
         try {
           await deleteDiscordChannel(channelId);
-          
+
           set((state) => ({
             discordChannels: state.discordChannels.filter((ch) => ch.id !== channelId),
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[SettingsStore] Failed to remove Discord channel:', error);
-          set({ error: 'Failed to remove Discord channel', isLoading: false });
+          console.error("[SettingsStore] Failed to remove Discord channel:", error);
+          set({ error: "Failed to remove Discord channel", isLoading: false });
         }
       },
 
@@ -125,7 +149,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ isLoading: true, error: null });
         try {
           await updateDiscordChannel(channelId, updates as any);
-          
+
           set((state) => ({
             discordChannels: state.discordChannels.map((ch) =>
               ch.id === channelId ? { ...ch, ...updates } : ch
@@ -133,8 +157,8 @@ export const useSettingsStore = create<SettingsStore>()(
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[SettingsStore] Failed to update Discord channel:', error);
-          set({ error: 'Failed to update Discord channel', isLoading: false });
+          console.error("[SettingsStore] Failed to update Discord channel:", error);
+          set({ error: "Failed to update Discord channel", isLoading: false });
         }
       },
 
@@ -155,11 +179,11 @@ export const useSettingsStore = create<SettingsStore>()(
             isActive: ch.is_active,
             createdAt: new Date(ch.created_at),
           }));
-          
+
           set({ challenges: mappedChallenges, isLoading: false });
         } catch (error) {
-          console.error('[SettingsStore] Failed to load challenges:', error);
-          set({ error: 'Failed to load challenges', isLoading: false });
+          console.error("[SettingsStore] Failed to load challenges:", error);
+          set({ error: "Failed to load challenges", isLoading: false });
         }
       },
 
@@ -180,11 +204,11 @@ export const useSettingsStore = create<SettingsStore>()(
             isActive: ch.is_active,
             createdAt: new Date(ch.created_at),
           }));
-          
+
           set({ challenges: mappedChallenges, isLoading: false });
         } catch (error) {
-          console.error('[SettingsStore] Failed to create challenge:', error);
-          set({ error: 'Failed to create challenge', isLoading: false });
+          console.error("[SettingsStore] Failed to create challenge:", error);
+          set({ error: "Failed to create challenge", isLoading: false });
         }
       },
 
@@ -192,14 +216,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ isLoading: true, error: null });
         try {
           await deleteChallenge(challengeId);
-          
+
           set((state) => ({
             challenges: state.challenges.filter((ch) => ch.id !== challengeId),
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[SettingsStore] Failed to remove challenge:', error);
-          set({ error: 'Failed to remove challenge', isLoading: false });
+          console.error("[SettingsStore] Failed to remove challenge:", error);
+          set({ error: "Failed to remove challenge", isLoading: false });
         }
       },
 
@@ -207,7 +231,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ isLoading: true, error: null });
         try {
           await updateChallenge(challengeId, updates as any);
-          
+
           set((state) => ({
             challenges: state.challenges.map((ch) =>
               ch.id === challengeId ? { ...ch, ...updates } : ch
@@ -215,8 +239,8 @@ export const useSettingsStore = create<SettingsStore>()(
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[SettingsStore] Failed to update challenge:', error);
-          set({ error: 'Failed to update challenge', isLoading: false });
+          console.error("[SettingsStore] Failed to update challenge:", error);
+          set({ error: "Failed to update challenge", isLoading: false });
         }
       },
 
@@ -232,13 +256,13 @@ export const useSettingsStore = create<SettingsStore>()(
       getDefaultChannels: (type) => {
         const { discordChannels } = get();
         switch (type) {
-          case 'load':
+          case "load":
             return discordChannels.filter((ch) => ch.isDefaultLoad && ch.isActive);
-          case 'enter':
+          case "enter":
             return discordChannels.filter((ch) => ch.isDefaultEnter && ch.isActive);
-          case 'exit':
+          case "exit":
             return discordChannels.filter((ch) => ch.isDefaultExit && ch.isActive);
-          case 'update':
+          case "update":
             return discordChannels.filter((ch) => ch.isDefaultUpdate && ch.isActive);
           default:
             return [];
@@ -256,8 +280,9 @@ export const useSettingsStore = create<SettingsStore>()(
           challenges: [],
           isLoading: false,
           error: null,
+          discordAlertsEnabled: true,
         }),
     }),
-    { name: 'SettingsStore' }
+    { name: "SettingsStore" }
   )
 );

@@ -67,6 +67,7 @@ export interface Challenge {
   isActive: boolean;
   createdAt: Date;
   scope?: ChallengeScope;
+  defaultChannel?: string;
 }
 
 export interface Trade {

@@ -1,11 +1,11 @@
-import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from '../../../stores';
-import { HDRowWatchlist } from '../cards/HDRowWatchlist';
-import { HDMacroPanel } from '../dashboard/HDMacroPanel';
-import { HDEnteredTradeCard } from '../cards/HDEnteredTradeCard';
-import { Ticker, Trade } from '../../../types';
-import { Plus, Trash2, Edit } from 'lucide-react';
-import { cn } from '../../../lib/utils';
-import { useState } from 'react';
+import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../../../stores";
+import { HDRowWatchlist } from "../cards/HDRowWatchlist";
+import { HDMacroPanel } from "../dashboard/HDMacroPanel";
+import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
+import { Ticker, Trade } from "../../../types";
+import { Plus, Trash2, Edit } from "lucide-react";
+import { cn } from "../../../lib/utils";
+import { useState } from "react";
 
 interface HDWatchlistRailProps {
   onTickerClick?: (ticker: Ticker) => void;
@@ -20,9 +20,7 @@ interface HDWatchlistRailProps {
 function SectionHeader({ title, onAdd }: { title: string; onAdd?: () => void }) {
   return (
     <div className="px-3 py-2 bg-gradient-to-r from-yellow-500/10 to-transparent border-l-2 border-yellow-500 flex items-center justify-between">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-yellow-500">
-        {title}
-      </h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-yellow-500">{title}</h3>
       {onAdd && (
         <button
           onClick={onAdd}
@@ -50,8 +48,8 @@ export function HDWatchlistRail({
   const [deletingChallengeId, setDeletingChallengeId] = useState<string | null>(null);
 
   // Filter trades by state
-  const loadedTrades = activeTrades.filter((t) => t.state === 'LOADED');
-  const enteredTrades = activeTrades.filter((t) => t.state === 'ENTERED');
+  const loadedTrades = activeTrades.filter((t) => t.state === "LOADED");
+  const enteredTrades = activeTrades.filter((t) => t.state === "ENTERED");
 
   // Calculate challenge progress
   const activeChallenges = challenges.filter((c) => c.isActive);
@@ -63,7 +61,7 @@ export function HDWatchlistRail({
         await removeChallenge(challengeId);
         setDeletingChallengeId(null);
       } catch (error) {
-        console.error('[HDWatchlistRail] Failed to delete challenge:', error);
+        console.error("[HDWatchlistRail] Failed to delete challenge:", error);
       }
     } else {
       // First click - show confirmation
@@ -122,11 +120,10 @@ export function HDWatchlistRail({
                   className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] text-sm"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-[var(--text-high)]">
-                      {trade.ticker}
-                    </span>
+                    <span className="font-medium text-[var(--text-high)]">{trade.ticker}</span>
                     <span className="text-xs text-[var(--text-muted)]">
-                      {trade.contract.strike}{trade.contract.type}
+                      {trade.contract.strike}
+                      {trade.contract.type}
                     </span>
                   </div>
                   <div className="text-xs text-[var(--text-muted)] mt-1">
@@ -158,15 +155,12 @@ export function HDWatchlistRail({
 
         {/* Challenges Section */}
         <div className="mt-4">
-          <SectionHeader
-            title="Challenges"
-            onAdd={() => setShowAddChallengeDialog(true)}
-          />
+          <SectionHeader title="Challenges" onAdd={() => setShowAddChallengeDialog(true)} />
           {activeChallenges.length > 0 ? (
             <div className="p-3 space-y-2">
               {activeChallenges.map((challenge) => {
                 const completedTrades = activeTrades.filter(
-                  (t) => t.challenges.includes(challenge.id) && t.state === 'EXITED'
+                  (t) => t.challenges.includes(challenge.id) && t.state === "EXITED"
                 ).length;
                 const totalTrades = 10; // Default target, can be enhanced later
                 const progress = totalTrades > 0 ? (completedTrades / totalTrades) * 100 : 0;
@@ -188,12 +182,12 @@ export function HDWatchlistRail({
                         <button
                           onClick={() => handleDeleteChallenge(challenge.id)}
                           className={cn(
-                            'p-1 rounded transition-colors',
+                            "p-1 rounded transition-colors",
                             isDeleting
-                              ? 'bg-[var(--accent-negative)] text-white'
-                              : 'opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-3)]'
+                              ? "bg-[var(--accent-negative)] text-white"
+                              : "opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-3)]"
                           )}
-                          title={isDeleting ? 'Click again to confirm delete' : 'Delete challenge'}
+                          title={isDeleting ? "Click again to confirm delete" : "Delete challenge"}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -202,10 +196,10 @@ export function HDWatchlistRail({
                     <div className="w-full h-1.5 bg-[var(--surface-3)] rounded-full overflow-hidden">
                       <div
                         className={cn(
-                          'h-full transition-all duration-300 rounded-full',
+                          "h-full transition-all duration-300 rounded-full",
                           progress >= 100
-                            ? 'bg-[var(--accent-positive)]'
-                            : 'bg-[var(--brand-primary)]'
+                            ? "bg-[var(--accent-positive)]"
+                            : "bg-[var(--brand-primary)]"
                         )}
                         style={{ width: `${Math.min(progress, 100)}%` }}
                       />
