@@ -265,7 +265,7 @@ const MobileMenu: React.FC<MobileMenuProps> = ({ onSettingsClick, onRadarClick, 
       <SheetTrigger asChild>
         <button
           className={cn(
-            'lg:hidden flex items-center justify-center w-9 h-9 rounded-md hover:bg-[var(--surface-2)]',
+            'md:hidden flex items-center justify-center w-9 h-9 rounded-md hover:bg-[var(--surface-2)]',
             colorTransition,
             buttonHoverColor,
             focusStateSmooth
@@ -357,7 +357,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ userName = 'Trader', onLogout, onPr
   };
 
   return (
-    <div className="relative hidden lg:block">
+    <div className="relative hidden md:block">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
