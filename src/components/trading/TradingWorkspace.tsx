@@ -1,17 +1,17 @@
-import React from 'react';
-import { Ticker, Contract, Trade, TradeState, AlertType } from '../../types';
-import type { CompositeSignal } from '../../lib/composite/CompositeSignal';
-import { HDLiveChart } from '../hd/charts/HDLiveChart';
-import { HDContractGrid } from '../hd/common/HDContractGrid';
-import { HDLoadedTradeCard } from '../hd/cards/HDLoadedTradeCard';
-import { HDEnteredTradeCard } from '../hd/cards/HDEnteredTradeCard';
-import { HDPanelFocusedTrade } from '../hd/dashboard/HDPanelFocusedTrade';
-import { HDPriceSparkline } from '../hd/charts/HDPriceSparkline';
-import { MobileWatermark } from '../MobileWatermark';
-import { useMemo } from 'react';
-import { useKeyLevels } from '../../hooks/useKeyLevels';
-import { buildChartLevelsForTrade } from '../../lib/riskEngine/chartLevels';
-import type { KeyLevels } from '../../lib/riskEngine/types';
+import React from "react";
+import { Ticker, Contract, Trade, TradeState, AlertType } from "../../types";
+import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
+import { HDLiveChart } from "../hd/charts/HDLiveChart";
+import { HDContractGrid } from "../hd/common/HDContractGrid";
+import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
+import { HDEnteredTradeCard } from "../hd/cards/HDEnteredTradeCard";
+import { HDPanelFocusedTrade } from "../hd/dashboard/HDPanelFocusedTrade";
+import { HDPriceSparkline } from "../hd/charts/HDPriceSparkline";
+import { MobileWatermark } from "../MobileWatermark";
+import { useMemo } from "react";
+import { useKeyLevels } from "../../hooks/useKeyLevels";
+import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
+import type { KeyLevels } from "../../lib/riskEngine/types";
 
 // Use permissive typing for confluence metrics; downstream components will handle specifics.
 interface TradingWorkspaceProps {
@@ -45,28 +45,30 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onAutoTrim,
   compositeSignals,
 }) => {
-  const currentPrice = activeTicker ? (watchlist.find(t => t.symbol === activeTicker.symbol)?.last || activeTicker.last) : 0;
+  const currentPrice = activeTicker
+    ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
+    : 0;
 
-  const enteredTrade = tradeState === 'ENTERED' && currentTrade && !showAlert ? currentTrade : null;
+  const enteredTrade = tradeState === "ENTERED" && currentTrade && !showAlert ? currentTrade : null;
   // Enable key level computation for LOADED and ENTERED states
-  const levelsTicker = currentTrade?.ticker || activeTicker?.symbol || '';
+  const levelsTicker = currentTrade?.ticker || activeTicker?.symbol || "";
   const { keyLevels: computedKeyLevels } = useKeyLevels(levelsTicker, {
-    timeframe: '5',
+    timeframe: "5",
     lookbackDays: 5,
     orbWindow: 5,
-    enabled: Boolean(levelsTicker && (tradeState === 'LOADED' || tradeState === 'ENTERED')),
+    enabled: Boolean(levelsTicker && (tradeState === "LOADED" || tradeState === "ENTERED")),
   });
   const [chartHeight, setChartHeight] = React.useState(360);
   React.useEffect(() => {
     const update = () => setChartHeight(window.innerWidth < 768 ? 260 : 360);
     update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, []);
 
   // Decide which ticker drives the global chart
   const chartTicker = useMemo(() => {
-    if (currentTrade && (tradeState === 'LOADED' || tradeState === 'ENTERED')) {
+    if (currentTrade && (tradeState === "LOADED" || tradeState === "ENTERED")) {
       return currentTrade.ticker;
     }
     if (activeTicker) return activeTicker.symbol;
@@ -77,14 +79,16 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
     if (!enteredTrade) return [] as any[];
     return [
       ...(enteredTrade.entryTime
-        ? [{
-            type: 'enter' as const,
-            timestamp: new Date(enteredTrade.entryTime).getTime(),
-            price: enteredTrade.entryPrice || enteredTrade.contract.mid,
-            label: 'Enter',
-          }]
+        ? [
+            {
+              type: "enter" as const,
+              timestamp: new Date(enteredTrade.entryTime).getTime(),
+              price: enteredTrade.entryPrice || enteredTrade.contract.mid,
+              label: "Enter",
+            },
+          ]
         : []),
-      ...(enteredTrade.updates || []).map(update => ({
+      ...(enteredTrade.updates || []).map((update) => ({
         type: update.type as any,
         timestamp: new Date(update.timestamp).getTime(),
         price: update.price || enteredTrade.contract.mid,
@@ -121,7 +125,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
 
   // Add loaded trade chart levels (for LOADED state)
   const loadedChartLevels = useMemo(() => {
-    if (!currentTrade || tradeState !== 'LOADED') return [] as any[];
+    if (!currentTrade || tradeState !== "LOADED") return [] as any[];
     const keyLevels: KeyLevels = computedKeyLevels || {
       preMarketHigh: 0,
       preMarketLow: 0,
@@ -155,26 +159,50 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           <HDLiveChart
             ticker={chartTicker}
             initialTimeframe="5"
-            indicators={{ ema: { periods: [8,21,50,200] }, vwap: { enabled: true, bands: false }, bollinger: { period: 20, stdDev: 2 } }}
-            events={tradeState === 'ENTERED' ? enteredTradeEvents : []}
-            levels={tradeState === 'LOADED' ? loadedChartLevels : tradeState === 'ENTERED' ? enteredChartLevels : []}
+            indicators={{
+              ema: { periods: [8, 21, 50, 200] },
+              vwap: { enabled: true, bands: false },
+              bollinger: { period: 20, stdDev: 2 },
+            }}
+            events={tradeState === "ENTERED" ? enteredTradeEvents : []}
+            levels={
+              tradeState === "LOADED"
+                ? loadedChartLevels
+                : tradeState === "ENTERED"
+                  ? enteredChartLevels
+                  : []
+            }
             height={chartHeight}
             stickyHeader
           />
         </div>
       )}
       {/* Entered Trade Card with details */}
-      {tradeState === 'ENTERED' && currentTrade && (
+      {tradeState === "ENTERED" && currentTrade && (
         <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
           <HDEnteredTradeCard
             trade={currentTrade}
-            direction={currentTrade.contract.type === 'C' ? 'call' : 'put'}
+            direction={currentTrade.contract.type === "C" ? "call" : "put"}
             confluence={confluence}
             onAutoTrim={onAutoTrim}
           />
         </div>
       )}
-      {tradeState === 'WATCHING' && activeTicker ? (
+      {/* Loaded Trade Card with details */}
+      {tradeState === "LOADED" && currentTrade && (
+        <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
+          <HDLoadedTradeCard
+            trade={currentTrade}
+            onEnter={onEnterTrade}
+            onDiscard={onDiscard}
+            underlyingPrice={activeTicker?.last}
+            underlyingChange={activeTicker?.changePercent}
+            confluence={confluence}
+            signals={compositeSignals?.filter((s) => s.symbol === currentTrade.ticker)}
+          />
+        </div>
+      )}
+      {tradeState === "WATCHING" && activeTicker && (
         <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
           {contracts.length > 0 ? (
             <HDContractGrid
@@ -189,36 +217,21 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
             </div>
           )}
         </div>
-      ) : tradeState === 'LOADED' && currentTrade && !showAlert ? (
-        <div className="p-4 lg:p-6 pointer-events-auto space-y-3">
-          <HDLoadedTradeCard
-            trade={currentTrade}
-            onEnter={onEnterTrade}
-            onDiscard={onDiscard}
-            underlyingPrice={activeTicker?.last}
-            underlyingChange={activeTicker?.changePercent}
-            confluence={confluence}
-            signals={compositeSignals?.filter(s => s.symbol === currentTrade.ticker)}
-          />
-        </div>
-      ) : showAlert ? (
-        <div className="hidden lg:block p-4 lg:p-6 pointer-events-auto">
-          {currentTrade && (
-            <HDPanelFocusedTrade
-              trade={currentTrade}
-              ticker={activeTicker?.symbol}
-              state={tradeState}
-            />
-          )}
-        </div>
-      ) : (
+      )}
+      {!currentTrade && !activeTicker && (
         <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
           <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
-            <img src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png" alt="Honey Drip" className="w-auto h-[50vh] max-w-[60vw] object-contain" />
+            <img
+              src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png"
+              alt="Honey Drip"
+              className="w-auto h-[50vh] max-w-[60vw] object-contain"
+            />
           </div>
           <div className="relative z-10 text-center space-y-4 max-w-md">
             <h3 className="text-xl lg:text-2xl font-semibold text-white">Honey Drip Admin</h3>
-            <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">Select a Ticker from the Watchlist or Loaded Trades to begin</p>
+            <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">
+              Select a Ticker from the Watchlist or Loaded Trades to begin
+            </p>
           </div>
         </div>
       )}

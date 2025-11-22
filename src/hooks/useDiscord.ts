@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { discordWebhook, sendToMultipleChannels } from '../lib/discord/webhook';
-import type { DiscordChannel, Trade } from '../types';
+import { useState } from "react";
+import { discordWebhook, sendToMultipleChannels } from "../lib/discord/webhook";
+import type { DiscordChannel, Trade, Challenge } from "../types";
 
 export function useDiscord() {
   const [sending, setSending] = useState(false);
@@ -9,19 +9,15 @@ export function useDiscord() {
     try {
       return await discordWebhook.testWebhook(channel.webhookUrl);
     } catch (error) {
-      console.error('Test webhook failed:', error);
+      console.error("Test webhook failed:", error);
       return false;
     }
   };
 
-  const sendLoadAlert = async (
-    channels: DiscordChannel[],
-    trade: Trade,
-    notes?: string
-  ) => {
+  const sendLoadAlert = async (channels: DiscordChannel[], trade: Trade, notes?: string) => {
     setSending(true);
     try {
-      const webhookUrls = channels.map(ch => ch.webhookUrl);
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendLoadAlert(url, {
           ticker: trade.ticker,
@@ -49,7 +45,7 @@ export function useDiscord() {
   ) => {
     setSending(true);
     try {
-      const webhookUrls = channels.map(ch => ch.webhookUrl);
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendEntryAlert(url, {
           ticker: trade.ticker,
@@ -73,12 +69,12 @@ export function useDiscord() {
   const sendUpdateAlert = async (
     channels: DiscordChannel[],
     trade: Trade,
-    updateType: 'trim' | 'update-sl' | 'generic',
+    updateType: "trim" | "update-sl" | "generic",
     message: string
   ) => {
     setSending(true);
     try {
-      const webhookUrls = channels.map(ch => ch.webhookUrl);
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendUpdateAlert(url, {
           ticker: trade.ticker,
@@ -106,7 +102,7 @@ export function useDiscord() {
   ) => {
     setSending(true);
     try {
-      const webhookUrls = channels.map(ch => ch.webhookUrl);
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendExitAlert(url, {
           ticker: trade.ticker,
@@ -126,13 +122,10 @@ export function useDiscord() {
     }
   };
 
-  const sendTrailingStopAlert = async (
-    channels: DiscordChannel[],
-    trade: Trade
-  ) => {
+  const sendTrailingStopAlert = async (channels: DiscordChannel[], trade: Trade) => {
     setSending(true);
     try {
-      const webhookUrls = channels.map(ch => ch.webhookUrl);
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendTrailingStopAlert(url, {
           ticker: trade.ticker,
@@ -151,6 +144,39 @@ export function useDiscord() {
     }
   };
 
+  const sendChallengeProgressAlert = async (
+    channels: DiscordChannel[],
+    challenge: Challenge,
+    stats: {
+      totalPnL: number;
+      winRate: number;
+      completedTrades: number;
+      activeTrades: number;
+    }
+  ) => {
+    setSending(true);
+    try {
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
+      const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
+        client.sendChallengeProgressAlert(url, {
+          challengeName: challenge.name,
+          startingBalance: challenge.startingBalance,
+          currentBalance: challenge.currentBalance,
+          targetBalance: challenge.targetBalance,
+          totalPnL: stats.totalPnL,
+          winRate: stats.winRate,
+          completedTrades: stats.completedTrades,
+          activeTrades: stats.activeTrades,
+          startDate: challenge.startDate,
+          endDate: challenge.endDate,
+        })
+      );
+      return results;
+    } finally {
+      setSending(false);
+    }
+  };
+
   return {
     sending,
     testWebhook,
@@ -159,5 +185,6 @@ export function useDiscord() {
     sendUpdateAlert,
     sendExitAlert,
     sendTrailingStopAlert,
+    sendChallengeProgressAlert,
   };
 }
