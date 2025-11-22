@@ -17,6 +17,8 @@ import {
 import { adjustProfileByConfluence } from "../lib/riskEngine/confluenceAdjustment";
 import { useAppToast } from "./useAppToast";
 import { useAuth } from "../contexts/AuthContext";
+import { useDiscord } from "./useDiscord";
+import { useSettingsStore } from "../stores/settingsStore";
 import {
   createTradeApi,
   updateTradeApi,
@@ -95,6 +97,7 @@ export function useTradeStateMachine({
   confluence,
 }: UseTradeStateMachineProps): TradeStateMachineState & { actions: TradeStateMachineActions } {
   const toast = useAppToast();
+  const discord = useDiscord();
   const auth = useAuth();
   const userId = auth?.user?.id;
 
@@ -156,6 +159,37 @@ export function useTradeStateMachine({
         price,
         message,
       };
+    },
+    []
+  );
+
+  const getDiscordChannelsForAlert = useCallback(
+    (channelIds: string[], challengeIds: string[]): DiscordChannel[] => {
+      const settingsStore = useSettingsStore.getState();
+      const channels: DiscordChannel[] = [];
+
+      // Add user-selected channels
+      channelIds.forEach((id) => {
+        const channel = settingsStore.getChannelById(id);
+        if (channel) {
+          channels.push(channel);
+        }
+      });
+
+      // Add channels from linked challenges
+      challengeIds.forEach((challengeId) => {
+        const challenge = settingsStore.getChallengeById(challengeId);
+        if (challenge?.defaultChannel) {
+          const channel = settingsStore.discordChannels.find(
+            (ch) => ch.name === challenge.defaultChannel
+          );
+          if (channel && !channels.some((c) => c.id === channel.id)) {
+            channels.push(channel);
+          }
+        }
+      });
+
+      return channels;
     },
     []
   );
