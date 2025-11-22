@@ -138,6 +138,7 @@ Client Request → /api/massive/* → Server adds API key → Massive.com
 ```
 
 **Why?**
+
 - API keys never exposed to browser
 - Rate limiting enforced server-side
 - Request validation and sanitization
@@ -175,6 +176,8 @@ Stale detection: Show warning if data >5s old
 │   │   └── monitoring/            # Monitoring dashboard
 │   │
 │   ├── lib/                       # Core business logic
+│   │   ├── api/                   # API client functions (Phase 4)
+│   │   │   └── tradeApi.ts        # Trade API with exponential backoff retry
 │   │   ├── massive/               # Massive.com integration
 │   │   │   ├── websocket.ts       # WebSocket client with auto-reconnect
 │   │   │   ├── streaming-manager.ts  # Centralized subscription manager
@@ -218,6 +221,7 @@ Stale detection: Show warning if data >5s old
 │   ├── index.ts                   # Main server entry point
 │   ├── routes/
 │   │   ├── api.ts                 # Main API routes (970+ lines)
+│   │   ├── trades.ts              # Trade persistence API (507 lines, Phase 4)
 │   │   └── strategies.ts          # Strategy routes
 │   ├── ws/                        # WebSocket servers
 │   │   ├── index.ts               # WebSocket setup
@@ -238,6 +242,7 @@ Stale detection: Show warning if data >5s old
 │   ├── 001_create_schema.sql
 │   ├── 002_add_profiles.sql
 │   ├── 006_add_composite_signals.sql  # Phase 5 composite system
+│   ├── 008_add_trade_discord_channels.sql  # Phase 4 trade persistence
 │   └── README.md
 │
 ├── e2e/                           # Playwright E2E tests
@@ -256,60 +261,60 @@ Stale detection: Show warning if data >5s old
 
 ### Frontend Core
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `react` | 18.3.1 | UI framework |
-| `typescript` | ^5 | Type safety |
-| `vite` | 6.3.5 | Build tool |
-| `react-router-dom` | ^7.9.6 | Routing |
-| `zustand` | ^4.5.0 | State management |
+| Package            | Version | Purpose          |
+| ------------------ | ------- | ---------------- |
+| `react`            | 18.3.1  | UI framework     |
+| `typescript`       | ^5      | Type safety      |
+| `vite`             | 6.3.5   | Build tool       |
+| `react-router-dom` | ^7.9.6  | Routing          |
+| `zustand`          | ^4.5.0  | State management |
 
 ### UI Libraries
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `@radix-ui/*` | 1.x-2.x | 20+ headless UI components |
-| `tailwindcss` | 3.4.15 | Utility-first CSS |
-| `lucide-react` | ^0.454.0 | Icon library |
-| `recharts` | 2.15.2 | Data visualization |
-| `lightweight-charts` | ^4.2.0 | Trading charts |
-| `sonner` | 2.0.3 | Toast notifications |
+| Package              | Version  | Purpose                    |
+| -------------------- | -------- | -------------------------- |
+| `@radix-ui/*`        | 1.x-2.x  | 20+ headless UI components |
+| `tailwindcss`        | 3.4.15   | Utility-first CSS          |
+| `lucide-react`       | ^0.454.0 | Icon library               |
+| `recharts`           | 2.15.2   | Data visualization         |
+| `lightweight-charts` | ^4.2.0   | Trading charts             |
+| `sonner`             | 2.0.3    | Toast notifications        |
 
 ### Backend
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `express` | ^4.18.2 | Web server |
-| `ws` | ^8.18.3 | WebSocket server |
-| `helmet` | ^8.1.0 | Security headers |
-| `compression` | ^1.8.1 | Response compression |
-| `express-rate-limit` | ^8.2.1 | Rate limiting |
-| `morgan` | ^1.10.1 | Request logging |
+| Package              | Version | Purpose              |
+| -------------------- | ------- | -------------------- |
+| `express`            | ^4.18.2 | Web server           |
+| `ws`                 | ^8.18.3 | WebSocket server     |
+| `helmet`             | ^8.1.0  | Security headers     |
+| `compression`        | ^1.8.1  | Response compression |
+| `express-rate-limit` | ^8.2.1  | Rate limiting        |
+| `morgan`             | ^1.10.1 | Request logging      |
 
 ### Database & Auth
 
-| Package | Purpose |
-|---------|---------|
-| `@supabase/supabase-js` | PostgreSQL client |
-| `@supabase/ssr` | Server-side rendering support |
+| Package                 | Purpose                       |
+| ----------------------- | ----------------------------- |
+| `@supabase/supabase-js` | PostgreSQL client             |
+| `@supabase/ssr`         | Server-side rendering support |
 
 ### Testing
 
-| Package | Purpose |
-|---------|---------|
-| `vitest` | Unit testing framework |
+| Package                  | Purpose                 |
+| ------------------------ | ----------------------- |
+| `vitest`                 | Unit testing framework  |
 | `@testing-library/react` | React component testing |
-| `@playwright/test` | E2E testing |
+| `@playwright/test`       | E2E testing             |
 
 ### Development Tools
 
-| Package | Purpose |
-|---------|---------|
-| `tsx` | TypeScript execution |
+| Package        | Purpose                |
+| -------------- | ---------------------- |
+| `tsx`          | TypeScript execution   |
 | `concurrently` | Run multiple processes |
-| `husky` | Git hooks |
-| `eslint` | Code linting |
-| `prettier` | Code formatting |
+| `husky`        | Git hooks              |
+| `eslint`       | Code linting           |
+| `prettier`     | Code formatting        |
 
 ---
 
@@ -323,28 +328,28 @@ Stale detection: Show warning if data >5s old
 
 ```typescript
 // REST API Base URL
-const MASSIVE_BASE = 'https://api.massive.com';
+const MASSIVE_BASE = "https://api.massive.com";
 
 // WebSocket URLs
-const WS_OPTIONS = 'wss://socket.massive.com/options';
-const WS_INDICES = 'wss://socket.massive.com/indices';
+const WS_OPTIONS = "wss://socket.massive.com/options";
+const WS_INDICES = "wss://socket.massive.com/indices";
 
 // Common REST Endpoints
-GET /v2/aggs/ticker/{optionsTicker}/range/1/minute/{from}/{to}
-GET /v3/snapshot/options/{underlyingAsset}
-GET /v3/snapshot/indices
-GET /v3/reference/options/contracts
+GET / v2 / aggs / ticker / { optionsTicker } / range / 1 / minute / { from } / { to };
+GET / v3 / snapshot / options / { underlyingAsset };
+GET / v3 / snapshot / indices;
+GET / v3 / reference / options / contracts;
 ```
 
 #### Tradier API (Fallback)
 
 ```typescript
-const TRADIER_BASE = 'https://api.tradier.com/v1';
+const TRADIER_BASE = "https://api.tradier.com/v1";
 
 // Common endpoints
-GET /markets/quotes
-GET /markets/history
-GET /markets/options/chains
+GET / markets / quotes;
+GET / markets / history;
+GET / markets / options / chains;
 ```
 
 ### Backend API Routes
@@ -364,6 +369,16 @@ POST /api/ws-token                  // Generate ephemeral WebSocket token (5-min
 GET  /api/quotes?tickers=SPY,SPX,NDX           // Real-time quotes (stocks + indices)
 GET  /api/bars?symbol=SPY&timespan=minute      // Historical bars
 GET  /api/options/chain?symbol=SPX&window=10   // Unified options chain
+
+// Trade Persistence (Phase 4 Implementation)
+POST /api/trades                              // Create trade
+PATCH /api/trades/:tradeId                    // Update trade
+DELETE /api/trades/:tradeId                   // Delete trade
+POST /api/trades/:tradeId/updates             // Record trade action (entry, exit, trim, etc.)
+POST /api/trades/:tradeId/channels/:channelId // Link Discord channel to trade
+DELETE /api/trades/:tradeId/channels/:channelId // Unlink Discord channel
+POST /api/trades/:tradeId/challenges/:challengeId // Link challenge to trade
+DELETE /api/trades/:tradeId/challenges/:challengeId // Unlink challenge
 
 // Massive.com Proxy (requires x-massive-proxy-token header)
 GET  /api/massive/indices/bars
@@ -392,7 +407,7 @@ wss://socket.massive.com/indices
 
 ```typescript
 // Client requests token
-const { token, expiresAt } = await fetch('/api/ws-token').then(r => r.json());
+const { token, expiresAt } = await fetch("/api/ws-token").then((r) => r.json());
 
 // Token format: base64(payload).hmac_signature
 // Payload: { exp: timestamp, n: nonce }
@@ -400,7 +415,7 @@ const { token, expiresAt } = await fetch('/api/ws-token').then(r => r.json());
 // Expiry: 5 minutes
 
 // Client uses token in WebSocket auth
-ws.send({ action: 'auth', params: token });
+ws.send({ action: "auth", params: token });
 ```
 
 ### Rate Limiting
@@ -408,8 +423,8 @@ ws.send({ action: 'auth', params: token });
 ```typescript
 // Express middleware
 const generalLimiter = rateLimit({
-  windowMs: 60_000,    // 1 minute
-  max: 1200,           // 1200 requests per minute
+  windowMs: 60_000, // 1 minute
+  max: 1200, // 1200 requests per minute
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -422,6 +437,7 @@ const generalLimiter = rateLimit({
 ### Core Tables
 
 #### `profiles`
+
 ```sql
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id),
@@ -430,9 +446,11 @@ CREATE TABLE profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
+
 **RLS**: Users can only see/edit their own profile
 
 #### `discord_channels`
+
 ```sql
 CREATE TABLE discord_channels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -442,9 +460,11 @@ CREATE TABLE discord_channels (
   UNIQUE(user_id, name)
 );
 ```
+
 **RLS**: Users can only CRUD their own channels
 
 #### `challenges`
+
 ```sql
 CREATE TABLE challenges (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -457,9 +477,11 @@ CREATE TABLE challenges (
   UNIQUE(user_id, name)
 );
 ```
+
 **RLS**: Users can only manage their own challenges
 
 #### `watchlist`
+
 ```sql
 CREATE TABLE watchlist (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -469,9 +491,11 @@ CREATE TABLE watchlist (
   UNIQUE(user_id, symbol)
 );
 ```
+
 **RLS**: Users can only see their own watchlist
 
 #### `trades`
+
 ```sql
 CREATE TABLE trades (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -497,9 +521,11 @@ CREATE INDEX idx_trades_user_id ON trades(user_id);
 CREATE INDEX idx_trades_state ON trades(state);
 CREATE INDEX idx_trades_ticker ON trades(ticker);
 ```
+
 **RLS**: Users can only CRUD their own trades
 
 #### `trade_updates`
+
 ```sql
 CREATE TABLE trade_updates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -512,9 +538,45 @@ CREATE TABLE trade_updates (
   pnl_percent NUMERIC
 );
 ```
+
 **RLS**: Users can only see updates for their trades
 
+#### `trades_discord_channels` (Phase 4 - Trade Persistence)
+
+```sql
+CREATE TABLE trades_discord_channels (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  discord_channel_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(trade_id, discord_channel_id)
+);
+
+CREATE INDEX idx_trades_discord_channels_trade_id ON trades_discord_channels(trade_id);
+```
+
+**Purpose**: Many-to-many relationship between trades and Discord channels
+**RLS**: Users can only view/edit links on their own trades
+
+#### `trades_challenges` (Phase 4 - Trade Persistence)
+
+```sql
+CREATE TABLE trades_challenges (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  challenge_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(trade_id, challenge_id)
+);
+
+CREATE INDEX idx_trades_challenges_trade_id ON trades_challenges(trade_id);
+```
+
+**Purpose**: Many-to-many relationship between trades and challenges
+**RLS**: Users can only view/edit links on their own trades
+
 #### `composite_signals` (Phase 5+)
+
 ```sql
 CREATE TABLE composite_signals (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -577,9 +639,10 @@ CREATE POLICY "Users can delete own trades"
 ```
 
 **Best Practice**:
+
 ```typescript
 // ✅ CORRECT: RLS automatically filters by auth.uid()
-const { data } = await supabase.from('trades').select('*');
+const { data } = await supabase.from("trades").select("*");
 // Only returns current user's trades
 
 // ❌ WRONG: Never use service role in frontend
@@ -654,8 +717,10 @@ interface TradeStore {
 
 export const useTradeStore = create<TradeStore>()(
   devtools(
-    (set, get) => ({ /* implementation */ }),
-    { name: 'TradeStore' }
+    (set, get) => ({
+      /* implementation */
+    }),
+    { name: "TradeStore" }
   )
 );
 ```
@@ -689,12 +754,15 @@ interface MarketDataStore {
 ```
 
 **Uses Immer middleware** for immutable updates:
-```typescript
-import { immer } from 'zustand/middleware/immer';
 
-set(produce((draft) => {
-  draft.symbols[symbol].candles['1m'].push(bar);
-}));
+```typescript
+import { immer } from "zustand/middleware/immer";
+
+set(
+  produce((draft) => {
+    draft.symbols[symbol].candles["1m"].push(bar);
+  })
+);
 ```
 
 #### 3. `marketStore.ts` - Watchlist & Quotes
@@ -731,7 +799,7 @@ interface UIStore {
   showAddTickerDialog: boolean;
 
   // Voice
-  voiceState: 'idle' | 'listening' | 'processing';
+  voiceState: "idle" | "listening" | "processing";
 
   // Focus
   focusedTrade: Trade | null;
@@ -741,29 +809,34 @@ interface UIStore {
 ### Best Practices
 
 #### ✅ Slice-Based Subscriptions (Prevents Re-renders)
+
 ```typescript
 // Only re-renders when activeTrades changes
-const activeTrades = useTradeStore(state => state.activeTrades);
+const activeTrades = useTradeStore((state) => state.activeTrades);
 
 // Derived selector
-const enteredTrades = useTradeStore(state =>
-  state.activeTrades.filter(t => t.state === 'ENTERED')
+const enteredTrades = useTradeStore((state) =>
+  state.activeTrades.filter((t) => t.state === "ENTERED")
 );
 ```
 
 #### ✅ DevTools Integration
+
 ```typescript
-import { devtools } from 'zustand/middleware';
+import { devtools } from "zustand/middleware";
 
 export const useStore = create<Store>()(
   devtools(
-    (set, get) => ({ /* state */ }),
-    { name: 'StoreName' }
+    (set, get) => ({
+      /* state */
+    }),
+    { name: "StoreName" }
   )
 );
 ```
 
 #### ✅ Async Actions
+
 ```typescript
 loadTrades: async (userId) => {
   set({ isLoading: true });
@@ -773,7 +846,7 @@ loadTrades: async (userId) => {
   } catch (error) {
     set({ error: error.message, isLoading: false });
   }
-}
+};
 ```
 
 ---
@@ -799,6 +872,7 @@ src/hooks/__tests__/
 ```
 
 **Configuration**: `vitest.config.ts`
+
 ```typescript
 {
   globals: true,
@@ -816,6 +890,7 @@ src/hooks/__tests__/
 ```
 
 **Running Tests**:
+
 ```bash
 pnpm test              # Run all tests
 pnpm test:watch        # Watch mode
@@ -834,6 +909,7 @@ e2e/
 ```
 
 **Configuration**: `playwright.config.ts`
+
 ```typescript
 {
   testDir: './e2e',
@@ -850,6 +926,7 @@ e2e/
 ```
 
 **Running E2E Tests**:
+
 ```bash
 pnpm test:e2e           # Run all E2E tests
 pnpm test:e2e:ui        # Interactive UI mode
@@ -860,14 +937,15 @@ pnpm test:e2e:debug     # Step-through debugging
 ### Test Patterns
 
 #### Risk Engine Test Example
+
 ```typescript
-describe('Risk Calculator', () => {
-  it('calculates position size with Kelly Criterion', () => {
+describe("Risk Calculator", () => {
+  it("calculates position size with Kelly Criterion", () => {
     const size = calculatePositionSize({
       winRate: 0.65,
       avgWin: 150,
       avgLoss: 100,
-      capital: 10000
+      capital: 10000,
     });
     expect(size).toBeLessThan(10000);
     expect(size).toBeGreaterThan(0);
@@ -876,15 +954,14 @@ describe('Risk Calculator', () => {
 ```
 
 #### Store Test Example
-```typescript
-describe('marketStore', () => {
-  it('adds ticker to watchlist', async () => {
-    const store = useMarketStore.getState();
-    await store.addTicker('user-id', 'SPY');
 
-    expect(store.watchlist).toContainEqual(
-      expect.objectContaining({ symbol: 'SPY' })
-    );
+```typescript
+describe("marketStore", () => {
+  it("adds ticker to watchlist", async () => {
+    const store = useMarketStore.getState();
+    await store.addTicker("user-id", "SPY");
+
+    expect(store.watchlist).toContainEqual(expect.objectContaining({ symbol: "SPY" }));
   });
 });
 ```
@@ -896,21 +973,25 @@ describe('marketStore', () => {
 ### Starting a New Session
 
 1. **Pull latest changes**
+
    ```bash
    git pull origin main
    ```
 
 2. **Install dependencies** (if package.json changed)
+
    ```bash
    pnpm install
    ```
 
 3. **Check environment**
+
    ```bash
    cp .env.example .env.local  # If .env.local doesn't exist
    ```
 
 4. **Run tests**
+
    ```bash
    pnpm test
    ```
@@ -925,16 +1006,19 @@ describe('marketStore', () => {
 ### Making Changes
 
 1. **Create feature branch**
+
    ```bash
    git checkout -b claude/feature-description-sessionid
    ```
 
 2. **Run tests in watch mode**
+
    ```bash
    pnpm test:watch
    ```
 
 3. **Type check frequently**
+
    ```bash
    pnpm typecheck
    ```
@@ -957,11 +1041,13 @@ describe('marketStore', () => {
 ### End of Session Checklist
 
 **Run the automated check**:
+
 ```bash
 pnpm run session-check
 ```
 
 This command:
+
 - ✅ Runs all tests
 - ✅ Checks TypeScript errors (non-blocking)
 - ✅ Verifies build works
@@ -970,6 +1056,7 @@ This command:
 - ✅ Provides status report
 
 **Status Meanings**:
+
 - 🚀 **READY FOR NEXT SESSION**: All good, commit and push
 - ⚠️ **NEEDS ATTENTION**: Uncommitted changes or few test failures
 - ❌ **BLOCKED**: Tests failing or build broken - must fix
@@ -979,10 +1066,12 @@ This command:
 **File**: `.github/workflows/ci.yml`
 
 **Triggers**:
+
 - Push to `main`, `develop`, or `claude/**` branches
 - Pull requests to `main` or `develop`
 
 **Jobs**:
+
 1. **Test & Build**
    - TypeScript type checking (warns, doesn't block)
    - Unit tests with coverage
@@ -1008,6 +1097,7 @@ This command:
 ### Current Platform: Railway
 
 **Architecture**:
+
 - **Service 1**: Main app (frontend + backend)
 - **Service 2**: Composite scanner worker
 
@@ -1045,6 +1135,7 @@ WEB_ORIGIN=https://yourdomain.com
 ### Start Commands
 
 **Railway Configuration**:
+
 ```json
 {
   "build": "pnpm build",
@@ -1054,6 +1145,7 @@ WEB_ORIGIN=https://yourdomain.com
 ```
 
 **Worker Service**:
+
 ```json
 {
   "build": "pnpm build",
@@ -1066,6 +1158,7 @@ WEB_ORIGIN=https://yourdomain.com
 **Health Endpoint**: `/api/health`
 
 Returns:
+
 ```json
 {
   "status": "healthy",
@@ -1096,38 +1189,36 @@ railway rollback <deployment-id>
 
 ```typescript
 // Client requests token
-const { token, expiresAt } = await fetch('/api/ws-token').then(r => r.json());
+const { token, expiresAt } = await fetch("/api/ws-token").then((r) => r.json());
 
 // Server generates token (server/index.ts)
 const payload = { exp: Date.now() + 5 * 60 * 1000, n: nonce };
 const signature = crypto
-  .createHmac('sha256', MASSIVE_API_KEY)
+  .createHmac("sha256", MASSIVE_API_KEY)
   .update(JSON.stringify(payload))
-  .digest('base64');
-const token = `${Buffer.from(JSON.stringify(payload)).toString('base64')}.${signature}`;
+  .digest("base64");
+const token = `${Buffer.from(JSON.stringify(payload)).toString("base64")}.${signature}`;
 
 // Client uses in WebSocket
-ws.send({ action: 'auth', params: token });
+ws.send({ action: "auth", params: token });
 ```
 
 ### 2. Streaming-First Data Architecture
 
 ```typescript
 // Primary: WebSocket with real-time updates
-const handle = streamingManager.subscribe(
-  'SPY',
-  ['quotes', 'trades', 'agg1m'],
-  (data) => handleUpdate(data)
+const handle = streamingManager.subscribe("SPY", ["quotes", "trades", "agg1m"], (data) =>
+  handleUpdate(data)
 );
 
 // Auto-fallback on disconnect
 if (!wsConnected) {
-  startPolling(3000);  // 3-second interval
+  startPolling(3000); // 3-second interval
 }
 
 // Stale detection
-const isStale = Date.now() - lastUpdate > 5000;  // >5s old
-if (isStale) showWarning('Data may be stale');
+const isStale = Date.now() - lastUpdate > 5000; // >5s old
+if (isStale) showWarning("Data may be stale");
 ```
 
 ### 3. Intelligent Fallback Aggregates
@@ -1141,7 +1232,7 @@ const failureCache = new Map<string, number>();
 
 function shouldShortCircuit(path: string): boolean {
   const lastFailure = failureCache.get(path);
-  return lastFailure && (Date.now() - lastFailure < 30000);  // 30s
+  return lastFailure && Date.now() - lastFailure < 30000; // 30s
 }
 
 // Return empty result instead of error
@@ -1169,11 +1260,11 @@ const barTimeKey = `${timeISO}_${symbol}_${opportunityType}`;
 
 ```typescript
 function transitionToEntered(entryPrice: number) {
-  if (currentState !== 'LOADED') {
-    throw new Error('Cannot enter trade from WATCHING state');
+  if (currentState !== "LOADED") {
+    throw new Error("Cannot enter trade from WATCHING state");
   }
-  setState('ENTERED');
-  recordUpdate('enter', entryPrice);
+  setState("ENTERED");
+  recordUpdate("enter", entryPrice);
 }
 ```
 
@@ -1184,10 +1275,9 @@ function calculateTPSL(contract: OptionContract) {
   const dte = calculateDTE(contract.expiry);
 
   // Tighter stops for 0DTE
-  const stopMultiplier = dte === 0 ? 0.5 :
-                         dte <= 7 ? 0.75 : 1.0;
+  const stopMultiplier = dte === 0 ? 0.5 : dte <= 7 ? 0.75 : 1.0;
 
-  const stopLoss = entryPrice - (atr * stopMultiplier);
+  const stopLoss = entryPrice - atr * stopMultiplier;
   return { stopLoss, targetPrice };
 }
 ```
@@ -1195,13 +1285,13 @@ function calculateTPSL(contract: OptionContract) {
 ### 7. LRU Caching with TTL
 
 ```typescript
-import LRUCache from 'lru-cache';
+import LRUCache from "lru-cache";
 
 const cache = new LRUCache<string, CachedData>({
-  max: 500,                    // Max 500 entries
-  ttl: 5000,                   // 5-second TTL
-  updateAgeOnGet: false,       // Don't reset TTL on read
-  allowStale: false            // Reject stale entries
+  max: 500, // Max 500 entries
+  ttl: 5000, // 5-second TTL
+  updateAgeOnGet: false, // Don't reset TTL on read
+  allowStale: false, // Reject stale entries
 });
 
 const cacheKey = `bars:${symbol}:${timespan}:${from}:${to}`;
@@ -1211,18 +1301,12 @@ const cacheKey = `bars:${symbol}:${timespan}:${from}:${to}`;
 
 ```typescript
 // ✅ CORRECT: Frontend always uses user client
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_ANON_KEY
-);
-const { data } = await supabase.from('trades').select('*');
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
+const { data } = await supabase.from("trades").select("*");
 // RLS automatically filters by auth.uid()
 
 // ✅ CORRECT: Backend worker uses service role
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 // Only use in server/workers/* - bypasses RLS
 
 // ❌ WRONG: Never use service role in frontend
@@ -1239,7 +1323,7 @@ const supabaseAdmin = createClient(URL, SERVICE_ROLE_KEY); // SECURITY RISK!
 
 ```typescript
 // 1. Add route
-router.get('/api/your-endpoint', async (req, res) => {
+router.get("/api/your-endpoint", async (req, res) => {
   try {
     const data = await yourFunction();
     res.json(data);
@@ -1258,8 +1342,8 @@ router.get('/api/your-endpoint', async (req, res) => {
 **File**: `src/stores/yourStore.ts`
 
 ```typescript
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
 
 interface YourStore {
   // State
@@ -1281,26 +1365,26 @@ export const useYourStore = create<YourStore>()(
       },
 
       updateData: (id, updates) => {
-        set(state => ({
-          data: state.data.map(item =>
-            item.id === id ? { ...item, ...updates } : item
-          )
+        set((state) => ({
+          data: state.data.map((item) => (item.id === id ? { ...item, ...updates } : item)),
         }));
-      }
+      },
     }),
-    { name: 'YourStore' }
+    { name: "YourStore" }
   )
 );
 ```
 
 **Export**: Add to `src/stores/index.ts`
+
 ```typescript
-export { useYourStore } from './yourStore';
+export { useYourStore } from "./yourStore";
 ```
 
 ### Add a Database Table
 
 1. **Create migration**: `scripts/00X_add_your_table.sql`
+
 ```sql
 CREATE TABLE your_table (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1339,10 +1423,10 @@ CREATE TRIGGER your_table_updated_at
 **File**: `src/lib/composite/detectors/YourDetector.ts`
 
 ```typescript
-import { DetectorModule } from '../types';
+import { DetectorModule } from "../types";
 
 export const YourDetector: DetectorModule = {
-  name: 'Your Detector',
+  name: "Your Detector",
 
   async detect(features, config) {
     // Your detection logic
@@ -1352,8 +1436,8 @@ export const YourDetector: DetectorModule = {
       return {
         detected: true,
         score,
-        opportunityType: 'YOUR_OPPORTUNITY_TYPE',
-        direction: 'LONG',  // or 'SHORT'
+        opportunityType: "YOUR_OPPORTUNITY_TYPE",
+        direction: "LONG", // or 'SHORT'
         confluence: {
           factor1: weight1,
           factor2: weight2,
@@ -1365,13 +1449,14 @@ export const YourDetector: DetectorModule = {
     }
 
     return { detected: false, score: 0 };
-  }
+  },
 };
 ```
 
 **Register**: Add to `src/lib/composite/CompositeScanner.ts`
+
 ```typescript
-import { YourDetector } from './detectors/YourDetector';
+import { YourDetector } from "./detectors/YourDetector";
 
 const detectors = [
   // ... existing detectors
@@ -1429,12 +1514,14 @@ pnpm lint
 ### WebSocket Not Connecting
 
 1. **Check token generation**:
+
    ```bash
    curl http://localhost:3000/api/ws-token
    # Should return: { "token": "...", "expiresAt": ... }
    ```
 
 2. **Check Massive.com API key**:
+
    ```bash
    curl http://localhost:3000/api/massive-key-status
    ```
@@ -1448,11 +1535,13 @@ pnpm lint
 ### Database Queries Failing
 
 1. **Check RLS policies**:
+
    ```sql
    SELECT * FROM pg_policies WHERE tablename = 'trades';
    ```
 
 2. **Test as specific user**:
+
    ```sql
    SET request.jwt.claim.sub = 'user-uuid-here';
    SELECT * FROM trades;
@@ -1467,6 +1556,7 @@ pnpm lint
 ### Massive.com API Errors
 
 1. **Check API key status**:
+
    ```bash
    curl http://localhost:3000/api/massive-key-status
    ```
@@ -1484,6 +1574,7 @@ pnpm lint
 ### E2E Tests Failing in CI
 
 1. **Run locally first**:
+
    ```bash
    pnpm test:e2e:headed  # See what's happening
    ```
