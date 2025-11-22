@@ -192,9 +192,10 @@ export function HDWatchlistRail({
             <SectionHeader title="Loaded" />
             <div className="p-3 space-y-2">
               {loadedTrades.map((trade) => (
-                <div
+                <button
                   key={trade.id}
-                  className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] text-sm"
+                  onClick={() => useTradeStore.setState({ currentTrade: trade })}
+                  className="w-full p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] text-sm hover:bg-[var(--surface-3)] cursor-pointer transition-colors text-left"
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-[var(--text-high)]">{trade.ticker}</span>
@@ -206,7 +207,7 @@ export function HDWatchlistRail({
                   <div className="text-xs text-[var(--text-muted)] mt-1">
                     {trade.contract.daysToExpiry}DTE
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
