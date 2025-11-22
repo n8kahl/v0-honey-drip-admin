@@ -2,10 +2,13 @@ import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../
 import { HDRowWatchlist } from "../cards/HDRowWatchlist";
 import { HDMacroPanel } from "../dashboard/HDMacroPanel";
 import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
-import { Ticker, Trade } from "../../../types";
+import { HDDialogEditChallenge } from "../forms/HDDialogEditChallenge";
+import { HDChallengeDetailSheet } from "../forms/HDChallengeDetailSheet";
+import { HDChallengeShare } from "../forms/HDChallengeShare";
+import { Ticker, Trade, Challenge } from "../../../types";
 import { Plus, Trash2, Edit } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 interface HDWatchlistRailProps {
   onTickerClick?: (ticker: Ticker) => void;
@@ -43,9 +46,17 @@ export function HDWatchlistRail({
   const watchlist = useMarketStore((state) => state.watchlist);
   const activeTrades = useTradeStore((state) => state.activeTrades);
   const challenges = useSettingsStore((state) => state.challenges);
+  const discordChannels = useSettingsStore((state) => state.discordChannels);
   const removeChallenge = useSettingsStore((state) => state.removeChallenge);
+  const updateChallengeSettings = useSettingsStore((state) => state.updateChallengeSettings);
   const setShowAddChallengeDialog = useUIStore((state) => state.setShowAddChallengeDialog);
   const [deletingChallengeId, setDeletingChallengeId] = useState<string | null>(null);
+  const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
+  const [showDetailSheet, setShowDetailSheet] = useState(false);
+  const [sharingChallenge, setSharingChallenge] = useState<Challenge | null>(null);
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   // Filter trades by state
   const loadedTrades = activeTrades.filter((t) => t.state === "LOADED");
@@ -70,6 +81,72 @@ export function HDWatchlistRail({
       setTimeout(() => setDeletingChallengeId(null), 3000);
     }
   };
+
+  const handleEditChallenge = (challenge: Challenge) => {
+    setEditingChallenge(challenge);
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateChallenge = async (challengeId: string, updates: Partial<Challenge>) => {
+    try {
+      await updateChallengeSettings(challengeId, updates);
+    } catch (error) {
+      console.error("[HDWatchlistRail] Failed to update challenge:", error);
+    }
+  };
+
+  const handleChallengeClick = (challenge: Challenge) => {
+    setSelectedChallenge(challenge);
+    setShowDetailSheet(true);
+  };
+
+  const handleShareChallenge = (challenge: Challenge) => {
+    setSharingChallenge(challenge);
+    setShowShareDialog(true);
+  };
+
+  // Calculate stats for sharing challenge
+  const shareStats = useMemo(() => {
+    if (!sharingChallenge) {
+      return {
+        totalPnL: 0,
+        winRate: 0,
+        completedTrades: 0,
+        activeTrades: 0,
+      };
+    }
+
+    const challengeTrades = activeTrades.filter((t) => t.challenges.includes(sharingChallenge.id));
+    const completedTrades = challengeTrades.filter((t) => t.state === "EXITED");
+    const activeCount = challengeTrades.filter(
+      (t) => t.state === "ENTERED" || t.state === "LOADED"
+    ).length;
+
+    const totalPnL = completedTrades.reduce((sum, t) => {
+      const pnl =
+        t.exitPrice && t.entryPrice
+          ? (t.exitPrice - t.entryPrice) * t.quantity * (t.contract.type === "CALL" ? 1 : -1)
+          : 0;
+      return sum + pnl;
+    }, 0);
+
+    const winners = completedTrades.filter((t) => {
+      const pnl =
+        t.exitPrice && t.entryPrice
+          ? (t.exitPrice - t.entryPrice) * t.quantity * (t.contract.type === "CALL" ? 1 : -1)
+          : 0;
+      return pnl > 0;
+    });
+    const winRate =
+      completedTrades.length > 0 ? (winners.length / completedTrades.length) * 100 : 0;
+
+    return {
+      totalPnL,
+      winRate,
+      completedTrades: completedTrades.length,
+      activeTrades: activeCount,
+    };
+  }, [sharingChallenge, activeTrades]);
 
   return (
     <div className="w-full lg:w-80 border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
@@ -169,7 +246,8 @@ export function HDWatchlistRail({
                 return (
                   <div
                     key={challenge.id}
-                    className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] group"
+                    onClick={() => handleChallengeClick(challenge)}
+                    className="p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] group cursor-pointer hover:bg-[var(--surface-3)] transition-colors"
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-sm font-medium text-[var(--text-high)] truncate">
@@ -180,7 +258,20 @@ export function HDWatchlistRail({
                           {completedTrades}/{totalTrades}
                         </span>
                         <button
-                          onClick={() => handleDeleteChallenge(challenge.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditChallenge(challenge);
+                          }}
+                          className="p-1 rounded transition-colors opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-3)]"
+                          title="Edit challenge"
+                        >
+                          <Edit className="w-3 h-3 text-[var(--text-muted)]" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteChallenge(challenge.id);
+                          }}
                           className={cn(
                             "p-1 rounded transition-colors",
                             isDeleting
@@ -221,6 +312,34 @@ export function HDWatchlistRail({
           )}
         </div>
       </div>
+
+      {/* Edit Challenge Dialog */}
+      <HDDialogEditChallenge
+        open={showEditDialog}
+        onOpenChange={setShowEditDialog}
+        challenge={editingChallenge}
+        onUpdateChallenge={handleUpdateChallenge}
+      />
+
+      {/* Challenge Detail Sheet */}
+      <HDChallengeDetailSheet
+        open={showDetailSheet}
+        onOpenChange={setShowDetailSheet}
+        challenge={selectedChallenge}
+        trades={activeTrades}
+        onEdit={handleEditChallenge}
+        onDelete={handleDeleteChallenge}
+        onShare={handleShareChallenge}
+      />
+
+      {/* Challenge Share Dialog */}
+      <HDChallengeShare
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        challenge={sharingChallenge}
+        stats={shareStats}
+        availableChannels={discordChannels}
+      />
     </div>
   );
 }

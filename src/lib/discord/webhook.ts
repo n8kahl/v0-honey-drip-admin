@@ -338,6 +338,102 @@ class DiscordWebhookClient {
       ],
     });
   }
+
+  // Send a challenge progress alert
+  async sendChallengeProgressAlert(
+    webhookUrl: string,
+    data: {
+      challengeName: string;
+      startingBalance: number;
+      currentBalance: number;
+      targetBalance: number;
+      totalPnL: number;
+      winRate: number;
+      completedTrades: number;
+      activeTrades: number;
+      startDate: string;
+      endDate: string;
+    }
+  ): Promise<boolean> {
+    const progress =
+      data.targetBalance > 0
+        ? ((data.currentBalance - data.startingBalance) /
+            (data.targetBalance - data.startingBalance)) *
+          100
+        : 0;
+
+    const pnlSign = data.totalPnL >= 0 ? "+" : "";
+    const pnlColor = data.totalPnL >= 0 ? DISCORD_COLORS.profit : DISCORD_COLORS.loss;
+
+    // Progress bar emoji representation
+    const totalBars = 10;
+    const filledBars = Math.round((Math.min(progress, 100) / 100) * totalBars);
+    const emptyBars = totalBars - filledBars;
+    const progressBar = "🟩".repeat(filledBars) + "⬜".repeat(emptyBars);
+
+    // Emoji based on progress
+    let emoji = "🎯";
+    if (progress >= 100) emoji = "🏆";
+    else if (progress >= 75) emoji = "🔥";
+    else if (progress >= 50) emoji = "📈";
+
+    const fields = [
+      {
+        name: "Progress",
+        value: `${progressBar}\n${progress.toFixed(1)}% to target`,
+        inline: false,
+      },
+      {
+        name: "Starting Balance",
+        value: `$${data.startingBalance.toFixed(2)}`,
+        inline: true,
+      },
+      {
+        name: "Current Balance",
+        value: `$${data.currentBalance.toFixed(2)}`,
+        inline: true,
+      },
+      {
+        name: "Target Balance",
+        value: `$${data.targetBalance.toFixed(2)}`,
+        inline: true,
+      },
+      {
+        name: "Total P&L",
+        value: `${pnlSign}$${Math.abs(data.totalPnL).toFixed(2)}`,
+        inline: true,
+      },
+      {
+        name: "Win Rate",
+        value: `${data.winRate.toFixed(1)}%`,
+        inline: true,
+      },
+      {
+        name: "Trades",
+        value: `${data.completedTrades} completed, ${data.activeTrades} active`,
+        inline: true,
+      },
+      {
+        name: "Duration",
+        value: `${data.startDate} → ${data.endDate}`,
+        inline: false,
+      },
+    ];
+
+    return this.sendMessage(webhookUrl, {
+      embeds: [
+        {
+          title: `${emoji} Challenge Update: ${data.challengeName}`,
+          color: pnlColor,
+          fields,
+          footer: {
+            text: "Honey Drip • Challenge Progress",
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+  }
 }
 
 // Singleton instance
