@@ -1,7 +1,7 @@
 import React from "react";
 import { Ticker, Contract, Trade, TradeState, AlertType } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
-import { HDLiveChart } from "../hd/charts/HDLiveChart";
+import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
 import { HDEnteredTradeCard } from "../hd/cards/HDEnteredTradeCard";
@@ -153,18 +153,15 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   return (
     <div className="flex-1 overflow-y-auto bg-[#0a0a0a] relative">
       <MobileWatermark />
-      {/* Chart area - full chart for WATCHING/LOADED/ENTERED */}
+      {/* Chart area - context-aware chart for WATCHING/LOADED/ENTERED */}
       {chartTicker && (
         <div className="p-4 lg:p-6 pointer-events-auto relative z-20 sticky top-0 bg-[#0a0a0a]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0a0a0a]/80">
-          <HDLiveChart
+          <HDLiveChartContextAware
             ticker={chartTicker}
-            initialTimeframe="5"
-            indicators={{
-              ema: { periods: [8, 21, 50, 200] },
-              vwap: { enabled: true, bands: false },
-              bollinger: { period: 20, stdDev: 2 },
-            }}
-            events={tradeState === "ENTERED" ? enteredTradeEvents : []}
+            tradeState={tradeState}
+            currentTrade={currentTrade}
+            activeTicker={activeTicker}
+            hasLoadedContract={tradeState === "LOADED" || tradeState === "ENTERED"}
             levels={
               tradeState === "LOADED"
                 ? loadedChartLevels
@@ -173,7 +170,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
                   : []
             }
             height={chartHeight}
-            stickyHeader
+            className="pointer-events-auto"
           />
         </div>
       )}
