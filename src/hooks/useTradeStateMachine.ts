@@ -16,8 +16,14 @@ import {
 } from "../lib/riskEngine/profiles";
 import { adjustProfileByConfluence } from "../lib/riskEngine/confluenceAdjustment";
 import { useAppToast } from "./useAppToast";
-import { useDiscord } from "./useDiscord";
-import { useSettingsStore } from "../stores/settingsStore";
+import { useAuth } from "../contexts/AuthContext";
+import {
+  createTradeApi,
+  updateTradeApi,
+  addTradeUpdateApi,
+  linkChannelsApi,
+  linkChallengesApi,
+} from "../lib/api/tradeApi";
 
 interface UseTradeStateMachineProps {
   hotTrades: Trade[];
@@ -89,7 +95,8 @@ export function useTradeStateMachine({
   confluence,
 }: UseTradeStateMachineProps): TradeStateMachineState & { actions: TradeStateMachineActions } {
   const toast = useAppToast();
-  const discord = useDiscord();
+  const auth = useAuth();
+  const userId = auth?.user?.id;
 
   // State
   const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
@@ -100,38 +107,9 @@ export function useTradeStateMachine({
   const [alertOptions, setAlertOptions] = useState<{ updateKind?: "trim" | "generic" | "sl" }>({});
   const [showAlert, setShowAlert] = useState(false);
   const [activeTrades, setActiveTrades] = useState<Trade[]>(hotTrades);
+  const [isCreatingTrade, setIsCreatingTrade] = useState(false);
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
-
-  // Helper: Get actual DiscordChannel objects from IDs + challenge-linked channels
-  const getDiscordChannelsForAlert = useCallback(
-    (channelIds: string[], challengeIds: string[]): DiscordChannel[] => {
-      const settingsState = useSettingsStore.getState();
-      const allChannels = settingsState.discordChannels;
-      const challenges = settingsState.challenges;
-
-      // Start with selected channels
-      const selectedChannels = channelIds
-        .map((id) => allChannels.find((ch) => ch.id === id))
-        .filter((ch): ch is DiscordChannel => ch !== undefined && ch.isActive !== false);
-
-      // Add challenge-linked default channels
-      const challengeChannelNames = challengeIds
-        .map((challengeId) => challenges.find((ch) => ch.id === challengeId)?.defaultChannel)
-        .filter((name): name is string => !!name);
-
-      const challengeChannels = allChannels.filter(
-        (ch) => challengeChannelNames.includes(ch.name) && ch.isActive !== false
-      );
-
-      // Combine and deduplicate by ID
-      const combinedMap = new Map<string, DiscordChannel>();
-      [...selectedChannels, ...challengeChannels].forEach((ch) => combinedMap.set(ch.id, ch));
-
-      return Array.from(combinedMap.values());
-    },
-    []
-  );
 
   // Sync active trades back to parent
   useEffect(() => {
@@ -190,7 +168,7 @@ export function useTradeStateMachine({
   }, []);
 
   const handleContractSelect = useCallback(
-    (
+    async (
       contract: Contract,
       confluenceData?: {
         trend?: any;
@@ -198,102 +176,155 @@ export function useTradeStateMachine({
         liquidity?: any;
       }
     ) => {
-      if (!activeTicker) return;
-
-      // Base defaults
-      let targetPrice = contract.mid * 1.5;
-      let stopLoss = contract.mid * 0.5;
-
-      try {
-        const tradeType = inferTradeTypeByDTE(contract.expiry, new Date(), DEFAULT_DTE_THRESHOLDS);
-
-        // Apply confluence adjustments if available
-        let riskProfile = RISK_PROFILES[tradeType];
-        if (
-          confluenceData &&
-          (confluenceData.trend || confluenceData.volatility || confluenceData.liquidity)
-        ) {
-          riskProfile = adjustProfileByConfluence(riskProfile, confluenceData);
-          console.log("[v0] Applied confluence adjustments to risk profile");
-        }
-
-        const risk = calculateRisk({
-          entryPrice: contract.mid,
-          currentUnderlyingPrice: contract.mid,
-          currentOptionMid: contract.mid,
-          keyLevels: {
-            preMarketHigh: 0,
-            preMarketLow: 0,
-            orbHigh: 0,
-            orbLow: 0,
-            priorDayHigh: 0,
-            priorDayLow: 0,
-            vwap: 0,
-            vwapUpperBand: 0,
-            vwapLowerBand: 0,
-            bollingerUpper: 0,
-            bollingerLower: 0,
-            weeklyHigh: 0,
-            weeklyLow: 0,
-            monthlyHigh: 0,
-            monthlyLow: 0,
-            quarterlyHigh: 0,
-            quarterlyLow: 0,
-            yearlyHigh: 0,
-            yearlyLow: 0,
-          },
-          expirationISO: contract.expiry,
-          tradeType,
-          delta: contract.delta ?? 0.5,
-          gamma: contract.gamma ?? 0,
-          defaults: {
-            mode: "percent",
-            tpPercent: 50,
-            slPercent: 50,
-            dteThresholds: DEFAULT_DTE_THRESHOLDS,
-          },
-        });
-        if (risk.targetPrice) targetPrice = risk.targetPrice;
-        if (risk.stopLoss) stopLoss = risk.stopLoss;
-      } catch {
-        /* fallback silently */
+      if (!activeTicker || !userId) {
+        toast.error("Unable to create trade: User not authenticated");
+        return;
       }
 
-      const trade: Trade = {
-        id: crypto.randomUUID(),
-        ticker: activeTicker.symbol,
-        state: "LOADED",
-        contract,
-        tradeType: inferTradeTypeByDTE(
-          contract.expiry,
-          new Date(),
-          DEFAULT_DTE_THRESHOLDS
-        ) as Trade["tradeType"],
-        targetPrice,
-        stopLoss,
-        movePercent: 0,
-        discordChannels: [],
-        challenges: [],
-        updates: [],
-      };
+      setIsCreatingTrade(true);
 
-      setCurrentTrade(trade);
-      setTradeState("LOADED");
-      setAlertType("load");
-      setShowAlert(true);
+      try {
+        // Base defaults
+        let targetPrice = contract.mid * 1.5;
+        let stopLoss = contract.mid * 0.5;
+
+        try {
+          const tradeType = inferTradeTypeByDTE(
+            contract.expiry,
+            new Date(),
+            DEFAULT_DTE_THRESHOLDS
+          );
+
+          // Apply confluence adjustments if available
+          let riskProfile = RISK_PROFILES[tradeType];
+          if (
+            confluenceData &&
+            (confluenceData.trend || confluenceData.volatility || confluenceData.liquidity)
+          ) {
+            riskProfile = adjustProfileByConfluence(riskProfile, confluenceData);
+            console.log("[v0] Applied confluence adjustments to risk profile");
+          }
+
+          const risk = calculateRisk({
+            entryPrice: contract.mid,
+            currentUnderlyingPrice: contract.mid,
+            currentOptionMid: contract.mid,
+            keyLevels: {
+              preMarketHigh: 0,
+              preMarketLow: 0,
+              orbHigh: 0,
+              orbLow: 0,
+              priorDayHigh: 0,
+              priorDayLow: 0,
+              vwap: 0,
+              vwapUpperBand: 0,
+              vwapLowerBand: 0,
+              bollingerUpper: 0,
+              bollingerLower: 0,
+              weeklyHigh: 0,
+              weeklyLow: 0,
+              monthlyHigh: 0,
+              monthlyLow: 0,
+              quarterlyHigh: 0,
+              quarterlyLow: 0,
+              yearlyHigh: 0,
+              yearlyLow: 0,
+            },
+            expirationISO: contract.expiry,
+            tradeType,
+            delta: contract.delta ?? 0.5,
+            gamma: contract.gamma ?? 0,
+            defaults: {
+              mode: "percent",
+              tpPercent: 50,
+              slPercent: 50,
+              dteThresholds: DEFAULT_DTE_THRESHOLDS,
+            },
+          });
+          if (risk.targetPrice) targetPrice = risk.targetPrice;
+          if (risk.stopLoss) stopLoss = risk.stopLoss;
+        } catch {
+          /* fallback silently */
+        }
+
+        // Create trade locally first (optimistic update)
+        const localTrade: Trade = {
+          id: crypto.randomUUID(),
+          ticker: activeTicker.symbol,
+          state: "LOADED",
+          contract,
+          tradeType: inferTradeTypeByDTE(
+            contract.expiry,
+            new Date(),
+            DEFAULT_DTE_THRESHOLDS
+          ) as Trade["tradeType"],
+          targetPrice,
+          stopLoss,
+          movePercent: 0,
+          discordChannels: [],
+          challenges: [],
+          updates: [],
+        };
+
+        setCurrentTrade(localTrade);
+        setTradeState("LOADED");
+        setAlertType("load");
+        setShowAlert(true);
+
+        // Persist to database
+        try {
+          const dbTrade = await createTradeApi(userId, {
+            ticker: activeTicker.symbol,
+            contract: {
+              type: contract.type,
+              strike: contract.strike,
+              expiry: contract.expiry,
+            },
+            targetPrice,
+            stopLoss,
+            discordChannelIds: [],
+            challengeIds: [],
+          });
+
+          // Update with database ID
+          const persistedTrade: Trade = {
+            ...localTrade,
+            id: dbTrade.id,
+          };
+          setCurrentTrade(persistedTrade);
+          setActiveTrades((prev) => prev.map((t) => (t.id === localTrade.id ? persistedTrade : t)));
+        } catch (error) {
+          console.error("[v0] Failed to persist trade to database:", error);
+          // Show error toast but don't block the UI - user can still use the trade locally
+          toast.error("Failed to save trade to database", {
+            description: "You can continue working, but it won't be saved.",
+          } as any);
+        }
+      } catch (error) {
+        console.error("[v0] Error in handleContractSelect:", error);
+        toast.error("Failed to create trade", {
+          description: error instanceof Error ? error.message : "Unknown error occurred",
+        } as any);
+        setCurrentTrade(null);
+        setTradeState("WATCHING");
+        setShowAlert(false);
+      } finally {
+        setIsCreatingTrade(false);
+      }
     },
-    [activeTicker]
+    [activeTicker, userId, toast]
   );
 
   const handleSendAlert = useCallback(
     async (channelIds: string[], challengeIds: string[], comment?: string) => {
-      if (!currentTrade) return;
+      if (!currentTrade || !userId) {
+        toast.error("Unable to send alert: Trade or user missing");
+        return;
+      }
 
-      // Get actual Discord channel objects (includes challenge-linked channels)
-      const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
-
-      // Check if Discord alerts are globally enabled
-      const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+      const selectedChannels = channelIds
+        .map((id) => ({ id, name: `Channel ${id.slice(0, 8)}` }))
+        .filter((c) => c);
 
       // LOAD alert: associate channels/challenges, do not create a TradeUpdate (load is not a TradeUpdate type)
       if (alertType === "load") {
@@ -302,6 +333,8 @@ export function useTradeStateMachine({
           discordChannels: channelIds,
           challenges: challengeIds,
         };
+
+        // Optimistic update
         setActiveTrades((prev) => {
           const exists = prev.find((t) => t.id === updatedTrade.id);
           return exists
@@ -314,20 +347,39 @@ export function useTradeStateMachine({
         setContracts([]);
         setActiveTicker(null);
 
-        // Send Discord LOAD alert
-        if (discordAlertsEnabled && channels.length > 0) {
-          try {
-            await discord.sendLoadAlert(channels, updatedTrade, comment);
-            console.log("[Discord] LOAD alert sent successfully");
-          } catch (error) {
-            console.error("[Discord] Failed to send LOAD alert:", error);
-            toast.error("Discord alert failed", {
-              description: "Check console for details",
-            } as any);
-          }
-        }
+        // Persist to database
+        try {
+          const persistencePromises = [];
 
-        showAlertToast("load", currentTrade.ticker, channels);
+          if (channelIds.length > 0) {
+            persistencePromises.push(
+              linkChannelsApi(userId, currentTrade.id, channelIds).catch((error) => {
+                console.error("[v0] Failed to link channels:", error);
+                throw error;
+              })
+            );
+          }
+
+          if (challengeIds.length > 0) {
+            persistencePromises.push(
+              linkChallengesApi(userId, currentTrade.id, challengeIds).catch((error) => {
+                console.error("[v0] Failed to link challenges:", error);
+                throw error;
+              })
+            );
+          }
+
+          if (persistencePromises.length > 0) {
+            await Promise.all(persistencePromises);
+          }
+
+          showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
+        } catch (error) {
+          console.error("[v0] Failed to persist load alert to database:", error);
+          toast.error("Failed to save trade links", {
+            description: "Alert sent but database save failed.",
+          } as any);
+        }
         return;
       }
 
@@ -337,10 +389,10 @@ export function useTradeStateMachine({
       const message = comment || "";
 
       let newTrade: Trade = { ...currentTrade };
+      let updateType: TradeUpdate["type"] | null = null;
 
       switch (alertType) {
         case "enter": {
-          // If not already ENTERED, move to ENTERED and set entryPrice
           const entryPrice = basePrice;
           newTrade = {
             ...newTrade,
@@ -351,6 +403,7 @@ export function useTradeStateMachine({
             challenges: challengeIds,
             updates: [...newTrade.updates, makeUpdate("enter", entryPrice, message)],
           };
+          updateType = "enter";
           break;
         }
         case "trim": {
@@ -360,10 +413,10 @@ export function useTradeStateMachine({
             challenges: challengeIds,
             updates: [...newTrade.updates, makeUpdate("trim", basePrice, message)],
           };
+          updateType = "trim";
           break;
         }
         case "update": {
-          // Map alertOptions.updateKind to appropriate TradeUpdate type
           const kind =
             alertOptions.updateKind === "trim"
               ? "trim"
@@ -379,6 +432,7 @@ export function useTradeStateMachine({
               makeUpdate(kind as TradeUpdate["type"], basePrice, message),
             ],
           };
+          updateType = kind as TradeUpdate["type"];
           break;
         }
         case "update-sl": {
@@ -389,6 +443,7 @@ export function useTradeStateMachine({
               makeUpdate("update-sl", basePrice, message || "Stop loss adjusted"),
             ],
           };
+          updateType = "update-sl";
           break;
         }
         case "trail-stop": {
@@ -399,6 +454,7 @@ export function useTradeStateMachine({
               makeUpdate("trail-stop", basePrice, message || "Trailing stop moved"),
             ],
           };
+          updateType = "trail-stop";
           break;
         }
         case "add": {
@@ -409,6 +465,7 @@ export function useTradeStateMachine({
               makeUpdate("add", basePrice, message || "Added to position"),
             ],
           };
+          updateType = "add";
           break;
         }
         case "exit": {
@@ -423,86 +480,15 @@ export function useTradeStateMachine({
               makeUpdate("exit", exitPrice, message || "Exited position"),
             ],
           };
+          updateType = "exit";
           break;
         }
       }
 
-      // Persist trade changes locally
+      // Optimistic update
       setActiveTrades((prev) => prev.map((t) => (t.id === newTrade.id ? newTrade : t)));
       setCurrentTrade(newTrade);
       setShowAlert(false);
-
-      // Send Discord alerts
-      if (discordAlertsEnabled && channels.length > 0) {
-        try {
-          switch (alertType) {
-            case "enter":
-              await discord.sendEntryAlert(channels, newTrade, message);
-              console.log("[Discord] ENTER alert sent successfully");
-              break;
-
-            case "trim":
-              await discord.sendUpdateAlert(
-                channels,
-                newTrade,
-                "trim",
-                message || "Trimmed position"
-              );
-              console.log("[Discord] TRIM alert sent successfully");
-              break;
-
-            case "update-sl":
-              await discord.sendUpdateAlert(
-                channels,
-                newTrade,
-                "update-sl",
-                message || "Stop loss updated"
-              );
-              console.log("[Discord] UPDATE-SL alert sent successfully");
-              break;
-
-            case "trail-stop":
-              await discord.sendTrailingStopAlert(channels, newTrade);
-              console.log("[Discord] TRAIL-STOP alert sent successfully");
-              break;
-
-            case "add":
-              await discord.sendUpdateAlert(
-                channels,
-                newTrade,
-                "generic",
-                message || "Added to position"
-              );
-              console.log("[Discord] ADD alert sent successfully");
-              break;
-
-            case "exit":
-              await discord.sendExitAlert(channels, newTrade, message);
-              console.log("[Discord] EXIT alert sent successfully");
-              break;
-
-            case "update": {
-              const updateType =
-                alertOptions.updateKind === "trim"
-                  ? "trim"
-                  : alertOptions.updateKind === "sl"
-                    ? "update-sl"
-                    : "generic";
-              await discord.sendUpdateAlert(
-                channels,
-                newTrade,
-                updateType,
-                message || "Trade updated"
-              );
-              console.log("[Discord] UPDATE alert sent successfully");
-              break;
-            }
-          }
-        } catch (error) {
-          console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
-          toast.error("Discord alert failed", { description: "Check console for details" } as any);
-        }
-      }
 
       // Mobile UX: move to active tab on enter; move to history on exit
       if (isMobile && onMobileTabChange) {
@@ -515,19 +501,98 @@ export function useTradeStateMachine({
         onExitedTrade(newTrade);
       }
 
-      showAlertToast(alertType, newTrade.ticker, channels);
+      // Persist to database
+      try {
+        const persistencePromises = [];
+
+        // Update trade state if changed
+        if (newTrade.state !== currentTrade.state) {
+          persistencePromises.push(
+            updateTradeApi(userId, newTrade.id, {
+              status: newTrade.state === "ENTERED" ? "entered" : "exited",
+              entry_price: newTrade.entryPrice,
+              entry_time: newTrade.entryTime,
+              exit_price: newTrade.exitPrice,
+              exit_time: newTrade.exitTime,
+            }).catch((error) => {
+              console.error("[v0] Failed to update trade state:", error);
+              throw error;
+            })
+          );
+        }
+
+        // Add trade update record
+        if (updateType) {
+          persistencePromises.push(
+            addTradeUpdateApi(userId, newTrade.id, updateType, basePrice, message).catch(
+              (error) => {
+                console.error("[v0] Failed to add trade update:", error);
+                throw error;
+              }
+            )
+          );
+        }
+
+        // Link channels if provided
+        if (
+          channelIds.length > 0 &&
+          (alertType === "enter" || alertType === "trim" || alertType === "update")
+        ) {
+          persistencePromises.push(
+            linkChannelsApi(userId, newTrade.id, channelIds).catch((error) => {
+              console.error("[v0] Failed to link channels:", error);
+              throw error;
+            })
+          );
+        }
+
+        // Link challenges if provided
+        if (
+          challengeIds.length > 0 &&
+          (alertType === "enter" || alertType === "trim" || alertType === "update")
+        ) {
+          persistencePromises.push(
+            linkChallengesApi(userId, newTrade.id, challengeIds).catch((error) => {
+              console.error("[v0] Failed to link challenges:", error);
+              throw error;
+            })
+          );
+        }
+
+        if (persistencePromises.length > 0) {
+          await Promise.all(persistencePromises);
+        }
+
+        showAlertToast(alertType, newTrade.ticker, selectedChannels as DiscordChannel[]);
+      } catch (error) {
+        console.error("[v0] Failed to persist alert to database:", error);
+
+        // Rollback optimistic update
+        setActiveTrades((prev) => prev.map((t) => (t.id === currentTrade.id ? currentTrade : t)));
+        setCurrentTrade(currentTrade);
+
+        // Show error with retry
+        const retryFn = () => handleSendAlert(channelIds, challengeIds, comment);
+        toast.error(`Failed to save ${alertType}`, {
+          description: "Click retry to try again",
+          action: {
+            label: "Retry",
+            onClick: retryFn,
+          },
+        } as any);
+      }
     },
     [
       currentTrade,
       alertType,
       alertOptions,
-      showAlertToast,
-      discord,
-      getDiscordChannelsForAlert,
-      toast,
+      userId,
       isMobile,
       onMobileTabChange,
       onExitedTrade,
+      showAlertToast,
+      toast,
+      makeUpdate,
     ]
   );
 

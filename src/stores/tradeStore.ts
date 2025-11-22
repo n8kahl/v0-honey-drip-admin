@@ -1,12 +1,12 @@
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { Trade, TradeState, Contract, TradeUpdate, OptionType, TradeType } from '../types';
-import { 
-  getTrades, 
-  createTrade as dbCreateTrade, 
-  updateTrade as dbUpdateTrade, 
-  deleteTrade as dbDeleteTrade 
-} from '../lib/supabase/database';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { Trade, TradeState, Contract, TradeUpdate, OptionType, TradeType } from "../types";
+import {
+  getTrades,
+  createTrade as dbCreateTrade,
+  updateTrade as dbUpdateTrade,
+  deleteTrade as dbDeleteTrade,
+} from "../lib/supabase/database";
 
 interface TradeStore {
   // State
@@ -26,39 +26,55 @@ interface TradeStore {
   setTradeState: (state: TradeState) => void;
   setContracts: (contracts: Contract[]) => void;
   setUpdatedTradeIds: (ids: Set<string>) => void;
-  
+
   // CRUD operations
   createTrade: (userId: string, trade: Partial<Trade>) => Promise<void>;
   updateTrade: (tradeId: string, updates: Partial<Trade>) => Promise<void>;
   deleteTrade: (tradeId: string) => Promise<void>;
   loadTrades: (userId: string) => Promise<void>;
-  
+
   // Trade lifecycle transitions
   transitionToLoaded: (contract: Contract) => void;
   transitionToEntered: (entryPrice: number, quantity: number) => void;
   transitionToExited: (exitPrice: number) => void;
-  
+
   // Trade updates
   addTradeUpdate: (tradeId: string, update: TradeUpdate) => void;
-  
+  addTradeUpdateToDb: (
+    userId: string,
+    tradeId: string,
+    update: Partial<TradeUpdate>
+  ) => Promise<void>;
+
+  // Discord/Challenge linking
+  linkTradeToChannels: (tradeId: string, channelIds: string[]) => Promise<void>;
+  unlinkTradeFromChannel: (tradeId: string, channelId: string) => Promise<void>;
+  linkTradeToChallenges: (tradeId: string, challengeIds: string[]) => Promise<void>;
+  unlinkTradeFromChallenge: (tradeId: string, challengeId: string) => Promise<void>;
+
   // Utilities
   getTradeById: (tradeId: string) => Trade | undefined;
   getLoadedTrades: () => Trade[];
   getEnteredTrades: () => Trade[];
   markTradeAsUpdated: (tradeId: string) => void;
   clearUpdatedFlags: () => void;
-  
+
   // Reset
   reset: () => void;
 }
 
 const mapStatusToState = (status: string): TradeState => {
   switch (status?.toLowerCase()) {
-    case 'watching': return 'WATCHING';
-    case 'loaded': return 'LOADED';
-    case 'entered': return 'ENTERED';
-    case 'exited': return 'EXITED';
-    default: return 'WATCHING';
+    case "watching":
+      return "WATCHING";
+    case "loaded":
+      return "LOADED";
+    case "entered":
+      return "ENTERED";
+    case "exited":
+      return "EXITED";
+    default:
+      return "WATCHING";
   }
 };
 
@@ -73,7 +89,7 @@ export const useTradeStore = create<TradeStore>()(
       activeTrades: [],
       historyTrades: [],
       currentTrade: null,
-      tradeState: 'WATCHING',
+      tradeState: "WATCHING",
       contracts: [],
       updatedTradeIds: new Set(),
       isLoading: false,
@@ -100,8 +116,10 @@ export const useTradeStore = create<TradeStore>()(
               strike: parseFloat(newTrade.strike),
               expiry: newTrade.expiration,
               expiryDate: new Date(newTrade.expiration),
-              daysToExpiry: Math.ceil((new Date(newTrade.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-              type: (newTrade.contract_type === 'call' ? 'C' : 'P') as OptionType,
+              daysToExpiry: Math.ceil(
+                (new Date(newTrade.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+              ),
+              type: (newTrade.contract_type === "call" ? "C" : "P") as OptionType,
               mid: 0,
               bid: 0,
               ask: 0,
@@ -109,19 +127,19 @@ export const useTradeStore = create<TradeStore>()(
               openInterest: 0,
             },
             state: mapStatusToState(newTrade.status),
-            tradeType: 'Day' as TradeType,
+            tradeType: "Day" as TradeType,
             updates: [],
             discordChannels: [],
             challenges: newTrade.challenge_id ? [newTrade.challenge_id] : [],
           };
-          
+
           set((state) => ({
             activeTrades: [...state.activeTrades, mappedTrade],
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[TradeStore] Failed to create trade:', error);
-          set({ error: 'Failed to create trade', isLoading: false });
+          console.error("[TradeStore] Failed to create trade:", error);
+          set({ error: "Failed to create trade", isLoading: false });
         }
       },
 
@@ -129,7 +147,7 @@ export const useTradeStore = create<TradeStore>()(
         set({ isLoading: true, error: null });
         try {
           await dbUpdateTrade(tradeId, updates as any);
-          
+
           set((state) => ({
             activeTrades: state.activeTrades.map((t) =>
               t.id === tradeId ? { ...t, ...updates } : t
@@ -137,14 +155,15 @@ export const useTradeStore = create<TradeStore>()(
             historyTrades: state.historyTrades.map((t) =>
               t.id === tradeId ? { ...t, ...updates } : t
             ),
-            currentTrade: state.currentTrade?.id === tradeId 
-              ? { ...state.currentTrade, ...updates } 
-              : state.currentTrade,
+            currentTrade:
+              state.currentTrade?.id === tradeId
+                ? { ...state.currentTrade, ...updates }
+                : state.currentTrade,
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[TradeStore] Failed to update trade:', error);
-          set({ error: 'Failed to update trade', isLoading: false });
+          console.error("[TradeStore] Failed to update trade:", error);
+          set({ error: "Failed to update trade", isLoading: false });
         }
       },
 
@@ -152,7 +171,7 @@ export const useTradeStore = create<TradeStore>()(
         set({ isLoading: true, error: null });
         try {
           await dbDeleteTrade(tradeId);
-          
+
           set((state) => ({
             activeTrades: state.activeTrades.filter((t) => t.id !== tradeId),
             historyTrades: state.historyTrades.filter((t) => t.id !== tradeId),
@@ -160,8 +179,8 @@ export const useTradeStore = create<TradeStore>()(
             isLoading: false,
           }));
         } catch (error) {
-          console.error('[TradeStore] Failed to delete trade:', error);
-          set({ error: 'Failed to delete trade', isLoading: false });
+          console.error("[TradeStore] Failed to delete trade:", error);
+          set({ error: "Failed to delete trade", isLoading: false });
         }
       },
 
@@ -177,8 +196,10 @@ export const useTradeStore = create<TradeStore>()(
               strike: parseFloat(t.strike),
               expiry: t.expiration,
               expiryDate: new Date(t.expiration),
-              daysToExpiry: Math.ceil((new Date(t.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-              type: (t.contract_type === 'call' ? 'C' : 'P') as OptionType,
+              daysToExpiry: Math.ceil(
+                (new Date(t.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+              ),
+              type: (t.contract_type === "call" ? "C" : "P") as OptionType,
               mid: 0,
               bid: 0,
               ask: 0,
@@ -192,22 +213,22 @@ export const useTradeStore = create<TradeStore>()(
             currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
             state: mapStatusToState(t.status),
             updates: t.trade_updates || [],
-            tradeType: 'Day' as TradeType,
+            tradeType: "Day" as TradeType,
             discordChannels: [],
             challenges: t.challenge_id ? [t.challenge_id] : [],
           }));
-          
-          const active = mappedTrades.filter((t) => t.state !== 'EXITED');
-          const history = mappedTrades.filter((t) => t.state === 'EXITED');
-          
+
+          const active = mappedTrades.filter((t) => t.state !== "EXITED");
+          const history = mappedTrades.filter((t) => t.state === "EXITED");
+
           set({
             activeTrades: active,
             historyTrades: history,
             isLoading: false,
           });
         } catch (error) {
-          console.error('[TradeStore] Failed to load trades:', error);
-          set({ error: 'Failed to load trades', isLoading: false });
+          console.error("[TradeStore] Failed to load trades:", error);
+          set({ error: "Failed to load trades", isLoading: false });
         }
       },
 
@@ -215,44 +236,41 @@ export const useTradeStore = create<TradeStore>()(
       transitionToLoaded: (contract) => {
         const { currentTrade } = get();
         if (!currentTrade) {
-          console.warn('[TradeStore] Cannot transition to LOADED: no current trade');
+          console.warn("[TradeStore] Cannot transition to LOADED: no current trade");
           return;
         }
 
         const loadedTrade: Trade = {
           ...currentTrade,
           contract,
-          state: 'LOADED',
+          state: "LOADED",
         };
 
         set((state) => ({
           currentTrade: loadedTrade,
-          tradeState: 'LOADED',
-          activeTrades: [
-            ...state.activeTrades.filter((t) => t.id !== loadedTrade.id),
-            loadedTrade,
-          ],
+          tradeState: "LOADED",
+          activeTrades: [...state.activeTrades.filter((t) => t.id !== loadedTrade.id), loadedTrade],
         }));
       },
 
       transitionToEntered: (entryPrice, _quantity) => {
         const { currentTrade } = get();
-        if (!currentTrade || currentTrade.state !== 'LOADED') {
-          console.warn('[TradeStore] Cannot transition to ENTERED: invalid state');
+        if (!currentTrade || currentTrade.state !== "LOADED") {
+          console.warn("[TradeStore] Cannot transition to ENTERED: invalid state");
           return;
         }
-        
+
         const updatedTrade: Trade = {
           ...currentTrade,
           entryPrice,
           currentPrice: entryPrice,
           entryTime: new Date(),
-          state: 'ENTERED',
+          state: "ENTERED",
         };
-        
+
         set((state) => ({
           currentTrade: updatedTrade,
-          tradeState: 'ENTERED',
+          tradeState: "ENTERED",
           activeTrades: state.activeTrades.map((t) =>
             t.id === updatedTrade.id ? updatedTrade : t
           ),
@@ -261,27 +279,27 @@ export const useTradeStore = create<TradeStore>()(
 
       transitionToExited: (exitPrice) => {
         const { currentTrade } = get();
-        if (!currentTrade || currentTrade.state !== 'ENTERED') {
-          console.warn('[TradeStore] Cannot transition to EXITED: invalid state');
+        if (!currentTrade || currentTrade.state !== "ENTERED") {
+          console.warn("[TradeStore] Cannot transition to EXITED: invalid state");
           return;
         }
-        
+
         const exitTime = new Date();
         const movePercent = currentTrade.entryPrice
           ? ((exitPrice - currentTrade.entryPrice) / currentTrade.entryPrice) * 100
           : 0;
-        
+
         const exitedTrade: Trade = {
           ...currentTrade,
           exitPrice,
           exitTime,
           movePercent,
-          state: 'EXITED',
+          state: "EXITED",
         };
-        
+
         set((state) => ({
           currentTrade: null,
-          tradeState: 'WATCHING',
+          tradeState: "WATCHING",
           activeTrades: state.activeTrades.filter((t) => t.id !== exitedTrade.id),
           historyTrades: [exitedTrade, ...state.historyTrades],
         }));
@@ -291,11 +309,251 @@ export const useTradeStore = create<TradeStore>()(
       addTradeUpdate: (tradeId, update) => {
         set((state) => ({
           activeTrades: state.activeTrades.map((t) =>
-            t.id === tradeId
-              ? { ...t, updates: [...(t.updates || []), update] }
-              : t
+            t.id === tradeId ? { ...t, updates: [...(t.updates || []), update] } : t
           ),
         }));
+      },
+
+      // Async: Create trade update in database
+      addTradeUpdateToDb: async (userId, tradeId, update) => {
+        try {
+          const response = await fetch(`/api/trades/${tradeId}/updates`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-user-id": userId,
+            },
+            body: JSON.stringify({
+              action: update.type,
+              price: update.price,
+              notes: update.message || "",
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || "Failed to create trade update");
+          }
+
+          // Update local state after successful DB insert
+          const { activeTrades, historyTrades } = get();
+          const trade = [...activeTrades, ...historyTrades].find((t) => t.id === tradeId);
+
+          if (trade) {
+            set((state) => ({
+              activeTrades: state.activeTrades.map((t) =>
+                t.id === tradeId
+                  ? {
+                      ...t,
+                      updates: [
+                        ...(t.updates || []),
+                        {
+                          id: crypto.randomUUID(),
+                          type: update.type!,
+                          timestamp: new Date(),
+                          price: update.price || 0,
+                          message: update.message || "",
+                        },
+                      ],
+                    }
+                  : t
+              ),
+              historyTrades: state.historyTrades.map((t) =>
+                t.id === tradeId
+                  ? {
+                      ...t,
+                      updates: [
+                        ...(t.updates || []),
+                        {
+                          id: crypto.randomUUID(),
+                          type: update.type!,
+                          timestamp: new Date(),
+                          price: update.price || 0,
+                          message: update.message || "",
+                        },
+                      ],
+                    }
+                  : t
+              ),
+            }));
+          }
+        } catch (error: any) {
+          console.error("[TradeStore] Failed to add trade update to DB:", error);
+          set({ error: error.message });
+          throw error;
+        }
+      },
+
+      // Async: Link trade to Discord channels
+      linkTradeToChannels: async (tradeId, channelIds) => {
+        try {
+          const promises = channelIds.map((channelId) =>
+            fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
+              method: "POST",
+              headers: {
+                "x-user-id": "", // Will be set by hook
+              },
+            })
+          );
+
+          const responses = await Promise.all(promises);
+
+          for (const response of responses) {
+            if (!response.ok) {
+              throw new Error(`Failed to link channel: ${response.status}`);
+            }
+          }
+
+          // Update local state
+          set((state) => ({
+            activeTrades: state.activeTrades.map((t) =>
+              t.id === tradeId
+                ? {
+                    ...t,
+                    discordChannels: [...new Set([...t.discordChannels, ...channelIds])],
+                  }
+                : t
+            ),
+            currentTrade:
+              state.currentTrade?.id === tradeId
+                ? {
+                    ...state.currentTrade,
+                    discordChannels: [
+                      ...new Set([...state.currentTrade.discordChannels, ...channelIds]),
+                    ],
+                  }
+                : state.currentTrade,
+          }));
+        } catch (error: any) {
+          console.error("[TradeStore] Failed to link channels:", error);
+          set({ error: error.message });
+          throw error;
+        }
+      },
+
+      // Async: Unlink trade from Discord channel
+      unlinkTradeFromChannel: async (tradeId, channelId) => {
+        try {
+          const response = await fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
+            method: "DELETE",
+            headers: {
+              "x-user-id": "", // Will be set by hook
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to unlink channel: ${response.status}`);
+          }
+
+          // Update local state
+          set((state) => ({
+            activeTrades: state.activeTrades.map((t) =>
+              t.id === tradeId
+                ? {
+                    ...t,
+                    discordChannels: t.discordChannels.filter((c) => c !== channelId),
+                  }
+                : t
+            ),
+            currentTrade:
+              state.currentTrade?.id === tradeId
+                ? {
+                    ...state.currentTrade,
+                    discordChannels: state.currentTrade.discordChannels.filter(
+                      (c) => c !== channelId
+                    ),
+                  }
+                : state.currentTrade,
+          }));
+        } catch (error: any) {
+          console.error("[TradeStore] Failed to unlink channel:", error);
+          set({ error: error.message });
+          throw error;
+        }
+      },
+
+      // Async: Link trade to challenges
+      linkTradeToChallenges: async (tradeId, challengeIds) => {
+        try {
+          const promises = challengeIds.map((challengeId) =>
+            fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
+              method: "POST",
+              headers: {
+                "x-user-id": "", // Will be set by hook
+              },
+            })
+          );
+
+          const responses = await Promise.all(promises);
+
+          for (const response of responses) {
+            if (!response.ok) {
+              throw new Error(`Failed to link challenge: ${response.status}`);
+            }
+          }
+
+          // Update local state
+          set((state) => ({
+            activeTrades: state.activeTrades.map((t) =>
+              t.id === tradeId
+                ? {
+                    ...t,
+                    challenges: [...new Set([...t.challenges, ...challengeIds])],
+                  }
+                : t
+            ),
+            currentTrade:
+              state.currentTrade?.id === tradeId
+                ? {
+                    ...state.currentTrade,
+                    challenges: [...new Set([...state.currentTrade.challenges, ...challengeIds])],
+                  }
+                : state.currentTrade,
+          }));
+        } catch (error: any) {
+          console.error("[TradeStore] Failed to link challenges:", error);
+          set({ error: error.message });
+          throw error;
+        }
+      },
+
+      // Async: Unlink trade from challenge
+      unlinkTradeFromChallenge: async (tradeId, challengeId) => {
+        try {
+          const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
+            method: "DELETE",
+            headers: {
+              "x-user-id": "", // Will be set by hook
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to unlink challenge: ${response.status}`);
+          }
+
+          // Update local state
+          set((state) => ({
+            activeTrades: state.activeTrades.map((t) =>
+              t.id === tradeId
+                ? {
+                    ...t,
+                    challenges: t.challenges.filter((c) => c !== challengeId),
+                  }
+                : t
+            ),
+            currentTrade:
+              state.currentTrade?.id === tradeId
+                ? {
+                    ...state.currentTrade,
+                    challenges: state.currentTrade.challenges.filter((c) => c !== challengeId),
+                  }
+                : state.currentTrade,
+          }));
+        } catch (error: any) {
+          console.error("[TradeStore] Failed to unlink challenge:", error);
+          set({ error: error.message });
+          throw error;
+        }
       },
 
       // Utilities
@@ -305,11 +563,11 @@ export const useTradeStore = create<TradeStore>()(
       },
 
       getLoadedTrades: () => {
-        return get().activeTrades.filter((t) => t.state === 'LOADED');
+        return get().activeTrades.filter((t) => t.state === "LOADED");
       },
 
       getEnteredTrades: () => {
-        return get().activeTrades.filter((t) => t.state === 'ENTERED');
+        return get().activeTrades.filter((t) => t.state === "ENTERED");
       },
 
       markTradeAsUpdated: (tradeId) => {
@@ -330,13 +588,13 @@ export const useTradeStore = create<TradeStore>()(
           activeTrades: [],
           historyTrades: [],
           currentTrade: null,
-          tradeState: 'WATCHING',
+          tradeState: "WATCHING",
           contracts: [],
           updatedTradeIds: new Set(),
           isLoading: false,
           error: null,
         }),
     }),
-    { name: 'TradeStore' }
+    { name: "TradeStore" }
   )
 );
