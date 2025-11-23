@@ -87,39 +87,53 @@ export function HDLiveChartContextAware({
   }, [mode, chartHeight]);
 
   return (
-    <div
-      className={`flex ${mode === "LOADED" && config.dualTimeframeView ? "flex-row gap-2" : "flex-col gap-0"} ${className}`}
-    >
-      {/* Main Chart */}
-      <div className={mode === "LOADED" && config.dualTimeframeView ? "flex-1 min-w-0" : "w-full"}>
-        <HDLiveChart
-          ticker={ticker}
-          initialTimeframe={timeframe}
-          indicators={indicatorConfig}
-          events={mode === "ENTERED" ? [] : []} // Events handled by TradingWorkspace
-          levels={config.showKeyLevels ? levels : []}
-          height={finalChartHeight}
-          className="flex-shrink-0"
-          showControls={mode !== "ENTERED"} // Hide controls in trading mode
-        />
-      </div>
+    <div className={className}>
+      {/* Single chart for BROWSE and ENTERED modes */}
+      {(mode === "BROWSE" || mode === "ENTERED") && (
+        <div className="w-full">
+          <HDLiveChart
+            ticker={ticker}
+            initialTimeframe={timeframe}
+            indicators={indicatorConfig}
+            events={mode === "ENTERED" ? [] : []}
+            levels={config.showKeyLevels ? levels : []}
+            height={finalChartHeight}
+            className="w-full"
+            showControls={mode === "BROWSE"}
+            showHeader={true}
+          />
+        </div>
+      )}
 
-      {/* Dual Timeframe View in LOADED mode - 5m for context/trend */}
+      {/* Dual Timeframe View in LOADED mode - 5m (left) + 1m (right) */}
       {mode === "LOADED" && config.dualTimeframeView && (
-        <div className="flex-1 min-w-0 border-l border-gray-700 relative">
-          <div className="absolute top-0 left-0 right-0 text-xs text-gray-500 px-3 py-1 bg-gray-900/50 z-10">
-            1-minute view for entry precision
+        <div className="flex gap-6 w-full">
+          {/* Left: 5-minute chart (50% width) */}
+          <div className="flex-1 min-w-0">
+            <HDLiveChart
+              ticker={ticker}
+              initialTimeframe="5"
+              indicators={indicatorConfig}
+              events={[]}
+              levels={config.showKeyLevels ? levels : []}
+              height={finalChartHeight}
+              className="w-full"
+              showControls={false}
+              showHeader={true}
+            />
           </div>
-          <div className="pt-7">
+          {/* Right: 1-minute chart for entry precision (50% width) */}
+          <div className="flex-1 min-w-0">
             <HDLiveChart
               ticker={ticker}
               initialTimeframe="1"
               indicators={indicatorConfig}
               events={[]}
-              levels={levels}
+              levels={config.showKeyLevels ? levels : []}
               height={finalChartHeight}
-              className="flex-shrink-0"
+              className="w-full"
               showControls={false}
+              showHeader={true}
             />
           </div>
         </div>
