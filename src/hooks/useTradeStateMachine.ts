@@ -22,6 +22,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import {
   createTradeApi,
   updateTradeApi,
+  deleteTradeApi,
   addTradeUpdateApi,
   linkChannelsApi,
   linkChallengesApi,
@@ -966,9 +967,18 @@ export function useTradeStateMachine({
   }, [currentTrade]);
 
   const handleUnloadTrade = useCallback(() => {
-    if (currentTrade && currentTrade.state === "LOADED") {
+    if (currentTrade && currentTrade.state === "LOADED" && userId) {
+      // Remove from local state immediately
       setActiveTrades((prev) => prev.filter((t) => t.id !== currentTrade.id));
-      toast.success(`${currentTrade.ticker} unloaded from watchlist`);
+      toast.success(`${currentTrade.ticker} unloaded`);
+
+      // Delete from database asynchronously
+      deleteTradeApi(userId, currentTrade.id).catch((error) => {
+        console.error("[v0] Failed to delete trade from database:", error);
+        toast.error("Failed to delete trade", {
+          description: "The trade was removed locally but may persist on refresh.",
+        } as any);
+      });
     }
 
     setCurrentTrade(null);
@@ -978,7 +988,7 @@ export function useTradeStateMachine({
     if (isMobile && onMobileTabChange) {
       onMobileTabChange("live");
     }
-  }, [currentTrade, isMobile, onMobileTabChange]);
+  }, [currentTrade, isMobile, onMobileTabChange, userId]);
 
   const handleTrim = useCallback(() => {
     if (!currentTrade) return;
