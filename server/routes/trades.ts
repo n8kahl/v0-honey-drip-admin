@@ -169,7 +169,8 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       stop_loss: trade.stopLoss || null,
       entry_time: trade.entryTime || null,
       notes: trade.notes || null,
-    };
+      contract: trade.contract || null, // Store full contract object as JSONB (includes bid, ask, volume, Greeks, etc.)
+    } as any;
 
     const { data, error } = await getSupabaseClient()
       .from("trades")
