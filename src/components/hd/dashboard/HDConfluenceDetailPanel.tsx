@@ -235,19 +235,17 @@ export function HDConfluenceDetailPanel({
             <h3 className="text-xs text-[var(--text-high)] font-semibold mb-2.5 uppercase tracking-wide">Contract Health</h3>
             
             <div className="space-y-2 text-[11px]">
-              {volatility && (
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-[var(--text-muted)]">IV Rank</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[var(--text-high)] font-medium tabular-nums">
-                      {volatility.ivPercentile.toFixed(0)}%
-                    </span>
-                    <span className={cn('text-[10px] font-medium', getVolatilityText())}>
-                      {getVolatilityLabel()}
-                    </span>
-                  </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-[var(--text-muted)]">IV Rank</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--text-high)] font-medium tabular-nums">
+                    {volPercentile.toFixed(0)}%
+                  </span>
+                  <span className={cn('text-[10px] font-medium', getVolatilityText())}>
+                    {getVolatilityLabel()}
+                  </span>
                 </div>
-              )}
+              </div>
               <div className="flex items-center justify-between py-1">
                 <span className="text-[var(--text-muted)]">Volume</span>
                 <span className="text-[var(--text-high)] tabular-nums font-medium">
@@ -283,7 +281,7 @@ export function HDConfluenceDetailPanel({
           <div className="flex items-center gap-1.5">
             <span className="text-[var(--text-faint)]">IV</span>
             <span className={cn('font-medium tabular-nums', getVolatilityText())}>
-              {volatility?.ivPercentile.toFixed(0) || '—'}%
+              {volPercentile.toFixed(0)}%
             </span>
           </div>
           <div className="flex items-center gap-1.5">

@@ -2,7 +2,7 @@
 
 > **Purpose**: Comprehensive guide for AI assistants (Claude, GPT, etc.) working on the Honey Drip Admin Trading Dashboard codebase. This is THE definitive reference - always consult this file before making changes.
 
-**Last Updated**: November 23, 2025 (Phase 1 Optimizations)
+**Last Updated**: November 23, 2025
 **Project**: Honey Drip Admin Trading Dashboard
 **Tech Stack**: React 18 + TypeScript + Express + PostgreSQL (Supabase) + Massive.com API
 
@@ -1306,11 +1306,51 @@ const barTimeKey = `${timeISO}_${symbol}_${opportunityType}`;
 // Duplicate inserts are silently ignored
 ```
 
-### 5. Trade State Machine
+### 5. Trade State Machine & Contract Preview Workflow
 
 **States**: WATCHING → LOADED → ENTERED → EXITED
 
+**Important**: As of November 2025, the trade workflow uses a **preview-then-persist** pattern:
+
 ```typescript
+// Step 1: User clicks contract → Preview (NOT persisted yet)
+handleContractSelect(contract) {
+  const previewTrade = {
+    id: crypto.randomUUID(),  // Temporary ID
+    state: "WATCHING",         // Preview state
+    contract,
+    // ... calculated TP/SL
+  };
+  setCurrentTrade(previewTrade);  // Show in UI for analysis
+  setShowAlert(true);              // Show "Load and Alert" dialog
+
+  // DO NOT add to activeTrades yet
+  // DO NOT persist to database yet
+}
+
+// Step 2: User clicks "Load and Alert" → Persist
+handleSendAlert(channelIds, challengeIds) {
+  if (alertType === "load") {
+    // NOW we persist to database
+    const dbTrade = await createTradeApi(userId, {
+      ticker: currentTrade.ticker,
+      contract: currentTrade.contract,  // Full contract as JSONB
+      // ...
+    });
+
+    // Update with real database ID
+    const persistedTrade = {
+      ...currentTrade,
+      id: dbTrade.id,           // Real ID from database
+      state: "LOADED",          // Now officially loaded
+    };
+
+    setActiveTrades(prev => [...prev, persistedTrade]); // Add to sidebar
+    await linkChannelsApi(userId, dbTrade.id, channelIds);
+  }
+}
+
+// Step 3: Transition to ENTERED
 function transitionToEntered(entryPrice: number) {
   if (currentState !== "LOADED") {
     throw new Error("Cannot enter trade from WATCHING state");
@@ -1319,6 +1359,13 @@ function transitionToEntered(entryPrice: number) {
   recordUpdate("enter", entryPrice);
 }
 ```
+
+**Key Points**:
+- Contract selection creates a **temporary preview trade** (state=WATCHING)
+- Preview is shown in Trade Details panel but NOT in sidebar
+- "Load and Alert" button triggers **database persistence**
+- Only after persistence does the trade enter LOADED state
+- This prevents premature database writes and allows user to analyze before committing
 
 ### 6. DTE-Aware Risk Calculations
 
@@ -1455,6 +1502,66 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 // ❌ WRONG: Never use service role in frontend
 const supabaseAdmin = createClient(URL, SERVICE_ROLE_KEY); // SECURITY RISK!
 ```
+
+### 9. Runtime Type Validation with ensureArray Utility
+
+**Problem**: Database/API responses may return `null`, `undefined`, or wrong types for array fields
+**Solution**: Use validation utilities from `src/lib/utils/validation.ts`
+
+**Critical for**:
+- Discord channel arrays (`trade.discordChannels`)
+- Challenge arrays (`trade.challenges`)
+- Trade updates (`trade.updates`)
+- Any data from external sources (Supabase, APIs)
+
+```typescript
+import { ensureArray, ensureStringArray, safeIncludes } from '@/lib/utils/validation';
+
+// ✅ CORRECT: Always validate arrays before operations
+const channels = ensureArray(trade.discordChannels);
+channels.forEach(id => console.log(id)); // Safe
+
+// ✅ CORRECT: Safe includes check
+if (safeIncludes(trade.discordChannels, channelId)) {
+  // ...
+}
+
+// ✅ CORRECT: Filter non-strings
+const validIds = ensureStringArray(trade.challengeIds);
+
+// ✅ CORRECT: Safe spreading
+const currentUpdates = ensureArray(trade.updates);
+const newUpdates = [...currentUpdates, newUpdate];
+
+// ❌ WRONG: Assumes always array
+const channels = trade.discordChannels || [];  // May still crash if not array
+channels.includes(id);  // TypeError if channels is not array
+```
+
+**Implementation** (`src/lib/utils/validation.ts`):
+```typescript
+export function ensureArray<T>(value: T[] | T | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (value == null) return [];
+  return [value];
+}
+
+export function ensureStringArray(value: any): string[] {
+  const arr = ensureArray(value);
+  return arr.filter((item): item is string => typeof item === 'string');
+}
+
+export function safeIncludes<T>(arr: T[] | any, value: T): boolean {
+  if (!Array.isArray(arr)) return false;
+  return arr.includes(value);
+}
+```
+
+**When to Use**:
+1. **Component props from stores**: `ensureArray(useTradeStore(s => s.trade.channels))`
+2. **Database query results**: `ensureArray(dbTrade.discord_channels)`
+3. **Before array operations**: Spreading, mapping, filtering, includes
+4. **API responses**: Any external data that should be arrays
 
 ---
 
@@ -1729,6 +1836,117 @@ pnpm lint
 3. **Check CI environment**:
    - `CI=true` disables certain features
    - Check GitHub Actions logs
+
+### Railway Build Errors
+
+**Common Issue**: TypeScript overload resolution errors during `pnpm build`
+
+**Symptoms**:
+```
+error TS2769: No overload matches this call.
+Argument of type '{ symbol: string; timeframe: string; ... }'
+```
+
+**Solutions**:
+
+1. **Supabase `.upsert()` type errors**:
+   ```typescript
+   // ❌ WRONG - TypeScript can't infer types
+   .upsert(rows, { onConflict: 'symbol,timeframe,timestamp' })
+
+   // ✅ CORRECT - Add type assertion
+   .upsert(rows as any, { onConflict: 'symbol,timeframe,timestamp' })
+   ```
+
+2. **Multi-line `.select()` query errors**:
+   ```typescript
+   // ❌ WRONG - Multi-line template literals cause inference issues
+   .select(`
+     *,
+     trade_updates(*),
+     trades_discord_channels(discord_channel_id)
+   `)
+
+   // ✅ CORRECT - Use single-line string
+   .select('*, trade_updates(*), trades_discord_channels(discord_channel_id)')
+   ```
+
+3. **Check `tsconfig.server.json` has permissive options**:
+   ```json
+   {
+     "compilerOptions": {
+       "strict": false,
+       "skipLibCheck": true,
+       "noImplicitAny": false,
+       "strictNullChecks": false,
+       "strictFunctionTypes": false
+     }
+   }
+   ```
+
+### Runtime Errors in Production
+
+**Common Issue**: `ReferenceError: [variable] is not defined`
+
+**Example**: `volatility is not defined` in `HDConfluenceDetailPanel.tsx`
+
+**Cause**: Using a variable that was removed during refactoring or never defined
+
+**Solution**:
+1. Search for the undefined variable in the component
+2. Check if it should reference an existing variable (e.g., `volPercentile` instead of `volatility.ivPercentile`)
+3. Add proper fallbacks/defaults for computed values
+
+**Prevention**:
+- Run `pnpm typecheck` before committing
+- Test in development mode with React strict mode enabled
+- Use ESLint to catch undefined variables
+
+### Trade Lifecycle Issues
+
+**Common Issue**: Array methods failing with "is not a function" errors
+
+**Symptoms**:
+```
+TypeError: selectedChannels.includes is not a function
+TypeError: trade.updates.map is not a function
+```
+
+**Root Cause**: Database queries returning `null` or non-array values for array fields
+
+**Solutions**:
+
+1. **Always validate array types**:
+   ```typescript
+   // ❌ WRONG - Assumes always array
+   const channels = trade.discordChannels || [];
+
+   // ✅ CORRECT - Runtime validation
+   const channels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
+   ```
+
+2. **Use helper utility** (`src/lib/utils/validation.ts`):
+   ```typescript
+   import { ensureArray } from '@/lib/utils/validation';
+
+   const channels = ensureArray(trade.discordChannels);
+   const updates = ensureArray(trade.updates);
+   ```
+
+3. **Add defensive checks before spreading**:
+   ```typescript
+   // ❌ WRONG - May crash if not array
+   updates: [...trade.updates, newUpdate]
+
+   // ✅ CORRECT - Safe spreading
+   const currentUpdates = Array.isArray(trade.updates) ? trade.updates : [];
+   updates: [...currentUpdates, newUpdate]
+   ```
+
+**Prevention**:
+- Always use `Array.isArray()` checks for data from external sources
+- Add runtime type validation at API boundaries
+- Use the `ensureArray` utility consistently
 
 ---
 
