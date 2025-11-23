@@ -554,6 +554,14 @@ export function useTradeStateMachine({
       // Callback for exited trades
       if (newTrade.state === "EXITED" && onExitedTrade) {
         onExitedTrade(newTrade);
+
+        // Clear currentTrade and remove from activeTrades after exit
+        // Use setTimeout to ensure callback completes first
+        setTimeout(() => {
+          setCurrentTrade(null);
+          setTradeState("WATCHING");
+          setActiveTrades((prev) => prev.filter((t) => t.id !== newTrade.id));
+        }, 100);
       }
 
       // Persist to database

@@ -36,13 +36,13 @@ export function HDLoadedLayout({
   compositeSignals,
 }: HDLoadedLayoutProps) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 px-4 lg:px-6 py-4 lg:py-6 pointer-events-auto relative z-10">
-      {/* Left Column: Options Chain Grid */}
-      <div className="lg:col-span-1 border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden">
-        <div className="px-3 py-2 border-b border-gray-700 bg-gray-900/50">
+    <div className="flex flex-col lg:flex-row gap-0 lg:gap-6 px-4 lg:px-6 py-4 lg:py-6 pointer-events-auto relative z-10 h-full">
+      {/* Left Column: Options Chain Grid - Fixed width, independent scroll */}
+      <div className="w-full lg:w-[45%] border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden flex flex-col min-h-[400px] lg:min-h-0">
+        <div className="px-3 py-2 border-b border-gray-700 bg-gray-900/50 flex-shrink-0">
           <h3 className="text-sm font-semibold text-gray-300">Options Chain</h3>
         </div>
-        <div className="overflow-y-auto max-h-96 lg:max-h-full">
+        <div className="overflow-y-auto flex-1">
           {contracts.length > 0 ? (
             <HDContractGrid
               contracts={contracts}
@@ -52,35 +52,41 @@ export function HDLoadedLayout({
               className="text-sm"
             />
           ) : (
-            <div className="flex items-center justify-center p-4 text-gray-400 text-xs">
+            <div className="flex items-center justify-center p-4 text-gray-400 text-xs h-full">
               Loading contracts...
             </div>
           )}
         </div>
       </div>
 
-      {/* Right Column: Contract Details + Market Analysis */}
-      <div className="lg:col-span-2 space-y-4">
+      {/* Right Column: Contract Details + Market Analysis - Independent scroll */}
+      <div className="w-full lg:w-[55%] overflow-y-auto flex-1 space-y-4">
         {/* Contract Details Card */}
-        <HDLoadedTradeCard
-          trade={trade}
-          onEnter={onEnter}
-          onDiscard={onDiscard}
-          underlyingPrice={activeTicker?.last}
-          underlyingChange={activeTicker?.changePercent}
-          confluence={confluence}
-          signals={compositeSignals?.filter((s) => s.symbol === trade.ticker)}
-        />
+        {trade?.contract ? (
+          <HDLoadedTradeCard
+            trade={trade}
+            onEnter={onEnter}
+            onDiscard={onDiscard}
+            underlyingPrice={activeTicker?.last}
+            underlyingChange={activeTicker?.changePercent}
+            confluence={confluence}
+            signals={compositeSignals?.filter((s) => s.symbol === trade.ticker)}
+          />
+        ) : (
+          <div className="border border-gray-700 rounded-lg bg-gray-900/30 p-4 text-center text-gray-400 text-sm">
+            Loading contract details...
+          </div>
+        )}
 
         {/* Market Analysis Panel */}
         <div className="border border-gray-700 rounded-lg bg-gray-900/30 p-4">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">Market Analysis</h3>
 
-          {trade.contract && (
+          {trade?.contract ? (
             <div className="space-y-3 text-xs">
               {/* Greeks Row */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {trade.contract.delta !== undefined && (
+                {trade.contract?.delta !== undefined && (
                   <div className="bg-gray-800/50 p-2 rounded">
                     <div className="text-gray-400">Delta</div>
                     <div className="font-semibold text-blue-400">
@@ -89,12 +95,12 @@ export function HDLoadedLayout({
                   </div>
                 )}
 
-                {trade.contract.theta !== undefined && (
+                {trade.contract?.theta !== undefined && (
                   <div className="bg-gray-800/50 p-2 rounded">
                     <div className="text-gray-400">Theta</div>
                     <div
                       className={`font-semibold ${
-                        (trade.contract.theta ?? 0) < 0 ? "text-red-400" : "text-green-400"
+                        (trade.contract?.theta ?? 0) < 0 ? "text-red-400" : "text-green-400"
                       }`}
                     >
                       {trade.contract.theta?.toFixed(4) || "-"}
@@ -102,7 +108,7 @@ export function HDLoadedLayout({
                   </div>
                 )}
 
-                {trade.contract.vega !== undefined && (
+                {trade.contract?.vega !== undefined && (
                   <div className="bg-gray-800/50 p-2 rounded">
                     <div className="text-gray-400">Vega</div>
                     <div className="font-semibold text-purple-400">
@@ -111,7 +117,7 @@ export function HDLoadedLayout({
                   </div>
                 )}
 
-                {trade.contract.iv !== undefined && (
+                {trade.contract?.iv !== undefined && (
                   <div className="bg-gray-800/50 p-2 rounded">
                     <div className="text-gray-400">IV</div>
                     <div className="font-semibold text-yellow-400">
@@ -132,7 +138,7 @@ export function HDLoadedLayout({
                 <div>
                   <div className="text-gray-400">Current</div>
                   <div className="font-semibold text-gray-200">
-                    ${trade.contract.mid?.toFixed(2) || "—"}
+                    ${trade.contract?.mid?.toFixed(2) || "—"}
                   </div>
                 </div>
                 <div>
@@ -150,14 +156,13 @@ export function HDLoadedLayout({
               </div>
 
               {/* Risk/Reward */}
-              {trade.targetPrice && trade.stopLoss && (
+              {trade.targetPrice && trade.stopLoss && trade.entryPrice && (
                 <div className="pt-2 border-t border-gray-700">
                   <div className="text-gray-400 mb-1">Risk/Reward Ratio</div>
                   <div className="font-semibold text-blue-400">
                     {(
                       Math.abs(
-                        (trade.targetPrice - trade.entryPrice!) /
-                          (trade.entryPrice! - trade.stopLoss)
+                        (trade.targetPrice - trade.entryPrice) / (trade.entryPrice - trade.stopLoss)
                       ) || 0
                     ).toFixed(2)}
                     :1
@@ -165,6 +170,8 @@ export function HDLoadedLayout({
                 </div>
               )}
             </div>
+          ) : (
+            <div className="text-gray-400 text-xs">Contract data unavailable</div>
           )}
         </div>
       </div>
