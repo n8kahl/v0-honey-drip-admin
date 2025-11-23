@@ -108,24 +108,28 @@ export const useTradeStore = create<TradeStore>()(
         set({ isLoading: true, error: null });
         try {
           const newTrade = await dbCreateTrade(userId, tradeData as any);
+          // Use stored contract if available, otherwise reconstruct from basic fields
+          const storedContract = newTrade.contract as any;
+          const contract = storedContract || {
+            id: `${newTrade.ticker}-${newTrade.strike}-${newTrade.expiration}`,
+            strike: parseFloat(newTrade.strike),
+            expiry: newTrade.expiration,
+            expiryDate: new Date(newTrade.expiration),
+            daysToExpiry: Math.ceil(
+              (new Date(newTrade.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            ),
+            type: (newTrade.contract_type === "call" ? "C" : "P") as OptionType,
+            mid: 0,
+            bid: 0,
+            ask: 0,
+            volume: 0,
+            openInterest: 0,
+          };
+
           const mappedTrade: Trade = {
             id: newTrade.id,
             ticker: newTrade.ticker,
-            contract: {
-              id: `${newTrade.ticker}-${newTrade.strike}-${newTrade.expiration}`,
-              strike: parseFloat(newTrade.strike),
-              expiry: newTrade.expiration,
-              expiryDate: new Date(newTrade.expiration),
-              daysToExpiry: Math.ceil(
-                (new Date(newTrade.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-              ),
-              type: (newTrade.contract_type === "call" ? "C" : "P") as OptionType,
-              mid: 0,
-              bid: 0,
-              ask: 0,
-              volume: 0,
-              openInterest: 0,
-            },
+            contract,
             state: mapStatusToState(newTrade.status),
             tradeType: "Day" as TradeType,
             updates: [],
@@ -188,10 +192,10 @@ export const useTradeStore = create<TradeStore>()(
         set({ isLoading: true, error: null });
         try {
           const tradesData = await getTrades(userId);
-          const mappedTrades: Trade[] = tradesData.map((t) => ({
-            id: t.id,
-            ticker: t.ticker,
-            contract: {
+          const mappedTrades: Trade[] = tradesData.map((t) => {
+            // Use stored contract if available, otherwise reconstruct from basic fields
+            const storedContract = t.contract as any;
+            const contract = storedContract || {
               id: `${t.ticker}-${t.strike}-${t.expiration}`,
               strike: parseFloat(t.strike),
               expiry: t.expiration,
@@ -205,18 +209,24 @@ export const useTradeStore = create<TradeStore>()(
               ask: 0,
               volume: 0,
               openInterest: 0,
-            },
-            entryPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
-            exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
-            entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
-            exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
-            currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
-            state: mapStatusToState(t.status),
-            updates: t.trade_updates || [],
-            tradeType: "Day" as TradeType,
-            discordChannels: [],
-            challenges: t.challenge_id ? [t.challenge_id] : [],
-          }));
+            };
+
+            return {
+              id: t.id,
+              ticker: t.ticker,
+              contract,
+              entryPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
+              entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
+              exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
+              currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              state: mapStatusToState(t.status),
+              updates: t.trade_updates || [],
+              tradeType: "Day" as TradeType,
+              discordChannels: [],
+              challenges: t.challenge_id ? [t.challenge_id] : [],
+            };
+          });
 
           const active = mappedTrades.filter((t) => t.state !== "EXITED");
           const history = mappedTrades.filter((t) => t.state === "EXITED");

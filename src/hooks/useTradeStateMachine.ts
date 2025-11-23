@@ -279,11 +279,7 @@ export function useTradeStateMachine({
         try {
           const dbTrade = await createTradeApi(userId, {
             ticker: activeTicker.symbol,
-            contract: {
-              type: contract.type,
-              strike: contract.strike,
-              expiry: contract.expiry,
-            },
+            contract: contract, // Store full contract object (includes bid, ask, volume, Greeks, etc.)
             targetPrice,
             stopLoss,
             discordChannelIds: [],
