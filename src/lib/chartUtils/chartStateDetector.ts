@@ -47,19 +47,19 @@ export function detectChartMode(
 export function getChartModeConfig(mode: ChartMode, symbol: string): ChartModeConfig {
   switch (mode) {
     case "BROWSE":
-      // Lightweight mode: just 5m for scanning setups
+      // Browsing mode: dual timeframe (1m + 5m) for immediate analysis on symbol selection
       return {
         mode: "BROWSE",
-        timeframes: ["5"],
-        defaultTimeframe: "5",
+        timeframes: ["1", "5"],
+        defaultTimeframe: "1",
         indicators: {
           ema: [9, 21], // Momentum + trend
-          vwap: false,
+          vwap: true, // Add VWAP for immediate context
         },
-        historicalBarCount: 20,
+        historicalBarCount: 400, // ~1 day of 1m bars for full context
         showKeyLevels: false,
         showTradeMetrics: false,
-        dualTimeframeView: false,
+        dualTimeframeView: true, // Show 1m + 5m dual view on symbol selection
         cacheKey: `chart:${symbol}:browse`,
         cacheTTL: 60, // 60 seconds
       };

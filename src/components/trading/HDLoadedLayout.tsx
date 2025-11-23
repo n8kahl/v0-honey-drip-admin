@@ -37,8 +37,8 @@ export function HDLoadedLayout({
 }: HDLoadedLayoutProps) {
   return (
     <div className="flex flex-col lg:flex-row gap-0 lg:gap-6 px-4 lg:px-6 py-4 lg:py-6 pointer-events-auto relative z-10 h-full">
-      {/* Left Column: Options Chain Grid - Fixed width, independent scroll */}
-      <div className="w-full lg:w-[45%] border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden flex flex-col min-h-[400px] lg:min-h-0">
+      {/* Left Column: Options Chain Grid - Wide column matching chart width, independent scroll */}
+      <div className="w-full lg:w-1/2 border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden flex flex-col min-h-[400px] lg:min-h-0">
         <div className="px-3 py-2 border-b border-gray-700 bg-gray-900/50 flex-shrink-0">
           <h3 className="text-sm font-semibold text-gray-300">Options Chain</h3>
         </div>
@@ -60,8 +60,8 @@ export function HDLoadedLayout({
       </div>
 
       {/* Right Column: Contract Details + Market Analysis - Independent scroll */}
-      <div className="w-full lg:w-[55%] overflow-y-auto flex-1 space-y-4">
-        {/* Contract Details Card */}
+      <div className="w-full lg:w-1/2 overflow-y-auto flex-1 space-y-4">
+        {/* Contract Details Card - without action buttons */}
         {trade?.contract ? (
           <HDLoadedTradeCard
             trade={trade}
@@ -71,6 +71,7 @@ export function HDLoadedLayout({
             underlyingChange={activeTicker?.changePercent}
             confluence={confluence}
             signals={compositeSignals?.filter((s) => s.symbol === trade.ticker)}
+            showActions={false}
           />
         ) : (
           <div className="border border-gray-700 rounded-lg bg-gray-900/30 p-4 text-center text-gray-400 text-sm">
@@ -78,9 +79,9 @@ export function HDLoadedLayout({
           </div>
         )}
 
-        {/* Market Analysis Panel */}
+        {/* Contract Analysis Panel */}
         <div className="border border-gray-700 rounded-lg bg-gray-900/30 p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Market Analysis</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Contract Analysis</h3>
 
           {trade?.contract ? (
             <div className="space-y-3 text-xs">

@@ -282,11 +282,13 @@ export function useTradeStateMachine({
           /* fallback silently */
         }
 
-        // Create trade locally first (optimistic update)
+        // Create trade locally for UI display only
+        // NOTE: State is WATCHING, not LOADED - this is just for previewing the contract
+        // The trade is NOT added to activeTrades and NOT persisted yet
         const localTrade: Trade = {
           id: crypto.randomUUID(),
           ticker: activeTicker.symbol,
-          state: "LOADED",
+          state: "WATCHING", // Temporary state for contract preview
           contract,
           tradeType: inferTradeTypeByDTE(
             contract.expiry,
@@ -301,43 +303,15 @@ export function useTradeStateMachine({
           updates: [],
         };
 
+        // Set as currentTrade for UI display (Trade Details, Analysis, etc.)
         setCurrentTrade(localTrade);
-        setTradeState("LOADED");
+        setTradeState("WATCHING");
         setAlertType("load");
         setShowAlert(true);
 
-        // Add trade to activeTrades immediately (optimistic update)
-        setActiveTrades((prev) => [...prev, localTrade]);
-
-        // Persist to database
-        try {
-          const dbTrade = await createTradeApi(userId, {
-            ticker: activeTicker.symbol,
-            contract: {
-              type: contract.type,
-              strike: contract.strike,
-              expiry: contract.expiry,
-            },
-            targetPrice,
-            stopLoss,
-            discordChannelIds: [],
-            challengeIds: [],
-          });
-
-          // Update with database ID
-          const persistedTrade: Trade = {
-            ...localTrade,
-            id: dbTrade.id,
-          };
-          setCurrentTrade(persistedTrade);
-          setActiveTrades((prev) => prev.map((t) => (t.id === localTrade.id ? persistedTrade : t)));
-        } catch (error) {
-          console.error("[v0] Failed to persist trade to database:", error);
-          // Show error toast but don't block the UI - user can still use the trade locally
-          toast.error("Failed to save trade to database", {
-            description: "You can continue working, but it won't be saved.",
-          } as any);
-        }
+        // DO NOT add to activeTrades yet - wait for "Load and Alert" button
+        // DO NOT persist to database yet - wait for "Load and Alert" button
+        // The user is just previewing this contract
       } catch (error) {
         console.error("[v0] Error in handleContractSelect:", error);
         toast.error("Failed to create trade", {
@@ -364,52 +338,75 @@ export function useTradeStateMachine({
         .map((id) => ({ id, name: `Channel ${id.slice(0, 8)}` }))
         .filter((c) => c);
 
-      // LOAD alert: associate channels/challenges, do not create a TradeUpdate (load is not a TradeUpdate type)
+      // LOAD alert: This is the point where the user explicitly "loads" a contract
+      // Now we persist it to the database for the first time
       if (alertType === "load") {
-        const updatedTrade: Trade = {
-          ...currentTrade,
-          discordChannels: channelIds,
-          challenges: challengeIds,
-        };
-
-        // Optimistic update
-        setActiveTrades((prev) => {
-          const exists = prev.find((t) => t.id === updatedTrade.id);
-          return exists
-            ? prev.map((t) => (t.id === updatedTrade.id ? updatedTrade : t))
-            : [...prev, updatedTrade];
-        });
-        setCurrentTrade(updatedTrade);
-        setTradeState("LOADED");
-        setShowAlert(false);
-        setContracts([]);
-        // IMPORTANT: Do NOT clear activeTicker for load alerts - middle column needs it to display the chart
-        // setActiveTicker(null);
-
-        // Persist to database
         try {
-          const persistencePromises = [];
+          // Step 1: Create the trade in database (it was only in preview/WATCHING state before)
+          console.log("[v0] Creating loaded trade in database with full contract JSONB");
 
-          if (channelIds.length > 0) {
-            persistencePromises.push(
-              linkChannelsApi(userId, currentTrade.id, channelIds).catch((error) => {
-                console.error("[v0] Failed to link channels:", error);
-                throw error;
-              })
-            );
-          }
+          const dbTrade = await createTradeApi(userId, {
+            ticker: currentTrade.ticker,
+            contract: currentTrade.contract, // Store full contract object
+            targetPrice: currentTrade.targetPrice,
+            stopLoss: currentTrade.stopLoss,
+            discordChannelIds: channelIds,
+            challengeIds: challengeIds,
+          });
 
-          if (challengeIds.length > 0) {
-            persistencePromises.push(
-              linkChallengesApi(userId, currentTrade.id, challengeIds).catch((error) => {
-                console.error("[v0] Failed to link challenges:", error);
-                throw error;
-              })
-            );
-          }
+          // Step 2: Create the final trade object with the real database ID
+          const persistedTrade: Trade = {
+            ...currentTrade,
+            id: dbTrade.id, // Replace temporary ID with real database ID
+            state: "LOADED",
+            discordChannels: channelIds,
+            challenges: challengeIds,
+          };
 
-          if (persistencePromises.length > 0) {
-            await Promise.all(persistencePromises);
+          // Step 3: Update UI state
+          setCurrentTrade(persistedTrade);
+          setTradeState("LOADED");
+
+          // Step 4: Add to activeTrades list (so it shows in left sidebar)
+          setActiveTrades((prev) => [...prev, persistedTrade]);
+
+          setShowAlert(false);
+          setContracts([]);
+          // IMPORTANT: Do NOT clear activeTicker for load alerts - middle column needs it to display the chart
+          // setActiveTicker(null);
+
+          // Step 5: Link Discord channels and challenges if provided
+          try {
+            const persistencePromises = [];
+
+            if (channelIds.length > 0) {
+              persistencePromises.push(
+                linkChannelsApi(userId, dbTrade.id, channelIds).catch((error) => {
+                  console.error("[v0] Failed to link channels:", error);
+                  throw error;
+                })
+              );
+            }
+
+            if (challengeIds.length > 0) {
+              persistencePromises.push(
+                linkChallengesApi(userId, dbTrade.id, challengeIds).catch((error) => {
+                  console.error("[v0] Failed to link challenges:", error);
+                  throw error;
+                })
+              );
+            }
+
+            if (persistencePromises.length > 0) {
+              await Promise.all(persistencePromises);
+            }
+
+            showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
+          } catch (error) {
+            console.error("[v0] Failed to persist load alert channels/challenges:", error);
+            toast.error("Trade loaded but failed to save channels/challenges", {
+              description: "You may need to re-link them.",
+            } as any);
           }
 
           // Send Discord LOAD alert
@@ -430,10 +427,13 @@ export function useTradeStateMachine({
 
           showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
         } catch (error) {
-          console.error("[v0] Failed to persist load alert to database:", error);
-          toast.error("Failed to save trade links", {
-            description: "Alert sent but database save failed.",
+          console.error("[v0] Failed to create loaded trade in database:", error);
+          toast.error("Failed to load trade", {
+            description: "Trade setup was not saved. Please try again.",
           } as any);
+          // Revert state on error
+          setCurrentTrade(null);
+          setTradeState("WATCHING");
         }
         return;
       }

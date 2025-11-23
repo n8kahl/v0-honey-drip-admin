@@ -1,4 +1,4 @@
-import { createClient } from './client';
+import { createClient } from "./client";
 
 // ============================================================================
 // PROFILES
@@ -6,28 +6,27 @@ import { createClient } from './client';
 
 export async function getProfile(userId: string) {
   const supabase = createClient();
-  
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
+
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
 
   if (error) throw error;
   return data;
 }
 
-export async function updateProfile(userId: string, updates: {
-  display_name?: string;
-  discord_handle?: string;
-  avatar_url?: string;
-}) {
+export async function updateProfile(
+  userId: string,
+  updates: {
+    display_name?: string;
+    discord_handle?: string;
+    avatar_url?: string;
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('profiles')
+    .from("profiles")
     .update(updates)
-    .eq('id', userId)
+    .eq("id", userId)
     .select()
     .single();
 
@@ -41,12 +40,12 @@ export async function updateProfile(userId: string, updates: {
 
 export async function getDiscordChannels(userId: string) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('discord_channels')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+    .from("discord_channels")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
 
   if (error) throw error;
   return data || [];
@@ -54,9 +53,9 @@ export async function getDiscordChannels(userId: string) {
 
 export async function addDiscordChannel(userId: string, name: string, webhookUrl: string) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('discord_channels')
+    .from("discord_channels")
     .insert({
       user_id: userId,
       name,
@@ -74,21 +73,24 @@ export async function addDiscordChannel(userId: string, name: string, webhookUrl
   return data;
 }
 
-export async function updateDiscordChannel(channelId: string, updates: {
-  name?: string;
-  webhook_url?: string;
-  is_active?: boolean;
-  is_default_load?: boolean;
-  is_default_enter?: boolean;
-  is_default_exit?: boolean;
-  is_default_update?: boolean;
-}) {
+export async function updateDiscordChannel(
+  channelId: string,
+  updates: {
+    name?: string;
+    webhook_url?: string;
+    is_active?: boolean;
+    is_default_load?: boolean;
+    is_default_enter?: boolean;
+    is_default_exit?: boolean;
+    is_default_update?: boolean;
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('discord_channels')
+    .from("discord_channels")
     .update(updates)
-    .eq('id', channelId)
+    .eq("id", channelId)
     .select()
     .single();
 
@@ -98,11 +100,8 @@ export async function updateDiscordChannel(channelId: string, updates: {
 
 export async function deleteDiscordChannel(id: string) {
   const supabase = createClient();
-  
-  const { error } = await supabase
-    .from('discord_channels')
-    .delete()
-    .eq('id', id);
+
+  const { error } = await supabase.from("discord_channels").delete().eq("id", id);
 
   if (error) throw error;
 }
@@ -113,29 +112,32 @@ export async function deleteDiscordChannel(id: string) {
 
 export async function getChallenges(userId: string) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('challenges')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .from("challenges")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
   return data || [];
 }
 
-export async function addChallenge(userId: string, challenge: {
-  name: string;
-  description?: string;
-  starting_balance: number;
-  target_balance: number;
-  start_date: string;
-  end_date: string;
-}) {
+export async function addChallenge(
+  userId: string,
+  challenge: {
+    name: string;
+    description?: string;
+    starting_balance: number;
+    target_balance: number;
+    start_date: string;
+    end_date: string;
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('challenges')
+    .from("challenges")
     .insert({
       user_id: userId,
       name: challenge.name,
@@ -154,18 +156,21 @@ export async function addChallenge(userId: string, challenge: {
   return data;
 }
 
-export async function updateChallenge(challengeId: string, updates: {
-  name?: string;
-  description?: string;
-  current_balance?: number;
-  is_active?: boolean;
-}) {
+export async function updateChallenge(
+  challengeId: string,
+  updates: {
+    name?: string;
+    description?: string;
+    current_balance?: number;
+    is_active?: boolean;
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('challenges')
+    .from("challenges")
     .update(updates)
-    .eq('id', challengeId)
+    .eq("id", challengeId)
     .select()
     .single();
 
@@ -175,11 +180,8 @@ export async function updateChallenge(challengeId: string, updates: {
 
 export async function deleteChallenge(id: string) {
   const supabase = createClient();
-  
-  const { error } = await supabase
-    .from('challenges')
-    .delete()
-    .eq('id', id);
+
+  const { error } = await supabase.from("challenges").delete().eq("id", id);
 
   if (error) throw error;
 }
@@ -190,21 +192,21 @@ export async function deleteChallenge(id: string) {
 
 export async function getWatchlist(userId: string) {
   // Test-mode: return a seeded watchlist without hitting Supabase
-  const isAutomated = typeof navigator !== 'undefined' && (navigator as any)?.webdriver === true;
-  if ((import.meta as any)?.env?.VITE_TEST_FAKE_DB === 'true' || isAutomated) {
+  const isAutomated = typeof navigator !== "undefined" && (navigator as any)?.webdriver === true;
+  if ((import.meta as any)?.env?.VITE_TEST_FAKE_DB === "true" || isAutomated) {
     return [
-      { id: 'wl-1', user_id: userId, symbol: 'QQQ', added_at: new Date().toISOString() },
-      { id: 'wl-2', user_id: userId, symbol: 'SPY', added_at: new Date().toISOString() },
-      { id: 'wl-3', user_id: userId, symbol: 'AAPL', added_at: new Date().toISOString() },
+      { id: "wl-1", user_id: userId, symbol: "QQQ", added_at: new Date().toISOString() },
+      { id: "wl-2", user_id: userId, symbol: "SPY", added_at: new Date().toISOString() },
+      { id: "wl-3", user_id: userId, symbol: "AAPL", added_at: new Date().toISOString() },
     ];
   }
 
   const supabase = createClient();
   const { data, error } = await supabase
-    .from('watchlist')
-    .select('*')
-    .eq('user_id', userId)
-    .order('added_at', { ascending: true });
+    .from("watchlist")
+    .select("*")
+    .eq("user_id", userId)
+    .order("added_at", { ascending: true });
 
   if (error) throw error;
   return data || [];
@@ -214,7 +216,7 @@ export async function addToWatchlist(userId: string, symbol: string) {
   const supabase = createClient();
 
   // Normalize
-  const norm = (symbol || '').trim().toUpperCase();
+  const norm = (symbol || "").trim().toUpperCase();
 
   try {
     // Pre-check to avoid duplicate insert errors if state is stale
@@ -223,30 +225,33 @@ export async function addToWatchlist(userId: string, symbol: string) {
     // Try symbol column first
     {
       const { data, error } = await supabase
-        .from('watchlist')
-        .select('id, symbol')
-        .eq('user_id', userId)
-        .eq('symbol', norm);
+        .from("watchlist")
+        .select("id, symbol")
+        .eq("user_id", userId)
+        .eq("symbol", norm);
       existing = data as any[] | null;
       preErr = error;
     }
     // Fallback to legacy 'ticker' column if 'symbol' is missing
-    if (preErr && (preErr.code === '42703' || preErr.code === 'PGRST204' || /symbol/.test(preErr.message || ''))) {
-      console.warn('[v0] addToWatchlist: falling back to legacy ticker column for pre-check');
+    if (
+      preErr &&
+      (preErr.code === "42703" || preErr.code === "PGRST204" || /symbol/.test(preErr.message || ""))
+    ) {
+      console.warn("[v0] addToWatchlist: falling back to legacy ticker column for pre-check");
       const { data, error } = await supabase
-        .from('watchlist')
-        .select('id, ticker')
-        .eq('user_id', userId)
-        .eq('ticker', norm);
+        .from("watchlist")
+        .select("id, ticker")
+        .eq("user_id", userId)
+        .eq("ticker", norm);
       existing = data as any[] | null;
       preErr = error;
     }
 
     if (preErr) {
-      console.error('[v0] addToWatchlist pre-check error:', preErr);
+      console.error("[v0] addToWatchlist pre-check error:", preErr);
       // continue to attempt insert
     } else if (Array.isArray(existing) && existing.length > 0) {
-      console.log('[v0] addToWatchlist: symbol already exists, returning existing row');
+      console.log("[v0] addToWatchlist: symbol already exists, returning existing row");
       return existing[0];
     }
 
@@ -255,7 +260,7 @@ export async function addToWatchlist(userId: string, symbol: string) {
     let insertErr: any = null;
     {
       const { data, error } = await supabase
-        .from('watchlist')
+        .from("watchlist")
         .insert({
           user_id: userId,
           symbol: norm,
@@ -266,10 +271,15 @@ export async function addToWatchlist(userId: string, symbol: string) {
       insertErr = error;
     }
 
-    if (insertErr && (insertErr.code === '42703' || insertErr.code === 'PGRST204' || /symbol/.test(insertErr.message || ''))) {
-      console.warn('[v0] addToWatchlist: falling back to legacy ticker column for insert');
+    if (
+      insertErr &&
+      (insertErr.code === "42703" ||
+        insertErr.code === "PGRST204" ||
+        /symbol/.test(insertErr.message || ""))
+    ) {
+      console.warn("[v0] addToWatchlist: falling back to legacy ticker column for insert");
       const { data, error } = await supabase
-        .from('watchlist')
+        .from("watchlist")
         .insert({
           user_id: userId,
           ticker: norm,
@@ -281,7 +291,7 @@ export async function addToWatchlist(userId: string, symbol: string) {
     }
 
     if (insertErr) {
-      console.error('[v0] addToWatchlist insert error:', {
+      console.error("[v0] addToWatchlist insert error:", {
         message: (insertErr as any)?.message,
         code: (insertErr as any)?.code,
         details: (insertErr as any)?.details,
@@ -291,18 +301,15 @@ export async function addToWatchlist(userId: string, symbol: string) {
     }
     return insertData;
   } catch (err: any) {
-    console.error('[v0] addToWatchlist caught error:', err?.message || err);
+    console.error("[v0] addToWatchlist caught error:", err?.message || err);
     throw err;
   }
 }
 
 export async function removeFromWatchlist(id: string) {
   const supabase = createClient();
-  
-  const { error } = await supabase
-    .from('watchlist')
-    .delete()
-    .eq('id', id);
+
+  const { error } = await supabase.from("watchlist").delete().eq("id", id);
 
   if (error) throw error;
 }
@@ -314,37 +321,37 @@ export async function removeFromWatchlist(id: string) {
 export async function getTrades(userId: string, status?: string) {
   const supabase = createClient();
 
-  // Fetch trades with their discord channel and challenge relationships
-  let query = supabase
-    .from('trades')
-    .select('*, trade_updates(*), trades_discord_channels(discord_channel_id), trades_challenges(challenge_id)')
-    .eq('user_id', userId);
+  let query = supabase.from("trades").select("*, trade_updates(*)").eq("user_id", userId);
 
   if (status) {
-    query = query.eq('status', status);
+    query = query.eq("status", status);
   }
 
-  const { data, error } = await query.order('created_at', { ascending: false });
+  const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) throw error;
   return data || [];
 }
 
-export async function createTrade(userId: string, trade: {
-  ticker: string;
-  contract_type: 'call' | 'put';
-  strike: number;
-  expiration: string;
-  quantity: number;
-  entry_price?: number;
-  status?: string;
-  notes?: string;
-  challenge_id?: string;
-}) {
+export async function createTrade(
+  userId: string,
+  trade: {
+    ticker: string;
+    contract_type: "call" | "put";
+    strike: number;
+    expiration: string;
+    quantity: number;
+    entry_price?: number;
+    status?: string;
+    notes?: string;
+    challenge_id?: string;
+    contract?: any; // Full contract object to persist
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('trades')
+    .from("trades")
     .insert({
       user_id: userId,
       ticker: trade.ticker,
@@ -353,9 +360,10 @@ export async function createTrade(userId: string, trade: {
       expiration: trade.expiration,
       quantity: trade.quantity,
       entry_price: trade.entry_price,
-      status: trade.status || 'watching',
+      status: trade.status || "watching",
       notes: trade.notes,
       challenge_id: trade.challenge_id,
+      contract: trade.contract || null, // Store full contract as JSONB
     })
     .select()
     .single();
@@ -364,28 +372,31 @@ export async function createTrade(userId: string, trade: {
   return data;
 }
 
-export async function updateTrade(id: string, updates: {
-  status?: string;
-  quantity?: number;
-  entry_price?: number;
-  exit_price?: number;
-  entry_time?: string;
-  exit_time?: string;
-  pnl?: number;
-  pnl_percent?: number;
-  notes?: string;
-  target_price?: number;
-  stop_loss?: number;
-  current_price?: number;
-  move_percent?: number;
-  state?: string;
-}) {
+export async function updateTrade(
+  id: string,
+  updates: {
+    status?: string;
+    quantity?: number;
+    entry_price?: number;
+    exit_price?: number;
+    entry_time?: string;
+    exit_time?: string;
+    pnl?: number;
+    pnl_percent?: number;
+    notes?: string;
+    target_price?: number;
+    stop_loss?: number;
+    current_price?: number;
+    move_percent?: number;
+    state?: string;
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('trades')
+    .from("trades")
     .update(updates)
-    .eq('id', id)
+    .eq("id", id)
     .select()
     .single();
 
@@ -395,11 +406,8 @@ export async function updateTrade(id: string, updates: {
 
 export async function deleteTrade(id: string) {
   const supabase = createClient();
-  
-  const { error } = await supabase
-    .from('trades')
-    .delete()
-    .eq('id', id);
+
+  const { error } = await supabase.from("trades").delete().eq("id", id);
 
   if (error) throw error;
 }
@@ -408,16 +416,20 @@ export async function deleteTrade(id: string) {
 // TRADE UPDATES
 // ============================================================================
 
-export async function addTradeUpdate(tradeId: string, userId: string, update: {
-  action: string;
-  quantity?: number;
-  price?: number;
-  notes?: string;
-}) {
+export async function addTradeUpdate(
+  tradeId: string,
+  userId: string,
+  update: {
+    action: string;
+    quantity?: number;
+    price?: number;
+    notes?: string;
+  }
+) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('trade_updates')
+    .from("trade_updates")
     .insert({
       trade_id: tradeId,
       user_id: userId,
@@ -435,12 +447,12 @@ export async function addTradeUpdate(tradeId: string, userId: string, update: {
 
 export async function getTradeUpdates(tradeId: string) {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
-    .from('trade_updates')
-    .select('*')
-    .eq('trade_id', tradeId)
-    .order('created_at', { ascending: true });
+    .from("trade_updates")
+    .select("*")
+    .eq("trade_id", tradeId)
+    .order("created_at", { ascending: true });
 
   if (error) throw error;
   return data || [];
