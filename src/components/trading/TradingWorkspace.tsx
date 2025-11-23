@@ -185,10 +185,40 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           />
         </div>
       )}
-      {/* Loaded State: Two-column layout with options chain + contract details */}
-      {tradeState === "LOADED" && currentTrade && activeTicker && (
+      {/* Two-column layout: Show for WATCHING (symbol selected) and LOADED states */}
+      {(tradeState === "WATCHING" || tradeState === "LOADED") && activeTicker && (
         <HDLoadedLayout
-          trade={currentTrade}
+          trade={
+            currentTrade || {
+              id: "",
+              userId: "",
+              ticker: activeTicker.symbol,
+              tradeType: "Day",
+              state: "WATCHING",
+              contract: contracts[0] || {
+                id: "",
+                symbol: activeTicker.symbol,
+                type: "C",
+                strike: 0,
+                expiry: new Date().toISOString(),
+                bid: 0,
+                ask: 0,
+                mid: currentPrice,
+                volume: 0,
+                openInterest: 0,
+                impliedVolatility: 0,
+                daysToExpiry: 0,
+              },
+              entryPrice: undefined,
+              targetPrice: undefined,
+              stopLoss: undefined,
+              discordChannels: [],
+              challenges: [],
+              updates: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            }
+          }
           contracts={contracts}
           currentPrice={currentPrice}
           ticker={activeTicker.symbol}
@@ -199,22 +229,6 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           onDiscard={onDiscard}
           compositeSignals={compositeSignals}
         />
-      )}
-      {tradeState === "WATCHING" && activeTicker && (
-        <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">
-          {contracts.length > 0 ? (
-            <HDContractGrid
-              contracts={contracts}
-              currentPrice={currentPrice}
-              ticker={activeTicker.symbol}
-              onContractSelect={(c) => onContractSelect(c, confluence)}
-            />
-          ) : (
-            <div className="flex items-center justify-center p-8 text-gray-400 text-sm">
-              Loading contracts for {activeTicker.symbol}...
-            </div>
-          )}
-        </div>
       )}
       {!currentTrade && !activeTicker && (
         <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
