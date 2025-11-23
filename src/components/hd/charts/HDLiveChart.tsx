@@ -7,6 +7,7 @@ import {
   CandlestickData,
   LineData,
 } from "lightweight-charts";
+import { massive } from "../../../lib/massive";
 import {
   MassiveError,
   getIndexBars,
