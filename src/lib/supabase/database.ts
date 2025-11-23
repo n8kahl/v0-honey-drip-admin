@@ -313,10 +313,16 @@ export async function removeFromWatchlist(id: string) {
 
 export async function getTrades(userId: string, status?: string) {
   const supabase = createClient();
-  
+
+  // Fetch trades with their discord channel and challenge relationships
   let query = supabase
     .from('trades')
-    .select('*, trade_updates(*)')
+    .select(`
+      *,
+      trade_updates(*),
+      trades_discord_channels(discord_channel_id),
+      trades_challenges(challenge_id)
+    `)
     .eq('user_id', userId);
 
   if (status) {

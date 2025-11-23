@@ -108,6 +108,17 @@ export const useTradeStore = create<TradeStore>()(
         set({ isLoading: true, error: null });
         try {
           const newTrade = await dbCreateTrade(userId, tradeData as any);
+
+          // Ensure arrays are always initialized properly
+          const discordChannels = Array.isArray(newTrade.discordChannels)
+            ? newTrade.discordChannels
+            : [];
+          const challenges = Array.isArray(newTrade.challenges)
+            ? newTrade.challenges
+            : newTrade.challenge_id
+              ? [newTrade.challenge_id]
+              : [];
+
           const mappedTrade: Trade = {
             id: newTrade.id,
             ticker: newTrade.ticker,
@@ -129,8 +140,8 @@ export const useTradeStore = create<TradeStore>()(
             state: mapStatusToState(newTrade.status),
             tradeType: "Day" as TradeType,
             updates: [],
-            discordChannels: [],
-            challenges: newTrade.challenge_id ? [newTrade.challenge_id] : [],
+            discordChannels,
+            challenges,
           };
 
           set((state) => ({
@@ -188,35 +199,53 @@ export const useTradeStore = create<TradeStore>()(
         set({ isLoading: true, error: null });
         try {
           const tradesData = await getTrades(userId);
-          const mappedTrades: Trade[] = tradesData.map((t) => ({
-            id: t.id,
-            ticker: t.ticker,
-            contract: {
-              id: `${t.ticker}-${t.strike}-${t.expiration}`,
-              strike: parseFloat(t.strike),
-              expiry: t.expiration,
-              expiryDate: new Date(t.expiration),
-              daysToExpiry: Math.ceil(
-                (new Date(t.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-              ),
-              type: (t.contract_type === "call" ? "C" : "P") as OptionType,
-              mid: 0,
-              bid: 0,
-              ask: 0,
-              volume: 0,
-              openInterest: 0,
-            },
-            entryPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
-            exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
-            entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
-            exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
-            currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
-            state: mapStatusToState(t.status),
-            updates: t.trade_updates || [],
-            tradeType: "Day" as TradeType,
-            discordChannels: [],
-            challenges: t.challenge_id ? [t.challenge_id] : [],
-          }));
+          const mappedTrades: Trade[] = tradesData.map((t) => {
+            // Extract discord channel IDs from junction table data
+            const discordChannelIds = Array.isArray(t.trades_discord_channels)
+              ? t.trades_discord_channels
+                  .map((tdc: any) => tdc?.discord_channel_id)
+                  .filter((id): id is string => typeof id === 'string')
+              : [];
+
+            // Extract challenge IDs from junction table data
+            const challengeIds = Array.isArray(t.trades_challenges)
+              ? t.trades_challenges
+                  .map((tc: any) => tc?.challenge_id)
+                  .filter((id): id is string => typeof id === 'string')
+              : t.challenge_id
+                ? [t.challenge_id]
+                : [];
+
+            return {
+              id: t.id,
+              ticker: t.ticker,
+              contract: {
+                id: `${t.ticker}-${t.strike}-${t.expiration}`,
+                strike: parseFloat(t.strike),
+                expiry: t.expiration,
+                expiryDate: new Date(t.expiration),
+                daysToExpiry: Math.ceil(
+                  (new Date(t.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                ),
+                type: (t.contract_type === "call" ? "C" : "P") as OptionType,
+                mid: 0,
+                bid: 0,
+                ask: 0,
+                volume: 0,
+                openInterest: 0,
+              },
+              entryPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
+              entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
+              exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
+              currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              state: mapStatusToState(t.status),
+              updates: t.trade_updates || [],
+              tradeType: "Day" as TradeType,
+              discordChannels: discordChannelIds,
+              challenges: challengeIds,
+            };
+          });
 
           const active = mappedTrades.filter((t) => t.state !== "EXITED");
           const history = mappedTrades.filter((t) => t.state === "EXITED");
