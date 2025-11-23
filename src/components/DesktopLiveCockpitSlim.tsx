@@ -19,6 +19,15 @@ import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import { Contract, OptionType } from "../types";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
 
+// Default confluence object to prevent undefined errors in child components
+const DEFAULT_CONFLUENCE = {
+  loading: false,
+  error: undefined,
+  trend: undefined,
+  volatility: undefined,
+  liquidity: undefined,
+};
+
 interface DesktopLiveCockpitSlimProps {
   watchlist: Ticker[];
   hotTrades: Trade[];
@@ -244,7 +253,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 currentTrade={currentTrade}
                 tradeState={tradeState}
                 showAlert={showAlert}
-                confluence={undefined}
+                confluence={DEFAULT_CONFLUENCE}
                 alertType={alertType}
                 onContractSelect={(contract, confluenceData) =>
                   actions.handleContractSelect(contract, confluenceData)
@@ -294,7 +303,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           ticker={activeTicker?.symbol}
           state={tradeState}
           hideWhenAlert={showAlert}
-          confluence={undefined}
+          confluence={DEFAULT_CONFLUENCE}
           onEnter={actions.handleEnterTrade}
           onDiscard={actions.handleDiscard}
           onAction={(type) => {

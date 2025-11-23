@@ -769,9 +769,11 @@ router.get("/quotes", requireProxyToken, async (req, res) => {
       const items: any[] = Array.isArray(idxSnap?.results) ? idxSnap.results : [];
       for (const it of items) {
         const symbol = it.ticker || it.symbol || "";
+        // Try multiple field names for the current price (indices API returns value, stocks use different fields)
+        const last = Number(it.value ?? it.last ?? it.price ?? it.close ?? 0);
         results.push({
           symbol: symbol,
-          last: Number(it.value) || 0,
+          last,
           change: Number(it.session?.change || 0),
           changePercent: Number(it.session?.change_percent || 0),
           asOf: Date.now(),
