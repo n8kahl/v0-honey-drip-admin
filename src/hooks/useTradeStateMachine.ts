@@ -17,6 +17,8 @@ import {
 import { adjustProfileByConfluence } from "../lib/riskEngine/confluenceAdjustment";
 import { useAppToast } from "./useAppToast";
 import { useAuth } from "../contexts/AuthContext";
+import { useDiscord } from "./useDiscord";
+import { useSettingsStore } from "../stores/settingsStore";
 import {
   createTradeApi,
   updateTradeApi,
@@ -96,6 +98,7 @@ export function useTradeStateMachine({
   confluence,
 }: UseTradeStateMachineProps): TradeStateMachineState & { actions: TradeStateMachineActions } {
   const toast = useAppToast();
+  const discord = useDiscord();
   const auth = useAuth();
   const userId = auth?.user?.id;
 
@@ -157,6 +160,37 @@ export function useTradeStateMachine({
         price,
         message,
       };
+    },
+    []
+  );
+
+  const getDiscordChannelsForAlert = useCallback(
+    (channelIds: string[], challengeIds: string[]): DiscordChannel[] => {
+      const settingsStore = useSettingsStore.getState();
+      const channels: DiscordChannel[] = [];
+
+      // Add user-selected channels
+      channelIds.forEach((id) => {
+        const channel = settingsStore.getChannelById(id);
+        if (channel) {
+          channels.push(channel);
+        }
+      });
+
+      // Add channels from linked challenges
+      challengeIds.forEach((challengeId) => {
+        const challenge = settingsStore.getChallengeById(challengeId);
+        if (challenge?.defaultChannel) {
+          const channel = settingsStore.discordChannels.find(
+            (ch) => ch.name === challenge.defaultChannel
+          );
+          if (channel && !channels.some((c) => c.id === channel.id)) {
+            channels.push(channel);
+          }
+        }
+      });
+
+      return channels;
     },
     []
   );
@@ -374,6 +408,24 @@ export function useTradeStateMachine({
               description: "You may need to re-link them.",
             } as any);
           }
+
+          // Send Discord LOAD alert
+          const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
+          const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+
+          if (discordAlertsEnabled && channels.length > 0) {
+            try {
+              await discord.sendLoadAlert(channels, updatedTrade);
+              console.log("[Discord] LOAD alert sent successfully");
+            } catch (error) {
+              console.error("[Discord] Failed to send LOAD alert:", error);
+              toast.error("Discord alert failed", {
+                description: "Check console for details",
+              } as any);
+            }
+          }
+
+          showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
         } catch (error) {
           console.error("[v0] Failed to create loaded trade in database:", error);
           toast.error("Failed to load trade", {
@@ -502,6 +554,14 @@ export function useTradeStateMachine({
       // Callback for exited trades
       if (newTrade.state === "EXITED" && onExitedTrade) {
         onExitedTrade(newTrade);
+
+        // Clear currentTrade and remove from activeTrades after exit
+        // Use setTimeout to ensure callback completes first
+        setTimeout(() => {
+          setCurrentTrade(null);
+          setTradeState("WATCHING");
+          setActiveTrades((prev) => prev.filter((t) => t.id !== newTrade.id));
+        }, 100);
       }
 
       // Persist to database
@@ -564,6 +624,70 @@ export function useTradeStateMachine({
 
         if (persistencePromises.length > 0) {
           await Promise.all(persistencePromises);
+        }
+
+        // Send Discord alerts
+        const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
+        const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+
+        if (discordAlertsEnabled && channels.length > 0) {
+          try {
+            switch (alertType) {
+              case "enter":
+                await discord.sendEntryAlert(channels, newTrade, comment);
+                console.log("[Discord] ENTER alert sent successfully");
+                break;
+              case "trim":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  "trim",
+                  comment || "Position trimmed"
+                );
+                console.log("[Discord] TRIM alert sent successfully");
+                break;
+              case "update":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  alertOptions.updateKind === "sl" ? "update-sl" : "generic",
+                  comment || "Position updated"
+                );
+                console.log("[Discord] UPDATE alert sent successfully");
+                break;
+              case "update-sl":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  "update-sl",
+                  comment || "Stop loss updated"
+                );
+                console.log("[Discord] UPDATE-SL alert sent successfully");
+                break;
+              case "trail-stop":
+                await discord.sendTrailingStopAlert(channels, newTrade);
+                console.log("[Discord] TRAIL-STOP alert sent successfully");
+                break;
+              case "add":
+                await discord.sendUpdateAlert(
+                  channels,
+                  newTrade,
+                  "generic",
+                  comment || "Added to position"
+                );
+                console.log("[Discord] ADD alert sent successfully");
+                break;
+              case "exit":
+                await discord.sendExitAlert(channels, newTrade, comment);
+                console.log("[Discord] EXIT alert sent successfully");
+                break;
+            }
+          } catch (error) {
+            console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
+            toast.error("Discord alert failed", {
+              description: "Check console for details",
+            } as any);
+          }
         }
 
         showAlertToast(alertType, newTrade.ticker, selectedChannels as DiscordChannel[]);
@@ -701,10 +825,137 @@ export function useTradeStateMachine({
   );
 
   const handleEnterAndAlert = useCallback(
-    (channelIds: string[], challengeIds: string[], comment?: string, entryPrice?: number) => {
-      handleEnterTrade(channelIds, challengeIds, comment, entryPrice);
+    async (channelIds: string[], challengeIds: string[], comment?: string, entryPrice?: number) => {
+      if (!currentTrade) return;
+
+      const finalEntryPrice = entryPrice || currentTrade.contract.mid;
+
+      // Recalculate TP/SL with actual entry price
+      let targetPrice = finalEntryPrice * 1.5;
+      let stopLoss = finalEntryPrice * 0.5;
+
+      try {
+        const tradeType = inferTradeTypeByDTE(
+          currentTrade.contract.expiry,
+          new Date(),
+          DEFAULT_DTE_THRESHOLDS
+        );
+
+        const risk = calculateRisk({
+          entryPrice: finalEntryPrice,
+          currentUnderlyingPrice: finalEntryPrice,
+          currentOptionMid: finalEntryPrice,
+          keyLevels: {
+            preMarketHigh: 0,
+            preMarketLow: 0,
+            orbHigh: 0,
+            orbLow: 0,
+            priorDayHigh: 0,
+            priorDayLow: 0,
+            vwap: 0,
+            vwapUpperBand: 0,
+            vwapLowerBand: 0,
+            bollingerUpper: 0,
+            bollingerLower: 0,
+            weeklyHigh: 0,
+            weeklyLow: 0,
+            monthlyHigh: 0,
+            monthlyLow: 0,
+            quarterlyHigh: 0,
+            quarterlyLow: 0,
+            yearlyHigh: 0,
+            yearlyLow: 0,
+          },
+          expirationISO: currentTrade.contract.expiry,
+          tradeType,
+          delta: currentTrade.contract.delta ?? 0.5,
+          gamma: currentTrade.contract.gamma ?? 0,
+          defaults: {
+            mode: "percent",
+            tpPercent: 50,
+            slPercent: 50,
+            dteThresholds: DEFAULT_DTE_THRESHOLDS,
+          },
+        });
+
+        if (risk.targetPrice) targetPrice = risk.targetPrice;
+        if (risk.stopLoss) stopLoss = risk.stopLoss;
+      } catch (error) {
+        console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
+      }
+
+      const enteredTrade: Trade = {
+        ...currentTrade,
+        state: "ENTERED",
+        entryPrice: finalEntryPrice,
+        currentPrice: finalEntryPrice,
+        targetPrice,
+        stopLoss,
+        movePercent: 0,
+        discordChannels: channelIds || [],
+        challenges: challengeIds || [],
+        updates: [
+          ...(currentTrade.updates || []),
+          {
+            id: crypto.randomUUID(),
+            type: "enter",
+            timestamp: new Date(),
+            price: finalEntryPrice,
+            message: comment || "",
+          },
+        ],
+      };
+
+      // Update local state
+      setActiveTrades((prev) => {
+        const existing = prev.find((t) => t.id === currentTrade.id);
+        if (existing) {
+          return prev.map((t) => (t.id === currentTrade.id ? enteredTrade : t));
+        } else {
+          return [...prev, enteredTrade];
+        }
+      });
+      setCurrentTrade(enteredTrade);
+      setTradeState("ENTERED");
+      setShowAlert(false);
+
+      // Send Discord alerts
+      const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
+      const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
+
+      if (discordAlertsEnabled && channels.length > 0) {
+        try {
+          await discord.sendEntryAlert(channels, enteredTrade, comment);
+          console.log("[Discord] ENTER alert sent successfully");
+        } catch (error) {
+          console.error("[Discord] Failed to send ENTER alert:", error);
+          toast.error("Discord alert failed", {
+            description: "Check console for details",
+          } as any);
+        }
+      }
+
+      // Mobile UX: navigate to active tab
+      if (isMobile && onMobileTabChange) {
+        onMobileTabChange("active");
+      }
+
+      // Show success toast
+      showAlertToast("enter", enteredTrade.ticker, channels);
     },
-    [handleEnterTrade]
+    [
+      currentTrade,
+      discord,
+      getDiscordChannelsForAlert,
+      setActiveTrades,
+      setCurrentTrade,
+      setTradeState,
+      setShowAlert,
+      showAlertToast,
+      toast,
+      isMobile,
+      onMobileTabChange,
+    ]
   );
 
   const handleCancelAlert = useCallback(() => {
