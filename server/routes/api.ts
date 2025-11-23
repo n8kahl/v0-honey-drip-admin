@@ -142,7 +142,7 @@ async function storeHistoricalBars(
 
     const { error } = await supabase
       .from('historical_bars')
-      .upsert(rows, {
+      .upsert(rows as any, {
         onConflict: 'symbol,timeframe,timestamp',
         ignoreDuplicates: true,
       });
