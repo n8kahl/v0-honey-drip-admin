@@ -349,7 +349,8 @@ export function useTradeStateMachine({
         setTradeState("LOADED");
         setShowAlert(false);
         setContracts([]);
-        setActiveTicker(null);
+        // IMPORTANT: Do NOT clear activeTicker for load alerts - middle column needs it to display the chart
+        // setActiveTicker(null);
 
         // Persist to database
         try {

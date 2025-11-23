@@ -3,6 +3,7 @@ import { HDRowWatchlist } from "../cards/HDRowWatchlist";
 import { HDRowLoadedTrade } from "../cards/HDRowLoadedTrade";
 import { HDMacroPanel } from "../dashboard/HDMacroPanel";
 import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
+import { HDTagTradeType } from "../common/HDTagTradeType";
 import { HDDialogEditChallenge } from "../forms/HDDialogEditChallenge";
 import { HDChallengeDetailSheet } from "../forms/HDChallengeDetailSheet";
 import { HDChallengeShare } from "../forms/HDChallengeShare";
