@@ -12,7 +12,7 @@ vi.mock("../massive", () => ({
   },
 }));
 
-import { massive } from "../massive/index.js";
+import { massive } from "../massive";
 
 describe("VIX Classifier", () => {
   beforeEach(() => {
