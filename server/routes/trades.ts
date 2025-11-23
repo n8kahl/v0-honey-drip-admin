@@ -432,7 +432,13 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
 
       // Handle foreign key constraint (channel doesn't exist)
       if (error.message.includes("foreign key") || error.message.includes("violates")) {
-        return res.status(400).json({ error: "Discord channel not found or invalid" });
+        console.warn(
+          `[Trades API] Channel ${channelId} does not exist or trade ${tradeId} not found`
+        );
+        return res.status(400).json({
+          error: "Discord channel not found or invalid",
+          details: `Channel ID ${channelId} does not exist in database`,
+        });
       }
 
       // Handle duplicate (idempotent)
@@ -442,6 +448,7 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       }
 
       // Other errors
+      console.error("[Trades API] Unexpected error:", error.message);
       return res.status(500).json({ error: "Failed to link channel", details: error.message });
     }
 
@@ -530,7 +537,13 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
 
       // Handle foreign key constraint (challenge doesn't exist)
       if (error.message.includes("foreign key") || error.message.includes("violates")) {
-        return res.status(400).json({ error: "Challenge not found or invalid" });
+        console.warn(
+          `[Trades API] Challenge ${challengeId} does not exist or trade ${tradeId} not found`
+        );
+        return res.status(400).json({
+          error: "Challenge not found or invalid",
+          details: `Challenge ID ${challengeId} does not exist in database`,
+        });
       }
 
       // Handle duplicate (idempotent)
@@ -540,6 +553,7 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       }
 
       // Other errors
+      console.error("[Trades API] Unexpected error:", error.message);
       return res.status(500).json({ error: "Failed to link challenge", details: error.message });
     }
 

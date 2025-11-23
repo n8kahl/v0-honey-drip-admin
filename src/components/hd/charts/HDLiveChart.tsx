@@ -397,8 +397,8 @@ export function HDLiveChart({
           }
 
           if (deduplicated.length < parsed.length) {
-            console.warn(
-              `[HDLiveChart] Removed ${parsed.length - deduplicated.length} duplicate timestamps for ${ticker}`
+            console.debug(
+              `[HDLiveChart] Deduped ${parsed.length - deduplicated.length}/${parsed.length} bars for ${ticker}`
             );
           }
 

@@ -409,13 +409,14 @@ export function useTradeStateMachine({
             } as any);
           }
 
-          // Send Discord LOAD alert
+          // Send Discord LOAD alert (use local updatedTrade copy to avoid scope issues)
+          const tradeForAlert = updatedTrade;
           const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
           const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
           if (discordAlertsEnabled && channels.length > 0) {
             try {
-              await discord.sendLoadAlert(channels, updatedTrade);
+              await discord.sendLoadAlert(channels, tradeForAlert);
               console.log("[Discord] LOAD alert sent successfully");
             } catch (error) {
               console.error("[Discord] Failed to send LOAD alert:", error);
