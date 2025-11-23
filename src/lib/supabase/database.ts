@@ -317,12 +317,7 @@ export async function getTrades(userId: string, status?: string) {
   // Fetch trades with their discord channel and challenge relationships
   let query = supabase
     .from('trades')
-    .select(`
-      *,
-      trade_updates(*),
-      trades_discord_channels(discord_channel_id),
-      trades_challenges(challenge_id)
-    `)
+    .select('*, trade_updates(*), trades_discord_channels(discord_channel_id), trades_challenges(challenge_id)')
     .eq('user_id', userId);
 
   if (status) {
