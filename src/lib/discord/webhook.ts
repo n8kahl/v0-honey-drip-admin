@@ -40,16 +40,21 @@ export const DISCORD_COLORS = {
 
 class DiscordWebhookClient {
   private async sendMessageOnce(webhookUrl: string, message: DiscordMessage): Promise<boolean> {
-    const response = await fetch(webhookUrl, {
+    // Call backend proxy instead of Discord directly to avoid CSP violations
+    const response = await fetch("/api/discord/webhook", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(message),
+      body: JSON.stringify({
+        webhookUrl,
+        payload: message,
+      }),
     });
 
     if (!response.ok) {
-      throw new Error(`Discord webhook failed: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(`Discord webhook failed: ${errorData.error || response.statusText}`);
     }
 
     return true;

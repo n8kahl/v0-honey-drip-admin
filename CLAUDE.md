@@ -176,6 +176,8 @@ Stale detection: Show warning if data >5s old
 │   │   └── monitoring/            # Monitoring dashboard
 │   │
 │   ├── lib/                       # Core business logic
+│   │   ├── api/                   # API client functions (Phase 4)
+│   │   │   └── tradeApi.ts        # Trade API with exponential backoff retry
 │   │   ├── massive/               # Massive.com integration
 │   │   │   ├── websocket.ts       # WebSocket client with auto-reconnect
 │   │   │   ├── streaming-manager.ts  # Centralized subscription manager
@@ -219,6 +221,7 @@ Stale detection: Show warning if data >5s old
 │   ├── index.ts                   # Main server entry point
 │   ├── routes/
 │   │   ├── api.ts                 # Main API routes (970+ lines)
+│   │   ├── trades.ts              # Trade persistence API (507 lines, Phase 4)
 │   │   └── strategies.ts          # Strategy routes
 │   ├── ws/                        # WebSocket servers
 │   │   ├── index.ts               # WebSocket setup
@@ -239,6 +242,7 @@ Stale detection: Show warning if data >5s old
 │   ├── 001_create_schema.sql
 │   ├── 002_add_profiles.sql
 │   ├── 006_add_composite_signals.sql  # Phase 5 composite system
+│   ├── 008_add_trade_discord_channels.sql  # Phase 4 trade persistence
 │   └── README.md
 │
 ├── e2e/                           # Playwright E2E tests
@@ -365,6 +369,16 @@ POST /api/ws-token                  // Generate ephemeral WebSocket token (5-min
 GET  /api/quotes?tickers=SPY,SPX,NDX           // Real-time quotes (stocks + indices)
 GET  /api/bars?symbol=SPY&timespan=minute      // Historical bars
 GET  /api/options/chain?symbol=SPX&window=10   // Unified options chain
+
+// Trade Persistence (Phase 4 Implementation)
+POST /api/trades                              // Create trade
+PATCH /api/trades/:tradeId                    // Update trade
+DELETE /api/trades/:tradeId                   // Delete trade
+POST /api/trades/:tradeId/updates             // Record trade action (entry, exit, trim, etc.)
+POST /api/trades/:tradeId/channels/:channelId // Link Discord channel to trade
+DELETE /api/trades/:tradeId/channels/:channelId // Unlink Discord channel
+POST /api/trades/:tradeId/challenges/:challengeId // Link challenge to trade
+DELETE /api/trades/:tradeId/challenges/:challengeId // Unlink challenge
 
 // Massive.com Proxy (requires x-massive-proxy-token header)
 GET  /api/massive/indices/bars
@@ -526,6 +540,40 @@ CREATE TABLE trade_updates (
 ```
 
 **RLS**: Users can only see updates for their trades
+
+#### `trades_discord_channels` (Phase 4 - Trade Persistence)
+
+```sql
+CREATE TABLE trades_discord_channels (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  discord_channel_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(trade_id, discord_channel_id)
+);
+
+CREATE INDEX idx_trades_discord_channels_trade_id ON trades_discord_channels(trade_id);
+```
+
+**Purpose**: Many-to-many relationship between trades and Discord channels
+**RLS**: Users can only view/edit links on their own trades
+
+#### `trades_challenges` (Phase 4 - Trade Persistence)
+
+```sql
+CREATE TABLE trades_challenges (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  challenge_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(trade_id, challenge_id)
+);
+
+CREATE INDEX idx_trades_challenges_trade_id ON trades_challenges(trade_id);
+```
+
+**Purpose**: Many-to-many relationship between trades and challenges
+**RLS**: Users can only view/edit links on their own trades
 
 #### `composite_signals` (Phase 5+)
 

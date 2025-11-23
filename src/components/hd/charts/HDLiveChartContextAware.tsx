@@ -87,35 +87,41 @@ export function HDLiveChartContextAware({
   }, [mode, chartHeight]);
 
   return (
-    <div className={`flex flex-col gap-0 ${className}`}>
+    <div
+      className={`flex ${mode === "LOADED" && config.dualTimeframeView ? "flex-row gap-2" : "flex-col gap-0"} ${className}`}
+    >
       {/* Main Chart */}
-      <HDLiveChart
-        ticker={ticker}
-        initialTimeframe={timeframe}
-        indicators={indicatorConfig}
-        events={mode === "ENTERED" ? [] : []} // Events handled by TradingWorkspace
-        levels={config.showKeyLevels ? levels : []}
-        height={finalChartHeight}
-        className="flex-shrink-0"
-        showControls={mode !== "ENTERED"} // Hide controls in trading mode
-      />
+      <div className={mode === "LOADED" && config.dualTimeframeView ? "flex-1 min-w-0" : "w-full"}>
+        <HDLiveChart
+          ticker={ticker}
+          initialTimeframe={timeframe}
+          indicators={indicatorConfig}
+          events={mode === "ENTERED" ? [] : []} // Events handled by TradingWorkspace
+          levels={config.showKeyLevels ? levels : []}
+          height={finalChartHeight}
+          className="flex-shrink-0"
+          showControls={mode !== "ENTERED"} // Hide controls in trading mode
+        />
+      </div>
 
       {/* Dual Timeframe View in LOADED mode - 5m for context/trend */}
       {mode === "LOADED" && config.dualTimeframeView && (
-        <div className="border-t border-gray-700">
-          <div className="text-xs text-gray-500 px-3 py-1 bg-gray-900/50">
-            5-minute view for context and trend
+        <div className="flex-1 min-w-0 border-l border-gray-700 relative">
+          <div className="absolute top-0 left-0 right-0 text-xs text-gray-500 px-3 py-1 bg-gray-900/50 z-10">
+            1-minute view for entry precision
           </div>
-          <HDLiveChart
-            ticker={ticker}
-            initialTimeframe="5"
-            indicators={indicatorConfig}
-            events={[]}
-            levels={levels}
-            height={Math.floor(height ? height / 2 : 200) - 10}
-            className="flex-shrink-0"
-            showControls={false}
-          />
+          <div className="pt-7">
+            <HDLiveChart
+              ticker={ticker}
+              initialTimeframe="1"
+              indicators={indicatorConfig}
+              events={[]}
+              levels={levels}
+              height={finalChartHeight}
+              className="flex-shrink-0"
+              showControls={false}
+            />
+          </div>
         </div>
       )}
 

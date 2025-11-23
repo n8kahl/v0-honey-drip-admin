@@ -65,7 +65,8 @@ export default function App() {
   } = useUIStore();
 
   // Settings store
-  const { discordChannels, challenges, loadDiscordChannels, loadChallenges, discordAlertsEnabled } = useSettingsStore();
+  const { discordChannels, challenges, loadDiscordChannels, loadChallenges, discordAlertsEnabled } =
+    useSettingsStore();
 
   // Market session actions
   const { fetchMarketSession } = useMarketSessionActions();
