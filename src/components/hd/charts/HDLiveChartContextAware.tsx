@@ -49,8 +49,8 @@ export function HDLiveChartContextAware({
   // Get optimized config for this mode
   const config = useMemo(() => getChartModeConfig(mode, ticker), [mode, ticker]);
 
-  // Determine safe timeframe
-  const timeframe = getSafeTimeframe("5", mode, config);
+  // Determine safe timeframe (undefined to get mode default)
+  const timeframe = getSafeTimeframe(undefined, mode, config);
 
   // Get current price for P&L calculation
   const currentPrice = useMemo(() => {
@@ -65,7 +65,6 @@ export function HDLiveChartContextAware({
     () => ({
       ema: { periods: config.indicators.ema },
       vwap: { enabled: config.indicators.vwap, bands: false },
-      ...(config.indicators.bollinger && { bollinger: { period: 20, stdDev: 2 } }),
     }),
     [config.indicators]
   );
@@ -101,15 +100,15 @@ export function HDLiveChartContextAware({
         showControls={mode !== "ENTERED"} // Hide controls in trading mode
       />
 
-      {/* Dual Timeframe View in LOADED mode */}
+      {/* Dual Timeframe View in LOADED mode - 5m for context/trend */}
       {mode === "LOADED" && config.dualTimeframeView && (
         <div className="border-t border-gray-700">
           <div className="text-xs text-gray-500 px-3 py-1 bg-gray-900/50">
-            1-minute view for entry precision
+            5-minute view for context and trend
           </div>
           <HDLiveChart
             ticker={ticker}
-            initialTimeframe="1"
+            initialTimeframe="5"
             indicators={indicatorConfig}
             events={[]}
             levels={levels}
