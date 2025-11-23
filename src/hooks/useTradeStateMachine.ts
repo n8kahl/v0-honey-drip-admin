@@ -375,48 +375,16 @@ export function useTradeStateMachine({
           // IMPORTANT: Do NOT clear activeTicker for load alerts - middle column needs it to display the chart
           // setActiveTicker(null);
 
-          // Step 5: Link Discord channels and challenges if provided
-          try {
-            const persistencePromises = [];
+          // Note: Discord channels and challenges are already linked by the createTradeApi call
+          // No need to link them again here
 
-            if (channelIds.length > 0) {
-              persistencePromises.push(
-                linkChannelsApi(userId, dbTrade.id, channelIds).catch((error) => {
-                  console.error("[v0] Failed to link channels:", error);
-                  throw error;
-                })
-              );
-            }
-
-            if (challengeIds.length > 0) {
-              persistencePromises.push(
-                linkChallengesApi(userId, dbTrade.id, challengeIds).catch((error) => {
-                  console.error("[v0] Failed to link challenges:", error);
-                  throw error;
-                })
-              );
-            }
-
-            if (persistencePromises.length > 0) {
-              await Promise.all(persistencePromises);
-            }
-
-            showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
-          } catch (error) {
-            console.error("[v0] Failed to persist load alert channels/challenges:", error);
-            toast.error("Trade loaded but failed to save channels/challenges", {
-              description: "You may need to re-link them.",
-            } as any);
-          }
-
-          // Send Discord LOAD alert (use local updatedTrade copy to avoid scope issues)
-          const tradeForAlert = updatedTrade;
+          // Send Discord LOAD alert
           const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
           const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
           if (discordAlertsEnabled && channels.length > 0) {
             try {
-              await discord.sendLoadAlert(channels, tradeForAlert);
+              await discord.sendLoadAlert(channels, persistedTrade);
               console.log("[Discord] LOAD alert sent successfully");
             } catch (error) {
               console.error("[Discord] Failed to send LOAD alert:", error);
@@ -426,7 +394,7 @@ export function useTradeStateMachine({
             }
           }
 
-          showAlertToast("load", currentTrade.ticker, selectedChannels as DiscordChannel[]);
+          showAlertToast("load", persistedTrade.ticker, selectedChannels as DiscordChannel[]);
         } catch (error) {
           console.error("[v0] Failed to create loaded trade in database:", error);
           toast.error("Failed to load trade", {

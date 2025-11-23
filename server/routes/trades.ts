@@ -428,6 +428,12 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       .single();
 
     if (error) {
+      // Handle duplicate key error - this is OK, channel is already linked (code 23505)
+      if (error.code === '23505') {
+        console.log(`[Trades API] Channel ${channelId} already linked to trade ${tradeId} (idempotent - OK)`);
+        return res.status(200).json({ message: "Channel already linked", alreadyLinked: true });
+      }
+
       console.error("[Trades API] Error linking channel:", error);
 
       // Handle foreign key constraint (channel doesn't exist)
@@ -439,12 +445,6 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
           error: "Discord channel not found or invalid",
           details: `Channel ID ${channelId} does not exist in database`,
         });
-      }
-
-      // Handle duplicate (idempotent)
-      if (error.message.includes("duplicate")) {
-        console.log(`[Trades API] Channel already linked (idempotent)`);
-        return res.status(200).json({ message: "Channel already linked" });
       }
 
       // Other errors
@@ -533,6 +533,12 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       .single();
 
     if (error) {
+      // Handle duplicate key error - this is OK, challenge is already linked (code 23505)
+      if (error.code === '23505') {
+        console.log(`[Trades API] Challenge ${challengeId} already linked to trade ${tradeId} (idempotent - OK)`);
+        return res.status(200).json({ message: "Challenge already linked", alreadyLinked: true });
+      }
+
       console.error("[Trades API] Error linking challenge:", error);
 
       // Handle foreign key constraint (challenge doesn't exist)
@@ -544,12 +550,6 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
           error: "Challenge not found or invalid",
           details: `Challenge ID ${challengeId} does not exist in database`,
         });
-      }
-
-      // Handle duplicate (idempotent)
-      if (error.message.includes("duplicate")) {
-        console.log(`[Trades API] Challenge already linked (idempotent)`);
-        return res.status(200).json({ message: "Challenge already linked" });
       }
 
       // Other errors
