@@ -103,6 +103,28 @@ export async function updateTradeApi(userId: string, tradeId: string, updates: a
 }
 
 /**
+ * Delete a trade via API
+ */
+export async function deleteTradeApi(userId: string, tradeId: string): Promise<any> {
+  return apiCallWithRetry(async () => {
+    const response = await fetch(`/api/trades/${tradeId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  });
+}
+
+/**
  * Add trade update record via API
  */
 export async function addTradeUpdateApi(
