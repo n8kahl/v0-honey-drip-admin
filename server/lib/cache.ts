@@ -24,9 +24,12 @@ const indexCache = new LRUCache<string, any>({
   ttl: 500, // 500ms for index values
 });
 
+// Smart TTL for bars cache (historical data cached longer)
 const barsCache = new LRUCache<string, any>({
-  max: 300,
-  ttl: 5_000, // 5 seconds for bars
+  max: 500, // Increased from 300 to handle more historical data
+  ttl: 5_000, // Default TTL (overridden per entry)
+  ttlAutopurge: true, // Automatically purge expired entries
+  updateAgeOnGet: false, // Don't reset TTL on read (keep historical data stable)
 });
 
 export function getCachedSnapshot(key: string): any | undefined {
@@ -53,12 +56,68 @@ export function setCachedIndex(key: string, value: any): void {
   indexCache.set(key, value);
 }
 
+/**
+ * Calculate smart TTL based on data recency
+ * - Historical data (>1 day old): 7 days
+ * - Recent data (>1 hour old): 1 hour
+ * - Live data (<1 hour old): 5 seconds
+ */
+function getSmartTTL(timestamp: number): number {
+  const age = Date.now() - timestamp;
+  const oneHour = 60 * 60 * 1000;
+  const oneDay = 24 * oneHour;
+  const sevenDays = 7 * oneDay;
+
+  if (age > oneDay) {
+    // Historical data (>1 day old): cache for 7 days
+    return sevenDays;
+  } else if (age > oneHour) {
+    // Recent data (>1 hour old): cache for 1 hour
+    return oneHour;
+  } else {
+    // Live data (<1 hour old): cache for 5 seconds
+    return 5_000;
+  }
+}
+
+/**
+ * Extract most recent timestamp from bars data
+ */
+function getMostRecentTimestamp(value: any): number {
+  // Handle different response formats
+  if (Array.isArray(value?.bars)) {
+    const bars = value.bars;
+    if (bars.length > 0) {
+      const lastBar = bars[bars.length - 1];
+      return lastBar.timestamp || lastBar.t || Date.now();
+    }
+  } else if (Array.isArray(value?.results)) {
+    const results = value.results;
+    if (results.length > 0) {
+      const lastBar = results[results.length - 1];
+      return lastBar.t || Date.now();
+    }
+  } else if (Array.isArray(value)) {
+    if (value.length > 0) {
+      const lastBar = value[value.length - 1];
+      return lastBar.timestamp || lastBar.t || Date.now();
+    }
+  }
+
+  // Default to current time (live data)
+  return Date.now();
+}
+
 export function getCachedBars(key: string): any | undefined {
   return barsCache.get(key);
 }
 
 export function setCachedBars(key: string, value: any): void {
-  barsCache.set(key, value);
+  // Calculate smart TTL based on most recent timestamp in the data
+  const timestamp = getMostRecentTimestamp(value);
+  const ttl = getSmartTTL(timestamp);
+
+  barsCache.set(key, value, { ttl });
 }
 
 // Generic cache wrapper with exponential backoff
