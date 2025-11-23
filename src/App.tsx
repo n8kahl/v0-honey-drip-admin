@@ -234,8 +234,8 @@ export default function App() {
   const focusTradeInLive = (trade: any) => {
     navigate("/");
     setFocusedTrade(trade);
-    // Clear focus after a brief moment to allow component to react
-    setTimeout(() => setFocusedTrade(null), 100);
+    // Clear focus after component has processed the state change
+    setTimeout(() => setFocusedTrade(null), 300);
   };
 
   const handleExitedTrade = (trade: any) => {
