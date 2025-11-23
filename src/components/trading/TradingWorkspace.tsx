@@ -3,7 +3,7 @@ import { Ticker, Contract, Trade, TradeState, AlertType } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
 import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
-import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
+import { HDLoadedLayout } from "./HDLoadedLayout";
 import { HDEnteredTradeCard } from "../hd/cards/HDEnteredTradeCard";
 import { HDPanelFocusedTrade } from "../hd/dashboard/HDPanelFocusedTrade";
 import { HDPriceSparkline } from "../hd/charts/HDPriceSparkline";
@@ -185,19 +185,20 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           />
         </div>
       )}
-      {/* Loaded Trade Card with details */}
-      {tradeState === "LOADED" && currentTrade && (
-        <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
-          <HDLoadedTradeCard
-            trade={currentTrade}
-            onEnter={onEnterTrade}
-            onDiscard={onDiscard}
-            underlyingPrice={activeTicker?.last}
-            underlyingChange={activeTicker?.changePercent}
-            confluence={confluence}
-            signals={compositeSignals?.filter((s) => s.symbol === currentTrade.ticker)}
-          />
-        </div>
+      {/* Loaded State: Two-column layout with options chain + contract details */}
+      {tradeState === "LOADED" && currentTrade && activeTicker && (
+        <HDLoadedLayout
+          trade={currentTrade}
+          contracts={contracts}
+          currentPrice={currentPrice}
+          ticker={activeTicker.symbol}
+          activeTicker={activeTicker}
+          confluence={confluence}
+          onContractSelect={onContractSelect}
+          onEnter={onEnterTrade}
+          onDiscard={onDiscard}
+          compositeSignals={compositeSignals}
+        />
       )}
       {tradeState === "WATCHING" && activeTicker && (
         <div className="p-4 lg:p-6 space-y-3 pointer-events-auto relative z-10">

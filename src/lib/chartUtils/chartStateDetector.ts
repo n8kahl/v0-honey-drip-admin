@@ -14,7 +14,6 @@ export interface ChartModeConfig {
   indicators: {
     ema: number[];
     vwap: boolean;
-    bollinger: boolean;
   };
   historicalBarCount: number;
   showKeyLevels: boolean;
@@ -56,7 +55,6 @@ export function getChartModeConfig(mode: ChartMode, symbol: string): ChartModeCo
         indicators: {
           ema: [9, 21], // Momentum + trend
           vwap: false,
-          bollinger: false,
         },
         historicalBarCount: 20,
         showKeyLevels: false,
@@ -67,17 +65,16 @@ export function getChartModeConfig(mode: ChartMode, symbol: string): ChartModeCo
       };
 
     case "LOADED":
-      // Setup mode: 1m + 5m for entry precision, add key levels
+      // Setup mode: 1m (primary) + 5m (secondary) for entry precision, add key levels
       return {
         mode: "LOADED",
-        timeframes: ["1", "5", "15"], // 15m available but not default
-        defaultTimeframe: "5",
+        timeframes: ["1", "5"], // Only 1m and 5m for focused entry
+        defaultTimeframe: "1", // 1m is primary for entry precision
         indicators: {
-          ema: [9, 21], // Keep it simple for entry focus
+          ema: [9, 21], // Momentum + trend
           vwap: true, // Order flow context
-          bollinger: false,
         },
-        historicalBarCount: 50,
+        historicalBarCount: 400, // ~1 day of 1m bars + 5m bars
         showKeyLevels: true,
         showTradeMetrics: false,
         dualTimeframeView: true, // Show 1m + 5m side-by-side
@@ -94,7 +91,6 @@ export function getChartModeConfig(mode: ChartMode, symbol: string): ChartModeCo
         indicators: {
           ema: [9], // Minimal - focus on price action
           vwap: true,
-          bollinger: false,
         },
         historicalBarCount: 30,
         showKeyLevels: true,
