@@ -133,8 +133,8 @@ export const useTradeStore = create<TradeStore>()(
             state: mapStatusToState(newTrade.status),
             tradeType: "Day" as TradeType,
             updates: [],
-            discordChannels: [],
-            challenges: newTrade.challenge_id ? [newTrade.challenge_id] : [],
+            discordChannels,
+            challenges,
           };
 
           set((state) => ({

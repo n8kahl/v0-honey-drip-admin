@@ -446,6 +446,9 @@ export function useTradeStateMachine({
       let newTrade: Trade = { ...currentTrade };
       let updateType: TradeUpdate["type"] | null = null;
 
+      // Ensure current updates array is valid before spreading
+      const currentUpdates = Array.isArray(newTrade.updates) ? newTrade.updates : [];
+
       switch (alertType) {
         case "enter": {
           const entryPrice = basePrice;
@@ -456,7 +459,7 @@ export function useTradeStateMachine({
             currentPrice: entryPrice,
             discordChannels: channelIds,
             challenges: challengeIds,
-            updates: [...newTrade.updates, makeUpdate("enter", entryPrice, message)],
+            updates: [...currentUpdates, makeUpdate("enter", entryPrice, message)],
           };
           updateType = "enter";
           break;
@@ -466,7 +469,7 @@ export function useTradeStateMachine({
             ...newTrade,
             discordChannels: channelIds,
             challenges: challengeIds,
-            updates: [...newTrade.updates, makeUpdate("trim", basePrice, message)],
+            updates: [...currentUpdates, makeUpdate("trim", basePrice, message)],
           };
           updateType = "trim";
           break;
@@ -483,7 +486,7 @@ export function useTradeStateMachine({
             discordChannels: channelIds,
             challenges: challengeIds,
             updates: [
-              ...newTrade.updates,
+              ...currentUpdates,
               makeUpdate(kind as TradeUpdate["type"], basePrice, message),
             ],
           };
@@ -494,7 +497,7 @@ export function useTradeStateMachine({
           newTrade = {
             ...newTrade,
             updates: [
-              ...newTrade.updates,
+              ...currentUpdates,
               makeUpdate("update-sl", basePrice, message || "Stop loss adjusted"),
             ],
           };
@@ -505,7 +508,7 @@ export function useTradeStateMachine({
           newTrade = {
             ...newTrade,
             updates: [
-              ...newTrade.updates,
+              ...currentUpdates,
               makeUpdate("trail-stop", basePrice, message || "Trailing stop moved"),
             ],
           };
@@ -516,7 +519,7 @@ export function useTradeStateMachine({
           newTrade = {
             ...newTrade,
             updates: [
-              ...newTrade.updates,
+              ...currentUpdates,
               makeUpdate("add", basePrice, message || "Added to position"),
             ],
           };
@@ -531,7 +534,7 @@ export function useTradeStateMachine({
             exitPrice,
             exitTime: new Date(),
             updates: [
-              ...newTrade.updates,
+              ...currentUpdates,
               makeUpdate("exit", exitPrice, message || "Exited position"),
             ],
           };
@@ -553,15 +556,14 @@ export function useTradeStateMachine({
 
       // Callback for exited trades
       if (newTrade.state === "EXITED" && onExitedTrade) {
-        onExitedTrade(newTrade);
+        // Clear currentTrade and remove from activeTrades immediately
+        // The callback can handle any navigation it needs
+        setCurrentTrade(null);
+        setTradeState("WATCHING");
+        setActiveTrades((prev) => prev.filter((t) => t.id !== newTrade.id));
 
-        // Clear currentTrade and remove from activeTrades after exit
-        // Use setTimeout to ensure callback completes first
-        setTimeout(() => {
-          setCurrentTrade(null);
-          setTradeState("WATCHING");
-          setActiveTrades((prev) => prev.filter((t) => t.id !== newTrade.id));
-        }, 100);
+        // Call the callback after state updates
+        onExitedTrade(newTrade);
       }
 
       // Persist to database
@@ -791,10 +793,11 @@ export function useTradeStateMachine({
         targetPrice,
         stopLoss,
         movePercent: 0,
-        discordChannels: channelIds || [],
-        challenges: challengeIds || [],
+        // Ensure arrays are always valid
+        discordChannels: Array.isArray(channelIds) ? channelIds : [],
+        challenges: Array.isArray(challengeIds) ? challengeIds : [],
         updates: [
-          ...(currentTrade.updates || []),
+          ...(Array.isArray(currentTrade.updates) ? currentTrade.updates : []),
           {
             id: crypto.randomUUID(),
             type: "enter",
@@ -892,10 +895,11 @@ export function useTradeStateMachine({
         targetPrice,
         stopLoss,
         movePercent: 0,
-        discordChannels: channelIds || [],
-        challenges: challengeIds || [],
+        // Ensure arrays are always valid
+        discordChannels: Array.isArray(channelIds) ? channelIds : [],
+        challenges: Array.isArray(challengeIds) ? challengeIds : [],
         updates: [
-          ...(currentTrade.updates || []),
+          ...(Array.isArray(currentTrade.updates) ? currentTrade.updates : []),
           {
             id: crypto.randomUUID(),
             type: "enter",
