@@ -8,9 +8,9 @@
  * - extreme: VIX > 35 (panic, avoid new positions or trade very defensively)
  */
 
-import { massive } from '../massive/index.js';
+import { massive } from "../massive";
 
-export type VIXLevel = 'low' | 'medium' | 'high' | 'extreme';
+export type VIXLevel = "low" | "medium" | "high" | "extreme";
 
 export interface VIXResult {
   level: VIXLevel;
@@ -45,7 +45,7 @@ async function fetchVIX(): Promise<number> {
 
   try {
     // Fetch VIX snapshot from Polygon Indices API
-    const indices = await massive.getIndices(['VIX']);
+    const indices = await massive.getIndices(["VIX"]);
 
     if (indices && indices.length > 0 && indices[0].value) {
       const vixValue = indices[0].value;
@@ -61,19 +61,19 @@ async function fetchVIX(): Promise<number> {
 
     // If API fails, return cached value if available (even if stale)
     if (vixCache) {
-      console.warn('[VIX] API returned no data, using stale cache');
+      console.warn("[VIX] API returned no data, using stale cache");
       return vixCache.value;
     }
 
     // No data available, return default (assume medium volatility)
-    console.warn('[VIX] No data available, defaulting to 20');
+    console.warn("[VIX] No data available, defaulting to 20");
     return 20;
   } catch (error) {
-    console.error('[VIX] Error fetching VIX:', error);
+    console.error("[VIX] Error fetching VIX:", error);
 
     // Return cached value if available
     if (vixCache) {
-      console.warn('[VIX] Using stale cache due to error');
+      console.warn("[VIX] Using stale cache due to error");
       return vixCache.value;
     }
 
@@ -105,23 +105,23 @@ export async function classifyVIXLevel(): Promise<VIXResult> {
   let confidence: number;
 
   if (vixValue < 15) {
-    level = 'low';
+    level = "low";
     // Confidence increases as VIX drops below 15
     // VIX 10 = 100 conf, VIX 15 = 50 conf
     confidence = Math.min(100, (15 - vixValue) * 10 + 50);
   } else if (vixValue < 25) {
-    level = 'medium';
+    level = "medium";
     // Medium has high confidence in the middle of range
     // VIX 20 = 100 conf, VIX 15/25 = 50 conf
     const distanceFromCenter = Math.abs(vixValue - 20);
     confidence = Math.max(50, 100 - distanceFromCenter * 10);
   } else if (vixValue < 35) {
-    level = 'high';
+    level = "high";
     // Confidence increases as VIX rises above 25
     // VIX 25 = 50 conf, VIX 30 = 75 conf, VIX 35 = 100 conf
     confidence = Math.min(100, (vixValue - 25) * 5 + 50);
   } else {
-    level = 'extreme';
+    level = "extreme";
     // VIX > 35 is extreme fear
     // VIX 35 = 70 conf, VIX 50 = 100 conf
     confidence = Math.min(100, (vixValue - 35) * 2 + 70);
@@ -145,36 +145,36 @@ export function getVIXStrategyAdjustments(level: VIXLevel): {
   avoid: string[];
 } {
   switch (level) {
-    case 'low':
+    case "low":
       return {
         stopMultiplier: 0.8, // Tighter stops work in low volatility
         sizeMultiplier: 1.2, // Can size up slightly
-        recommendedTypes: ['breakout', 'trend-continuation', 'opening-range'],
+        recommendedTypes: ["breakout", "trend-continuation", "opening-range"],
         avoid: [],
       };
 
-    case 'medium':
+    case "medium":
       return {
         stopMultiplier: 1.0, // Normal stops
         sizeMultiplier: 1.0, // Normal size
-        recommendedTypes: ['all'],
+        recommendedTypes: ["all"],
         avoid: [],
       };
 
-    case 'high':
+    case "high":
       return {
         stopMultiplier: 1.5, // Wider stops needed
         sizeMultiplier: 0.7, // Reduce size
-        recommendedTypes: ['mean-reversion', 'support-resistance', 'divergence'],
-        avoid: ['tight-breakout', 'scalp-momentum'],
+        recommendedTypes: ["mean-reversion", "support-resistance", "divergence"],
+        avoid: ["tight-breakout", "scalp-momentum"],
       };
 
-    case 'extreme':
+    case "extreme":
       return {
         stopMultiplier: 2.0, // Very wide stops
         sizeMultiplier: 0.5, // Cut size in half
-        recommendedTypes: ['extreme-oversold', 'capitulation-bounce'],
-        avoid: ['breakout', 'trend-continuation', 'most-strategies'],
+        recommendedTypes: ["extreme-oversold", "capitulation-bounce"],
+        avoid: ["breakout", "trend-continuation", "most-strategies"],
       };
 
     default:

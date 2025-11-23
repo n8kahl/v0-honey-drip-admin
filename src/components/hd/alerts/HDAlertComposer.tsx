@@ -68,8 +68,12 @@ export function HDAlertComposer({
 
   // Initialize channels and challenges when trade changes or alert opens
   useEffect(() => {
-    setSelectedChannels(trade.discordChannels || []);
-    setSelectedChallenges(trade.challenges || []);
+    // Ensure we always work with arrays to prevent .includes() crashes
+    const channels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
+    const challenges = Array.isArray(trade.challenges) ? trade.challenges : [];
+
+    setSelectedChannels(channels);
+    setSelectedChallenges(challenges);
   }, [trade.id, trade.discordChannels, trade.challenges]); // Re-run when channels/challenges change
 
   // Initialize defaults based on alertType
