@@ -431,7 +431,8 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       console.error("[Trades API] Error linking channel:", error);
 
       // Handle duplicate key error - this is OK, channel is already linked (code 23505)
-      if (error.code === '23505' || error.code === 23505) {
+      const errorCode = typeof error.code === 'number' ? error.code : parseInt(error.code || '0', 10);
+      if (errorCode === 23505) {
         console.log(`[Trades API] Channel ${channelId} already linked to trade ${tradeId} (idempotent - OK)`);
         return res.status(200).json({ message: "Channel already linked", alreadyLinked: true });
       }
@@ -539,7 +540,8 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       console.error("[Trades API] Error linking challenge:", error);
 
       // Handle duplicate key error - this is OK, challenge is already linked (code 23505)
-      if (error.code === '23505' || error.code === 23505) {
+      const challengeErrorCode = typeof error.code === 'number' ? error.code : parseInt(error.code || '0', 10);
+      if (challengeErrorCode === 23505) {
         console.log(`[Trades API] Challenge ${challengeId} already linked to trade ${tradeId} (idempotent - OK)`);
         return res.status(200).json({ message: "Challenge already linked", alreadyLinked: true });
       }
