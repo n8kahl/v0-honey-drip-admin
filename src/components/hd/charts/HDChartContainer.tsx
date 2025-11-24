@@ -53,16 +53,16 @@ export function HDChartContainer({
   return (
     <div className={`w-full ${className}`}>
       {/* Header with title and collapse toggle */}
-      <div className="flex items-center justify-between bg-slate-900 border-b border-slate-700 px-4 py-3 rounded-t-lg">
-        <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
+      <div className="flex items-center justify-between bg-[var(--surface-2)] border-b border-[var(--border-hairline)] px-4 py-3 rounded-t-lg">
+        <h3 className="text-sm font-semibold text-[var(--text-high)]">{title}</h3>
         <button
           onClick={toggleExpanded}
-          className="p-1 hover:bg-slate-800 rounded transition-colors duration-200"
+          className="p-1 hover:bg-[var(--surface-3)] rounded transition-colors duration-200"
           aria-label={isExpanded ? "Collapse charts" : "Expand charts"}
         >
           <ChevronDown
             size={18}
-            className={`text-slate-400 transition-transform duration-300 ${
+            className={`text-[var(--text-muted)] transition-transform duration-300 ${
               isExpanded ? "rotate-0" : "-rotate-90"
             }`}
           />
@@ -75,7 +75,7 @@ export function HDChartContainer({
           isExpanded ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <div className="bg-slate-950 rounded-b-lg">{children}</div>
+        <div className="bg-[var(--surface-2)] rounded-b-lg">{children}</div>
       </div>
     </div>
   );
