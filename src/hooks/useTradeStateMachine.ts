@@ -27,6 +27,8 @@ import {
   linkChannelsApi,
   linkChallengesApi,
 } from "../lib/api/tradeApi";
+import { recordAlertHistory } from "../lib/supabase/database";
+import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 
 interface UseTradeStateMachineProps {
   hotTrades: Trade[];
@@ -633,14 +635,26 @@ export function useTradeStateMachine({
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
         if (discordAlertsEnabled && channels.length > 0) {
+          // Check rate limit
+          if (!discordAlertLimiter.canProceed()) {
+            const waitTime = discordAlertLimiter.getWaitTime();
+            toast.error("Discord alert rate limit exceeded", {
+              description: `Too many alerts sent. Wait ${formatWaitTime(waitTime)} before sending more.`,
+            } as any);
+            setShowAlert(false);
+            return;
+          }
+
           try {
+            let results = { success: 0, failed: 0 };
+
             switch (alertType) {
               case "enter":
-                await discord.sendEntryAlert(channels, newTrade, comment);
+                results = await discord.sendEntryAlert(channels, newTrade, comment);
                 console.log("[Discord] ENTER alert sent successfully");
                 break;
               case "trim":
-                await discord.sendUpdateAlert(
+                results = await discord.sendUpdateAlert(
                   channels,
                   newTrade,
                   "trim",
@@ -649,7 +663,7 @@ export function useTradeStateMachine({
                 console.log("[Discord] TRIM alert sent successfully");
                 break;
               case "update":
-                await discord.sendUpdateAlert(
+                results = await discord.sendUpdateAlert(
                   channels,
                   newTrade,
                   alertOptions.updateKind === "sl" ? "update-sl" : "generic",
@@ -658,7 +672,7 @@ export function useTradeStateMachine({
                 console.log("[Discord] UPDATE alert sent successfully");
                 break;
               case "update-sl":
-                await discord.sendUpdateAlert(
+                results = await discord.sendUpdateAlert(
                   channels,
                   newTrade,
                   "update-sl",
@@ -667,11 +681,11 @@ export function useTradeStateMachine({
                 console.log("[Discord] UPDATE-SL alert sent successfully");
                 break;
               case "trail-stop":
-                await discord.sendTrailingStopAlert(channels, newTrade);
+                results = await discord.sendTrailingStopAlert(channels, newTrade);
                 console.log("[Discord] TRAIL-STOP alert sent successfully");
                 break;
               case "add":
-                await discord.sendUpdateAlert(
+                results = await discord.sendUpdateAlert(
                   channels,
                   newTrade,
                   "generic",
@@ -680,9 +694,25 @@ export function useTradeStateMachine({
                 console.log("[Discord] ADD alert sent successfully");
                 break;
               case "exit":
-                await discord.sendExitAlert(channels, newTrade, comment);
+                results = await discord.sendExitAlert(channels, newTrade, comment);
                 console.log("[Discord] EXIT alert sent successfully");
                 break;
+            }
+
+            // Record alert history (non-blocking)
+            if (userId) {
+              recordAlertHistory({
+                userId,
+                tradeId: newTrade.id,
+                alertType: alertType === "update-sl" ? "update-sl" : alertType as any,
+                channelIds: channels.map(c => c.id),
+                challengeIds: selectedChallenges,
+                successCount: results.success,
+                failedCount: results.failed,
+                tradeTicker: newTrade.ticker,
+              }).catch((err) => {
+                console.error("[Database] Failed to record alert history:", err);
+              });
             }
           } catch (error) {
             console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
@@ -690,6 +720,23 @@ export function useTradeStateMachine({
             toast.error(`Failed to send ${alertType} alert to Discord`, {
               description: `${channels.length} channel(s) selected. ${errorMessage}`,
             } as any);
+
+            // Record failed alert history
+            if (userId) {
+              recordAlertHistory({
+                userId,
+                tradeId: newTrade.id,
+                alertType: alertType === "update-sl" ? "update-sl" : alertType as any,
+                channelIds: channels.map(c => c.id),
+                challengeIds: selectedChallenges,
+                successCount: 0,
+                failedCount: channels.length,
+                errorMessage,
+                tradeTicker: newTrade.ticker,
+              }).catch((err) => {
+                console.error("[Database] Failed to record failed alert history:", err);
+              });
+            }
           }
         }
 

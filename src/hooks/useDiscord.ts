@@ -70,7 +70,8 @@ export function useDiscord() {
     channels: DiscordChannel[],
     trade: Trade,
     updateType: "trim" | "update-sl" | "generic",
-    message: string
+    message: string,
+    imageUrl?: string
   ) => {
     setSending(true);
     try {
@@ -86,6 +87,7 @@ export function useDiscord() {
           currentPrice: trade.currentPrice!,
           pnlPercent: trade.movePercent!,
           message,
+          imageUrl,
         })
       );
       return results;

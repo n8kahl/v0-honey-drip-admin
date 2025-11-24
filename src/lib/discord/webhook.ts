@@ -216,6 +216,7 @@ class DiscordWebhookClient {
       currentPrice: number;
       pnlPercent: number;
       message: string;
+      imageUrl?: string;
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
@@ -237,25 +238,27 @@ class DiscordWebhookClient {
         title = `📝 UPDATE: ${data.ticker}`;
     }
 
-    return this.sendMessage(webhookUrl, {
-      embeds: [
-        {
-          title,
-          description: data.message,
-          color,
-          fields: [
-            { name: "Option", value: `$${data.strike} ${optionType}`, inline: true },
-            { name: "Entry", value: `$${data.entryPrice.toFixed(2)}`, inline: true },
-            { name: "Current", value: `$${data.currentPrice.toFixed(2)}`, inline: true },
-            { name: "P/L", value: `${pnlSign}${data.pnlPercent.toFixed(1)}%`, inline: true },
-          ],
-          footer: {
-            text: "Honey Drip • Update Alert",
-          },
-          timestamp: new Date().toISOString(),
-        },
+    const embed: DiscordEmbed = {
+      title,
+      description: data.message,
+      color,
+      fields: [
+        { name: "Option", value: `$${data.strike} ${optionType}`, inline: true },
+        { name: "Entry", value: `$${data.entryPrice.toFixed(2)}`, inline: true },
+        { name: "Current", value: `$${data.currentPrice.toFixed(2)}`, inline: true },
+        { name: "P/L", value: `${pnlSign}${data.pnlPercent.toFixed(1)}%`, inline: true },
       ],
-    });
+      footer: {
+        text: "Honey Drip • Update Alert",
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    if (data.imageUrl) {
+      embed.image = { url: data.imageUrl };
+    }
+
+    return this.sendMessage(webhookUrl, { embeds: [embed] });
   }
 
   // Send an exit alert
