@@ -1,9 +1,9 @@
-const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
+const MASSIVE_BASE = process.env.MASSIVE_BASE_URL || "https://api.massive.com";
 
 function getApiKey(): string {
   const key = process.env.MASSIVE_API_KEY;
   if (!key) {
-    throw new Error('MASSIVE_API_KEY is not configured');
+    throw new Error("MASSIVE_API_KEY is not configured");
   }
   return key;
 }
@@ -19,13 +19,13 @@ function buildHeaders(): Record<string, string> {
   const API_KEY = getApiKey();
   return {
     Authorization: `Bearer ${API_KEY}`,
-    'X-API-Key': API_KEY,
-    'User-Agent': 'Honeydrip-Admin/1.0',
-    'Content-Type': 'application/json',
+    "X-API-Key": API_KEY,
+    "User-Agent": "Honeydrip-Admin/1.0",
+    "Content-Type": "application/json",
   };
 }
 
-function flattenHeaders(source?: RequestInit['headers']): Record<string, string> {
+function flattenHeaders(source?: RequestInit["headers"]): Record<string, string> {
   const headers: Record<string, string> = {};
   if (!source) return headers;
 
@@ -36,7 +36,7 @@ function flattenHeaders(source?: RequestInit['headers']): Record<string, string>
     return headers;
   }
 
-  if (typeof source === 'object') {
+  if (typeof source === "object") {
     const withForEach = source as { forEach?: (cb: (value: string, key: string) => void) => void };
     if (withForEach.forEach) {
       withForEach.forEach((value, key) => {
@@ -55,24 +55,24 @@ function flattenHeaders(source?: RequestInit['headers']): Record<string, string>
   return headers;
 }
 
-function buildMassiveHeaders(initHeaders?: RequestInit['headers']) {
+function buildMassiveHeaders(initHeaders?: RequestInit["headers"]) {
   const API_KEY = getApiKey();
   return {
-    Accept: 'application/json',
+    Accept: "application/json",
     Authorization: `Bearer ${API_KEY}`,
-    'X-API-Key': API_KEY,
+    "X-API-Key": API_KEY,
     ...flattenHeaders(initHeaders),
   };
 }
 
 export async function massiveFetch(path: string, init: RequestInit = {}) {
-  const url = path.startsWith('http') ? path : `${MASSIVE_BASE}${path}`;
+  const url = path.startsWith("http") ? path : `${MASSIVE_BASE}${path}`;
   const { headers: initHeaders, ...restInit } = init;
   const headers = buildMassiveHeaders(initHeaders);
 
   const res = await fetch(url, { ...restInit, headers });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
+    const text = await res.text().catch(() => "");
     const err = new Error(`Massive ${res.status}: ${text || res.statusText}`);
     (err as any).status = res.status;
     throw err;
@@ -101,7 +101,7 @@ export async function callMassive<T>(
   init: RequestInit = {},
   tries = 3
 ): Promise<CallMassiveResult<T>> {
-  const url = path.startsWith('http') ? path : `${MASSIVE_BASE}${path}`;
+  const url = path.startsWith("http") ? path : `${MASSIVE_BASE}${path}`;
   const { headers: initHeaders, ...restInit } = init;
   const headers = { ...buildHeaders(), ...flattenHeaders(initHeaders) };
 
@@ -121,7 +121,7 @@ export async function callMassive<T>(
       const text = await response.text();
       const payload = parseJson<T>(text);
       const error =
-        typeof payload === 'object' && payload && 'error' in payload
+        typeof payload === "object" && payload && "error" in payload
           ? ((payload as any).error as string | undefined)
           : undefined;
       const result: CallMassiveResult<T> = {
@@ -134,7 +134,7 @@ export async function callMassive<T>(
       lastResponse = result;
 
       if (response.status === 429) {
-        const retryAfter = Number(response.headers.get('Retry-After') || '1');
+        const retryAfter = Number(response.headers.get("Retry-After") || "1");
         await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
         continue;
       }
@@ -153,16 +153,16 @@ export async function callMassive<T>(
   }
 
   if (lastResponse && !lastResponse.ok) {
-    throw new Error(`Massive ${lastResponse.status}: ${lastResponse.error ?? 'request failed'}`);
+    throw new Error(`Massive ${lastResponse.status}: ${lastResponse.error ?? "request failed"}`);
   }
 
-  throw lastError || new Error('callMassive: failed to reach Massive');
+  throw lastError || new Error("callMassive: failed to reach Massive");
 }
 
 export async function getIndexAggregates(
   ticker: string,
   mult: number,
-  timespan: 'minute' | 'hour' | 'day',
+  timespan: "minute" | "hour" | "day",
   from: string,
   to: string
 ) {
@@ -171,10 +171,14 @@ export async function getIndexAggregates(
   )}/range/${mult}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=5000`;
   const res = await callMassive<{ results?: any[]; [key: string]: any }>(path);
   if (!res.ok) {
-    throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to fetch aggregates'}`);
+    throw new Error(`Massive error ${res.status}: ${res.error ?? "failed to fetch aggregates"}`);
   }
   const payload = res.data;
-  const results = Array.isArray(payload?.results) ? payload.results : Array.isArray(payload) ? payload : [];
+  const results = Array.isArray(payload?.results)
+    ? payload.results
+    : Array.isArray(payload)
+      ? payload
+      : [];
   return results.map((bar) => ({
     t: bar.t,
     o: bar.o,
@@ -186,10 +190,14 @@ export async function getIndexAggregates(
   }));
 }
 
-export async function getOptionChain(underlying: string, limit?: number, filters?: Record<string, any>) {
+export async function getOptionChain(
+  underlying: string,
+  limit?: number,
+  filters?: Record<string, any>
+) {
   const normalizedLimit =
-    typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 250;
-  
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 250;
+
   // Build query parameters including filters (.gte, .lte, etc.)
   const params = new URLSearchParams({ limit: String(normalizedLimit) });
   if (filters) {
@@ -200,11 +208,23 @@ export async function getOptionChain(underlying: string, limit?: number, filters
       }
     });
   }
-  
+
   const path = `/v3/snapshot/options/${encodeURIComponent(underlying)}?${params.toString()}`;
+  console.log(`[Massive] Fetching options chain: ${path}`);
   const res = await callMassive<any>(path);
   if (!res.ok) {
-    throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to fetch option chain'}`);
+    console.error(`[Massive] Error fetching options chain for ${underlying}:`, res.error);
+    throw new Error(`Massive error ${res.status}: ${res.error ?? "failed to fetch option chain"}`);
+  }
+  console.log(`[Massive] Options chain response keys:`, Object.keys(res.data || {}));
+  console.log(`[Massive] Has results array:`, Array.isArray(res.data?.results));
+  if (res.data?.results) {
+    console.log(`[Massive] Results count:`, res.data.results.length);
+  }
+  // Massive API returns { status: "OK", results: [...] }, not { contracts: [...] }
+  // Normalize the response format
+  if (res.data?.results && !res.data.contracts) {
+    res.data.contracts = res.data.results;
   }
   return res.data;
 }
@@ -213,16 +233,18 @@ export async function listOptionContracts(filters: Record<string, string>) {
   const qs = new URLSearchParams(filters).toString();
   const res = await callMassive<any>(`/v3/reference/options/contracts?${qs}`);
   if (!res.ok) {
-    throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to list contracts'}`);
+    throw new Error(`Massive error ${res.status}: ${res.error ?? "failed to list contracts"}`);
   }
   return res.data;
 }
 
 export async function getIndicesSnapshot(tickers: string[]) {
-  const clean = tickers.map((t) => t.replace(/^I:/, '')).join(',');
+  const clean = tickers.map((t) => t.replace(/^I:/, "")).join(",");
   const res = await callMassive<any>(`/v3/snapshot/indices?tickers=${encodeURIComponent(clean)}`);
   if (!res.ok) {
-    throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to fetch indices snapshot'}`);
+    throw new Error(
+      `Massive error ${res.status}: ${res.error ?? "failed to fetch indices snapshot"}`
+    );
   }
   return res.data;
 }
@@ -230,23 +252,25 @@ export async function getIndicesSnapshot(tickers: string[]) {
 const holidaysCache = new Map<number, string[]>();
 
 export async function getMarketHolidays(year?: number): Promise<string[]> {
-  const targetYear = typeof year === 'number' ? year : new Date().getFullYear();
+  const targetYear = typeof year === "number" ? year : new Date().getFullYear();
   if (holidaysCache.has(targetYear)) {
     return holidaysCache.get(targetYear)!;
   }
 
   const params = new URLSearchParams();
-  params.set('year', String(targetYear));
+  params.set("year", String(targetYear));
   const res = await callMassive<any>(`/v1/market/holidays?${params.toString()}`);
   if (!res.ok) {
-    throw new Error(`Massive error ${res.status}: ${res.error ?? 'failed to fetch market holidays'}`);
+    throw new Error(
+      `Massive error ${res.status}: ${res.error ?? "failed to fetch market holidays"}`
+    );
   }
   const payload = res.data;
   const items: any[] = Array.isArray(payload?.results)
     ? payload.results
     : Array.isArray(payload)
-    ? payload
-    : [];
+      ? payload
+      : [];
   const dates = items
     .map((item: any) => item?.date || item?.holiday_date)
     .filter(Boolean)
