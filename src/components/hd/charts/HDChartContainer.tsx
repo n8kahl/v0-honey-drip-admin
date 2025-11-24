@@ -26,12 +26,16 @@ export function HDChartContainer({
     try {
       const stored =
         typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+      console.log(`[HDChartContainer] localStorage ${STORAGE_KEY}:`, stored);
       if (stored !== null) {
-        return stored === "true";
+        const expanded = stored === "true";
+        console.log(`[HDChartContainer] Initializing with isExpanded=${expanded} from localStorage`);
+        return expanded;
       }
     } catch {
       // localStorage not available
     }
+    console.log(`[HDChartContainer] Initializing with defaultExpanded=${defaultExpanded}`);
     return defaultExpanded;
   });
 
