@@ -193,16 +193,6 @@ export function HDPanelDiscordAlert({
 
   const buttonLabel = alertType === 'load' ? 'Load and Alert' : 'Send Alert';
 
-  // Debug logging for scroll container
-  useEffect(() => {
-    console.log('[HDPanelDiscordAlert] Component mounted/updated', {
-      alertType,
-      showShareCard,
-      channelsCount: availableChannels.length,
-      challengesCount: challenges.length
-    });
-  }, [alertType, showShareCard, availableChannels.length, challenges.length]);
-
   return (
     <div className={cn('flex flex-col flex-1 min-h-0 bg-[var(--surface-2)]', className)}>
       {/* Header */}
@@ -212,28 +202,9 @@ export function HDPanelDiscordAlert({
         </h2>
       </div>
 
-      <div 
+      <div
         className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6"
         style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
-        onScroll={(e) => {
-          const target = e.currentTarget;
-          console.log('[HDPanelDiscordAlert] Scroll event:', {
-            scrollTop: target.scrollTop,
-            scrollHeight: target.scrollHeight,
-            clientHeight: target.clientHeight,
-            canScrollMore: target.scrollTop + target.clientHeight < target.scrollHeight
-          });
-        }}
-        ref={(el) => {
-          if (el) {
-            console.log('[HDPanelDiscordAlert] Scroll container dimensions:', {
-              scrollHeight: el.scrollHeight,
-              clientHeight: el.clientHeight,
-              offsetHeight: el.offsetHeight,
-              isScrollable: el.scrollHeight > el.clientHeight
-            });
-          }
-        }}
       >
         {/* Share Card Preview - Only show for share flow from History */}
         {showShareCard && (

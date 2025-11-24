@@ -177,6 +177,28 @@ export function useDiscord() {
     }
   };
 
+  const sendSummaryAlert = async (
+    channels: DiscordChannel[],
+    title: string,
+    summaryText: string,
+    comment?: string
+  ) => {
+    setSending(true);
+    try {
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
+      const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
+        client.sendSummaryAlert(url, {
+          title,
+          summaryText,
+          comment,
+        })
+      );
+      return results;
+    } finally {
+      setSending(false);
+    }
+  };
+
   return {
     sending,
     testWebhook,
@@ -186,5 +208,6 @@ export function useDiscord() {
     sendExitAlert,
     sendTrailingStopAlert,
     sendChallengeProgressAlert,
+    sendSummaryAlert,
   };
 }

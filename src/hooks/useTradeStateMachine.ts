@@ -686,8 +686,9 @@ export function useTradeStateMachine({
             }
           } catch (error) {
             console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
-            toast.error("Discord alert failed", {
-              description: "Check console for details",
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            toast.error(`Failed to send ${alertType} alert to Discord`, {
+              description: `${channels.length} channel(s) selected. ${errorMessage}`,
             } as any);
           }
         }
@@ -1028,6 +1029,12 @@ export function useTradeStateMachine({
     openAlertComposer("add");
   }, [currentTrade, openAlertComposer]);
 
+  const handleTakeProfit = useCallback(() => {
+    if (!currentTrade) return;
+    // Take profit is just an exit with "Taking profit at target" default comment
+    openAlertComposer("exit");
+  }, [currentTrade, openAlertComposer]);
+
   const handleExit = useCallback(() => {
     if (!currentTrade) return;
     openAlertComposer("exit");
@@ -1058,6 +1065,7 @@ export function useTradeStateMachine({
       handleUpdateSL,
       handleTrailStop,
       handleAdd,
+      handleTakeProfit,
       handleExit,
       setActiveTicker,
       setContracts,

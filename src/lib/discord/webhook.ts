@@ -439,6 +439,39 @@ class DiscordWebhookClient {
       ],
     });
   }
+
+  // Send a summary alert (for history exports)
+  async sendSummaryAlert(
+    webhookUrl: string,
+    data: {
+      title: string;
+      summaryText: string;
+      comment?: string;
+    }
+  ): Promise<boolean> {
+    // Parse summary text to determine if it's positive or negative performance
+    const avgPnLMatch = data.summaryText.match(/Average P&L: ([+-]?\d+\.?\d*)%/);
+    const avgPnL = avgPnLMatch ? parseFloat(avgPnLMatch[1]) : 0;
+    const pnlColor = avgPnL >= 0 ? DISCORD_COLORS.profit : DISCORD_COLORS.loss;
+
+    const description = data.comment
+      ? `${data.summaryText}\n\n${data.comment}`
+      : data.summaryText;
+
+    return this.sendMessage(webhookUrl, {
+      embeds: [
+        {
+          title: `📊 ${data.title}`,
+          description,
+          color: pnlColor,
+          footer: {
+            text: "Honey Drip • Trade Summary",
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+  }
 }
 
 // Singleton instance
