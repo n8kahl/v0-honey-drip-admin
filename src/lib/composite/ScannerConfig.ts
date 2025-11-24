@@ -16,6 +16,11 @@ export interface SignalThresholds {
   minRiskReward: number; // Minimum risk/reward ratio (e.g., 1.5 = 1.5:1)
   maxSignalsPerSymbolPerHour: number; // Max signals per symbol per hour
   cooldownMinutes: number; // Cooldown between signals for same symbol
+
+  // Weekend/Evening overrides (optional)
+  // VWAP and volume data unavailable on weekends, so scores are lower
+  weekendMinBaseScore?: number; // Lower threshold for weekend analysis
+  weekendMinStyleScore?: number; // Lower threshold for weekend analysis
 }
 
 /**
