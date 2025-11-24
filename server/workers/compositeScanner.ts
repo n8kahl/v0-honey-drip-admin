@@ -442,17 +442,59 @@ async function scanUserWatchlist(userId: string): Promise<number> {
   try {
     // Fetch user's watchlist
     console.log(`[Composite Scanner] DEBUG: Querying watchlist with column='symbol' for user ${userId}`);
-    const { data: watchlist, error: watchlistErr } = await supabase
-      .from("watchlist")
-      .select("ticker")
-      .eq("user_id", userId);
+    let watchlist: any[] | null = null;
+    let watchlistErr: any = null;
+
+    // Try querying with 'symbol' column first
+    let symbolError: any = null;
+    {
+      const { data, error } = await supabase
+        .from("watchlist")
+        .select("symbol")
+        .eq("user_id", userId);
+      watchlist = data;
+      watchlistErr = error;
+      symbolError = error;
+
+      if (error) {
+        console.error(`[Composite Scanner] First attempt with 'symbol' column failed:`, {
+          code: error.code,
+          message: error.message,
+          details: error.details
+        });
+      } else if (data) {
+        console.log(`[Composite Scanner] ✅ SUCCESS with 'symbol' column! Found ${data.length} symbols`);
+      }
+    }
+
+    // If 'symbol' column doesn't exist, try fallback to 'ticker' column
+    if (watchlistErr && (watchlistErr.code === '42703' || /column/i.test(watchlistErr.message || ''))) {
+      console.warn(`[Composite Scanner] Attempting fallback to 'ticker' column...`);
+      const { data, error } = await supabase
+        .from("watchlist")
+        .select("ticker")
+        .eq("user_id", userId);
+
+      if (!error && data) {
+        console.log(`[Composite Scanner] ✅ SUCCESS with 'ticker' column! Found ${data.length} rows`);
+        console.log(`[Composite Scanner] DATABASE MIGRATION NEEDED: ALTER TABLE watchlist RENAME COLUMN ticker TO symbol;`);
+        // Map ticker to symbol for compatibility
+        watchlist = data.map((row: any) => ({ symbol: row.ticker }));
+        watchlistErr = null;
+      } else {
+        console.error(`[Composite Scanner] Fallback to 'ticker' column also failed:`, {
+          code: error?.code,
+          message: error?.message
+        });
+        watchlistErr = error;
+      }
+    }
 
     if (watchlistErr) {
-      console.error(
-        `[Composite Scanner] Error fetching watchlist for user ${userId}:`,
-        watchlistErr
-      );
-      console.error(`[Composite Scanner] Tried both 'symbol' and 'ticker' columns - both failed!`);
+      console.error(`[Composite Scanner] ❌ BOTH COLUMNS FAILED!`);
+      console.error(`[Composite Scanner] Error from 'symbol' attempt:`, symbolError);
+      console.error(`[Composite Scanner] Error from 'ticker' attempt:`, watchlistErr);
+      console.error(`[Composite Scanner] DIAGNOSTIC NEEDED: Run scripts/diagnose_watchlist_schema.sql in Supabase`);
       stats.totalErrors++;
       return 0;
     }
@@ -462,7 +504,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map((w) => w.ticker);
+    const symbols = watchlist.map((w) => w.symbol);
     console.log(
       `[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
     );
