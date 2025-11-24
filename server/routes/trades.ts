@@ -438,8 +438,9 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
 
       // Handle foreign key constraint (channel doesn't exist)
       // Note: Exclude duplicate key errors (already handled above)
-      if (error.message.includes("foreign key") ||
-          (error.message.includes("violates") && !error.message.includes("duplicate key"))) {
+      const errorMsg = typeof error.message === 'string' ? error.message : String(error.message || '');
+      if (errorMsg.includes("foreign key") ||
+          (errorMsg.includes("violates") && !errorMsg.includes("duplicate key"))) {
         console.warn(
           `[Trades API] Channel ${channelId} does not exist or trade ${tradeId} not found`
         );
@@ -450,8 +451,8 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       }
 
       // Other errors
-      console.error("[Trades API] Unexpected error:", error.message);
-      return res.status(500).json({ error: "Failed to link channel", details: error.message });
+      console.error("[Trades API] Unexpected error:", errorMsg);
+      return res.status(500).json({ error: "Failed to link channel", details: errorMsg });
     }
 
     console.log(`[Trades API] Channel linked successfully`);
@@ -545,8 +546,9 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
 
       // Handle foreign key constraint (challenge doesn't exist)
       // Note: Exclude duplicate key errors (already handled above)
-      if (error.message.includes("foreign key") ||
-          (error.message.includes("violates") && !error.message.includes("duplicate key"))) {
+      const challengeErrorMsg = typeof error.message === 'string' ? error.message : String(error.message || '');
+      if (challengeErrorMsg.includes("foreign key") ||
+          (challengeErrorMsg.includes("violates") && !challengeErrorMsg.includes("duplicate key"))) {
         console.warn(
           `[Trades API] Challenge ${challengeId} does not exist or trade ${tradeId} not found`
         );
@@ -557,8 +559,8 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       }
 
       // Other errors
-      console.error("[Trades API] Unexpected error:", error.message);
-      return res.status(500).json({ error: "Failed to link challenge", details: error.message });
+      console.error("[Trades API] Unexpected error:", challengeErrorMsg);
+      return res.status(500).json({ error: "Failed to link challenge", details: challengeErrorMsg });
     }
 
     console.log(`[Trades API] Challenge linked successfully`);
