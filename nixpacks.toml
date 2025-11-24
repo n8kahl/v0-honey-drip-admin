@@ -1,0 +1,19 @@
+# Railway build configuration via Nixpacks
+# Forces clean builds and prevents stale cache issues
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[phases.install]
+cmds = ["pnpm install --frozen-lockfile"]
+
+[phases.build]
+# Force clean build - delete all cached artifacts before compiling
+cmds = [
+  "rm -rf server/dist",
+  "rm -f *.tsbuildinfo",
+  "pnpm run build"
+]
+
+[start]
+cmd = "node server/dist/server/index.js"

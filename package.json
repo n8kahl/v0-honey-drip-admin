@@ -17,7 +17,7 @@
     "start:prewarm": "node server/dist/server/workers/weekendPreWarm.js --force",
     "start:all": "concurrently \"node server/dist/server/index.js\" \"node server/dist/server/workers/compositeScanner.js\"",
     "clean:strategy-js": "rm -f src/lib/strategy/*.js",
-    "clean:dist": "rm -rf server/dist",
+    "clean:dist": "rm -rf server/dist && rm -f *.tsbuildinfo",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
