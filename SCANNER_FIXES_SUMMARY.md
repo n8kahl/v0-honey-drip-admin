@@ -67,9 +67,103 @@ marketHoursOnly: process.env.MARKET_HOURS_ONLY === 'true' ? true : false,
 
 ---
 
-## 🟡 Enhancements Implemented
+## 🟢 Weekend Mode Support (CRITICAL FIX)
 
-### 4. ✅ Comprehensive Logging Added
+### 4. ✅ Detector Weekend Mode (ALL 8 DETECTORS UPDATED)
+
+**Problem**: All detectors had hardcoded `isRegularHours === true` checks, blocking ALL weekend/evening signals
+
+**Files**:
+- `src/lib/composite/detectors/utils.ts` (NEW)
+- 8 detector files updated with weekend mode support
+
+**Before**:
+```typescript
+// ❌ Blocked ALL weekend signals
+const regularHours = features.session?.isRegularHours === true;
+if (!regularHours) return false;
+```
+
+**After**:
+```typescript
+// ✅ Allows weekend mode when enabled
+import { shouldRunDetector } from './utils.js';
+
+// Check if detector should run (market hours or weekend mode)
+if (!shouldRunDetector(features)) return false;
+```
+
+**How It Works**:
+- `shouldRunDetector()` returns `true` if:
+  - It's regular market hours, OR
+  - `ALLOW_WEEKEND_SIGNALS=true` environment variable is set, OR
+  - Analyzing historical data (has timestamp but not in regular hours)
+
+**Environment Variable**:
+```bash
+# Railway Production
+ALLOW_WEEKEND_SIGNALS=true  # Enable weekend/evening analysis
+```
+
+**Impact**: This was the **primary blocker** preventing weekend signals. Patterns were being detected, but detectors immediately rejected them due to market hours.
+
+---
+
+## 🟡 Production Threshold Adjustments
+
+### 5. ✅ Realistic Production Thresholds
+
+**Problem**: Production thresholds (80/85/2.0) were too strict, generating zero signals even with patterns detected
+
+**User Feedback**: *"But if it isn't in testing mode-id still want trades"*
+
+**File**: `src/lib/composite/OptimizedScannerConfig.ts`
+
+**Before** (Too Strict):
+```typescript
+// Equity/ETF Production Thresholds
+minBaseScore: 80,    // ❌ Only top 20% of setups
+minStyleScore: 85,   // ❌ Near-perfect fit required
+minRiskReward: 2.0,  // ❌ Excellent R:R only
+maxSignalsPerSymbolPerHour: 1,
+cooldownMinutes: 30,
+
+// Index Production Thresholds
+minBaseScore: 85,    // ❌ Very high bar
+minStyleScore: 88,   // ❌ Near-perfect required
+minRiskReward: 2.5,  // ❌ Excellent R:R only
+```
+
+**After** (Realistic):
+```typescript
+// Equity/ETF Production Thresholds
+minBaseScore: 70,    // ✅ Solid setups
+minStyleScore: 75,   // ✅ Good style fit
+minRiskReward: 1.8,  // ✅ Healthy R:R
+maxSignalsPerSymbolPerHour: 2,   // ✅ Allow reasonable frequency
+cooldownMinutes: 20,
+
+// Index Production Thresholds
+minBaseScore: 75,    // ✅ Strong setups
+minStyleScore: 80,   // ✅ Very good fit
+minRiskReward: 2.0,  // ✅ Healthy R:R
+maxSignalsPerSymbolPerHour: 3,   // ✅ More due to liquidity
+cooldownMinutes: 15,
+```
+
+**Rationale**:
+- RADAR_WEEKEND_FEASIBILITY.md expected "2-4 signals/day per symbol"
+- Previous thresholds (80/85) were ultra-selective
+- New thresholds (70/75) maintain quality while allowing signals
+- Testing thresholds (60/65) remain unchanged for development
+
+**Impact**: Production mode will now generate signals on weekends/evenings while maintaining quality
+
+---
+
+## 🟡 Additional Enhancements
+
+### 6. ✅ Comprehensive Logging Added
 
 **Enhanced Feature Logging** (`compositeScanner.ts:276-284`):
 ```typescript
@@ -106,7 +200,7 @@ console.log(`[DEBUG] Watchlist raw data:`, watchlist.slice(0, 3));
 
 ---
 
-### 5. ✅ Testing Mode Thresholds
+### 7. ✅ Testing Mode Thresholds
 
 **File**: `src/lib/composite/OptimizedScannerConfig.ts:61-82, 87-108`
 
@@ -157,12 +251,15 @@ const TESTING_INDEX_THRESHOLDS: SignalThresholds = {
   ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
   ```
 
-- [ ] **Set environment variables** (if needed)
+- [ ] **Set environment variables** (CRITICAL for weekend signals)
   ```bash
-  # For production (enforce market hours)
-  MARKET_HOURS_ONLY=true
+  # REQUIRED for weekend/evening signals
+  ALLOW_WEEKEND_SIGNALS=true
 
-  # For testing (use low thresholds)
+  # Optional: Enforce market hours filter (for additional filtering)
+  MARKET_HOURS_ONLY=false  # or leave unset
+
+  # Optional: Use low testing thresholds (for development)
   NODE_ENV=development
   # OR
   TESTING_MODE=true
@@ -301,7 +398,12 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 # Production settings
 NODE_ENV=production
-MARKET_HOURS_ONLY=true
+
+# Weekend/Evening Signals (CRITICAL)
+ALLOW_WEEKEND_SIGNALS=true  # Enable signals outside market hours
+
+# Optional: Additional market hours filtering
+MARKET_HOURS_ONLY=false  # Leave unset or set to false for weekend signals
 ```
 
 ---
@@ -310,14 +412,14 @@ MARKET_HOURS_ONLY=true
 
 ### Development Mode (Testing Thresholds):
 - **More signals** (thresholds: 60/65/1.5)
-- **Faster iteration** (10min cooldown vs 30min)
-- **Weekend/evening signals** (market hours filter disabled)
+- **Faster iteration** (10min cooldown vs 20min)
+- **Weekend/evening signals** (when ALLOW_WEEKEND_SIGNALS=true)
 
-### Production Mode:
-- **High quality signals** (thresholds: 80/85/2.0)
-- **Selective** (~2-3 signals/day per symbol)
-- **Market hours only** (9:30am-4pm ET Mon-Fri)
-- **Target: 65%+ win rate**
+### Production Mode (NEW - Adjusted Thresholds):
+- **Quality signals** (thresholds: 70/75/1.8 equity, 75/80/2.0 index)
+- **Reasonable frequency** (~2-4 signals/day per symbol)
+- **Weekend/evening signals** (when ALLOW_WEEKEND_SIGNALS=true)
+- **Target: 60-65% win rate**
 
 ---
 
@@ -326,7 +428,9 @@ MARKET_HOURS_ONLY=true
 | File | Changes | Lines |
 |------|---------|-------|
 | `server/workers/compositeScanner.ts` | Fixed watchlist column, discord query, added logging | 4 changes |
-| `src/lib/composite/OptimizedScannerConfig.ts` | Market hours override, testing thresholds | 2 major sections |
+| `src/lib/composite/OptimizedScannerConfig.ts` | Market hours override, testing thresholds, lowered production thresholds | 3 major sections |
+| `src/lib/composite/detectors/utils.ts` | NEW: Weekend mode detection utility | 45 lines |
+| `src/lib/composite/detectors/*.ts` | Updated 8 detectors for weekend mode support | 2 lines per file |
 | `scripts/013_add_composite_scanner_heartbeat.sql` | Already exists (created earlier) | N/A |
 
 ---
@@ -336,20 +440,37 @@ MARKET_HOURS_ONLY=true
 - [x] Phase 1: Critical Fixes (15 min) ← **DONE**
 - [x] Phase 2: Enhanced Features (1 hour) ← **DONE**
 - [x] Phase 3: Production Ready (30 min) ← **DONE**
+- [x] Phase 4: Weekend Mode Support (1 hour) ← **DONE** (Nov 24, 2025)
+- [x] Phase 5: Production Threshold Adjustment (15 min) ← **DONE** (Nov 24, 2025)
 
-**Total Implementation Time**: ~45 minutes
-**Total Files Modified**: 2 files + 1 migration (already exists)
-**Lines Changed**: ~50 lines
+**Total Implementation Time**: ~3 hours (across 2 sessions)
+**Total Files Modified**: 12 files + 1 migration (already exists)
+**Lines Changed**: ~150 lines
+
+**Key Breakthrough**: Identified and fixed the root cause - detectors had hardcoded `isRegularHours` checks blocking ALL weekend signals
 
 ---
 
 ## 🎯 Next Steps
 
-1. **Commit and push changes**
-2. **Add symbols to watchlist** (SPY, QQQ, etc.)
-3. **Run database migration** (scripts/013)
-4. **Start scanner** (`pnpm dev:all`)
-5. **Wait 60-120 seconds** for first scan
-6. **Check Radar tab** for signals!
+1. **Commit and push changes** ← YOU ARE HERE
+2. **Add `ALLOW_WEEKEND_SIGNALS=true` to Railway** (CRITICAL!)
+3. **Deploy to Railway** (or wait for auto-deploy)
+4. **Verify symbols in watchlist** (SPY, QQQ, SPX, NDX)
+5. **Monitor scanner logs** for signals
+6. **Check Radar tab** for signals (should appear within 60-120 seconds)
 
-**Expected Result**: Signals should appear within 2 minutes! 🎉
+**Expected Result After Deployment**:
+```
+[Composite Scanner] Min Base Score: 70 (Equity), 75 (Index)  ← NEW THRESHOLDS
+[Composite Scanner] Weekend Mode: ENABLED  ← NEW
+[FEATURES] SPX: { hasPattern: true, patternKeys: [...] }
+[SCAN] SPX: {
+  filtered: false,   ← ✅ NOT FILTERED ANYMORE!
+  hasSignal: true,
+  signal: { type: 'mean_reversion_long', baseScore: 72.5 }
+}
+[Composite Scanner] 🎯 NEW SIGNAL SAVED: SPX mean_reversion_long (72/100)
+```
+
+**🎉 Weekend Radar should now work!**

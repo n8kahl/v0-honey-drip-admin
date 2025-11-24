@@ -1,5 +1,6 @@
 import type { SymbolFeatures } from '../../strategy/engine.js';
 import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
+import { shouldRunDetector } from './utils.js';
 
 /**
  * Index Mean Reversion Short Detector (SPX/NDX)
@@ -24,8 +25,8 @@ export const indexMeanReversionShortDetector: OpportunityDetector = createDetect
     const vwapDist = features.vwap?.distancePct;
     if (!vwapDist || vwapDist <= 0.3) return false;
 
-    // 3. During regular hours
-    if (!features.session?.isRegularHours) return false;
+    // 3. Check if detector should run (market hours or weekend mode)
+    if (!shouldRunDetector(features)) return false;
 
     // 4. Not in extreme uptrend
     const regime = features.pattern?.market_regime;

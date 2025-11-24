@@ -1,5 +1,6 @@
 import type { SymbolFeatures } from '../../strategy/engine.js';
 import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
+import { shouldRunDetector } from './utils.js';
 
 /**
  * Trend Continuation Long Detector
@@ -35,9 +36,8 @@ export const trendContinuationLongDetector: OpportunityDetector = createDetector
     const rsi = features.rsi?.['14'];
     if (!rsi || rsi < 40 || rsi > 70) return false; // Looking for pullbacks, not extremes
 
-    // 5. During regular hours
-    const regularHours = features.session?.isRegularHours === true;
-    if (!regularHours) return false;
+    // 5. Check if detector should run (market hours or weekend mode)
+    if (!shouldRunDetector(features)) return false;
 
     return true;
   },
