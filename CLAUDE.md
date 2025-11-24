@@ -18,19 +18,20 @@
 ## 📋 Table of Contents
 
 1. [Quick Start](#quick-start)
-2. [Project Overview](#project-overview)
-3. [Architecture](#architecture)
-4. [Directory Structure](#directory-structure)
-5. [Technology Stack](#technology-stack)
-6. [API Integration](#api-integration)
-7. [Database Schema](#database-schema)
-8. [State Management](#state-management)
-9. [Testing Strategy](#testing-strategy)
-10. [Development Workflow](#development-workflow)
-11. [Deployment](#deployment)
-12. [Critical Patterns](#critical-patterns)
-13. [Common Tasks](#common-tasks)
-14. [Troubleshooting](#troubleshooting)
+2. [Recent Session Changes](#recent-session-changes)
+3. [Project Overview](#project-overview)
+4. [Architecture](#architecture)
+5. [Directory Structure](#directory-structure)
+6. [Technology Stack](#technology-stack)
+7. [API Integration](#api-integration)
+8. [Database Schema](#database-schema)
+9. [State Management](#state-management)
+10. [Testing Strategy](#testing-strategy)
+11. [Development Workflow](#development-workflow)
+12. [Deployment](#deployment)
+13. [Critical Patterns](#critical-patterns)
+14. [Common Tasks](#common-tasks)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -70,6 +71,109 @@ pnpm run session-check  # Run before ending session (tests + build + git status)
 pnpm start:composite  # Run composite scanner worker
 pnpm start:prewarm    # Run weekend pre-warm worker (manual trigger)
 ```
+
+---
+
+## 📝 Recent Session Changes
+
+### Session: November 23, 2025 - Loaded Trades & Contract Persistence
+
+**Branch**: `claude/fix-loaded-trades-nav-01C7dP6XiJ9sjtQZmozssYp9`
+
+#### Changes Made:
+
+1. **Fixed Critical UX Issues (Commits: f644d57, 8707217)**
+   - Added missing `HDTagTradeType` import to HDWatchlistRail
+   - Fixed center column not loading when "Load and Alert" clicked
+   - Preserved `activeTicker` for load alerts so charts continue to display
+   - Implemented database deletion for dismissed trades (no reappearing on refresh)
+   - Fixed chart layout (1m/5m side-by-side instead of stacked)
+   - Added active trades to left navigation with row-based styling
+
+2. **Contract JSONB Persistence (Commit: e39519c)**
+   - Added `contract` JSONB column to trades table (migration 011)
+   - Store full contract object (bid, ask, volume, Greeks, etc.) in database
+   - Trades now persist across sessions with complete market details
+   - Prevents "ghost" loaded trades showing with 0.00 prices
+
+3. **Deferred Trade Persistence - KEY CHANGE (Commit: d6ea76b)**
+   - **BREAKING**: Changed when trades are saved to database
+   - `handleContractSelect()`: Creates WATCHING state trade (preview only)
+     - Shows Trade Details, Contract Analysis, Market Analysis panels
+     - Does NOT add to activeTrades
+     - Does NOT persist to database
+   - `handleSendAlert("load")`: Creates trade in database for first time
+     - Transitions WATCHING → LOADED
+     - Adds to activeTrades
+     - Only explicit "Load and Alert" action triggers persistence
+   - **Result**: No more ghost trades from just browsing contracts
+
+4. **Fixed Import Bundling Error (Commits: 67137c0, 3406f76)**
+   - Removed `.js` extensions from massive imports in vixClassifier
+   - Fixed "massive is not defined" error in production builds
+   - Lesson: TypeScript imports from `.ts` files without extensions
+
+#### Database Migrations to Apply:
+
+```sql
+-- Migration 011: Add contract JSONB persistence
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS contract JSONB;
+CREATE INDEX IF NOT EXISTS idx_trades_contract ON trades USING GIN (contract);
+```
+
+#### Trade Lifecycle (Updated):
+
+```
+Symbol Click (e.g., SPY)
+  ↓
+  Middle: Empty
+  Left Nav: No changes
+
+Contract Click (e.g., 649P · 1 DTE)
+  ↓
+  State: WATCHING (temporary, local only)
+  Middle: Show Trade Details, Analysis panels
+  Left Nav: "Loaded Trades" still empty
+  ↓
+  [User decides to load...]
+  ↓
+"Load and Alert" Button Click
+  ↓
+  State: Creating trade in DB...
+  ↓
+  State: LOADED (with real database ID)
+  Middle: Continue showing contract
+  Left Nav: Trade appears in "Loaded Trades" section ✅
+```
+
+#### Key Files Modified:
+
+- `src/hooks/useTradeStateMachine.ts` - handleContractSelect & handleSendAlert refactored
+- `src/lib/supabase/database.ts` - createTrade accepts contract param
+- `src/stores/tradeStore.ts` - loadTrades restores contract from JSONB
+- `src/lib/api/tradeApi.ts` - Added deleteTradeApi function
+- `src/components/hd/charts/HDLiveChartContextAware.tsx` - Fixed flex layout
+- `src/components/hd/layout/HDWatchlistRail.tsx` - Added HDTagTradeType import
+- `server/routes/trades.ts` - Updated to store full contract object
+- `src/lib/strategy/vixClassifier.ts` - Fixed massive import
+- `scripts/011_add_contract_jsonb.sql` - New migration
+
+#### Testing Checklist for Next Session:
+
+- [ ] Select symbol → middle column empty ✓
+- [ ] Select contract → panels load ✓
+- [ ] Dismiss via X → deleted from DB, doesn't reappear on refresh ✓
+- [ ] Click "Load and Alert" → trade appears in "Loaded Trades" ✓
+- [ ] Refresh page → loaded trades persist with full contract data ✓
+- [ ] Charts display side-by-side (1m + 5m) ✓
+- [ ] Active trades show in left nav with P&L coloring ✓
+
+#### Known Issues / Next Steps:
+
+- [ ] Migration 011 needs to be run in Supabase SQL Editor before full deployment
+- [ ] Test the full flow end-to-end with real market data
+- [ ] Verify P&L calculations for active trades are correct
+- [ ] Consider adding confirmation dialog before dismissing loaded trades
 
 ---
 
