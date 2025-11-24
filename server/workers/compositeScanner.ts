@@ -273,6 +273,16 @@ async function fetchSymbolFeatures(
       timezone: "America/New_York",
     });
 
+    // Log pattern detection results for diagnostics
+    console.log(`[FEATURES] ${symbol}:`, {
+      hasPattern: !!features.pattern,
+      patternKeys: features.pattern ? Object.keys(features.pattern).filter(k => features.pattern![k] === true) : [],
+      rsi: features.mtf?.['5m']?.rsi?.[14]?.toFixed(1),
+      price: latestBar.close.toFixed(2),
+      volume: latestBar.volume,
+      barCount: bars.length,
+    });
+
     return features;
   } catch (error) {
     console.error(`[Composite Scanner] Error fetching features for ${symbol}:`, error);
@@ -370,8 +380,8 @@ async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promi
     const { data: channels, error: channelsErr } = await supabase
       .from("discord_channels")
       .select("*")
-      .eq("user_id", userId)
-      .eq("enabled", true);
+      .eq("user_id", userId);
+      // Note: 'enabled' column doesn't exist in schema, fetching all channels
 
     if (channelsErr) {
       console.error(
@@ -450,10 +460,11 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map((w) => w.ticker);
+    const symbols = watchlist.map((w) => w.symbol);
     console.log(
       `[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
     );
+    console.log(`[DEBUG] Watchlist raw data:`, watchlist.slice(0, 3)); // Show first 3 for debugging
 
     // Create scanner instance for this user with optimized configuration
     const scanner = new CompositeScanner({
@@ -489,6 +500,20 @@ async function scanUserWatchlist(userId: string): Promise<number> {
 
         // Scan symbol
         const result = await scanner.scanSymbol(symbol, features);
+
+        // Enhanced logging for diagnostics
+        console.log(`[SCAN] ${symbol}:`, {
+          filtered: result.filtered,
+          filterReason: result.filterReason,
+          hasSignal: !!result.signal,
+          signal: result.signal ? {
+            type: result.signal.opportunityType,
+            baseScore: result.signal.baseScore.toFixed(1),
+            direction: result.signal.direction,
+            entry: result.signal.entryPrice,
+            rr: result.signal.riskReward?.toFixed(2),
+          } : null,
+        });
 
         if (result.filtered) {
           console.log(`[Composite Scanner] ${symbol}: Filtered (${result.filterReason})`);
