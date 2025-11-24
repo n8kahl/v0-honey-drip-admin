@@ -26,7 +26,7 @@ import {
 } from "./ScannerConfig.js";
 import { SignalDeduplication, checkDeduplication } from "./SignalDeduplication.js";
 import { ALL_DETECTORS } from "./detectors/index.js";
-import type { ParameterConfig } from "../../server/workers/confluenceOptimizer.js";
+import type { ParameterConfig } from "../../types/optimizedParameters.js";
 
 // Phase 2: Import Context Engines
 // TEMPORARILY DISABLED for production build compatibility

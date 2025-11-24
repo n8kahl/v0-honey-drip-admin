@@ -44,7 +44,7 @@ import { fileURLToPath } from "url";
 import { OPTIMIZED_SCANNER_CONFIG } from "../../src/lib/composite/OptimizedScannerConfig.js";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import type { ParameterConfig } from "./confluenceOptimizer.js";
+import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
