@@ -921,11 +921,23 @@ router.get("/quotes", requireProxyToken, async (req, res) => {
         const symbol = it.ticker || it.symbol || "";
         // Try multiple field names for the current price (indices API returns value, stocks use different fields)
         const last = Number(it.value ?? it.last ?? it.price ?? it.close ?? 0);
+
+        // Calculate change from previous close (especially important for weekends/after-hours)
+        const prevClose = Number(it.prevDay?.c ?? it.previous_close ?? 0);
+        let change = Number(it.session?.change || 0);
+        let changePercent = Number(it.session?.change_percent || 0);
+
+        // If session data is missing/zero but we have prevClose, calculate manually
+        if ((change === 0 || changePercent === 0) && prevClose > 0 && last > 0) {
+          change = last - prevClose;
+          changePercent = (change / prevClose) * 100;
+        }
+
         results.push({
           symbol: symbol,
           last,
-          change: Number(it.session?.change || 0),
-          changePercent: Number(it.session?.change_percent || 0),
+          change,
+          changePercent,
           asOf: Date.now(),
           source: "indices",
         });
@@ -988,9 +1000,17 @@ router.get("/quotes", requireProxyToken, async (req, res) => {
                       r?.last_quote?.bp ??
                       0
                   );
-                  // Extract change and changePercent from underlying asset
-                  const change = Number(underlying?.change ?? 0);
-                  const changePercent = Number(underlying?.change_percent ?? 0);
+
+                  // Calculate change from previous close if session data is missing
+                  const prevClose = Number(underlying?.previous_close ?? 0);
+                  let change = Number(underlying?.change ?? 0);
+                  let changePercent = Number(underlying?.change_percent ?? 0);
+
+                  // If change data is missing/zero but we have prevClose, calculate manually
+                  if ((change === 0 || changePercent === 0) && prevClose > 0 && last > 0) {
+                    change = last - prevClose;
+                    changePercent = (change / prevClose) * 100;
+                  }
 
                   results.push({
                     symbol: s,
