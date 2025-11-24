@@ -14,11 +14,19 @@ import { HDChartContainer } from "./HDChartContainer";
 import { TradeMetricsPanel } from "./TradeMetricsPanel";
 import type { Trade, TradeState, Ticker } from "../../../types";
 import type { ChartLevel } from "../../../types/tradeLevels";
-import {
-  detectChartMode,
-  getChartModeConfig,
-  getSafeTimeframe,
-} from "../../../lib/chartUtils/chartStateDetector";
+
+// Chart mode detection (inline - no longer using chartStateDetector)
+type ChartMode = "BROWSE" | "LOADED" | "ENTERED";
+
+function detectChartMode(
+  tradeState: TradeState,
+  currentTrade: Trade | null,
+  hasLoadedContract: boolean
+): ChartMode {
+  if (tradeState === "ENTERED") return "ENTERED";
+  if (tradeState === "LOADED" || hasLoadedContract) return "LOADED";
+  return "BROWSE";
+}
 
 interface HDLiveChartContextAwareProps {
   ticker: string;
@@ -47,12 +55,6 @@ export function HDLiveChartContextAware({
     [tradeState, currentTrade, hasLoadedContract]
   );
 
-  // Get optimized config for this mode
-  const config = useMemo(() => getChartModeConfig(mode, ticker), [mode, ticker]);
-
-  // Determine safe timeframe (undefined to get mode default)
-  const timeframe = getSafeTimeframe(undefined, mode, config);
-
   // Get current price for P&L calculation
   const currentPrice = useMemo(() => {
     if (currentTrade?.contract?.mid) {
@@ -61,14 +63,17 @@ export function HDLiveChartContextAware({
     return activeTicker?.last || 0;
   }, [currentTrade, activeTicker]);
 
-  // Build indicator config based on mode
+  // Simple indicator config - show key indicators
   const indicatorConfig = useMemo(
     () => ({
-      ema: { periods: config.indicators.ema },
-      vwap: { enabled: config.indicators.vwap, bands: false },
+      ema: { periods: [9, 21] },
+      vwap: { enabled: true, bands: false },
     }),
-    [config.indicators]
+    []
   );
+
+  // Show key levels when in LOADED or ENTERED mode
+  const showKeyLevels = mode === "LOADED" || mode === "ENTERED";
 
   // Always use dual view on desktop - split height equally between 1m and 5m charts
   const chartHeight = useMemo(() => {
@@ -96,7 +101,7 @@ export function HDLiveChartContextAware({
               initialTimeframe="5"
               indicators={indicatorConfig}
               events={[]}
-              levels={config.showKeyLevels ? levels : []}
+              levels={showKeyLevels ? levels : []}
               height={finalChartHeight}
               className="w-full"
               showControls={false}
@@ -110,7 +115,7 @@ export function HDLiveChartContextAware({
               initialTimeframe="1"
               indicators={indicatorConfig}
               events={[]}
-              levels={config.showKeyLevels ? levels : []}
+              levels={showKeyLevels ? levels : []}
               height={finalChartHeight}
               className="w-full"
               showControls={false}
