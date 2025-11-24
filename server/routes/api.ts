@@ -354,8 +354,14 @@ router.get("/massive/indices/bars", requireProxyToken, async (req, res) => {
   }
 
   try {
+    // CRITICAL: Normalize symbol for Massive.com (adds I: prefix for indices like SPX, NDX)
+    const normalizedSymbol = normalizeSymbolForMassive(symbol!);
+    console.log(
+      `[Massive] /massive/indices/bars: Normalized symbol: ${symbol} → ${normalizedSymbol}`
+    );
+
     const path =
-      `/v2/aggs/ticker/${encodeURIComponent(symbol!)}` +
+      `/v2/aggs/ticker/${encodeURIComponent(normalizedSymbol)}` +
       `/range/${multiplier}/${timespan}/${from}/${to}` +
       `?adjusted=${adjusted}&sort=${sort}&limit=${limit}`;
     const json = await massiveFetch(path);

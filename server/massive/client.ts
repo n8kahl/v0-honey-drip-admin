@@ -166,8 +166,13 @@ export async function getIndexAggregates(
   from: string,
   to: string
 ) {
+  // CRITICAL: Normalize symbol for Massive.com (adds I: prefix for indices like SPX, NDX)
+  const { normalizeSymbolForMassive } = await import("../lib/symbolUtils.js");
+  const normalizedSymbol = normalizeSymbolForMassive(ticker);
+  console.log(`[Massive] getIndexAggregates: Normalized symbol: ${ticker} → ${normalizedSymbol}`);
+
   const path = `/v2/aggs/ticker/${encodeURIComponent(
-    ticker
+    normalizedSymbol
   )}/range/${mult}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=5000`;
   const res = await callMassive<{ results?: any[]; [key: string]: any }>(path);
   if (!res.ok) {
@@ -195,6 +200,11 @@ export async function getOptionChain(
   limit?: number,
   filters?: Record<string, any>
 ) {
+  // CRITICAL: Normalize symbol for Massive.com (adds I: prefix for indices like SPX, NDX)
+  const { normalizeSymbolForMassive } = await import("../lib/symbolUtils.js");
+  const normalizedSymbol = normalizeSymbolForMassive(underlying);
+  console.log(`[Massive] Normalized symbol: ${underlying} → ${normalizedSymbol}`);
+
   const normalizedLimit =
     typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 250;
 
@@ -209,7 +219,7 @@ export async function getOptionChain(
     });
   }
 
-  const path = `/v3/snapshot/options/${encodeURIComponent(underlying)}?${params.toString()}`;
+  const path = `/v3/snapshot/options/${encodeURIComponent(normalizedSymbol)}?${params.toString()}`;
   console.log(`[Massive] Fetching options chain: ${path}`);
   const res = await callMassive<any>(path);
   if (!res.ok) {
