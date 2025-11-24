@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prebuild": "pnpm run clean:strategy-js",
+    "prebuild": "pnpm run clean:strategy-js && pnpm run clean:dist",
     "build": "vite build && tsc -p tsconfig.server.json",
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "dev:worker": "tsx watch server/workers/scanner.ts",
@@ -17,6 +17,7 @@
     "start:prewarm": "node server/dist/server/workers/weekendPreWarm.js --force",
     "start:all": "concurrently \"node server/dist/server/index.js\" \"node server/dist/server/workers/compositeScanner.js\"",
     "clean:strategy-js": "rm -f src/lib/strategy/*.js",
+    "clean:dist": "rm -rf server/dist",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
