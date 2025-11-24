@@ -443,7 +443,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     // Fetch user's watchlist
     const { data: watchlist, error: watchlistErr } = await supabase
       .from("watchlist")
-      .select("symbol")
+      .select("ticker")
       .eq("user_id", userId);
 
     if (watchlistErr) {
@@ -460,7 +460,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map((w) => w.symbol);
+    const symbols = watchlist.map((w) => w.ticker);
     console.log(
       `[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
     );
