@@ -23,6 +23,8 @@
     "backtest:detector": "tsx server/workers/backtestRunner.ts --detector",
     "dev:flow": "tsx server/workers/optionsFlowListener.ts",
     "start:flow": "tsx server/workers/optionsFlowListener.ts",
+    "optimize": "tsx server/workers/confluenceOptimizer.ts",
+    "optimize:quick": "tsx server/workers/confluenceOptimizer.ts --quick",
     "preview": "vite preview",
     "start": "node server/dist/server/index.js",
     "start:worker": "node server/dist/server/workers/scanner.js",
