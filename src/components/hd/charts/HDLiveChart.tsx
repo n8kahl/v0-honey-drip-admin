@@ -175,7 +175,7 @@ export function HDLiveChart({
   const tickerRef = useRef<string>(ticker);
 
   // Timeframe-specific initial zoom levels
-  const lastNBarsAuto = currentTf === "1" ? 30 : currentTf === "5" ? 5 : 100;
+  const lastNBarsAuto = currentTf === "1" ? 30 : currentTf === "5" ? 20 : 100;
 
   const [opacity, setOpacity] = useState<number>(1);
 
