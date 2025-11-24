@@ -23,9 +23,9 @@ CREATE INDEX IF NOT EXISTS idx_historical_bars_timeframe ON historical_bars(time
 CREATE INDEX IF NOT EXISTS idx_historical_bars_timestamp ON historical_bars(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_historical_bars_symbol_timeframe ON historical_bars(symbol, timeframe, timestamp DESC);
 
--- Composite index for date range queries
-CREATE INDEX IF NOT EXISTS idx_historical_bars_range ON historical_bars(symbol, timeframe, timestamp)
-  WHERE timestamp > extract(epoch from now() - interval '90 days')::bigint * 1000;
+-- Composite index for date range queries (removed WHERE clause - causes IMMUTABLE error)
+-- Note: Full index without predicate - still fast due to B-tree structure
+CREATE INDEX IF NOT EXISTS idx_historical_bars_range ON historical_bars(symbol, timeframe, timestamp DESC);
 
 -- Enable RLS (no user-specific restrictions - this is global market data)
 ALTER TABLE historical_bars ENABLE ROW LEVEL SECURITY;
