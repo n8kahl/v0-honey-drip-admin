@@ -431,7 +431,7 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       console.error("[Trades API] Error linking channel:", error);
 
       // Handle foreign key constraint (channel doesn't exist)
-      if (error.message.includes("foreign key") || error.message.includes("violates")) {
+      if (error.message?.includes("foreign key") || error.message?.includes("violates")) {
         console.warn(
           `[Trades API] Channel ${channelId} does not exist or trade ${tradeId} not found`
         );
@@ -442,7 +442,7 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       }
 
       // Handle duplicate (idempotent)
-      if (error.message.includes("duplicate")) {
+      if (error.message?.includes("duplicate")) {
         console.log(`[Trades API] Channel already linked (idempotent)`);
         return res.status(200).json({ message: "Channel already linked" });
       }
@@ -536,7 +536,7 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       console.error("[Trades API] Error linking challenge:", error);
 
       // Handle foreign key constraint (challenge doesn't exist)
-      if (error.message.includes("foreign key") || error.message.includes("violates")) {
+      if (error.message?.includes("foreign key") || error.message?.includes("violates")) {
         console.warn(
           `[Trades API] Challenge ${challengeId} does not exist or trade ${tradeId} not found`
         );
@@ -547,7 +547,7 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       }
 
       // Handle duplicate (idempotent)
-      if (error.message.includes("duplicate")) {
+      if (error.message?.includes("duplicate")) {
         console.log(`[Trades API] Challenge already linked (idempotent)`);
         return res.status(200).json({ message: "Challenge already linked" });
       }
