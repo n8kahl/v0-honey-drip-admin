@@ -496,28 +496,25 @@ export function HDLiveChart({
     };
   }, []);
 
-  useEffect(() => {
-    console.log("[HDLiveChart] Chart initialization effect triggered, height:", height);
+  // Callback ref to initialize chart as soon as container is mounted
+  const setChartContainerRef = useCallback((node: HTMLDivElement | null) => {
+    chartContainerRef.current = node;
 
-    const container = chartContainerRef.current;
-    if (!container) {
-      console.warn("[HDLiveChart] No chart container ref, cannot initialize chart");
+    if (!node) {
+      console.warn("[HDLiveChart] Chart container unmounted");
       return;
     }
 
+    // Only initialize if we don't have a chart yet
     if (chartRef.current) {
-      console.log("[HDLiveChart] Chart already exists, updating dimensions only");
-      chartRef.current.applyOptions({
-        width: container.clientWidth,
-        height,
-      });
+      console.log("[HDLiveChart] Chart already exists, skipping initialization");
       return;
     }
 
-    console.log("[HDLiveChart] Creating new chart instance...");
+    console.log("[HDLiveChart] Chart container mounted, initializing chart...");
 
-    const chart = createChart(container, {
-      width: container.clientWidth,
+    const chart = createChart(node, {
+      width: node.clientWidth,
       height,
       layout: {
         background: { color: "#0a0a0a" },
@@ -646,8 +643,10 @@ export function HDLiveChart({
     // No viewport subscription needed - let users control pan/zoom freely
     console.log("[HDLiveChart] Chart initialization complete, setting chartReady=true");
     setChartReady(true);
+  }, [height]); // Only depend on height to avoid re-creating chart unnecessarily
 
-    // Handle resize
+  // Separate effect to handle resize
+  useEffect(() => {
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
         chartRef.current.applyOptions({
@@ -657,27 +656,33 @@ export function HDLiveChart({
     };
 
     window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
+  // Cleanup chart when ticker changes or component unmounts
+  useEffect(() => {
     return () => {
-      window.removeEventListener("resize", handleResize);
-      levelSeriesRefs.current.forEach((series) => {
-        try {
-          chart.removeSeries(series);
-        } catch (e) {
-          // Series might already be removed
-        }
-      });
-      levelSeriesRefs.current.clear();
-      candleSeriesRef.current = null;
-      volumeSeriesRef.current = null;
-      emaSeriesRefs.current.clear();
-      vwapSeriesRef.current = null;
-      bollingerRefs.current = null;
-      chart.remove();
-      chartRef.current = null;
-      setChartReady(false);
+      if (chartRef.current) {
+        console.log("[HDLiveChart] Cleaning up chart for ticker change");
+        levelSeriesRefs.current.forEach((series) => {
+          try {
+            chartRef.current?.removeSeries(series);
+          } catch (e) {
+            // Series might already be removed
+          }
+        });
+        levelSeriesRefs.current.clear();
+        candleSeriesRef.current = null;
+        volumeSeriesRef.current = null;
+        emaSeriesRefs.current.clear();
+        vwapSeriesRef.current = null;
+        bollingerRefs.current = null;
+        chartRef.current.remove();
+        chartRef.current = null;
+        setChartReady(false);
+      }
     };
-  }, [height, indicators, ticker]); // Re-initialize chart when ticker changes
+  }, [ticker]); // Cleanup when ticker changes
 
   useEffect(() => {
     // Reset auto-fit flag when ticker changes so new chart gets fitted
@@ -1371,7 +1376,7 @@ export function HDLiveChart({
 
       {/* Chart Canvas */}
       <div
-        ref={chartContainerRef}
+        ref={setChartContainerRef}
         style={{ position: "relative", width: "100%", height: `${height}px` }}
       />
     </div>
