@@ -107,7 +107,7 @@ describe("useTradeStateMachine", () => {
     expect(result.current.activeTicker).toBeNull();
   });
 
-  it("should transition WATCHING → LOADED on contract select", () => {
+  it("should transition WATCHING → LOADED on contract select and load", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -122,17 +122,28 @@ describe("useTradeStateMachine", () => {
 
     expect(result.current.activeTicker).toEqual(mockTicker);
 
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    // Step 1: Contract select creates preview (stays in WATCHING)
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
     });
 
-    expect(result.current.tradeState).toBe("LOADED");
+    expect(result.current.tradeState).toBe("WATCHING"); // Preview state
     expect(result.current.currentTrade).toBeTruthy();
     expect(result.current.currentTrade?.ticker).toBe("SPY");
     expect(result.current.currentTrade?.contract).toEqual(mockContract);
+    expect(result.current.showAlert).toBe(true);
+    expect(result.current.alertType).toBe("load");
+
+    // Step 2: Send "load" alert to persist and transition to LOADED
+    await act(async () => {
+      await result.current.actions.handleSendAlert(["channel-1"], [], "Loading SPY 450C");
+    });
+
+    expect(result.current.tradeState).toBe("LOADED");
+    expect(result.current.currentTrade?.state).toBe("LOADED");
   });
 
-  it("should transition LOADED → ENTERED on enter trade", () => {
+  it("should transition LOADED → ENTERED on enter trade", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -145,14 +156,20 @@ describe("useTradeStateMachine", () => {
       result.current.actions.handleTickerClick(mockTicker);
     });
 
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    // Contract select creates preview
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
+    });
+
+    // Load the trade to transition to LOADED state
+    await act(async () => {
+      await result.current.actions.handleSendAlert(["channel-1"], [], "Loading");
     });
 
     expect(result.current.tradeState).toBe("LOADED");
 
-    act(() => {
-      result.current.actions.handleEnterTrade(["channel-1"], ["challenge-1"], "Test entry");
+    await act(async () => {
+      await result.current.actions.handleEnterTrade(["channel-1"], ["challenge-1"], "Test entry");
     });
 
     expect(result.current.tradeState).toBe("ENTERED");
@@ -201,7 +218,7 @@ describe("useTradeStateMachine", () => {
     expect(result.current.currentTrade?.updates[1].type).toBe("trim");
   });
 
-  it("should transition ENTERED → EXITED on exit", () => {
+  it("should transition ENTERED → EXITED on exit", async () => {
     const onExitedTrade = vi.fn();
     const { result } = renderHook(() =>
       useTradeStateMachine({
@@ -215,11 +232,14 @@ describe("useTradeStateMachine", () => {
     act(() => {
       result.current.actions.handleTickerClick(mockTicker);
     });
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
     });
-    act(() => {
-      result.current.actions.handleEnterTrade(["channel-1"], []);
+    await act(async () => {
+      await result.current.actions.handleSendAlert(["channel-1"], [], "Loading");
+    });
+    await act(async () => {
+      await result.current.actions.handleEnterTrade(["channel-1"], []);
     });
 
     expect(result.current.tradeState).toBe("ENTERED");
@@ -233,14 +253,22 @@ describe("useTradeStateMachine", () => {
     expect(result.current.alertType).toBe("exit");
 
     // Send exit alert
-    act(() => {
-      result.current.actions.handleSendAlert(["channel-1"], [], "Closed position");
+    await act(async () => {
+      await result.current.actions.handleSendAlert(["channel-1"], [], "Closed position");
     });
 
-    expect(result.current.currentTrade?.state).toBe("EXITED");
-    expect(result.current.currentTrade?.updates).toHaveLength(2);
-    expect(result.current.currentTrade?.updates[1].type).toBe("exit");
-    expect(onExitedTrade).toHaveBeenCalledWith(expect.objectContaining({ state: "EXITED" }));
+    // After exit, currentTrade is cleared and onExitedTrade callback is called
+    expect(result.current.currentTrade).toBeNull();
+    expect(result.current.tradeState).toBe("WATCHING");
+    expect(onExitedTrade).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: "EXITED",
+        updates: expect.arrayContaining([
+          expect.objectContaining({ type: "enter" }),
+          expect.objectContaining({ type: "exit" }),
+        ]),
+      })
+    );
   });
 
   it("should add update-sl alert to ENTERED trade", () => {
@@ -280,7 +308,7 @@ describe("useTradeStateMachine", () => {
     expect(result.current.currentTrade?.updates[1].type).toBe("update-sl");
   });
 
-  it("should handle discard from LOADED state", () => {
+  it("should handle discard from LOADED state", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -293,8 +321,11 @@ describe("useTradeStateMachine", () => {
     act(() => {
       result.current.actions.handleTickerClick(mockTicker);
     });
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
+    });
+    await act(async () => {
+      await result.current.actions.handleSendAlert(["channel-1"], [], "Loading");
     });
 
     expect(result.current.tradeState).toBe("LOADED");
