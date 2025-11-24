@@ -5,35 +5,38 @@
  * Orchestrates opportunity detection, scoring, and signal generation
  */
 
-import type { SymbolFeatures } from '../strategy/engine.js';
-import type { OptionsChainData } from './OpportunityDetector.js';
-import type { OpportunityDetector, AssetClass } from './OpportunityDetector.js';
-import { getAssetClass } from './OpportunityDetector.js';
+import type { SymbolFeatures } from "../strategy/engine.js";
+import type { OptionsChainData } from "./OpportunityDetector.js";
+import type { OpportunityDetector, AssetClass } from "./OpportunityDetector.js";
+import { getAssetClass } from "./OpportunityDetector.js";
 import type {
   CompositeSignal,
   RiskRewardCalculation,
   StyleScoringResult,
   DetectedOpportunity,
-} from './CompositeSignal.js';
-import { generateBarTimeKey } from './CompositeSignal.js';
-import type { ScannerConfig, SignalThresholds } from './ScannerConfig.js';
+} from "./CompositeSignal.js";
+import { generateBarTimeKey } from "./CompositeSignal.js";
+import type { ScannerConfig, SignalThresholds } from "./ScannerConfig.js";
 import {
   DEFAULT_SCANNER_CONFIG,
   getThresholdsForSignal,
   passesUniversalFilters,
-} from './ScannerConfig.js';
-import { SignalDeduplication, checkDeduplication } from './SignalDeduplication.js';
-import { ALL_DETECTORS } from './detectors/index.js';
+} from "./ScannerConfig.js";
+import { SignalDeduplication, checkDeduplication } from "./SignalDeduplication.js";
+import { ALL_DETECTORS } from "./detectors/index.js";
 
 // Phase 2: Import Context Engines
-import { contextEngines } from '../engines/index.js';
+// TEMPORARILY DISABLED for production build compatibility
+// Context engines need refactoring to not import frontend Supabase client
+// TODO: Make engines accept Supabase client as parameter instead of importing at module level
+// import { contextEngines } from '../engines/index.js';
 import type {
   IVContext,
   GammaContext,
   MTFContext,
   FlowContext,
   RegimeContext,
-} from '../engines/index.js';
+} from "../engines/index.js";
 
 // Import trading style profiles (to be created in Phase 4)
 // For now, we'll use placeholder types
@@ -54,8 +57,8 @@ interface TradingStyleProfile {
 
 // Placeholder profiles (will be replaced with actual profiles in Phase 4)
 const SCALP_PROFILE: TradingStyleProfile = {
-  name: 'scalp',
-  primaryTimeframe: '5m',
+  name: "scalp",
+  primaryTimeframe: "5m",
   risk: {
     stopLossATRMultiplier: 0.75,
     targetATRMultiplier: [1.0, 1.5, 2.0],
@@ -69,8 +72,8 @@ const SCALP_PROFILE: TradingStyleProfile = {
 };
 
 const DAY_TRADE_PROFILE: TradingStyleProfile = {
-  name: 'day_trade',
-  primaryTimeframe: '15m',
+  name: "day_trade",
+  primaryTimeframe: "15m",
   risk: {
     stopLossATRMultiplier: 1.0,
     targetATRMultiplier: [1.5, 2.5, 3.5],
@@ -84,8 +87,8 @@ const DAY_TRADE_PROFILE: TradingStyleProfile = {
 };
 
 const SWING_PROFILE: TradingStyleProfile = {
-  name: 'swing',
-  primaryTimeframe: '60m',
+  name: "swing",
+  primaryTimeframe: "60m",
   risk: {
     stopLossATRMultiplier: 1.5,
     targetATRMultiplier: [2.0, 3.0, 4.0],
@@ -150,7 +153,7 @@ export class CompositeScanner {
     if (!passesUniversalFilters(symbol, features, this.config.filters)) {
       return {
         filtered: true,
-        filterReason: 'Failed universal filters',
+        filterReason: "Failed universal filters",
         detectionCount: 0,
         scanTimeMs: Date.now() - startTime,
       };
@@ -160,7 +163,7 @@ export class CompositeScanner {
     const assetClass = getAssetClass(symbol);
     let optionsData: OptionsChainData | null = null;
 
-    if (assetClass === 'INDEX' && this.config.enableOptionsDataFetch && this.optionsDataProvider) {
+    if (assetClass === "INDEX" && this.config.enableOptionsDataFetch && this.optionsDataProvider) {
       try {
         optionsData = await this.optionsDataProvider(symbol);
       } catch (error) {
@@ -174,14 +177,18 @@ export class CompositeScanner {
     if (detectedOpportunities.length === 0) {
       return {
         filtered: true,
-        filterReason: 'No opportunities detected',
+        filterReason: "No opportunities detected",
         detectionCount: 0,
         scanTimeMs: Date.now() - startTime,
       };
     }
 
     // Step 4: Score and rank opportunities
-    const scoredOpportunities = this.scoreOpportunities(detectedOpportunities, features, optionsData);
+    const scoredOpportunities = this.scoreOpportunities(
+      detectedOpportunities,
+      features,
+      optionsData
+    );
 
     // Step 4.5: Apply context engine boosts (Phase 2)
     const contextEnhancedOpportunities = await this.applyContextBoosts(
@@ -346,60 +353,77 @@ export class CompositeScanner {
   ): Promise<DetectedOpportunity[]> {
     try {
       // Fetch all context data in parallel for performance
-      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
-        contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
-        contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
-        contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
-        contextEngines.flowAnalysis.getFlowContext(symbol, 'medium').catch(() => null),
-        contextEngines.regimeDetection.getRegimeContext().catch(() => null),
-      ]);
+      // TEMPORARILY DISABLED - engines have module resolution issues in production
+      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = [
+        null,
+        null,
+        null,
+        null,
+        null,
+      ];
+      // TODO: Re-enable once engines are refactored
+      // const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
+      //   contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
+      //   contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
+      //   contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
+      //   contextEngines.flowAnalysis.getFlowContext(symbol, 'medium').catch(() => null),
+      //   contextEngines.regimeDetection.getRegimeContext().catch(() => null),
+      // ]);
 
       // Apply boosts to each opportunity
       return opportunities.map((opp) => {
         const direction = opp.detector.direction;
-        const recommendedStyle = opp.styleScores.recommendedStyle.toUpperCase() as 'SCALP' | 'DAY' | 'SWING';
+        const recommendedStyle = opp.styleScores.recommendedStyle.toUpperCase() as
+          | "SCALP"
+          | "DAY"
+          | "SWING";
 
         // Start with current scores
-        let scalpScore = opp.styleScores.scalpScore;
-        let dayTradeScore = opp.styleScores.dayTradeScore;
-        let swingScore = opp.styleScores.swingScore;
-        let recommendedStyleScore = opp.styleScores.recommendedStyleScore;
+        const scalpScore = opp.styleScores.scalpScore;
+        const dayTradeScore = opp.styleScores.dayTradeScore;
+        const swingScore = opp.styleScores.swingScore;
+        const recommendedStyleScore = opp.styleScores.recommendedStyleScore;
 
-        // Apply IV boost (if available)
-        if (ivContext) {
-          scalpScore = contextEngines.ivPercentile.applyIVBoost(scalpScore, ivContext, direction);
-          dayTradeScore = contextEngines.ivPercentile.applyIVBoost(dayTradeScore, ivContext, direction);
-          swingScore = contextEngines.ivPercentile.applyIVBoost(swingScore, ivContext, direction);
-        }
+        // Apply context engine boosts
+        // TEMPORARILY DISABLED - engines have module resolution issues in production
+        // Scanner still works without these advanced boosts, just with baseline detector scores
+        // TODO: Re-enable once engines are refactored
 
-        // Apply Gamma boost (if available)
-        if (gammaContext) {
-          const currentPrice = features.price?.current;
-          scalpScore = contextEngines.gammaExposure.applyGammaBoost(scalpScore, gammaContext, direction, currentPrice);
-          dayTradeScore = contextEngines.gammaExposure.applyGammaBoost(dayTradeScore, gammaContext, direction, currentPrice);
-          swingScore = contextEngines.gammaExposure.applyGammaBoost(swingScore, gammaContext, direction, currentPrice);
-        }
+        // // Apply IV boost (if available)
+        // if (ivContext) {
+        //   scalpScore = contextEngines.ivPercentile.applyIVBoost(scalpScore, ivContext, direction);
+        //   dayTradeScore = contextEngines.ivPercentile.applyIVBoost(dayTradeScore, ivContext, direction);
+        //   swingScore = contextEngines.ivPercentile.applyIVBoost(swingScore, ivContext, direction);
+        // }
 
-        // Apply MTF boost (if available)
-        if (mtfContext) {
-          scalpScore = contextEngines.mtfAlignment.applyMTFBoost(scalpScore, mtfContext, direction);
-          dayTradeScore = contextEngines.mtfAlignment.applyMTFBoost(dayTradeScore, mtfContext, direction);
-          swingScore = contextEngines.mtfAlignment.applyMTFBoost(swingScore, mtfContext, direction);
-        }
+        // // Apply Gamma boost (if available)
+        // if (gammaContext) {
+        //   const currentPrice = features.price?.current;
+        //   scalpScore = contextEngines.gammaExposure.applyGammaBoost(scalpScore, gammaContext, direction, currentPrice);
+        //   dayTradeScore = contextEngines.gammaExposure.applyGammaBoost(dayTradeScore, gammaContext, direction, currentPrice);
+        //   swingScore = contextEngines.gammaExposure.applyGammaBoost(swingScore, gammaContext, direction, currentPrice);
+        // }
 
-        // Apply Flow boost (if available)
-        if (flowContext) {
-          scalpScore = contextEngines.flowAnalysis.applyFlowBoost(scalpScore, flowContext, direction);
-          dayTradeScore = contextEngines.flowAnalysis.applyFlowBoost(dayTradeScore, flowContext, direction);
-          swingScore = contextEngines.flowAnalysis.applyFlowBoost(swingScore, flowContext, direction);
-        }
+        // // Apply MTF boost (if available)
+        // if (mtfContext) {
+        //   scalpScore = contextEngines.mtfAlignment.applyMTFBoost(scalpScore, mtfContext, direction);
+        //   dayTradeScore = contextEngines.mtfAlignment.applyMTFBoost(dayTradeScore, mtfContext, direction);
+        //   swingScore = contextEngines.mtfAlignment.applyMTFBoost(swingScore, mtfContext, direction);
+        // }
 
-        // Apply Regime boost (if available)
-        if (regimeContext) {
-          scalpScore = contextEngines.regimeDetection.applyRegimeBoost(scalpScore, regimeContext, direction, 'SCALP');
-          dayTradeScore = contextEngines.regimeDetection.applyRegimeBoost(dayTradeScore, regimeContext, direction, 'DAY');
-          swingScore = contextEngines.regimeDetection.applyRegimeBoost(swingScore, regimeContext, direction, 'SWING');
-        }
+        // // Apply Flow boost (if available)
+        // if (flowContext) {
+        //   scalpScore = contextEngines.flowAnalysis.applyFlowBoost(scalpScore, flowContext, direction);
+        //   dayTradeScore = contextEngines.flowAnalysis.applyFlowBoost(dayTradeScore, flowContext, direction);
+        //   swingScore = contextEngines.flowAnalysis.applyFlowBoost(swingScore, flowContext, direction);
+        // }
+
+        // // Apply Regime boost (if available)
+        // if (regimeContext) {
+        //   scalpScore = contextEngines.regimeDetection.applyRegimeBoost(scalpScore, regimeContext, direction, 'SCALP');
+        //   dayTradeScore = contextEngines.regimeDetection.applyRegimeBoost(dayTradeScore, regimeContext, direction, 'DAY');
+        //   swingScore = contextEngines.regimeDetection.applyRegimeBoost(swingScore, regimeContext, direction, 'SWING');
+        // }
 
         // Recalculate recommended style after boosts
         const scores = {
@@ -416,7 +440,7 @@ export class CompositeScanner {
           scalpScore,
           dayTradeScore,
           swingScore,
-          recommendedStyle: newRecommended[0] as 'scalp' | 'day_trade' | 'swing',
+          recommendedStyle: newRecommended[0] as "scalp" | "day_trade" | "swing",
           recommendedStyleScore: newRecommended[1],
         };
 
@@ -471,9 +495,9 @@ export class CompositeScanner {
       styleScore *= timeModifier;
 
       // Apply volatility modifier
-      const mtf5m = features.mtf?.['5m'] as any;
+      const mtf5m = features.mtf?.["5m"] as any;
       const atr = mtf5m?.atr || 0;
-      const vixLevel = (features as any).pattern?.vix_level || 'medium';
+      const vixLevel = (features as any).pattern?.vix_level || "medium";
       const volModifier = profile.scoreModifiers.volatility(atr, vixLevel);
       styleScore *= volModifier;
 
@@ -489,7 +513,7 @@ export class CompositeScanner {
       scalpScore: scores.scalp || 0,
       dayTradeScore: scores.day_trade || 0,
       swingScore: scores.swing || 0,
-      recommendedStyle: recommended[0] as 'scalp' | 'day_trade' | 'swing',
+      recommendedStyle: recommended[0] as "scalp" | "day_trade" | "swing",
       recommendedStyleScore: recommended[1],
     };
   }
@@ -509,26 +533,25 @@ export class CompositeScanner {
   ): RiskRewardCalculation {
     const entry = features.price?.current || 0;
     const mtfPrimary = features.mtf?.[profile.primaryTimeframe] as any;
-    const mtf5m = features.mtf?.['5m'] as any;
+    const mtf5m = features.mtf?.["5m"] as any;
     const atr = mtfPrimary?.atr || mtf5m?.atr || 2.0;
 
     // Calculate stop based on direction and style
     const stopDistance = atr * profile.risk.stopLossATRMultiplier;
-    const stop =
-      detector.direction === 'LONG' ? entry - stopDistance : entry + stopDistance;
+    const stop = detector.direction === "LONG" ? entry - stopDistance : entry + stopDistance;
 
     // Calculate targets
     const targets = {
       T1:
-        detector.direction === 'LONG'
+        detector.direction === "LONG"
           ? entry + atr * profile.risk.targetATRMultiplier[0]
           : entry - atr * profile.risk.targetATRMultiplier[0],
       T2:
-        detector.direction === 'LONG'
+        detector.direction === "LONG"
           ? entry + atr * profile.risk.targetATRMultiplier[1]
           : entry - atr * profile.risk.targetATRMultiplier[1],
       T3:
-        detector.direction === 'LONG'
+        detector.direction === "LONG"
           ? entry + atr * profile.risk.targetATRMultiplier[2]
           : entry - atr * profile.risk.targetATRMultiplier[2],
     };
@@ -587,7 +610,7 @@ export class CompositeScanner {
       targets: riskReward.targets,
       riskReward: riskReward.riskRewardRatio,
       features,
-      status: 'ACTIVE',
+      status: "ACTIVE",
       expiresAt: new Date(timestamp + 5 * 60 * 1000), // 5 minutes
       barTimeKey: generateBarTimeKey(symbol, timestamp, opportunity.detector.type),
       detectorVersion: this.config.detectorVersion,
@@ -612,19 +635,21 @@ export class CompositeScanner {
     const isWeekend = features.session?.isRegularHours !== true;
 
     // Use weekend overrides if available and applicable
-    const effectiveMinBaseScore = isWeekend && thresholds.weekendMinBaseScore !== undefined
-      ? thresholds.weekendMinBaseScore
-      : thresholds.minBaseScore;
+    const effectiveMinBaseScore =
+      isWeekend && thresholds.weekendMinBaseScore !== undefined
+        ? thresholds.weekendMinBaseScore
+        : thresholds.minBaseScore;
 
-    const effectiveMinStyleScore = isWeekend && thresholds.weekendMinStyleScore !== undefined
-      ? thresholds.weekendMinStyleScore
-      : thresholds.minStyleScore;
+    const effectiveMinStyleScore =
+      isWeekend && thresholds.weekendMinStyleScore !== undefined
+        ? thresholds.weekendMinStyleScore
+        : thresholds.minStyleScore;
 
     // Base score threshold
     if (signal.baseScore < effectiveMinBaseScore) {
       return {
         pass: false,
-        reason: `Base score ${signal.baseScore.toFixed(1)} < ${effectiveMinBaseScore}${isWeekend ? ' (weekend)' : ''}`,
+        reason: `Base score ${signal.baseScore.toFixed(1)} < ${effectiveMinBaseScore}${isWeekend ? " (weekend)" : ""}`,
       };
     }
 
@@ -632,7 +657,7 @@ export class CompositeScanner {
     if (signal.recommendedStyleScore < effectiveMinStyleScore) {
       return {
         pass: false,
-        reason: `Style score ${signal.recommendedStyleScore.toFixed(1)} < ${effectiveMinStyleScore}${isWeekend ? ' (weekend)' : ''}`,
+        reason: `Style score ${signal.recommendedStyleScore.toFixed(1)} < ${effectiveMinStyleScore}${isWeekend ? " (weekend)" : ""}`,
       };
     }
 
@@ -655,11 +680,11 @@ export class CompositeScanner {
    */
   private getProfileForStyle(style: string): TradingStyleProfile {
     switch (style) {
-      case 'scalp':
+      case "scalp":
         return SCALP_PROFILE;
-      case 'day_trade':
+      case "day_trade":
         return DAY_TRADE_PROFILE;
-      case 'swing':
+      case "swing":
         return SWING_PROFILE;
       default:
         return DAY_TRADE_PROFILE;
