@@ -6,6 +6,10 @@
  * Handles both indices and options minute aggregate formats.
  */
 
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+config();
+
 import { createReadStream } from "fs";
 import { parse } from "csv-parse";
 import { createClient } from "@supabase/supabase-js";
@@ -41,10 +45,11 @@ export interface ParseStats {
 
 /**
  * Massive.com indices minute aggregate CSV format
+ * Actual format from flat files: ticker,open,close,high,low,window_start
  */
 interface IndicesRow {
-  timestamp: string; // ISO 8601 or epoch
-  ticker: string; // 'I:SPX', 'I:NDX', 'I:VIX'
+  window_start: string; // Nanosecond timestamp
+  ticker: string; // 'I:SPX', 'I:NDX', 'I:VIX', 'I:AAVE100'
   open: string;
   high: string;
   low: string;
@@ -170,7 +175,8 @@ export class FlatFileParser {
    */
   private parseRow(row: IndicesRow | OptionsRow, dataset: string, timeframe: string): BarRow {
     // Parse timestamp (handle both ISO 8601 and epoch formats)
-    const timestamp = this.parseTimestamp(row.timestamp);
+    const timestampField = "window_start" in row ? row.window_start : (row as any).timestamp;
+    const timestamp = this.parseTimestamp(timestampField);
 
     // Extract symbol
     const symbol = this.extractSymbol(row.ticker, dataset);
@@ -212,10 +218,19 @@ export class FlatFileParser {
    */
   private parseTimestamp(timestamp: string): number {
     // Try parsing as number first (epoch)
-    const epochMs = parseInt(timestamp, 10);
-    if (!isNaN(epochMs)) {
-      // If less than 13 digits, assume seconds, convert to ms
-      return epochMs < 10000000000000 ? epochMs * 1000 : epochMs;
+    const epochValue = parseInt(timestamp, 10);
+    if (!isNaN(epochValue)) {
+      // Check digit count to determine units
+      if (epochValue > 1000000000000000000) {
+        // 19 digits = nanoseconds (e.g., 1730436900000000000)
+        return Math.floor(epochValue / 1000000);
+      } else if (epochValue < 10000000000000) {
+        // Less than 13 digits = seconds
+        return epochValue * 1000;
+      } else {
+        // 13 digits = milliseconds
+        return epochValue;
+      }
     }
 
     // Parse as ISO 8601

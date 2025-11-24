@@ -10,6 +10,10 @@
  *   pnpm backfill:hybrid -- --symbols=SPX,NDX --days=90
  */
 
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+config();
+
 import { FlatFileDownloader, type DownloadConfig } from "./FlatFileDownloader.js";
 import { FlatFileParser, type ParseConfig } from "./FlatFileParser.js";
 import { join } from "path";

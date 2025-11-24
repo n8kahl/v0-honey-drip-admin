@@ -9,10 +9,15 @@
  *   pnpm backfill:bulk -- --dataset=indices --startDate=2024-01-01 --endDate=2024-11-24
  */
 
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+config();
+
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { createWriteStream, existsSync, mkdirSync } from "fs";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
+import { createGunzip } from "zlib";
 import { join } from "path";
 
 // Environment
@@ -142,7 +147,7 @@ export class FlatFileDownloader {
 
     try {
       const command = new GetObjectCommand({
-        Bucket: "massive-flatfiles", // Adjust based on actual bucket name
+        Bucket: "flatfiles",
         Key: s3Key,
       });
 
@@ -152,10 +157,11 @@ export class FlatFileDownloader {
         throw new Error("Empty response body");
       }
 
-      // Stream to file
+      // Stream to file (decompress gzip)
       const readable = response.Body as Readable;
+      const gunzip = createGunzip();
       const writable = createWriteStream(localPath);
-      await pipeline(readable, writable);
+      await pipeline(readable, gunzip, writable);
 
       const sizeKB = (response.ContentLength || 0) / 1024;
       console.log(`[FlatFileDownloader] ✅ Downloaded ${date} (${sizeKB.toFixed(1)} KB)`);
@@ -181,10 +187,14 @@ export class FlatFileDownloader {
 
     this.s3Client = new S3Client({
       region: MASSIVE_S3_REGION,
+      endpoint: "https://files.massive.com",
       credentials: {
         accessKeyId: MASSIVE_AWS_ACCESS_KEY,
         secretAccessKey: MASSIVE_AWS_SECRET_KEY,
       },
+      forcePathStyle: true, // Required for S3-compatible services
+      // Use signature version 4 (matches boto3 config)
+      signatureVersion: "v4",
     });
 
     console.log("[FlatFileDownloader] S3 client initialized");
@@ -229,12 +239,13 @@ export class FlatFileDownloader {
 
   /**
    * Get S3 key for a date
-   * Format: us_indices/minute_aggs_v1/2024/2024-11-24.csv
+   * Format: us_indices/minute_aggs_v1/2024/11/2024-11-24.csv.gz
+   * (Matches Massive.com Python boto3 example)
    */
   private getS3Key(dataset: Dataset, date: string): string {
-    const year = date.split("-")[0];
+    const [year, month] = date.split("-");
     const bucket = S3_BUCKETS[dataset];
-    return `${bucket}/${year}/${date}.csv`;
+    return `${bucket}/${year}/${month}/${date}.csv.gz`;
   }
 
   /**
