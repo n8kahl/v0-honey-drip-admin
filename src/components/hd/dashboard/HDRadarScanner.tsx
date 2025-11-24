@@ -37,23 +37,23 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter(signal =>
-        signal.ticker.toLowerCase().includes(searchTerm.toLowerCase())
+        signal.symbol.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     // Score filter
-    filtered = filtered.filter(signal => signal.finalScore >= minScore);
+    filtered = filtered.filter(signal => signal.baseScore >= minScore);
 
     // Sort by score (highest first)
-    return filtered.sort((a, b) => b.finalScore - a.finalScore);
+    return filtered.sort((a, b) => b.baseScore - a.baseScore);
   }, [activeSignals, searchTerm, minScore]);
 
   // Group signals by ticker
   const signalsByTicker = useMemo(() => {
     const grouped = new Map<string, CompositeSignal[]>();
     filteredSignals.forEach(signal => {
-      const existing = grouped.get(signal.ticker) || [];
-      grouped.set(signal.ticker, [...existing, signal]);
+      const existing = grouped.get(signal.symbol) || [];
+      grouped.set(signal.symbol, [...existing, signal]);
     });
     return grouped;
   }, [filteredSignals]);
@@ -152,7 +152,7 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
                   )}
                   <div className="text-right">
                     <div className="text-2xl font-bold">
-                      {Math.round(tickerSignals[0].finalScore)}
+                      {Math.round(tickerSignals[0].baseScore)}
                     </div>
                     <div className="text-xs text-[var(--text-muted)]">Score</div>
                   </div>
@@ -162,7 +162,7 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
               <div className="flex flex-wrap gap-2">
                 {tickerSignals.map((signal, idx) => (
                   <CompositeSignalBadge
-                    key={`${signal.ticker}-${signal.signalId}-${idx}`}
+                    key={`${signal.symbol}-${signal.id || signal.signalId}-${idx}`}
                     signal={signal}
                     size="sm"
                   />
