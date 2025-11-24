@@ -17,33 +17,55 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
   requiresOptionsData: false,
 
   detect: (features: SymbolFeatures) => {
+    const symbol = (features as any).symbol || 'UNKNOWN';
+
     // 1. Check if detector should run (market hours or weekend mode)
-    if (!shouldRunDetector(features)) return false;
+    const shouldRun = shouldRunDetector(features);
+    console.log(`[index-mean-reversion-long] ${symbol}: shouldRun=${shouldRun}`);
+    if (!shouldRun) return false;
 
     // 2. RSI oversold - relaxed threshold for weekend analysis
     const rsi = features.rsi?.['14'];
     const isWeekend = features.session?.isRegularHours !== true;
     const rsiThreshold = isWeekend ? 40 : 35; // More lenient on weekends
-    if (!rsi || rsi >= rsiThreshold) return false;
+    console.log(`[index-mean-reversion-long] ${symbol}: RSI=${rsi}, threshold=${rsiThreshold}, isWeekend=${isWeekend}`);
+    if (!rsi || rsi >= rsiThreshold) {
+      console.log(`[index-mean-reversion-long] ${symbol}: ❌ RSI check failed`);
+      return false;
+    }
 
     // 3. Below VWAP (stretched) - relaxed for weekends, optional if data unavailable
     const vwapDist = features.vwap?.distancePct;
     const vwapThreshold = isWeekend ? -0.2 : -0.3; // Less strict on weekends
+    console.log(`[index-mean-reversion-long] ${symbol}: VWAP dist=${vwapDist}, threshold=${vwapThreshold}`);
 
     // On weekends, VWAP data may be unavailable - skip this check
     if (!isWeekend) {
       // Regular hours: VWAP is required
-      if (!vwapDist || vwapDist >= vwapThreshold) return false;
+      if (!vwapDist || vwapDist >= vwapThreshold) {
+        console.log(`[index-mean-reversion-long] ${symbol}: ❌ VWAP check failed (regular hours)`);
+        return false;
+      }
     } else if (vwapDist !== undefined) {
       // Weekend with VWAP data: apply lenient threshold
-      if (vwapDist >= vwapThreshold) return false;
+      if (vwapDist >= vwapThreshold) {
+        console.log(`[index-mean-reversion-long] ${symbol}: ❌ VWAP check failed (weekend with data)`);
+        return false;
+      }
+    } else {
+      console.log(`[index-mean-reversion-long] ${symbol}: ⚠️ VWAP unavailable on weekend, skipping check`);
     }
     // Weekend without VWAP data: skip check entirely (rely on RSI + patterns)
 
     // 4. Not in extreme downtrend
     const regime = features.pattern?.market_regime;
-    if (regime === 'trending_down') return false;
+    console.log(`[index-mean-reversion-long] ${symbol}: market_regime=${regime}`);
+    if (regime === 'trending_down') {
+      console.log(`[index-mean-reversion-long] ${symbol}: ❌ Trending down, skipping`);
+      return false;
+    }
 
+    console.log(`[index-mean-reversion-long] ${symbol}: ✅ ALL CHECKS PASSED - SIGNAL DETECTED!`);
     return true;
   },
 
