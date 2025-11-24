@@ -428,16 +428,18 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       .single();
 
     if (error) {
+      console.error("[Trades API] Error linking channel:", error);
+
       // Handle duplicate key error - this is OK, channel is already linked (code 23505)
-      if (error.code === '23505') {
+      if (error.code === '23505' || error.code === 23505) {
         console.log(`[Trades API] Channel ${channelId} already linked to trade ${tradeId} (idempotent - OK)`);
         return res.status(200).json({ message: "Channel already linked", alreadyLinked: true });
       }
 
-      console.error("[Trades API] Error linking channel:", error);
-
       // Handle foreign key constraint (channel doesn't exist)
-      if (error.message.includes("foreign key") || error.message.includes("violates")) {
+      // Note: Exclude duplicate key errors (already handled above)
+      if (error.message.includes("foreign key") ||
+          (error.message.includes("violates") && !error.message.includes("duplicate key"))) {
         console.warn(
           `[Trades API] Channel ${channelId} does not exist or trade ${tradeId} not found`
         );
@@ -533,16 +535,18 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       .single();
 
     if (error) {
+      console.error("[Trades API] Error linking challenge:", error);
+
       // Handle duplicate key error - this is OK, challenge is already linked (code 23505)
-      if (error.code === '23505') {
+      if (error.code === '23505' || error.code === 23505) {
         console.log(`[Trades API] Challenge ${challengeId} already linked to trade ${tradeId} (idempotent - OK)`);
         return res.status(200).json({ message: "Challenge already linked", alreadyLinked: true });
       }
 
-      console.error("[Trades API] Error linking challenge:", error);
-
       // Handle foreign key constraint (challenge doesn't exist)
-      if (error.message.includes("foreign key") || error.message.includes("violates")) {
+      // Note: Exclude duplicate key errors (already handled above)
+      if (error.message.includes("foreign key") ||
+          (error.message.includes("violates") && !error.message.includes("duplicate key"))) {
         console.warn(
           `[Trades API] Challenge ${challengeId} does not exist or trade ${tradeId} not found`
         );
