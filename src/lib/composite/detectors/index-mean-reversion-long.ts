@@ -17,16 +17,19 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
   requiresOptionsData: false,
 
   detect: (features: SymbolFeatures) => {
-    // 1. RSI oversold (< 35)
-    const rsi = features.rsi?.['14'];
-    if (!rsi || rsi >= 35) return false;
-
-    // 2. Below VWAP (stretched)
-    const vwapDist = features.vwap?.distancePct;
-    if (!vwapDist || vwapDist >= -0.3) return false;
-
-    // 3. Check if detector should run (market hours or weekend mode)
+    // 1. Check if detector should run (market hours or weekend mode)
     if (!shouldRunDetector(features)) return false;
+
+    // 2. RSI oversold - relaxed threshold for weekend analysis
+    const rsi = features.rsi?.['14'];
+    const isWeekend = features.session?.isRegularHours !== true;
+    const rsiThreshold = isWeekend ? 40 : 35; // More lenient on weekends
+    if (!rsi || rsi >= rsiThreshold) return false;
+
+    // 3. Below VWAP (stretched) - relaxed for weekends
+    const vwapDist = features.vwap?.distancePct;
+    const vwapThreshold = isWeekend ? -0.2 : -0.3; // Less strict on weekends
+    if (!vwapDist || vwapDist >= vwapThreshold) return false;
 
     // 4. Not in extreme downtrend
     const regime = features.pattern?.market_regime;
