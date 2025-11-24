@@ -617,4 +617,86 @@ router.delete(
   }
 );
 
+// ============================================================================
+// GET /api/trades/admin/stale-loaded - Get stale LOADED trades for cleanup
+// ============================================================================
+router.get("/api/trades/admin/stale-loaded", async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized: No user ID" });
+    }
+
+    console.log(`[Trades API] Fetching stale LOADED trades for user ${userId}`);
+
+    // Find all LOADED trades older than 1 day
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
+    const { data, error } = await getSupabaseClient()
+      .from("trades")
+      .select("id, ticker, created_at, status")
+      .eq("user_id", userId)
+      .eq("status", "loaded")
+      .lt("created_at", oneDayAgo.toISOString())
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[Trades API] Error fetching stale trades:", error);
+      return res.status(500).json({ error: "Failed to fetch stale trades", details: error.message });
+    }
+
+    res.json({
+      count: data?.length || 0,
+      trades: data || [],
+      message: `Found ${data?.length || 0} stale LOADED trades older than 1 day`
+    });
+  } catch (error: any) {
+    console.error("[Trades API] Unexpected error in GET /api/trades/admin/stale-loaded:", error);
+    res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+});
+
+// ============================================================================
+// DELETE /api/trades/admin/cleanup-stale - Delete stale LOADED trades
+// ============================================================================
+router.delete("/api/trades/admin/cleanup-stale", async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized: No user ID" });
+    }
+
+    const { olderThanDays = 1 } = req.body;
+
+    console.log(`[Trades API] Cleaning up stale LOADED trades for user ${userId} (older than ${olderThanDays} days)`);
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+
+    const { data, error } = await getSupabaseClient()
+      .from("trades")
+      .delete()
+      .eq("user_id", userId)
+      .eq("status", "loaded")
+      .lt("created_at", cutoffDate.toISOString())
+      .select("id, ticker");
+
+    if (error) {
+      console.error("[Trades API] Error cleaning up stale trades:", error);
+      return res.status(500).json({ error: "Failed to cleanup stale trades", details: error.message });
+    }
+
+    console.log(`[Trades API] Deleted ${data?.length || 0} stale LOADED trades`);
+    res.json({
+      deleted: data?.length || 0,
+      trades: data || [],
+      message: `Successfully deleted ${data?.length || 0} stale LOADED trades`
+    });
+  } catch (error: any) {
+    console.error("[Trades API] Unexpected error in DELETE /api/trades/admin/cleanup-stale:", error);
+    res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+});
+
 export default router;
