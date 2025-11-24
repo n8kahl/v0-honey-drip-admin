@@ -180,6 +180,28 @@ export class BacktestEngine {
   }
 
   /**
+   * Run backtest for all detectors
+   * Used by ConfluenceOptimizer to evaluate parameter sets
+   */
+  async backtestAll(): Promise<BacktestStats[]> {
+    // Import all detectors dynamically to avoid circular dependencies
+    const { ALL_DETECTORS } = await import("../composite/detectors/index.js");
+
+    console.log(`[BacktestEngine] Running backtests for ${ALL_DETECTORS.length} detectors...`);
+
+    const results: BacktestStats[] = [];
+
+    for (const detector of ALL_DETECTORS) {
+      const stats = await this.backtestDetector(detector);
+      results.push(stats);
+    }
+
+    console.log(`[BacktestEngine] Completed backtests for all detectors`);
+
+    return results;
+  }
+
+  /**
    * Fetch historical bars for a symbol
    */
   private async fetchHistoricalBars(symbol: string): Promise<any[]> {

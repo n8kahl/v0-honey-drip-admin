@@ -301,8 +301,10 @@ export class ConfluenceOptimizer {
     // Aggregate results across all detectors
     const totalTrades = results.reduce((sum, r) => sum + r.totalTrades, 0);
     const totalWinners = results.reduce((sum, r) => sum + r.winners, 0);
-    const totalProfits = results.reduce((sum, r) => sum + r.totalProfit, 0);
-    const totalLosses = results.reduce((sum, r) => sum + Math.abs(r.totalLoss), 0);
+
+    // Calculate total profits and losses from averages
+    const totalProfits = results.reduce((sum, r) => sum + r.avgWin * r.winners, 0);
+    const totalLosses = results.reduce((sum, r) => sum + Math.abs(r.avgLoss) * r.losers, 0);
 
     return {
       winRate: totalWinners / totalTrades,
