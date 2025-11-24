@@ -494,16 +494,24 @@ export function HDLiveChart({
   }, []);
 
   useEffect(() => {
+    console.log("[HDLiveChart] Chart initialization effect triggered, height:", height);
+
     const container = chartContainerRef.current;
-    if (!container) return;
+    if (!container) {
+      console.warn("[HDLiveChart] No chart container ref, cannot initialize chart");
+      return;
+    }
 
     if (chartRef.current) {
+      console.log("[HDLiveChart] Chart already exists, updating dimensions only");
       chartRef.current.applyOptions({
         width: container.clientWidth,
         height,
       });
       return;
     }
+
+    console.log("[HDLiveChart] Creating new chart instance...");
 
     const chart = createChart(container, {
       width: container.clientWidth,
