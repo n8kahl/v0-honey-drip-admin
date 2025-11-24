@@ -452,6 +452,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
         `[Composite Scanner] Error fetching watchlist for user ${userId}:`,
         watchlistErr
       );
+      console.error(`[Composite Scanner] Tried both 'symbol' and 'ticker' columns - both failed!`);
       stats.totalErrors++;
       return 0;
     }
