@@ -5,11 +5,13 @@ import { HDInput } from './hd/common/HDInput';
 import { HDButton } from './hd/common/HDButton';
 import { HDCard } from './hd/common/HDCard';
 import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
+import { getShareText } from '../lib/utils/discord';
 import { Search, Share2, Download, ChevronDown, X, Filter, History } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { HDPanelDiscordAlert } from './hd/dashboard/HDPanelDiscordAlert';
 import { EmptyState } from './ui/EmptyState';
 import { useAppToast } from '../hooks/useAppToast';
+import { useDiscord } from '../hooks/useDiscord';
 import { MobileWatermark } from './MobileWatermark';
 
 interface MobileHistoryProps {
@@ -22,6 +24,7 @@ type DateRangeFilter = 'all' | 'today' | '7d' | '30d';
 
 export function MobileHistory({ trades, channels = [], challenges = [] }: MobileHistoryProps) {
   const toast = useAppToast();
+  const discord = useDiscord();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('7d');
@@ -59,39 +62,31 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
     return timeB - timeA;
   });
   
-  const getShareText = (trade: Trade) => {
-    const duration = trade.entryTime && trade.exitTime ? 
-      formatDuration(trade.entryTime, trade.exitTime) : 'N/A';
-    
-    return `**${trade.ticker} ${trade.contract.strike}${trade.contract.type} (${trade.tradeType})**
-
-Entry: $${formatPrice(trade.entryPrice || 0)}
-Exit: $${formatPrice(trade.exitPrice || 0)}
-P&L: ${formatPercent(trade.movePercent || 0)}
-Duration: ${duration}`;
-  };
-  
-  const formatDuration = (start: Date, end: Date) => {
-    const diff = new Date(end).getTime() - new Date(start).getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (hours === 0) return `${minutes}m`;
-    if (minutes === 0) return `${hours}h`;
-    return `${hours}h ${minutes}m`;
-  };
-  
   const handleShareClick = (trade: Trade) => {
     setSelectedTrade(trade);
     setShowShareSheet(true);
   };
-  
-  const handleSendAlert = (channelIds: string[], challengeIds: string[], comment?: string) => {
+
+  const handleSendAlert = async (channelIds: string[], challengeIds: string[], comment?: string) => {
     const selectedChannels = channels.filter(c => channelIds.includes(c.id));
-    const channelNames = selectedChannels.map(c => `#${c.name}`).join(', ');
-    
-    toast.success(`Share alert sent to ${channelNames}`);
-    setShowShareSheet(false);
+
+    if (selectedChannels.length === 0 || !selectedTrade) {
+      toast.error('Please select at least one Discord channel');
+      return;
+    }
+
+    try {
+      const results = await discord.sendExitAlert(selectedChannels, selectedTrade, comment);
+      if (results.failed === 0) {
+        toast.success(`Shared to ${results.success} channel${results.success > 1 ? 's' : ''}`);
+      } else {
+        toast.error(`Sent to ${results.success}, failed ${results.failed}`);
+      }
+      setShowShareSheet(false);
+    } catch (error) {
+      console.error('[MobileHistory] Failed to send Discord alert:', error);
+      toast.error('Failed to send Discord alert');
+    }
   };
   
   return (

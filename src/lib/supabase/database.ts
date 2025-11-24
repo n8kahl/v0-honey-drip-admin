@@ -457,3 +457,58 @@ export async function getTradeUpdates(tradeId: string) {
   if (error) throw error;
   return data || [];
 }
+
+// ============================================================================
+// ALERT HISTORY
+// ============================================================================
+
+export async function recordAlertHistory(params: {
+  userId: string;
+  tradeId?: string;
+  alertType: 'load' | 'enter' | 'trim' | 'update' | 'update-sl' | 'trail-stop' | 'add' | 'exit' | 'summary' | 'challenge';
+  channelIds: string[];
+  challengeIds?: string[];
+  successCount: number;
+  failedCount: number;
+  errorMessage?: string;
+  tradeTicker?: string;
+}) {
+  const supabase = createClient();
+
+  const { data, error} = await supabase
+    .from("alert_history")
+    .insert({
+      user_id: params.userId,
+      trade_id: params.tradeId || null,
+      alert_type: params.alertType,
+      channel_ids: params.channelIds,
+      challenge_ids: params.challengeIds || [],
+      success_count: params.successCount,
+      failed_count: params.failedCount,
+      error_message: params.errorMessage || null,
+      trade_ticker: params.tradeTicker || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // Don't throw - alert history is non-critical
+    console.error("[Database] Failed to record alert history:", error);
+    return null;
+  }
+  return data;
+}
+
+export async function getAlertHistory(userId: string, limit = 50) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("alert_history")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}

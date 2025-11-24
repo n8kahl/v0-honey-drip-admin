@@ -11,6 +11,7 @@ interface HDQuickActionsProps {
   onUpdateSL?: () => void;
   onTrailStop?: () => void;
   onAdd?: () => void;
+  onTakeProfit?: () => void;
   onExit?: () => void;
 }
 
@@ -24,6 +25,7 @@ export function HDQuickActions({
   onUpdateSL,
   onTrailStop,
   onAdd,
+  onTakeProfit,
   onExit
 }: HDQuickActionsProps) {
   if (state === 'WATCHING') {
@@ -77,8 +79,12 @@ export function HDQuickActions({
         <HDButton variant="secondary" className="w-full justify-start" onClick={onAdd}>
           <span className="flex-1 text-left">Add to Position</span>
         </HDButton>
-        <div className="pt-2 border-t border-[var(--border-hairline)]">
-          <HDButton variant="primary" className="w-full" onClick={onExit}>
+        <div className="pt-2 border-t border-[var(--border-hairline)] space-y-2">
+          <HDButton variant="primary" className="w-full" onClick={onTakeProfit}>
+            <span className="flex-1 text-left">Take Profit</span>
+            <span className="text-[var(--text-muted)] text-micro">At Target</span>
+          </HDButton>
+          <HDButton variant="ghost" className="w-full" onClick={onExit}>
             Full Exit
           </HDButton>
         </div>

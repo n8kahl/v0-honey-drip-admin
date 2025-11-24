@@ -216,6 +216,7 @@ class DiscordWebhookClient {
       currentPrice: number;
       pnlPercent: number;
       message: string;
+      imageUrl?: string;
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
@@ -237,25 +238,27 @@ class DiscordWebhookClient {
         title = `📝 UPDATE: ${data.ticker}`;
     }
 
-    return this.sendMessage(webhookUrl, {
-      embeds: [
-        {
-          title,
-          description: data.message,
-          color,
-          fields: [
-            { name: "Option", value: `$${data.strike} ${optionType}`, inline: true },
-            { name: "Entry", value: `$${data.entryPrice.toFixed(2)}`, inline: true },
-            { name: "Current", value: `$${data.currentPrice.toFixed(2)}`, inline: true },
-            { name: "P/L", value: `${pnlSign}${data.pnlPercent.toFixed(1)}%`, inline: true },
-          ],
-          footer: {
-            text: "Honey Drip • Update Alert",
-          },
-          timestamp: new Date().toISOString(),
-        },
+    const embed: DiscordEmbed = {
+      title,
+      description: data.message,
+      color,
+      fields: [
+        { name: "Option", value: `$${data.strike} ${optionType}`, inline: true },
+        { name: "Entry", value: `$${data.entryPrice.toFixed(2)}`, inline: true },
+        { name: "Current", value: `$${data.currentPrice.toFixed(2)}`, inline: true },
+        { name: "P/L", value: `${pnlSign}${data.pnlPercent.toFixed(1)}%`, inline: true },
       ],
-    });
+      footer: {
+        text: "Honey Drip • Update Alert",
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    if (data.imageUrl) {
+      embed.image = { url: data.imageUrl };
+    }
+
+    return this.sendMessage(webhookUrl, { embeds: [embed] });
   }
 
   // Send an exit alert
@@ -433,6 +436,39 @@ class DiscordWebhookClient {
           fields,
           footer: {
             text: "Honey Drip • Challenge Progress",
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+  }
+
+  // Send a summary alert (for history exports)
+  async sendSummaryAlert(
+    webhookUrl: string,
+    data: {
+      title: string;
+      summaryText: string;
+      comment?: string;
+    }
+  ): Promise<boolean> {
+    // Parse summary text to determine if it's positive or negative performance
+    const avgPnLMatch = data.summaryText.match(/Average P&L: ([+-]?\d+\.?\d*)%/);
+    const avgPnL = avgPnLMatch ? parseFloat(avgPnLMatch[1]) : 0;
+    const pnlColor = avgPnL >= 0 ? DISCORD_COLORS.profit : DISCORD_COLORS.loss;
+
+    const description = data.comment
+      ? `${data.summaryText}\n\n${data.comment}`
+      : data.summaryText;
+
+    return this.sendMessage(webhookUrl, {
+      embeds: [
+        {
+          title: `📊 ${data.title}`,
+          description,
+          color: pnlColor,
+          footer: {
+            text: "Honey Drip • Trade Summary",
           },
           timestamp: new Date().toISOString(),
         },

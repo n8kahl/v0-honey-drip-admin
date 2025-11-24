@@ -5,6 +5,7 @@ import { HDButton } from "../common/HDButton";
 import { Loader2, Check } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useDiscord } from "../../../hooks/useDiscord";
+import { useAppToast } from "../../../hooks/useAppToast";
 
 interface HDChallengeShareProps {
   open: boolean;
@@ -26,6 +27,7 @@ export function HDChallengeShare({
   stats,
   availableChannels,
 }: HDChallengeShareProps) {
+  const toast = useAppToast();
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [shareResult, setShareResult] = useState<{ success: number; failed: number } | null>(null);
   const { sending, sendChallengeProgressAlert } = useDiscord();
@@ -55,6 +57,11 @@ export function HDChallengeShare({
       }
     } catch (error) {
       console.error("[HDChallengeShare] Failed to share challenge:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast.error("Failed to share challenge progress", {
+        description: errorMessage,
+      } as any);
+      setShareResult({ success: 0, failed: channels.length });
     }
   };
 

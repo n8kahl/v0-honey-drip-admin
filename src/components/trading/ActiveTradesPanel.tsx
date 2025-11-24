@@ -26,6 +26,7 @@ interface ActiveTradesPanelProps {
   onUpdateSL: () => void;
   onTrailStop: () => void;
   onAdd: () => void;
+  onTakeProfit: () => void;
   onExit: () => void;
   underlyingPrice?: number;
   underlyingChange?: number;
@@ -49,6 +50,7 @@ export const ActiveTradesPanel: React.FC<ActiveTradesPanelProps> = ({
   onUpdateSL,
   onTrailStop,
   onAdd,
+  onTakeProfit,
   onExit,
   underlyingPrice,
   underlyingChange,
@@ -133,6 +135,7 @@ export const ActiveTradesPanel: React.FC<ActiveTradesPanelProps> = ({
             onUpdateSL={onUpdateSL}
             onTrailStop={onTrailStop}
             onAdd={onAdd}
+            onTakeProfit={onTakeProfit}
             onExit={onExit}
           />
         </div>

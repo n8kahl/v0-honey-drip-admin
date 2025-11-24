@@ -70,7 +70,8 @@ export function useDiscord() {
     channels: DiscordChannel[],
     trade: Trade,
     updateType: "trim" | "update-sl" | "generic",
-    message: string
+    message: string,
+    imageUrl?: string
   ) => {
     setSending(true);
     try {
@@ -86,6 +87,7 @@ export function useDiscord() {
           currentPrice: trade.currentPrice!,
           pnlPercent: trade.movePercent!,
           message,
+          imageUrl,
         })
       );
       return results;
@@ -177,6 +179,28 @@ export function useDiscord() {
     }
   };
 
+  const sendSummaryAlert = async (
+    channels: DiscordChannel[],
+    title: string,
+    summaryText: string,
+    comment?: string
+  ) => {
+    setSending(true);
+    try {
+      const webhookUrls = channels.map((ch) => ch.webhookUrl);
+      const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
+        client.sendSummaryAlert(url, {
+          title,
+          summaryText,
+          comment,
+        })
+      );
+      return results;
+    } finally {
+      setSending(false);
+    }
+  };
+
   return {
     sending,
     testWebhook,
@@ -186,5 +210,6 @@ export function useDiscord() {
     sendExitAlert,
     sendTrailingStopAlert,
     sendChallengeProgressAlert,
+    sendSummaryAlert,
   };
 }

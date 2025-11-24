@@ -283,6 +283,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           onUpdateSL={actions.handleUpdateSL}
           onTrailStop={actions.handleTrailStop}
           onAdd={actions.handleAdd}
+          onTakeProfit={actions.handleTakeProfit}
           onExit={actions.handleExit}
         />
         <HDDialogChallengeDetail
