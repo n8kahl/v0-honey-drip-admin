@@ -208,7 +208,7 @@ export async function calculateMarketRegime(supabase: SupabaseClient): Promise<M
 
   try {
     // Fetch indices snapshot
-    const indices = await getIndicesSnapshot();
+    const indices = await getIndicesSnapshot(["VIX", "SPY", "NDX", "RUT", "TICK"]);
 
     if (!indices || indices.length === 0) {
       return {
