@@ -735,8 +735,8 @@ export class CompositeScannerWorker {
     console.log("[Composite Scanner] Configuration: OPTIMIZED (High Accuracy)");
     console.log("[Composite Scanner] Scan interval: 60 seconds");
     console.log("[Composite Scanner] Primary timeframe: 5m");
-    console.log("[Composite Scanner] Min Base Score: 80 (Equity), 85 (Index)");
-    console.log("[Composite Scanner] Min R:R Ratio: 2.0:1");
+    console.log(`[Composite Scanner] Min Base Score: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minBaseScore} (Equity), ${OPTIMIZED_SCANNER_CONFIG.assetClassThresholds?.INDEX?.minBaseScore || 85} (Index)`);
+    console.log(`[Composite Scanner] Min R:R Ratio: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minRiskReward}:1`);
     console.log("[Composite Scanner] Target Win Rate: 65%+");
     console.log("[Composite Scanner] ======================================\n");
 
