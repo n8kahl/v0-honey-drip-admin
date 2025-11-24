@@ -316,10 +316,35 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
 async function scanUserWatchlist(userId: string): Promise<number> {
   try {
     // Fetch user's watchlist
-    const { data: watchlist, error: watchlistErr } = await supabase
-      .from('watchlist')
-      .select('symbol')
-      .eq('user_id', userId);
+    let watchlist: any[] | null = null;
+    let watchlistErr: any = null;
+
+    // Try 'symbol' column first
+    {
+      const { data, error } = await supabase
+        .from('watchlist')
+        .select('symbol')
+        .eq('user_id', userId);
+      watchlist = data;
+      watchlistErr = error;
+    }
+
+    // Fallback to 'ticker' column if 'symbol' doesn't exist
+    if (watchlistErr && (watchlistErr.code === '42703' || /column.*symbol/i.test(watchlistErr.message || ''))) {
+      console.warn(`[Scanner Worker] 'symbol' column not found, trying 'ticker' column...`);
+      const { data, error } = await supabase
+        .from('watchlist')
+        .select('ticker')
+        .eq('user_id', userId);
+
+      if (!error && data) {
+        console.log(`[Scanner Worker] ✅ Using 'ticker' column - DATABASE NEEDS MIGRATION!`);
+        watchlist = data.map((row: any) => ({ symbol: row.ticker }));
+        watchlistErr = null;
+      } else {
+        watchlistErr = error;
+      }
+    }
 
     if (watchlistErr) {
       console.error(`[Scanner Worker] Error fetching watchlist for user ${userId}:`, watchlistErr);
