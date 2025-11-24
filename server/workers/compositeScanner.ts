@@ -44,6 +44,12 @@ const EXPIRE_SIGNALS_INTERVAL = 5 * 60 * 1000; // Expire old signals every 5 min
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+console.log("[Composite Scanner] 🔍 Supabase Configuration:");
+console.log(`  URL: ${SUPABASE_URL || "❌ MISSING"}`);
+console.log(
+  `  Service Role Key: ${SUPABASE_SERVICE_ROLE_KEY ? "✅ Present (" + SUPABASE_SERVICE_ROLE_KEY.substring(0, 20) + "...)" : "❌ MISSING"}`
+);
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error("[Composite Scanner] Missing required environment variables:");
   if (!SUPABASE_URL) console.error("  - SUPABASE_URL or VITE_SUPABASE_URL");
@@ -52,6 +58,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+console.log("[Composite Scanner] ✅ Supabase client created successfully");
 
 /**
  * Performance statistics
