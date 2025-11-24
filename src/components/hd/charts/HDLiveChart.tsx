@@ -173,7 +173,10 @@ export function HDLiveChart({
   });
   const timeframeRef = useRef<TfKey>(currentTf);
   const tickerRef = useRef<string>(ticker);
-  const lastNBarsAuto = 100;
+
+  // Timeframe-specific initial zoom levels
+  const lastNBarsAuto = currentTf === "1" ? 30 : currentTf === "5" ? 5 : 100;
+
   const [opacity, setOpacity] = useState<number>(1);
 
   const [indState, setIndState] = useState<IndicatorState>(() => {
