@@ -55,26 +55,55 @@ const TIER_3_STRATEGIES: OpportunityType[] = [
 ];
 
 /**
+ * Testing thresholds (for development/debugging)
+ * Much lower thresholds to see more signals during testing
+ */
+const TESTING_DEFAULT_THRESHOLDS: SignalThresholds = {
+  minBaseScore: 60, // Low threshold for testing
+  minStyleScore: 65, // Low threshold for testing
+  minRiskReward: 1.5, // Lower R:R for testing
+  maxSignalsPerSymbolPerHour: 5, // More signals for testing
+  cooldownMinutes: 10, // Shorter cooldown for testing
+};
+
+/**
  * Optimized default thresholds
  * Significantly more selective than defaults
  */
-export const OPTIMIZED_DEFAULT_THRESHOLDS: SignalThresholds = {
-  minBaseScore: 80, // Increased from 70 - only top 20% of setups
-  minStyleScore: 85, // Increased from 75 - must be ideal for trading style
-  minRiskReward: 2.0, // Increased from 1.5 - better R:R required
-  maxSignalsPerSymbolPerHour: 1, // Reduced from 2 - less overtrading
-  cooldownMinutes: 30, // Increased from 15 - more breathing room
+export const OPTIMIZED_DEFAULT_THRESHOLDS: SignalThresholds =
+  process.env.NODE_ENV === 'development' || process.env.TESTING_MODE === 'true'
+    ? TESTING_DEFAULT_THRESHOLDS
+    : {
+        minBaseScore: 80, // Increased from 70 - only top 20% of setups
+        minStyleScore: 85, // Increased from 75 - must be ideal for trading style
+        minRiskReward: 2.0, // Increased from 1.5 - better R:R required
+        maxSignalsPerSymbolPerHour: 1, // Reduced from 2 - less overtrading
+        cooldownMinutes: 30, // Increased from 15 - more breathing room
+      };
+
+/**
+ * Testing index thresholds (for development/debugging)
+ */
+const TESTING_INDEX_THRESHOLDS: SignalThresholds = {
+  minBaseScore: 65, // Low threshold for testing
+  minStyleScore: 70, // Low threshold for testing
+  minRiskReward: 1.5, // Lower R:R for testing
+  maxSignalsPerSymbolPerHour: 5,
+  cooldownMinutes: 10,
 };
 
 /**
  * SPX/NDX optimized thresholds
  * Indices require even stronger setups
  */
-export const OPTIMIZED_INDEX_THRESHOLDS: SignalThresholds = {
-  minBaseScore: 85, // Very high bar for indices
-  minStyleScore: 88, // Near-perfect style fit required
-  minRiskReward: 2.5, // Excellent R:R required
-  maxSignalsPerSymbolPerHour: 2, // Can handle slightly more due to liquidity
+export const OPTIMIZED_INDEX_THRESHOLDS: SignalThresholds =
+  process.env.NODE_ENV === 'development' || process.env.TESTING_MODE === 'true'
+    ? TESTING_INDEX_THRESHOLDS
+    : {
+        minBaseScore: 85, // Very high bar for indices
+        minStyleScore: 88, // Near-perfect style fit required
+        minRiskReward: 2.5, // Excellent R:R required
+        maxSignalsPerSymbolPerHour: 2, // Can handle slightly more due to liquidity
   cooldownMinutes: 20, // Shorter due to faster movement
 };
 
@@ -95,7 +124,9 @@ export const OPTIMIZED_EQUITY_THRESHOLDS: SignalThresholds = {
  * Stricter liquidity and quality requirements
  */
 export const OPTIMIZED_FILTERS: UniversalFilters = {
-  marketHoursOnly: true, // Critical - only trade during regular hours
+  // TESTING: Disabled for weekend/after-hours development
+  // Re-enable for production or override with MARKET_HOURS_ONLY env var
+  marketHoursOnly: process.env.MARKET_HOURS_ONLY === 'true' ? true : false,
   minRVOL: 0.0, // Temporarily disabled - intraday bars don't have daily avg volume data
   maxSpread: 0.003, // Tightened from 0.005 - better execution
   blacklist: [
