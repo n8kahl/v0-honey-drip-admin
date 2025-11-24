@@ -23,6 +23,13 @@ import {
 } from "../../../lib/indicators";
 import { Wifi, WifiOff, Activity, ChevronDown } from "lucide-react";
 import { ChartLevel } from "../../../types/tradeLevels";
+import {
+  getSessionMarkersForBars,
+  calculateKeyLevels,
+  detectOrderFlowClusters,
+  calculateVolumeProfile,
+  getClusterColor,
+} from "../../../lib/chartEnhancements";
 
 const formatIsoDate = (date: Date) => date.toISOString().split("T")[0];
 const getMostRecentTradingDay = (reference: Date, holidays: Set<string>) => {
@@ -128,6 +135,13 @@ export function HDLiveChart({
     lower: ISeriesApi<"Line">;
   } | null>(null);
   const levelSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+
+  // Zoom preservation on refresh
+  const zoomStateRef = useRef<{ from: number; to: number } | null>(null);
+
+  // Minute boundary detection for smart refresh
+  const lastMinuteBoundaryRef = useRef<number>(Math.floor(Date.now() / 60000));
+  const minuteRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [bars, setBars] = useState<Bar[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -466,6 +480,15 @@ export function HDLiveChart({
     }
   }, [ticker, currentTf, rateLimited, rateLimitMessage, holidaysSet]);
 
+  // Cleanup minute refresh timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (minuteRefreshTimeoutRef.current) {
+        clearTimeout(minuteRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const container = chartContainerRef.current;
     if (!container) return;
@@ -728,6 +751,10 @@ export function HDLiveChart({
       // Always render all bars (remove FPS-based downsampling to avoid dependency)
       const barsToRender = bars;
 
+      // Preserve zoom state before updating data
+      const timeScale = chartRef.current?.timeScale();
+      const previousZoomRange = timeScale?.getVisibleLogicalRange();
+
       // Update candlestick data - filter out any bars with null OHLC values as a final safety check
       const candleData: CandlestickData[] = barsToRender
         .filter((bar) => isValidBar(bar))
@@ -745,6 +772,15 @@ export function HDLiveChart({
       }
 
       priceSeries.setData(candleData);
+
+      // Restore zoom state after updating data
+      if (previousZoomRange && timeScale) {
+        try {
+          timeScale.setVisibleLogicalRange(previousZoomRange);
+        } catch (e) {
+          console.debug("[HDLiveChart] Could not restore zoom range:", e);
+        }
+      }
 
       // Update volume histogram
       if (volumeSeriesRef.current && barsToRender.length > 0) {
@@ -1036,6 +1072,86 @@ export function HDLiveChart({
       }
     });
   }, [levels, ticker]);
+
+  // Effect: Render session markers (pre-market, regular, after-hours background zones)
+  useEffect(() => {
+    if (!chartRef.current || bars.length === 0) return;
+
+    try {
+      // Get session markers for the bar times
+      const barTimes = bars.map((b) => b.time as number);
+      const sessionMarkers = getSessionMarkersForBars(barTimes);
+
+      if (sessionMarkers.length > 0 && chartRef.current.timeScale()) {
+        // Get price scale for zones
+        const priceScale = chartRef.current.priceScale("right");
+        if (priceScale) {
+          // Get price range from bars
+          const prices = bars.flatMap((b) => [b.high, b.low]);
+          const minPrice = Math.min(...prices);
+          const maxPrice = Math.max(...prices);
+
+          // Create zones for session markers
+          sessionMarkers.forEach((marker) => {
+            try {
+              const zoneOptions = {
+                startPrice: minPrice,
+                endPrice: maxPrice,
+                backgroundColor: marker.color,
+              };
+
+              // Use time-based zones if available
+              if ((chartRef.current as any).createSolidBackgroundZone) {
+                (chartRef.current as any).createSolidBackgroundZone({
+                  startTime: marker.startTime,
+                  endTime: marker.endTime,
+                  backgroundColor: marker.color,
+                  zOrder: "bottom" as any,
+                });
+              }
+            } catch (e) {
+              // Zones might not be supported in this version
+              console.debug("[HDLiveChart] Session zone creation not available");
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.debug("[HDLiveChart] Error rendering session markers:", e);
+    }
+  }, [bars]);
+
+  // Effect: Add auto-calculated key levels (previous day/week high/low)
+  useEffect(() => {
+    if (!chartRef.current || bars.length === 0) return;
+
+    try {
+      const keyLevels = calculateKeyLevels(bars);
+
+      if (keyLevels.length > 0) {
+        // Add key levels as price lines to the first series
+        const priceSeries = candleSeriesRef.current;
+        if (priceSeries) {
+          keyLevels.forEach((level) => {
+            try {
+              priceSeries.createPriceLine({
+                price: level.price,
+                color: level.color,
+                lineWidth: 1,
+                lineStyle: 2, // Dashed
+                axisLabelVisible: true,
+                title: level.label,
+              });
+            } catch (e) {
+              console.debug(`[HDLiveChart] Could not add key level ${level.label}:`, e);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.debug("[HDLiveChart] Error calculating key levels:", e);
+    }
+  }, [bars.length]);
 
   const getAsOfText = () => {
     const secondsAgo = Math.floor((Date.now() - lastUpdate) / 1000);
