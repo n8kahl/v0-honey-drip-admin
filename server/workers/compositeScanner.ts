@@ -460,7 +460,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map((w) => w.ticker);
+    const symbols = watchlist.map((w) => w.symbol);
     console.log(
       `[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
     );
