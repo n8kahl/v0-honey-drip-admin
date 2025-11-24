@@ -28,6 +28,27 @@ function detectChartMode(
   return "BROWSE";
 }
 
+/**
+ * Extract underlying symbol from options ticker
+ * Options format: O:SPY241123C00660000 → SPY
+ * Stocks/Indices: SPY or I:SPX → unchanged
+ */
+function extractUnderlyingSymbol(ticker: string): string {
+  if (!ticker) return ticker;
+
+  // Options ticker format: O:SYMBOL241123C00660000
+  if (ticker.startsWith("O:")) {
+    // Extract symbol between "O:" and the date (6 digits YYMMDD)
+    const match = ticker.match(/^O:([A-Z]+)\d{6}/);
+    if (match) {
+      return match[1]; // Return underlying symbol (e.g., "SPY", "SPX")
+    }
+  }
+
+  // For stocks/indices, return as-is
+  return ticker;
+}
+
 interface HDLiveChartContextAwareProps {
   ticker: string;
   tradeState: TradeState;
@@ -49,6 +70,10 @@ export function HDLiveChartContextAware({
   height = 400,
   className = "",
 }: HDLiveChartContextAwareProps) {
+  // Extract underlying symbol from options ticker
+  // When viewing options, we show the underlying's chart (has historical data)
+  const chartTicker = useMemo(() => extractUnderlyingSymbol(ticker), [ticker]);
+
   // Detect which mode we're in
   const mode = useMemo(
     () => detectChartMode(tradeState, currentTrade, hasLoadedContract),
@@ -97,7 +122,7 @@ export function HDLiveChartContextAware({
           {/* Left: 5-minute chart (50% width) */}
           <div className="flex-1 min-w-0">
             <HDLiveChart
-              ticker={ticker}
+              ticker={chartTicker}
               initialTimeframe="5"
               indicators={indicatorConfig}
               events={[]}
@@ -111,7 +136,7 @@ export function HDLiveChartContextAware({
           {/* Right: 1-minute chart for entry precision (50% width) */}
           <div className="flex-1 min-w-0">
             <HDLiveChart
-              ticker={ticker}
+              ticker={chartTicker}
               initialTimeframe="1"
               indicators={indicatorConfig}
               events={[]}
