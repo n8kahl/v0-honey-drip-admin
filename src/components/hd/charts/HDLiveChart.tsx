@@ -21,7 +21,7 @@ import {
   Bar,
   IndicatorConfig,
 } from "../../../lib/indicators";
-import { Wifi, WifiOff, Activity } from "lucide-react";
+import { Wifi, WifiOff, Activity, ChevronDown } from "lucide-react";
 import { ChartLevel } from "../../../types/tradeLevels";
 
 const formatIsoDate = (date: Date) => date.toISOString().split("T")[0];
@@ -119,6 +119,7 @@ export function HDLiveChart({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bollingerRefs = useRef<{
@@ -183,6 +184,18 @@ export function HDLiveChart({
       vwap: Boolean(indicators?.vwap?.enabled ?? true),
       bb: Boolean(indicators?.bollinger),
     } as IndicatorState;
+  });
+
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(() => {
+    try {
+      const stored =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("hdchart.headerCollapsed")
+          : null;
+      return stored === "true";
+    } catch {
+      return false;
+    }
   });
 
   const lastRenderTimeRef = useRef<number>(0);
@@ -522,6 +535,23 @@ export function HDLiveChart({
       console.error("[HDLiveChart] Failed to create candlestick series:", err);
     }
 
+    // Create volume histogram series for volume visualization
+    try {
+      const volumeOptions = {
+        priceFormat: {
+          type: "volume" as const,
+        },
+        priceScaleId: "",
+        lastValueVisible: false,
+        priceLineVisible: false,
+      };
+      volumeSeriesRef.current = (chartRef.current as any).addHistogramSeries(volumeOptions);
+    } catch (err) {
+      console.debug(
+        "[HDLiveChart] Volume histogram series not available (paid tier may be required)"
+      );
+    }
+
     // Create EMA series
     if (indicators?.ema?.periods) {
       const colors = ["#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
@@ -600,6 +630,7 @@ export function HDLiveChart({
       });
       levelSeriesRefs.current.clear();
       candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
       emaSeriesRefs.current.clear();
       vwapSeriesRef.current = null;
       bollingerRefs.current = null;
@@ -714,6 +745,23 @@ export function HDLiveChart({
       }
 
       priceSeries.setData(candleData);
+
+      // Update volume histogram
+      if (volumeSeriesRef.current && barsToRender.length > 0) {
+        const volumeData = barsToRender
+          .filter(
+            (bar) => bar.volume != null && typeof bar.volume === "number" && !isNaN(bar.volume)
+          )
+          .map((bar) => ({
+            time: bar.time as Time,
+            value: bar.volume as number,
+            color: bar.close >= bar.open ? "rgba(22, 163, 74, 0.3)" : "rgba(239, 68, 68, 0.3)",
+          }));
+
+        if (volumeData.length > 0) {
+          volumeSeriesRef.current.setData(volumeData);
+        }
+      }
 
       // Update indicators
       if (indicators?.ema?.periods) {
@@ -1031,6 +1079,20 @@ export function HDLiveChart({
     });
   };
 
+  const handleToggleHeaderCollapse = () => {
+    setIsHeaderCollapsed((prev) => {
+      const newValue = !prev;
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("hdchart.headerCollapsed", String(newValue));
+        }
+      } catch {
+        // localStorage not available, ignore silently
+      }
+      return newValue;
+    });
+  };
+
   const tfOptions: { key: TfKey; label: string }[] = [
     { key: "1", label: "1m" },
     { key: "5", label: "5m" },
@@ -1082,7 +1144,16 @@ export function HDLiveChart({
         <div
           className={`${stickyHeader ? "sticky top-0 z-10 bg-[var(--surface-2)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface-2)]/80" : ""} px-3 py-2 border-b border-[var(--border-hairline)] flex items-center justify-between`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            <button
+              onClick={handleToggleHeaderCollapse}
+              className="p-0.5 hover:bg-[var(--surface-3)] rounded transition-colors flex-shrink-0"
+              title={isHeaderCollapsed ? "Expand chart controls" : "Collapse chart controls"}
+            >
+              <ChevronDown
+                className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${isHeaderCollapsed ? "-rotate-90" : ""}`}
+              />
+            </button>
             <h3 className="text-[var(--text-high)] text-xs font-medium uppercase tracking-wide">
               Live Chart ({currentTf})
             </h3>
@@ -1115,7 +1186,7 @@ export function HDLiveChart({
               </span>
             )}
           </div>
-          {showControls && (
+          {!isHeaderCollapsed && showControls && (
             <div className="flex items-center gap-3">
               {/* Timeframe */}
               <div className="flex items-center gap-1 text-micro">
