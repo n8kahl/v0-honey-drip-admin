@@ -11,35 +11,35 @@
  * - Time-of-day performance
  */
 
-import type { OpportunityDetector } from '../composite/OpportunityDetector';
-import type { SymbolFeatures } from '../strategy/engine';
-import { createClient } from '../supabase/client';
+import type { OpportunityDetector } from "../composite/OpportunityDetector";
+import type { SymbolFeatures } from "../strategy/engine";
+import { createClient } from "../supabase/client";
 
 /**
  * Backtest configuration
  */
 export interface BacktestConfig {
-  symbols: string[];           // Symbols to backtest
-  startDate: string;            // Start date (YYYY-MM-DD)
-  endDate: string;              // End date (YYYY-MM-DD)
-  timeframe: string;            // Primary timeframe (e.g., '15m')
-  targetMultiple: number;       // Target profit multiple (e.g., 1.5 = 1.5R)
-  stopMultiple: number;         // Stop loss multiple (e.g., 1.0 = 1R)
-  maxHoldBars: number;          // Max bars to hold position
-  slippage: number;             // Slippage in % (e.g., 0.001 = 0.1%)
+  symbols: string[]; // Symbols to backtest
+  startDate: string; // Start date (YYYY-MM-DD)
+  endDate: string; // End date (YYYY-MM-DD)
+  timeframe: string; // Primary timeframe (e.g., '15m')
+  targetMultiple: number; // Target profit multiple (e.g., 1.5 = 1.5R)
+  stopMultiple: number; // Stop loss multiple (e.g., 1.0 = 1R)
+  maxHoldBars: number; // Max bars to hold position
+  slippage: number; // Slippage in % (e.g., 0.001 = 0.1%)
 }
 
 /**
  * Default backtest configuration
  */
 export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
-  symbols: ['SPY', 'SPX', 'NDX'],
-  startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-  endDate: new Date().toISOString().split('T')[0],
-  timeframe: '15m',
+  symbols: ["SPY", "SPX", "NDX"],
+  startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  endDate: new Date().toISOString().split("T")[0],
+  timeframe: "15m",
   targetMultiple: 1.5,
   stopMultiple: 1.0,
-  maxHoldBars: 20,  // ~5 hours on 15m
+  maxHoldBars: 20, // ~5 hours on 15m
   slippage: 0.001,
 };
 
@@ -50,16 +50,16 @@ export interface BacktestTrade {
   timestamp: number;
   symbol: string;
   detector: string;
-  direction: 'LONG' | 'SHORT';
+  direction: "LONG" | "SHORT";
   entryPrice: number;
   targetPrice: number;
   stopPrice: number;
   exitPrice: number;
   exitTimestamp: number;
-  exitReason: 'TARGET_HIT' | 'STOP_HIT' | 'MAX_HOLD' | 'EOD';
+  exitReason: "TARGET_HIT" | "STOP_HIT" | "MAX_HOLD" | "EOD";
   pnl: number;
   pnlPercent: number;
-  rMultiple: number;  // Actual R achieved (e.g., 1.5R or -1.0R)
+  rMultiple: number; // Actual R achieved (e.g., 1.5R or -1.0R)
   barsHeld: number;
   marketRegime?: string;
   vixLevel?: number;
@@ -91,8 +91,8 @@ export interface BacktestStats {
   largestLoss: number;
 
   // Risk metrics
-  profitFactor: number;  // Gross profit / Gross loss
-  expectancy: number;    // Average R per trade
+  profitFactor: number; // Gross profit / Gross loss
+  expectancy: number; // Average R per trade
   avgRMultiple: number;
 
   // Time metrics
@@ -136,7 +136,9 @@ export class BacktestEngine {
       const bars = await this.fetchHistoricalBars(symbol);
 
       if (!bars || bars.length < 50) {
-        console.warn(`[BacktestEngine]   ${symbol} - Insufficient data (${bars?.length || 0} bars)`);
+        console.warn(
+          `[BacktestEngine]   ${symbol} - Insufficient data (${bars?.length || 0} bars)`
+        );
         continue;
       }
 
@@ -170,7 +172,9 @@ export class BacktestEngine {
     // Calculate statistics
     const stats = this.calculateStats(detector.type, allTrades);
 
-    console.log(`[BacktestEngine] ${detector.type} - Complete: ${stats.totalTrades} trades, ${(stats.winRate * 100).toFixed(1)}% win rate`);
+    console.log(
+      `[BacktestEngine] ${detector.type} - Complete: ${stats.totalTrades} trades, ${(stats.winRate * 100).toFixed(1)}% win rate`
+    );
 
     return stats;
   }
@@ -180,13 +184,13 @@ export class BacktestEngine {
    */
   private async fetchHistoricalBars(symbol: string): Promise<any[]> {
     const { data, error } = await this.supabase
-      .from('historical_bars')
-      .select('*')
-      .eq('symbol', symbol)
-      .eq('timeframe', this.config.timeframe)
-      .gte('timestamp', new Date(this.config.startDate).getTime())
-      .lte('timestamp', new Date(this.config.endDate).getTime())
-      .order('timestamp', { ascending: true });
+      .from("historical_bars")
+      .select("*")
+      .eq("symbol", symbol)
+      .eq("timeframe", this.config.timeframe)
+      .gte("timestamp", new Date(this.config.startDate).getTime())
+      .lte("timestamp", new Date(this.config.endDate).getTime())
+      .order("timestamp", { ascending: true });
 
     if (error) {
       console.error(`[BacktestEngine] Error fetching bars for ${symbol}:`, error);
@@ -223,39 +227,43 @@ export class BacktestEngine {
 
     // Construct features (simplified version)
     const features: SymbolFeatures = {
-      ticker: symbol,
+      symbol,
+      time: new Date(current.timestamp).toISOString(),
       price: {
         current: current.close,
         open: current.open,
         high: current.high,
         low: current.low,
-        previousClose: previous[previous.length - 1]?.close || current.close,
-        change: current.close - (previous[previous.length - 1]?.close || current.close),
-        changePercent: ((current.close - (previous[previous.length - 1]?.close || current.close)) / (previous[previous.length - 1]?.close || current.close)) * 100,
+        prevClose: previous[previous.length - 1]?.close || current.close,
+        prev: previous[previous.length - 1]?.close,
       },
       volume: {
         current: current.volume,
-        average: volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length,
-        relativeVolume: current.volume / (volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length),
+        avg: volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length,
+        relativeToAvg:
+          current.volume /
+          (volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length),
       },
-      indicators: {
-        ema9: ema9[ema9.length - 1],
-        ema21: ema21[ema21.length - 1],
-        ema50: ema50[ema50.length - 1],
-        atr,
+      ema: {
+        "9": ema9[ema9.length - 1],
+        "21": ema21[ema21.length - 1],
+        "50": ema50[ema50.length - 1],
       },
       mtf: {
         [this.config.timeframe]: {
-          ema9: ema9[ema9.length - 1],
-          ema21: ema21[ema21.length - 1],
-          atr,
-          trend: this.determineTrend(current.close, ema9[ema9.length - 1], ema21[ema21.length - 1]),
+          ema: {
+            "9": ema9[ema9.length - 1],
+            "21": ema21[ema21.length - 1],
+          },
         },
       },
       session: {
-        isOpen: true,
         minutesSinceOpen: 0, // TODO: Calculate
-        isPowerHour: false,
+        isRegularHours: true,
+      },
+      pattern: {
+        atr,
+        trend: this.determineTrend(current.close, ema9[ema9.length - 1], ema21[ema21.length - 1]),
       },
     };
 
@@ -280,23 +288,22 @@ export class BacktestEngine {
     let targetPrice: number;
     let stopPrice: number;
 
-    if (direction === 'LONG') {
-      targetPrice = entryPrice + (atr * this.config.targetMultiple);
-      stopPrice = entryPrice - (atr * this.config.stopMultiple);
+    if (direction === "LONG") {
+      targetPrice = entryPrice + atr * this.config.targetMultiple;
+      stopPrice = entryPrice - atr * this.config.stopMultiple;
     } else {
-      targetPrice = entryPrice - (atr * this.config.targetMultiple);
-      stopPrice = entryPrice + (atr * this.config.stopMultiple);
+      targetPrice = entryPrice - atr * this.config.targetMultiple;
+      stopPrice = entryPrice + atr * this.config.stopMultiple;
     }
 
     // Apply slippage
     const slippageAmount = entryPrice * this.config.slippage;
-    const entryPriceWithSlippage = direction === 'LONG'
-      ? entryPrice + slippageAmount
-      : entryPrice - slippageAmount;
+    const entryPriceWithSlippage =
+      direction === "LONG" ? entryPrice + slippageAmount : entryPrice - slippageAmount;
 
     // Simulate holding the trade
     let exitPrice = entryPriceWithSlippage;
-    let exitReason: BacktestTrade['exitReason'] = 'MAX_HOLD';
+    let exitReason: BacktestTrade["exitReason"] = "MAX_HOLD";
     let exitTimestamp = entryBar.timestamp;
     let barsHeld = 0;
 
@@ -306,38 +313,39 @@ export class BacktestEngine {
       exitTimestamp = bar.timestamp;
 
       // Check if target hit
-      if (direction === 'LONG' && bar.high >= targetPrice) {
+      if (direction === "LONG" && bar.high >= targetPrice) {
         exitPrice = targetPrice;
-        exitReason = 'TARGET_HIT';
+        exitReason = "TARGET_HIT";
         break;
-      } else if (direction === 'SHORT' && bar.low <= targetPrice) {
+      } else if (direction === "SHORT" && bar.low <= targetPrice) {
         exitPrice = targetPrice;
-        exitReason = 'TARGET_HIT';
+        exitReason = "TARGET_HIT";
         break;
       }
 
       // Check if stop hit
-      if (direction === 'LONG' && bar.low <= stopPrice) {
+      if (direction === "LONG" && bar.low <= stopPrice) {
         exitPrice = stopPrice;
-        exitReason = 'STOP_HIT';
+        exitReason = "STOP_HIT";
         break;
-      } else if (direction === 'SHORT' && bar.high >= stopPrice) {
+      } else if (direction === "SHORT" && bar.high >= stopPrice) {
         exitPrice = stopPrice;
-        exitReason = 'STOP_HIT';
+        exitReason = "STOP_HIT";
         break;
       }
 
       // Exit at close if this is the last bar
       if (i === futureBars.length - 1) {
         exitPrice = bar.close;
-        exitReason = 'MAX_HOLD';
+        exitReason = "MAX_HOLD";
       }
     }
 
     // Calculate P&L
-    const pnl = direction === 'LONG'
-      ? exitPrice - entryPriceWithSlippage
-      : entryPriceWithSlippage - exitPrice;
+    const pnl =
+      direction === "LONG"
+        ? exitPrice - entryPriceWithSlippage
+        : entryPriceWithSlippage - exitPrice;
 
     const pnlPercent = (pnl / entryPriceWithSlippage) * 100;
 
@@ -401,33 +409,25 @@ export class BacktestEngine {
     const grossProfit = winners.reduce((sum, t) => sum + t.pnl, 0);
     const grossLoss = Math.abs(losers.reduce((sum, t) => sum + t.pnl, 0));
 
-    const avgWin = winners.length > 0
-      ? winners.reduce((sum, t) => sum + t.pnlPercent, 0) / winners.length
-      : 0;
+    const avgWin =
+      winners.length > 0 ? winners.reduce((sum, t) => sum + t.pnlPercent, 0) / winners.length : 0;
 
-    const avgLoss = losers.length > 0
-      ? losers.reduce((sum, t) => sum + t.pnlPercent, 0) / losers.length
-      : 0;
+    const avgLoss =
+      losers.length > 0 ? losers.reduce((sum, t) => sum + t.pnlPercent, 0) / losers.length : 0;
 
-    const largestWin = winners.length > 0
-      ? Math.max(...winners.map((t) => t.pnlPercent))
-      : 0;
+    const largestWin = winners.length > 0 ? Math.max(...winners.map((t) => t.pnlPercent)) : 0;
 
-    const largestLoss = losers.length > 0
-      ? Math.min(...losers.map((t) => t.pnlPercent))
-      : 0;
+    const largestLoss = losers.length > 0 ? Math.min(...losers.map((t) => t.pnlPercent)) : 0;
 
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : 0;
     const avgRMultiple = trades.reduce((sum, t) => sum + t.rMultiple, 0) / trades.length;
     const expectancy = avgRMultiple;
 
     const avgBarsHeld = trades.reduce((sum, t) => sum + t.barsHeld, 0) / trades.length;
-    const avgWinBars = winners.length > 0
-      ? winners.reduce((sum, t) => sum + t.barsHeld, 0) / winners.length
-      : 0;
-    const avgLossBars = losers.length > 0
-      ? losers.reduce((sum, t) => sum + t.barsHeld, 0) / losers.length
-      : 0;
+    const avgWinBars =
+      winners.length > 0 ? winners.reduce((sum, t) => sum + t.barsHeld, 0) / winners.length : 0;
+    const avgLossBars =
+      losers.length > 0 ? losers.reduce((sum, t) => sum + t.barsHeld, 0) / losers.length : 0;
 
     return {
       detector: detectorType,
@@ -470,12 +470,7 @@ export class BacktestEngine {
   /**
    * Helper: Calculate ATR
    */
-  private calculateATR(
-    highs: number[],
-    lows: number[],
-    closes: number[],
-    period: number
-  ): number {
+  private calculateATR(highs: number[], lows: number[], closes: number[], period: number): number {
     const trueRanges: number[] = [];
 
     for (let i = 1; i < highs.length; i++) {
@@ -495,8 +490,8 @@ export class BacktestEngine {
    * Helper: Determine trend
    */
   private determineTrend(price: number, ema9: number, ema21: number): string {
-    if (price > ema9 && ema9 > ema21) return 'UPTREND';
-    if (price < ema9 && ema9 < ema21) return 'DOWNTREND';
-    return 'SIDEWAYS';
+    if (price > ema9 && ema9 > ema21) return "UPTREND";
+    if (price < ema9 && ema9 < ema21) return "DOWNTREND";
+    return "SIDEWAYS";
   }
 }
