@@ -318,7 +318,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     // Fetch user's watchlist
     const { data: watchlist, error: watchlistErr } = await supabase
       .from('watchlist')
-      .select('ticker')
+      .select('symbol')
       .eq('user_id', userId);
 
     if (watchlistErr) {
@@ -331,7 +331,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map(w => w.ticker);
+    const symbols = watchlist.map(w => w.symbol);
     console.log(`[Scanner Worker] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(', ')}`);
 
     // Fetch market data for each symbol
