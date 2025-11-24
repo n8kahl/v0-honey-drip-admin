@@ -26,10 +26,19 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     const rsiThreshold = isWeekend ? 40 : 35; // More lenient on weekends
     if (!rsi || rsi >= rsiThreshold) return false;
 
-    // 3. Below VWAP (stretched) - relaxed for weekends
+    // 3. Below VWAP (stretched) - relaxed for weekends, optional if data unavailable
     const vwapDist = features.vwap?.distancePct;
     const vwapThreshold = isWeekend ? -0.2 : -0.3; // Less strict on weekends
-    if (!vwapDist || vwapDist >= vwapThreshold) return false;
+
+    // On weekends, VWAP data may be unavailable - skip this check
+    if (!isWeekend) {
+      // Regular hours: VWAP is required
+      if (!vwapDist || vwapDist >= vwapThreshold) return false;
+    } else if (vwapDist !== undefined) {
+      // Weekend with VWAP data: apply lenient threshold
+      if (vwapDist >= vwapThreshold) return false;
+    }
+    // Weekend without VWAP data: skip check entirely (rely on RSI + patterns)
 
     // 4. Not in extreme downtrend
     const regime = features.pattern?.market_regime;
