@@ -441,7 +441,7 @@ async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promi
 async function scanUserWatchlist(userId: string): Promise<number> {
   try {
     // Fetch user's watchlist
-    console.log(`[Composite Scanner] DEBUG: Querying watchlist with column='symbol' for user ${userId}`);
+    console.log(`[Composite Scanner] DEBUG: Querying watchlist with column='ticker' for user ${userId}`);
     const { data: watchlist, error: watchlistErr } = await supabase
       .from("watchlist")
       .select("ticker")
