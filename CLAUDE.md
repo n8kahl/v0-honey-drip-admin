@@ -7,6 +7,8 @@
 **Tech Stack**: React 18 + TypeScript + Express + PostgreSQL (Supabase) + Massive.com API
 
 **Recent Updates**:
+- ✅ **Chart Initialization Fix**: Callback ref pattern ensures charts initialize on first symbol selection
+- ✅ **Chart Zoom Levels**: Timeframe-specific zoom (1m: 30 bars, 5m: 20 bars, others: 100 bars)
 - ✅ **Phase 1 Data Optimizations**: 25x faster weekend analysis, 90% API cost reduction
 - ✅ **Smart Cache TTL**: Historical data cached 7 days vs 5 seconds
 - ✅ **Database Persistence**: New `historical_bars` table for 10-50x faster backtests
