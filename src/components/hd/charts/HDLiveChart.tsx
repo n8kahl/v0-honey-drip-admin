@@ -249,6 +249,8 @@ export function HDLiveChart({
   }, [ticker, currentTf]);
 
   const loadHistoricalBars = useCallback(async () => {
+    console.log(`[HDLiveChart] loadHistoricalBars called for ticker=${ticker}, timeframe=${currentTf}`);
+
     if (rateLimited) {
       console.warn("[HDLiveChart] Skipping historical fetch while rate limited:", rateLimitMessage);
       return;
@@ -257,6 +259,7 @@ export function HDLiveChart({
     const isOption = ticker.startsWith("O:");
     const isIndex = ticker.startsWith("I:") || INDEX_TICKERS.has(ticker);
     const symbolParam = isIndex ? (ticker.startsWith("I:") ? ticker : `I:${ticker}`) : ticker;
+    console.log(`[HDLiveChart] Symbol type - isOption: ${isOption}, isIndex: ${isIndex}, symbolParam: ${symbolParam}`);
     const useDay = currentTf === "1D";
     const multiplier = useDay ? 1 : Number(currentTf) || 1;
     const timespan = useDay ? "day" : "minute";
@@ -465,6 +468,7 @@ export function HDLiveChart({
       const parsedBars = await fetchPromise;
       // Ignore stale responses if inputs changed
       if (tickerRef.current !== ticker || timeframeRef.current !== currentTf) return;
+      console.log(`[HDLiveChart] Successfully loaded ${parsedBars.length} bars for ${ticker}`);
       setBars(parsedBars);
       setRateLimited(false);
       setRateLimitMessage(null);
@@ -629,6 +633,7 @@ export function HDLiveChart({
     }
 
     // No viewport subscription needed - let users control pan/zoom freely
+    console.log("[HDLiveChart] Chart initialization complete, setting chartReady=true");
     setChartReady(true);
 
     // Handle resize
@@ -668,7 +673,7 @@ export function HDLiveChart({
     hasAutoFitRef.current = false;
     tickerRef.current = ticker;
     loadHistoricalBars();
-  }, [ticker, currentTf]); // Only reload when ticker or timeframe changes
+  }, [ticker, currentTf, loadHistoricalBars]); // Only reload when ticker or timeframe changes
 
   // Separate effect: ONLY set initial viewport once, never runs again
   useEffect(() => {
@@ -714,12 +719,15 @@ export function HDLiveChart({
 
   // Separate effect: Update chart data and indicators (NO viewport changes)
   useEffect(() => {
+    console.log(`[HDLiveChart] Rendering effect triggered - chartReady: ${chartReady}, bars.length: ${bars.length}`);
+
     const priceSeries = ensurePriceSeries();
     if (!priceSeries) {
       if (!chartReady && !waitingForChartRef.current) {
         console.debug("[HDLiveChart] Waiting for chart API before creating series");
         waitingForChartRef.current = true;
       }
+      console.warn("[HDLiveChart] No price series available, early return");
       return;
     }
     waitingForChartRef.current = false;
@@ -734,6 +742,8 @@ export function HDLiveChart({
       }
       return;
     }
+
+    console.log(`[HDLiveChart] About to render ${bars.length} bars to chart`);
 
     const renderUpdate = () => {
       const now = performance.now();
