@@ -4,11 +4,13 @@ import { HDTagTradeType } from './hd/common/HDTagTradeType';
 import { HDInput } from './hd/common/HDInput';
 import { HDButton } from './hd/common/HDButton';
 import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
+import { getShareText, getSummaryText } from '../lib/utils/discord';
 import { Search, Share2, Download, ChevronDown, History } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { HDPanelDiscordAlert } from './hd/dashboard/HDPanelDiscordAlert';
 import { EmptyState } from './ui/EmptyState';
 import { useAppToast } from '../hooks/useAppToast';
+import { useDiscord } from '../hooks/useDiscord';
 import { MobileWatermark } from './MobileWatermark';
 
 interface DesktopHistoryProps {
@@ -21,6 +23,7 @@ type DateRangeFilter = 'all' | 'today' | '7d' | '30d';
 
 export function DesktopHistory({ trades, channels = [], challenges = [] }: DesktopHistoryProps) {
   const toast = useAppToast();
+  const discord = useDiscord();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tickerFilter, setTickerFilter] = useState('');
@@ -73,62 +76,25 @@ export function DesktopHistory({ trades, channels = [], challenges = [] }: Deskt
     return timeB - timeA;
   });
   
-  // Calculate summary stats for export
-  const getSummaryText = () => {
-    if (filtered.length === 0) return '';
-    
-    const wins = filtered.filter(t => (t.movePercent || 0) > 0).length;
-    const winRate = ((wins / filtered.length) * 100).toFixed(1);
-    const avgPnL = (filtered.reduce((sum, t) => sum + (t.movePercent || 0), 0) / filtered.length).toFixed(1);
-    
-    const biggestWinner = filtered.reduce((max, t) => 
-      (t.movePercent || 0) > (max.movePercent || 0) ? t : max
-    );
-    const biggestLoser = filtered.reduce((min, t) => 
-      (t.movePercent || 0) < (min.movePercent || 0) ? t : min
-    );
-    
-    const challengeName = challengeFilter === 'all' ? 'All Challenges' : 
+  // Calculate summary text for export using shared utility
+  const getFormattedSummary = () => {
+    const challengeName = challengeFilter === 'all' ? 'All Challenges' :
       challenges.find(c => c.id === challengeFilter)?.name || 'Challenge';
-    
+
     const dateRangeLabel = {
       'all': 'All Time',
       'today': 'Today',
       '7d': 'Last 7 Days',
       '30d': 'Last 30 Days'
     }[dateRangeFilter];
-    
+
     const tickerLabel = tickerFilter.trim() ? tickerFilter.toUpperCase() : 'All Tickers';
-    
-    return `**Trade Summary – ${challengeName} – ${dateRangeLabel} – ${tickerLabel}**
 
-- Trades: ${filtered.length}
-- Wins: ${wins} (${winRate}%)
-- Average P&L: ${avgPnL > 0 ? '+' : ''}${avgPnL}%
-- Biggest winner: ${biggestWinner.ticker} ${biggestWinner.contract.strike}${biggestWinner.contract.type} ${formatPercent(biggestWinner.movePercent || 0)}
-- Biggest loser: ${biggestLoser.ticker} ${biggestLoser.contract.strike}${biggestLoser.contract.type} ${formatPercent(biggestLoser.movePercent || 0)}`;
-  };
-  
-  const getShareText = (trade: Trade) => {
-    const duration = trade.entryTime && trade.exitTime ? 
-      formatDuration(trade.entryTime, trade.exitTime) : 'N/A';
-    
-    return `**${trade.ticker} ${trade.contract.strike}${trade.contract.type} (${trade.tradeType})**
-
-Entry: $${formatPrice(trade.entryPrice || 0)}
-Exit: $${formatPrice(trade.exitPrice || 0)}
-P&L: ${formatPercent(trade.movePercent || 0)}
-Duration: ${duration}`;
-  };
-  
-  const formatDuration = (start: Date, end: Date) => {
-    const diff = new Date(end).getTime() - new Date(start).getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (hours === 0) return `${minutes}m`;
-    if (minutes === 0) return `${hours}h`;
-    return `${hours}h ${minutes}m`;
+    return getSummaryText(filtered, {
+      challengeName,
+      dateRangeLabel,
+      tickerLabel,
+    });
   };
   
   const handleExportClick = () => {
@@ -143,19 +109,39 @@ Duration: ${duration}`;
     setShowAlertDialog(true);
   };
   
-  const handleSendAlert = (channelIds: string[], challengeIds: string[], comment?: string) => {
-    // Map channel IDs to channel names
+  const handleSendAlert = async (channelIds: string[], challengeIds: string[], comment?: string) => {
     const selectedChannels = channels.filter(c => channelIds.includes(c.id));
-    const channelNames = selectedChannels.map(c => `#${c.name}`).join(', ');
-    
-    console.log('Sending history alert:', { channelIds, selectedChannels, challengeIds, comment });
-    
-    const message = alertMode === 'share' 
-      ? `Share alert sent to ${channelNames}`
-      : `Export alert sent to ${channelNames}`;
-    
-    toast.success(message);
-    setShowAlertDialog(false);
+
+    if (selectedChannels.length === 0) {
+      toast.error('Please select at least one Discord channel');
+      return;
+    }
+
+    try {
+      if (alertMode === 'share' && selectedTrade) {
+        // Send individual trade share
+        const results = await discord.sendExitAlert(selectedChannels, selectedTrade, comment);
+        if (results.failed === 0) {
+          toast.success(`Shared to ${results.success} channel${results.success > 1 ? 's' : ''}`);
+        } else {
+          toast.error(`Sent to ${results.success}, failed ${results.failed}`);
+        }
+      } else {
+        // Send summary export
+        const summaryText = getFormattedSummary();
+        const title = 'Trade Summary';
+        const results = await discord.sendSummaryAlert(selectedChannels, title, summaryText, comment);
+        if (results.failed === 0) {
+          toast.success(`Summary sent to ${results.success} channel${results.success > 1 ? 's' : ''}`);
+        } else {
+          toast.error(`Sent to ${results.success}, failed ${results.failed}`);
+        }
+      }
+      setShowAlertDialog(false);
+    } catch (error) {
+      console.error('[DesktopHistory] Failed to send Discord alert:', error);
+      toast.error('Failed to send Discord alert');
+    }
   };
   
   // Create a mock trade for export summary
@@ -393,21 +379,8 @@ Duration: ${duration}`;
       
       {/* Alert Dialog */}
       <Dialog open={showAlertDialog} onOpenChange={setShowAlertDialog}>
-        <DialogContent 
+        <DialogContent
           className="max-w-2xl p-0 gap-0 bg-[var(--surface-1)] border-[var(--border-hairline)] border-t-2 border-t-[var(--brand-primary)] max-h-[90vh] !flex flex-col"
-          ref={(el) => {
-            if (el) {
-              console.log('[DesktopHistory] DialogContent dimensions:', {
-                scrollHeight: el.scrollHeight,
-                clientHeight: el.clientHeight,
-                offsetHeight: el.offsetHeight,
-                maxHeight: window.getComputedStyle(el).maxHeight,
-                display: window.getComputedStyle(el).display,
-                flexDirection: window.getComputedStyle(el).flexDirection,
-                overflow: window.getComputedStyle(el).overflow
-              });
-            }
-          }}
         >
           <DialogTitle className="sr-only">
             {alertMode === 'export' ? 'Export Trade Summary' : 'Share Trade'}
@@ -417,20 +390,7 @@ Duration: ${duration}`;
               ? 'Export your trade summary to Discord channels' 
               : 'Share this trade result to Discord channels'}
           </DialogDescription>
-          <div 
-            className="flex-1 min-h-0 flex flex-col"
-            ref={(el) => {
-              if (el) {
-                console.log('[DesktopHistory] Wrapper div dimensions:', {
-                  scrollHeight: el.scrollHeight,
-                  clientHeight: el.clientHeight,
-                  offsetHeight: el.offsetHeight,
-                  flex: window.getComputedStyle(el).flex,
-                  minHeight: window.getComputedStyle(el).minHeight
-                });
-              }
-            }}
-          >
+          <div className="flex-1 min-h-0 flex flex-col">
             <HDPanelDiscordAlert
               trade={alertMode === 'export' ? getMockTradeForExport() : selectedTrade!}
               alertType="update"
@@ -438,7 +398,7 @@ Duration: ${duration}`;
               challenges={challenges}
               onSend={handleSendAlert}
               onCancel={() => setShowAlertDialog(false)}
-              overridePreviewText={alertMode === 'export' ? getSummaryText() : getShareText(selectedTrade!)}
+              overridePreviewText={alertMode === 'export' ? getFormattedSummary() : (selectedTrade ? getShareText(selectedTrade) : '')}
               showShareCard={alertMode === 'share'} // Show share card only for individual trade shares
             />
           </div>
