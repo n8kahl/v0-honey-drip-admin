@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { Ticker } from "../types";
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from "../lib/supabase/database";
+import { useMarketDataStore } from "./marketDataStore";
 import { toast } from "sonner";
 
 export interface MarketQuote {
@@ -175,6 +176,21 @@ export const useMarketStore = create<MarketStore>()(
             return ticker;
           }),
         }));
+
+        // CRITICAL FIX: Also update marketDataStore timestamps so stale detection works
+        useMarketDataStore.setState((state: any) => {
+          const updatedSymbols = { ...state.symbols };
+          const now = Date.now();
+          quotes.forEach((quote, symbol) => {
+            if (updatedSymbols[symbol]) {
+              updatedSymbols[symbol] = {
+                ...updatedSymbols[symbol],
+                lastUpdated: now,
+              };
+            }
+          });
+          return { symbols: updatedSymbols };
+        });
       },
 
       updateQuote: (symbol, quote) => {
