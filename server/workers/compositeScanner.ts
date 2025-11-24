@@ -441,10 +441,10 @@ async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promi
 async function scanUserWatchlist(userId: string): Promise<number> {
   try {
     // Fetch user's watchlist
-    console.log(`[Composite Scanner] DEBUG: Querying watchlist with column='ticker' for user ${userId}`);
+    console.log(`[Composite Scanner] Querying watchlist for user ${userId}`);
     const { data: watchlist, error: watchlistErr } = await supabase
       .from("watchlist")
-      .select("ticker")
+      .select("symbol")
       .eq("user_id", userId);
 
     if (watchlistErr) {
@@ -452,7 +452,6 @@ async function scanUserWatchlist(userId: string): Promise<number> {
         `[Composite Scanner] Error fetching watchlist for user ${userId}:`,
         watchlistErr
       );
-      console.error(`[Composite Scanner] Tried both 'symbol' and 'ticker' columns - both failed!`);
       stats.totalErrors++;
       return 0;
     }
@@ -462,7 +461,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map((w) => w.ticker);
+    const symbols = watchlist.map((w) => w.symbol);
     console.log(
       `[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
     );
