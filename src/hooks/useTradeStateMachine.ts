@@ -541,9 +541,12 @@ export function useTradeStateMachine({
 
         // Update trade state if changed
         if (newTrade.state !== currentTrade.state) {
+          const newStatus = newTrade.state === "ENTERED" ? "entered" : "exited";
+          console.warn(`[v0] Updating trade ${newTrade.id} status: ${currentTrade.state} → ${newTrade.state} (DB status: ${newStatus})`);
+
           persistencePromises.push(
             updateTradeApi(userId, newTrade.id, {
-              status: newTrade.state === "ENTERED" ? "entered" : "exited",
+              status: newStatus,
               entry_price: newTrade.entryPrice,
               entry_time: newTrade.entryTime,
               exit_price: newTrade.exitPrice,
@@ -553,6 +556,8 @@ export function useTradeStateMachine({
               throw error;
             })
           );
+        } else {
+          console.warn(`[v0] Trade state unchanged (${newTrade.state}), not updating database status`);
         }
 
         // Add trade update record
