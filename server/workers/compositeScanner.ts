@@ -16,6 +16,20 @@
  * - Performance monitoring and logging
  */
 
+// Load environment variables
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+config();
+
+// Polyfill fetch for Node.js compatibility
+import fetch, { Headers, Request, Response } from "cross-fetch";
+if (!globalThis.fetch) {
+  globalThis.fetch = fetch as any;
+  globalThis.Headers = Headers as any;
+  globalThis.Request = Request as any;
+  globalThis.Response = Response as any;
+}
+
 import { createClient } from "@supabase/supabase-js";
 import { CompositeScanner } from "../../src/lib/composite/CompositeScanner.js";
 import type { CompositeSignal } from "../../src/lib/composite/CompositeSignal.js";
@@ -39,6 +53,12 @@ const EXPIRE_SIGNALS_INTERVAL = 5 * 60 * 1000; // Expire old signals every 5 min
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+console.log("[Composite Scanner] 🔍 Supabase Configuration:");
+console.log(`  URL: ${SUPABASE_URL || "❌ MISSING"}`);
+console.log(
+  `  Service Role Key: ${SUPABASE_SERVICE_ROLE_KEY ? "✅ Present (" + SUPABASE_SERVICE_ROLE_KEY.substring(0, 20) + "...)" : "❌ MISSING"}`
+);
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error("[Composite Scanner] Missing required environment variables:");
   if (!SUPABASE_URL) console.error("  - SUPABASE_URL or VITE_SUPABASE_URL");
@@ -47,6 +67,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+console.log("[Composite Scanner] ✅ Supabase client created successfully");
 
 /**
  * Performance statistics
@@ -276,8 +297,10 @@ async function fetchSymbolFeatures(
     // Log pattern detection results for diagnostics
     console.log(`[FEATURES] ${symbol}:`, {
       hasPattern: !!features.pattern,
-      patternKeys: features.pattern ? Object.keys(features.pattern).filter(k => features.pattern![k] === true) : [],
-      rsi: features.mtf?.['5m']?.rsi?.[14]?.toFixed(1),
+      patternKeys: features.pattern
+        ? Object.keys(features.pattern).filter((k) => features.pattern![k] === true)
+        : [],
+      rsi: features.mtf?.["5m"]?.rsi?.[14]?.toFixed(1),
       price: latestBar.close.toFixed(2),
       volume: latestBar.volume,
       barCount: bars.length,
@@ -381,7 +404,7 @@ async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promi
       .from("discord_channels")
       .select("*")
       .eq("user_id", userId);
-      // Note: 'enabled' column doesn't exist in schema, fetching all channels
+    // Note: 'enabled' column doesn't exist in schema, fetching all channels
 
     if (channelsErr) {
       console.error(
@@ -476,9 +499,11 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     let signalsGenerated = 0;
 
     // **OPTIMIZATION**: Fetch features for all symbols in parallel (25x speedup)
-    console.log(`[Composite Scanner] Fetching features for ${symbols.length} symbols in parallel...`);
+    console.log(
+      `[Composite Scanner] Fetching features for ${symbols.length} symbols in parallel...`
+    );
     const featureResults = await Promise.allSettled(
-      symbols.map(symbol => fetchSymbolFeatures(symbol))
+      symbols.map((symbol) => fetchSymbolFeatures(symbol))
     );
 
     // Process each symbol's features
@@ -488,8 +513,11 @@ async function scanUserWatchlist(userId: string): Promise<number> {
 
       try {
         // Check if feature fetch succeeded
-        if (featureResult.status === 'rejected') {
-          console.error(`[Composite Scanner] Failed to fetch features for ${symbol}:`, featureResult.reason);
+        if (featureResult.status === "rejected") {
+          console.error(
+            `[Composite Scanner] Failed to fetch features for ${symbol}:`,
+            featureResult.reason
+          );
           stats.totalErrors++;
           continue;
         }
@@ -507,13 +535,15 @@ async function scanUserWatchlist(userId: string): Promise<number> {
           filtered: result.filtered,
           filterReason: result.filterReason,
           hasSignal: !!result.signal,
-          signal: result.signal ? {
-            type: result.signal.opportunityType,
-            baseScore: result.signal.baseScore.toFixed(1),
-            direction: result.signal.direction,
-            entry: result.signal.entryPrice,
-            rr: result.signal.riskReward?.toFixed(2),
-          } : null,
+          signal: result.signal
+            ? {
+                type: result.signal.opportunityType,
+                baseScore: result.signal.baseScore.toFixed(1),
+                direction: result.signal.direction,
+                entry: result.signal.entryPrice,
+                rr: result.signal.riskReward?.toFixed(2),
+              }
+            : null,
         });
 
         if (result.filtered) {
@@ -736,8 +766,12 @@ export class CompositeScannerWorker {
     console.log("[Composite Scanner] Configuration: OPTIMIZED (High Accuracy)");
     console.log("[Composite Scanner] Scan interval: 60 seconds");
     console.log("[Composite Scanner] Primary timeframe: 5m");
-    console.log(`[Composite Scanner] Min Base Score: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minBaseScore} (Equity), ${OPTIMIZED_SCANNER_CONFIG.assetClassThresholds?.INDEX?.minBaseScore || 85} (Index)`);
-    console.log(`[Composite Scanner] Min R:R Ratio: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minRiskReward}:1`);
+    console.log(
+      `[Composite Scanner] Min Base Score: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minBaseScore} (Equity), ${OPTIMIZED_SCANNER_CONFIG.assetClassThresholds?.INDEX?.minBaseScore || 85} (Index)`
+    );
+    console.log(
+      `[Composite Scanner] Min R:R Ratio: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minRiskReward}:1`
+    );
     console.log("[Composite Scanner] Target Win Rate: 65%+");
     console.log("[Composite Scanner] ======================================\n");
 
