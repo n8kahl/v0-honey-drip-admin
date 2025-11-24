@@ -18,6 +18,12 @@ import { FlatFileDownloader, type DownloadConfig } from "./FlatFileDownloader.js
 import { FlatFileParser, type ParseConfig } from "./FlatFileParser.js";
 import { join } from "path";
 import { existsSync } from "fs";
+import { getIndexAggregates } from "../../massive/client.js";
+import { createClient } from "@supabase/supabase-js";
+
+// Supabase for API fallback
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export interface HybridBackfillConfig {
   symbols: string[]; // ['SPX', 'NDX']
@@ -43,11 +49,110 @@ export class HybridBackfillOrchestrator {
   private downloader: FlatFileDownloader;
   private parser: FlatFileParser;
   private dataDir: string;
+  private supabase: any;
 
   constructor() {
     this.downloader = new FlatFileDownloader();
     this.parser = new FlatFileParser();
     this.dataDir = join(process.cwd(), "data", "flat-files");
+
+    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      this.supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    }
+  }
+
+  /**
+   * Check if symbol is an index (has flat file data)
+   */
+  private isIndexSymbol(symbol: string): boolean {
+    const normalized = symbol.toUpperCase().replace(/^I:/, "");
+    return /^(SPX|NDX|DJI|VIX|RUT|RVX)$/i.test(normalized);
+  }
+
+  /**
+   * Separate symbols into indices (flat file) and equities (API fallback)
+   */
+  private categorizeSymbols(symbols: string[]): { indices: string[]; equities: string[] } {
+    const indices: string[] = [];
+    const equities: string[] = [];
+
+    for (const symbol of symbols) {
+      if (this.isIndexSymbol(symbol)) {
+        indices.push(symbol);
+      } else {
+        equities.push(symbol);
+      }
+    }
+
+    return { indices, equities };
+  }
+
+  /**
+   * Fetch bars from API and insert into database
+   */
+  private async backfillSymbolViaAPI(
+    symbol: string,
+    startDate: string,
+    endDate: string
+  ): Promise<number> {
+    console.log(`[HybridBackfill] 🔄 Fetching ${symbol} from API...`);
+
+    let totalInserted = 0;
+    const timeframes = ["1m", "5m", "15m"];
+
+    for (const timeframe of timeframes) {
+      try {
+        // Parse timeframe
+        const match = timeframe.match(/^(\d+)([mh])$/);
+        if (!match) continue;
+
+        const mult = parseInt(match[1], 10);
+        const span = match[2] === "m" ? "minute" : "hour";
+
+        // Fetch from API
+        const bars = await getIndexAggregates(symbol, mult, span as any, startDate, endDate);
+
+        if (bars.length === 0) {
+          console.warn(`[HybridBackfill] ⚠️  ${symbol} ${timeframe} - No data`);
+          continue;
+        }
+
+        // Convert to database format
+        const rows = bars.map((bar) => ({
+          symbol,
+          timeframe,
+          timestamp: bar.t,
+          open: bar.o,
+          high: bar.h,
+          low: bar.l,
+          close: bar.c,
+          volume: bar.v || 0,
+          vwap: bar.vw || null,
+          trades: null,
+        }));
+
+        // Insert into database
+        if (this.supabase) {
+          const { error } = await this.supabase
+            .from("historical_bars")
+            .upsert(rows, { onConflict: "symbol,timeframe,timestamp" });
+
+          if (error) {
+            console.error(`[HybridBackfill] ❌ Error inserting ${symbol} ${timeframe}:`, error);
+          } else {
+            console.log(`[HybridBackfill] ✅ ${symbol} ${timeframe}: ${rows.length} bars`);
+            totalInserted += rows.length;
+          }
+        }
+
+        // Rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      } catch (error: any) {
+        console.error(`[HybridBackfill] ❌ Error fetching ${symbol} ${timeframe}:`, error.message);
+      }
+    }
+
+    return totalInserted;
   }
 
   /**
@@ -69,6 +174,16 @@ export class HybridBackfillOrchestrator {
       duration: 0,
     };
 
+    // Categorize symbols by data source
+    const { indices, equities } = this.categorizeSymbols(config.symbols);
+
+    if (indices.length > 0) {
+      console.log(`[HybridBackfill] 📁 Indices (flat files): ${indices.join(", ")}`);
+    }
+    if (equities.length > 0) {
+      console.log(`[HybridBackfill] 🔌 Equities (API fallback): ${equities.join(", ")}`);
+    }
+
     // Calculate date ranges
     const { historicalStart, historicalEnd, recentStart, recentEnd } = this.calculateDateRanges(
       config.days
@@ -78,31 +193,27 @@ export class HybridBackfillOrchestrator {
     console.log(`  Historical (flat files): ${historicalStart} to ${historicalEnd}`);
     console.log(`  Recent (API): ${recentStart} to ${recentEnd}`);
 
-    // STEP 1: Download flat files for historical data (>1 day old)
-    if (!config.skipDownload) {
-      console.log("\n[HybridBackfill] STEP 1: Downloading flat files...");
+    // STEP 1: Download flat files for indices (if any)
+    if (indices.length > 0 && !config.skipDownload) {
+      console.log("\n[HybridBackfill] STEP 1: Downloading flat files for indices...");
 
-      // Download indices data
       const indicesDownloadConfig: DownloadConfig = {
         dataset: "indices",
         startDate: historicalStart,
         endDate: historicalEnd,
-        symbols: config.symbols,
+        symbols: indices,
       };
 
       const indicesDownloadStats = await this.downloader.download(indicesDownloadConfig);
       stats.filesDownloaded += indicesDownloadStats.filesDownloaded;
       stats.flatFileDays = indicesDownloadStats.filesDownloaded;
-
-      // TODO: Add options flat file download if needed
-      // const optionsDownloadConfig: DownloadConfig = { ... };
-    } else {
+    } else if (indices.length > 0) {
       console.log("\n[HybridBackfill] STEP 1: Skipping download (using existing files)");
     }
 
-    // STEP 2: Parse and insert flat file data
-    if (!config.skipParse) {
-      console.log("\n[HybridBackfill] STEP 2: Parsing flat files...");
+    // STEP 2: Parse and insert flat file data for indices
+    if (indices.length > 0 && !config.skipParse) {
+      console.log("\n[HybridBackfill] STEP 2: Parsing flat files for indices...");
 
       const files = this.getDownloadedFiles(historicalStart, historicalEnd);
       console.log(`[HybridBackfill] Found ${files.length} files to parse`);
@@ -112,7 +223,7 @@ export class HybridBackfillOrchestrator {
           const parseConfig: ParseConfig = {
             filePath: file,
             dataset: "indices",
-            symbols: config.symbols,
+            symbols: indices,
             timeframe: "1m",
           };
 
@@ -122,15 +233,21 @@ export class HybridBackfillOrchestrator {
           console.error(`[HybridBackfill] Error parsing ${file}:`, error);
         }
       }
-    } else {
+    } else if (indices.length > 0) {
       console.log("\n[HybridBackfill] STEP 2: Skipping parse (data already in DB)");
     }
 
-    // STEP 3: Use existing API backfill for recent data
-    console.log("\n[HybridBackfill] STEP 3: Fetching recent data via API...");
-    console.log("[HybridBackfill] ℹ️  Use existing API backfill worker for yesterday + today");
-    console.log("[HybridBackfill] ℹ️  Command: pnpm backfill:api -- --days=2");
-    stats.apiDays = this.calculateDaysBetween(recentStart, recentEnd);
+    // STEP 3: Use API for equities (full 90-day backfill)
+    if (equities.length > 0) {
+      console.log("\n[HybridBackfill] STEP 3: Fetching equities via API...");
+
+      for (const symbol of equities) {
+        const inserted = await this.backfillSymbolViaAPI(symbol, historicalStart, historicalEnd);
+        stats.rowsInserted += inserted;
+      }
+    }
+
+    stats.apiDays = this.calculateDaysBetween(historicalStart, historicalEnd);
 
     stats.duration = Date.now() - startTime;
     this.printSummary(stats, config);
