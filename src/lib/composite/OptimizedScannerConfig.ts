@@ -194,7 +194,7 @@ const STRATEGY_THRESHOLDS: Partial<Record<OpportunityType, Partial<SignalThresho
     // WEEKEND OVERRIDE: Lower threshold for weekend analysis
     // VWAP and volume data unavailable on weekends (50% of score missing)
     weekendMinBaseScore: 35, // Rely on RSI + market regime only
-    weekendMinStyleScore: 40,
+    weekendMinStyleScore: 35, // Match base score threshold
   },
   index_mean_reversion_short: {
     minBaseScore: 82,
@@ -202,7 +202,7 @@ const STRATEGY_THRESHOLDS: Partial<Record<OpportunityType, Partial<SignalThresho
     minRiskReward: 2.3,
     // WEEKEND OVERRIDE: Lower threshold for weekend analysis
     weekendMinBaseScore: 35,
-    weekendMinStyleScore: 40,
+    weekendMinStyleScore: 35, // Match base score threshold
   },
   power_hour_reversal_bullish: {
     minBaseScore: 85,
