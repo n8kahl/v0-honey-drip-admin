@@ -57,12 +57,12 @@ function getSupabaseClient() {
  */
 function getTimeframeKey(multiplier: string, timespan: string): string {
   const mult = multiplier;
-  if (timespan === 'minute') {
+  if (timespan === "minute") {
     return `${mult}m`;
-  } else if (timespan === 'hour') {
+  } else if (timespan === "hour") {
     return `${mult}h`;
-  } else if (timespan === 'day') {
-    return 'day';
+  } else if (timespan === "day") {
+    return "day";
   }
   return `${mult}${timespan.charAt(0)}`;
 }
@@ -88,13 +88,13 @@ async function queryHistoricalBars(
     const toMs = new Date(toDate).getTime() + 86400000 - 1; // End of day
 
     const { data, error } = await supabase
-      .from('historical_bars')
-      .select('*')
-      .eq('symbol', symbol)
-      .eq('timeframe', timeframe)
-      .gte('timestamp', fromMs)
-      .lte('timestamp', toMs)
-      .order('timestamp', { ascending: true });
+      .from("historical_bars")
+      .select("*")
+      .eq("symbol", symbol)
+      .eq("timeframe", timeframe)
+      .gte("timestamp", fromMs)
+      .lte("timestamp", toMs)
+      .order("timestamp", { ascending: true });
 
     if (error) {
       console.warn(`[API] Error querying historical_bars for ${symbol}:`, error);
@@ -116,18 +116,14 @@ async function queryHistoricalBars(
 /**
  * Store bars in historical_bars table for future use
  */
-async function storeHistoricalBars(
-  symbol: string,
-  timeframe: string,
-  bars: any[]
-): Promise<void> {
+async function storeHistoricalBars(symbol: string, timeframe: string, bars: any[]): Promise<void> {
   const supabase = getSupabaseClient();
   if (!supabase || bars.length === 0) {
     return;
   }
 
   try {
-    const rows = bars.map(bar => ({
+    const rows = bars.map((bar) => ({
       symbol,
       timeframe,
       timestamp: bar.t || bar.timestamp,
@@ -140,12 +136,10 @@ async function storeHistoricalBars(
       trades: bar.n || bar.trades || null,
     }));
 
-    const { error } = await supabase
-      .from('historical_bars')
-      .upsert(rows as any, {
-        onConflict: 'symbol,timeframe,timestamp',
-        ignoreDuplicates: true,
-      });
+    const { error } = await supabase.from("historical_bars").upsert(rows as any, {
+      onConflict: "symbol,timeframe,timestamp",
+      ignoreDuplicates: true,
+    });
 
     if (error) {
       console.warn(`[API] Error storing historical_bars for ${symbol}:`, error);
@@ -817,7 +811,7 @@ router.get("/bars", requireProxyToken, async (req, res) => {
     const dbBars = await queryHistoricalBars(symbol, timeframe, from, to);
 
     let normalized: any[] = [];
-    let source = 'api'; // Track data source for logging
+    let source = "api"; // Track data source for logging
 
     if (dbBars && dbBars.length > 0) {
       // Database hit! Convert to normalized format
@@ -831,7 +825,7 @@ router.get("/bars", requireProxyToken, async (req, res) => {
         vwap: bar.vwap ? Number(bar.vwap) : undefined,
         trades: bar.trades ? Number(bar.trades) : undefined,
       }));
-      source = 'database';
+      source = "database";
     } else {
       // **STEP 2**: Database miss - fetch from Massive API
       const massiveSymbol = normalizeSymbolForMassive(symbol);
@@ -865,8 +859,8 @@ router.get("/bars", requireProxyToken, async (req, res) => {
 
       // **STEP 3**: Store in database for future use (async, don't await)
       if (results.length > 0) {
-        storeHistoricalBars(symbol, timeframe, results).catch(err =>
-          console.warn('[API] Failed to store bars in database:', err)
+        storeHistoricalBars(symbol, timeframe, results).catch((err) =>
+          console.warn("[API] Failed to store bars in database:", err)
         );
       }
     }
@@ -994,12 +988,15 @@ router.get("/quotes", requireProxyToken, async (req, res) => {
                       r?.last_quote?.bp ??
                       0
                   );
+                  // Extract change and changePercent from underlying asset
+                  const change = Number(underlying?.change ?? 0);
+                  const changePercent = Number(underlying?.change_percent ?? 0);
 
                   results.push({
                     symbol: s,
                     last,
-                    change: 0,
-                    changePercent: 0,
+                    change,
+                    changePercent,
                     asOf: Date.now(),
                     source: "options-snapshot",
                   });
