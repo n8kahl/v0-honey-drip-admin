@@ -10,6 +10,7 @@
 
 import React, { useMemo } from "react";
 import { HDLiveChart } from "./HDLiveChart";
+import { HDChartContainer } from "./HDChartContainer";
 import { TradeMetricsPanel } from "./TradeMetricsPanel";
 import type { Trade, TradeState, Ticker } from "../../../types";
 import type { ChartLevel } from "../../../types/tradeLevels";
@@ -69,14 +70,11 @@ export function HDLiveChartContextAware({
     [config.indicators]
   );
 
-  // Determine chart height for dual view in LOADED mode
+  // Always use dual view on desktop - split height equally between 1m and 5m charts
   const chartHeight = useMemo(() => {
-    // In LOADED mode with dual view, use smaller height to fit both charts
-    if (mode === "LOADED" && config.dualTimeframeView) {
-      return height ? Math.floor(height / 2) - 10 : 180;
-    }
-    return height;
-  }, [mode, config.dualTimeframeView, height]);
+    // Always show dual 1m+5m view, split the height
+    return height ? Math.floor(height / 2) - 10 : 180;
+  }, [height]);
 
   // For ENTERED state, reduce chart height to make room for metrics panel
   const finalChartHeight = useMemo(() => {
@@ -88,26 +86,9 @@ export function HDLiveChartContextAware({
 
   return (
     <div className={className}>
-      {/* Single chart for BROWSE and ENTERED modes */}
-      {(mode === "BROWSE" || mode === "ENTERED") && (
-        <div className="w-full">
-          <HDLiveChart
-            ticker={ticker}
-            initialTimeframe={timeframe}
-            indicators={indicatorConfig}
-            events={mode === "ENTERED" ? [] : []}
-            levels={config.showKeyLevels ? levels : []}
-            height={finalChartHeight}
-            className="w-full"
-            showControls={mode === "BROWSE"}
-            showHeader={true}
-          />
-        </div>
-      )}
-
-      {/* Dual Timeframe View in LOADED mode - 5m (left) + 1m (right) */}
-      {mode === "LOADED" && config.dualTimeframeView && (
-        <div className="flex gap-6 w-full">
+      {/* Always show dual 1m+5m view wrapped in collapsible container */}
+      <HDChartContainer title="📊 Charts" defaultExpanded={true}>
+        <div className="flex gap-6 w-full p-4">
           {/* Left: 5-minute chart (50% width) */}
           <div className="flex-1 min-w-0">
             <HDLiveChart
@@ -137,7 +118,7 @@ export function HDLiveChartContextAware({
             />
           </div>
         </div>
-      )}
+      </HDChartContainer>
 
       {/* Trade Metrics Panel below chart in ENTERED mode */}
       {mode === "ENTERED" && currentTrade && currentTrade.contract && (
