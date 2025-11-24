@@ -677,7 +677,7 @@ export function HDLiveChart({
       chartRef.current = null;
       setChartReady(false);
     };
-  }, [height, indicators]);
+  }, [height, indicators, ticker]); // Re-initialize chart when ticker changes
 
   useEffect(() => {
     // Reset auto-fit flag when ticker changes so new chart gets fitted
