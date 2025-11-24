@@ -252,7 +252,9 @@ export function HDLiveChart({
   }, [ticker, currentTf]);
 
   const loadHistoricalBars = useCallback(async () => {
-    console.log(`[HDLiveChart] loadHistoricalBars called for ticker=${ticker}, timeframe=${currentTf}`);
+    console.log(
+      `[HDLiveChart] loadHistoricalBars called for ticker=${ticker}, timeframe=${currentTf}`
+    );
 
     if (rateLimited) {
       console.warn("[HDLiveChart] Skipping historical fetch while rate limited:", rateLimitMessage);
@@ -262,7 +264,9 @@ export function HDLiveChart({
     const isOption = ticker.startsWith("O:");
     const isIndex = ticker.startsWith("I:") || INDEX_TICKERS.has(ticker);
     const symbolParam = isIndex ? (ticker.startsWith("I:") ? ticker : `I:${ticker}`) : ticker;
-    console.log(`[HDLiveChart] Symbol type - isOption: ${isOption}, isIndex: ${isIndex}, symbolParam: ${symbolParam}`);
+    console.log(
+      `[HDLiveChart] Symbol type - isOption: ${isOption}, isIndex: ${isIndex}, symbolParam: ${symbolParam}`
+    );
     const useDay = currentTf === "1D";
     const multiplier = useDay ? 1 : Number(currentTf) || 1;
     const timespan = useDay ? "day" : "minute";
@@ -390,7 +394,7 @@ export function HDLiveChart({
           });
 
           const mapped = preFiltered.map((r: any) => ({
-            time: Math.floor(r.t / 1000),
+            time: Math.floor(r.t / 1000), // API proxy returns milliseconds, convert to seconds for lightweight-charts
             open: r.o,
             high: r.h,
             low: r.l,
@@ -497,153 +501,156 @@ export function HDLiveChart({
   }, []);
 
   // Callback ref to initialize chart as soon as container is mounted
-  const setChartContainerRef = useCallback((node: HTMLDivElement | null) => {
-    chartContainerRef.current = node;
+  const setChartContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      chartContainerRef.current = node;
 
-    if (!node) {
-      console.warn("[HDLiveChart] Chart container unmounted");
-      return;
-    }
-
-    // Only initialize if we don't have a chart yet
-    if (chartRef.current) {
-      console.log("[HDLiveChart] Chart already exists, skipping initialization");
-      return;
-    }
-
-    console.log("[HDLiveChart] Chart container mounted, initializing chart...");
-
-    const chart = createChart(node, {
-      width: node.clientWidth,
-      height,
-      layout: {
-        background: { color: "#0a0a0a" },
-        textColor: "#9CA3AF",
-      },
-      grid: {
-        vertLines: { color: "#1F2937" },
-        horzLines: { color: "#1F2937" },
-      },
-      crosshair: {
-        mode: 1,
-      },
-      rightPriceScale: {
-        borderColor: "#374151",
-      },
-      timeScale: {
-        borderColor: "#374151",
-        timeVisible: true,
-        secondsVisible: false,
-        // Enable natural interactions
-        rightOffset: 0,
-      },
-    });
-
-    // Do not abort on missing methods immediately; attempt to recover with retries.
-    chartRef.current = chart;
-
-    const createLineSeries = (opts: any, label?: string) => {
-      if (!chartRef.current || typeof (chartRef.current as any).addLineSeries !== "function") {
-        if (label) {
-          console.warn(`[HDLiveChart] Line series API unavailable, skipping ${label} for now`);
-        }
-        return null;
+      if (!node) {
+        console.warn("[HDLiveChart] Chart container unmounted");
+        return;
       }
-      return (chartRef.current as any).addLineSeries(opts);
-    };
 
-    // Create all series immediately - chart is synchronously ready
-    waitingForChartRef.current = false;
+      // Only initialize if we don't have a chart yet
+      if (chartRef.current) {
+        console.log("[HDLiveChart] Chart already exists, skipping initialization");
+        return;
+      }
 
-    // Create candlestick series using v4-style API (v5 uses different API but v4 still works)
-    try {
-      const candleOptions = {
-        upColor: "#16A34A",
-        downColor: "#EF4444",
-        borderUpColor: "#16A34A",
-        borderDownColor: "#EF4444",
-        wickUpColor: "#16A34A",
-        wickDownColor: "#EF4444",
-      };
-      candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries(candleOptions);
-    } catch (err) {
-      console.error("[HDLiveChart] Failed to create candlestick series:", err);
-    }
+      console.log("[HDLiveChart] Chart container mounted, initializing chart...");
 
-    // Create volume histogram series for volume visualization
-    try {
-      const volumeOptions = {
-        priceFormat: {
-          type: "volume" as const,
+      const chart = createChart(node, {
+        width: node.clientWidth,
+        height,
+        layout: {
+          background: { color: "#0a0a0a" },
+          textColor: "#9CA3AF",
         },
-        priceScaleId: "",
-        lastValueVisible: false,
-        priceLineVisible: false,
-      };
-      volumeSeriesRef.current = (chartRef.current as any).addHistogramSeries(volumeOptions);
-    } catch (err) {
-      console.debug(
-        "[HDLiveChart] Volume histogram series not available (paid tier may be required)"
-      );
-    }
-
-    // Create EMA series
-    if (indicators?.ema?.periods) {
-      const colors = ["#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
-      indicators.ema.periods.forEach((period, i) => {
-        const emaSeries = createLineSeries(
-          {
-            color: colors[i % colors.length],
-            lineWidth: 1,
-            title: `EMA${period}`,
-          },
-          `EMA${period}`
-        );
-        if (emaSeries) {
-          emaSeriesRefs.current.set(period, emaSeries);
-        }
+        grid: {
+          vertLines: { color: "#1F2937" },
+          horzLines: { color: "#1F2937" },
+        },
+        crosshair: {
+          mode: 1,
+        },
+        rightPriceScale: {
+          borderColor: "#374151",
+        },
+        timeScale: {
+          borderColor: "#374151",
+          timeVisible: true,
+          secondsVisible: false,
+          // Enable natural interactions
+          rightOffset: 0,
+        },
       });
-    }
 
-    // Create VWAP series
-    if (indicators?.vwap?.enabled) {
-      const vwapSeries = createLineSeries(
-        {
-          color: "#10B981",
-          lineWidth: 2,
-          lineStyle: 2,
-          title: "VWAP",
-        },
-        "VWAP"
-      );
-      if (vwapSeries) {
-        vwapSeriesRef.current = vwapSeries;
+      // Do not abort on missing methods immediately; attempt to recover with retries.
+      chartRef.current = chart;
+
+      const createLineSeries = (opts: any, label?: string) => {
+        if (!chartRef.current || typeof (chartRef.current as any).addLineSeries !== "function") {
+          if (label) {
+            console.warn(`[HDLiveChart] Line series API unavailable, skipping ${label} for now`);
+          }
+          return null;
+        }
+        return (chartRef.current as any).addLineSeries(opts);
+      };
+
+      // Create all series immediately - chart is synchronously ready
+      waitingForChartRef.current = false;
+
+      // Create candlestick series using v4-style API (v5 uses different API but v4 still works)
+      try {
+        const candleOptions = {
+          upColor: "#16A34A",
+          downColor: "#EF4444",
+          borderUpColor: "#16A34A",
+          borderDownColor: "#EF4444",
+          wickUpColor: "#16A34A",
+          wickDownColor: "#EF4444",
+        };
+        candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries(candleOptions);
+      } catch (err) {
+        console.error("[HDLiveChart] Failed to create candlestick series:", err);
       }
-    }
 
-    // Create Bollinger Bands
-    if (indicators?.bollinger) {
-      const upperSeries = createLineSeries(
-        { color: "#6366F1", lineWidth: 1, title: "BB Upper" },
-        "BB Upper"
-      );
-      const middleSeries = createLineSeries(
-        { color: "#6366F1", lineWidth: 1, lineStyle: 2, title: "BB Middle" },
-        "BB Middle"
-      );
-      const lowerSeries = createLineSeries(
-        { color: "#6366F1", lineWidth: 1, title: "BB Lower" },
-        "BB Lower"
-      );
-      if (upperSeries && middleSeries && lowerSeries) {
-        bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+      // Create volume histogram series for volume visualization
+      try {
+        const volumeOptions = {
+          priceFormat: {
+            type: "volume" as const,
+          },
+          priceScaleId: "",
+          lastValueVisible: false,
+          priceLineVisible: false,
+        };
+        volumeSeriesRef.current = (chartRef.current as any).addHistogramSeries(volumeOptions);
+      } catch (err) {
+        console.debug(
+          "[HDLiveChart] Volume histogram series not available (paid tier may be required)"
+        );
       }
-    }
 
-    // No viewport subscription needed - let users control pan/zoom freely
-    console.log("[HDLiveChart] Chart initialization complete, setting chartReady=true");
-    setChartReady(true);
-  }, [height]); // Only depend on height to avoid re-creating chart unnecessarily
+      // Create EMA series
+      if (indicators?.ema?.periods) {
+        const colors = ["#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
+        indicators.ema.periods.forEach((period, i) => {
+          const emaSeries = createLineSeries(
+            {
+              color: colors[i % colors.length],
+              lineWidth: 1,
+              title: `EMA${period}`,
+            },
+            `EMA${period}`
+          );
+          if (emaSeries) {
+            emaSeriesRefs.current.set(period, emaSeries);
+          }
+        });
+      }
+
+      // Create VWAP series
+      if (indicators?.vwap?.enabled) {
+        const vwapSeries = createLineSeries(
+          {
+            color: "#10B981",
+            lineWidth: 2,
+            lineStyle: 2,
+            title: "VWAP",
+          },
+          "VWAP"
+        );
+        if (vwapSeries) {
+          vwapSeriesRef.current = vwapSeries;
+        }
+      }
+
+      // Create Bollinger Bands
+      if (indicators?.bollinger) {
+        const upperSeries = createLineSeries(
+          { color: "#6366F1", lineWidth: 1, title: "BB Upper" },
+          "BB Upper"
+        );
+        const middleSeries = createLineSeries(
+          { color: "#6366F1", lineWidth: 1, lineStyle: 2, title: "BB Middle" },
+          "BB Middle"
+        );
+        const lowerSeries = createLineSeries(
+          { color: "#6366F1", lineWidth: 1, title: "BB Lower" },
+          "BB Lower"
+        );
+        if (upperSeries && middleSeries && lowerSeries) {
+          bollingerRefs.current = { upper: upperSeries, middle: middleSeries, lower: lowerSeries };
+        }
+      }
+
+      // No viewport subscription needed - let users control pan/zoom freely
+      console.log("[HDLiveChart] Chart initialization complete, setting chartReady=true");
+      setChartReady(true);
+    },
+    [height]
+  ); // Only depend on height to avoid re-creating chart unnecessarily
 
   // Separate effect to handle resize
   useEffect(() => {
@@ -735,7 +742,9 @@ export function HDLiveChart({
 
   // Separate effect: Update chart data and indicators (NO viewport changes)
   useEffect(() => {
-    console.log(`[HDLiveChart] Rendering effect triggered - chartReady: ${chartReady}, bars.length: ${bars.length}`);
+    console.log(
+      `[HDLiveChart] Rendering effect triggered - chartReady: ${chartReady}, bars.length: ${bars.length}`
+    );
 
     const priceSeries = ensurePriceSeries();
     if (!priceSeries) {
@@ -921,7 +930,7 @@ export function HDLiveChart({
           if (message.type === "aggregate" && message.data.ticker === ticker) {
             const agg = message.data;
             const newBar: Partial<Bar> = {
-              time: Math.floor(agg.timestamp / 1000),
+              time: Math.floor(agg.timestamp / 1000000000), // Massive WebSocket returns nanoseconds, convert to seconds
               open: agg.open,
               high: agg.high,
               low: agg.low,
@@ -964,7 +973,7 @@ export function HDLiveChart({
           if (message.type === "aggregate") {
             const agg = message.data;
             const newBar: Partial<Bar> = {
-              time: Math.floor(agg.timestamp / 1000),
+              time: Math.floor(agg.timestamp / 1000000000), // Massive WebSocket returns nanoseconds, convert to seconds
               open: agg.open,
               high: agg.high,
               low: agg.low,
