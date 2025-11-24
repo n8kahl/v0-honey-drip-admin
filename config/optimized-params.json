@@ -1,0 +1,50 @@
+{
+  "version": "1.0.0",
+  "timestamp": "2025-11-24T00:00:00.000Z",
+  "optimizationMethod": "genetic-algorithm",
+  "backtestPeriod": "Default baseline parameters (not yet optimized)",
+  "performance": {
+    "winRate": 0.58,
+    "profitFactor": 1.75,
+    "totalTrades": 0,
+    "note": "These are baseline defaults - run 'pnpm optimize' to generate optimized parameters"
+  },
+  "parameters": {
+    "minScores": {
+      "scalp": 40,
+      "day": 40,
+      "swing": 40
+    },
+    "ivBoosts": {
+      "lowIV": 0.15,
+      "highIV": -0.2
+    },
+    "gammaBoosts": {
+      "shortGamma": 0.15,
+      "longGamma": -0.1
+    },
+    "flowBoosts": {
+      "aligned": 0.2,
+      "opposed": -0.15
+    },
+    "mtfWeights": {
+      "weekly": 3.0,
+      "daily": 2.0,
+      "hourly": 1.0,
+      "fifteenMin": 0.5
+    },
+    "riskReward": {
+      "targetMultiple": 1.5,
+      "stopMultiple": 1.0,
+      "maxHoldBars": 20
+    }
+  },
+  "notes": [
+    "These are the default baseline parameters from Phase 5 design",
+    "To generate optimized parameters:",
+    "1. Run 'pnpm optimize:quick' for quick test (5-10 mins)",
+    "2. Run 'pnpm optimize' for full optimization (20-30 mins)",
+    "3. Copy the best parameters from optimization-results-*.json to this file",
+    "4. Restart the composite scanner worker to apply new parameters"
+  ]
+}
