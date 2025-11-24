@@ -193,8 +193,7 @@ export class FlatFileDownloader {
         secretAccessKey: MASSIVE_AWS_SECRET_KEY,
       },
       forcePathStyle: true, // Required for S3-compatible services
-      // Use signature version 4 (matches boto3 config)
-      signatureVersion: "v4",
+      // Note: Signature version v4 is the default in AWS SDK v3
     });
 
     console.log("[FlatFileDownloader] S3 client initialized");
