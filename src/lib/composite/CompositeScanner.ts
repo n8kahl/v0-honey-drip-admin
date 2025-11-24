@@ -200,7 +200,7 @@ export class CompositeScanner {
     );
 
     // Step 7: Validate signal
-    const validation = this.validateSignal(proposedSignal, thresholds);
+    const validation = this.validateSignal(proposedSignal, thresholds, features);
 
     if (!validation.pass) {
       return {
@@ -467,25 +467,39 @@ export class CompositeScanner {
    *
    * @param signal - Signal to validate
    * @param thresholds - Thresholds to check
+   * @param features - Symbol features (for weekend detection)
    * @returns Validation result
    */
   private validateSignal(
     signal: CompositeSignal,
-    thresholds: SignalThresholds
+    thresholds: SignalThresholds,
+    features: SymbolFeatures
   ): { pass: boolean; reason?: string } {
+    // Detect weekend/evening mode
+    const isWeekend = features.session?.isRegularHours !== true;
+
+    // Use weekend overrides if available and applicable
+    const effectiveMinBaseScore = isWeekend && thresholds.weekendMinBaseScore !== undefined
+      ? thresholds.weekendMinBaseScore
+      : thresholds.minBaseScore;
+
+    const effectiveMinStyleScore = isWeekend && thresholds.weekendMinStyleScore !== undefined
+      ? thresholds.weekendMinStyleScore
+      : thresholds.minStyleScore;
+
     // Base score threshold
-    if (signal.baseScore < thresholds.minBaseScore) {
+    if (signal.baseScore < effectiveMinBaseScore) {
       return {
         pass: false,
-        reason: `Base score ${signal.baseScore.toFixed(1)} < ${thresholds.minBaseScore}`,
+        reason: `Base score ${signal.baseScore.toFixed(1)} < ${effectiveMinBaseScore}${isWeekend ? ' (weekend)' : ''}`,
       };
     }
 
     // Style score threshold
-    if (signal.recommendedStyleScore < thresholds.minStyleScore) {
+    if (signal.recommendedStyleScore < effectiveMinStyleScore) {
       return {
         pass: false,
-        reason: `Style score ${signal.recommendedStyleScore.toFixed(1)} < ${thresholds.minStyleScore}`,
+        reason: `Style score ${signal.recommendedStyleScore.toFixed(1)} < ${effectiveMinStyleScore}${isWeekend ? ' (weekend)' : ''}`,
       };
     }
 
