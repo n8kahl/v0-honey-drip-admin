@@ -338,45 +338,31 @@ export function useTradeStateMachine({
         .map((id) => ({ id, name: `Channel ${id.slice(0, 8)}` }))
         .filter((c) => c);
 
-      // LOAD alert: This is the point where the user explicitly "loads" a contract
-      // Now we persist it to the database for the first time
+      // LOAD alert: Keep trade in memory only (don't persist to database yet)
+      // We'll persist when user enters the trade (LOADED → ENTERED transition)
       if (alertType === "load") {
         try {
-          // Step 1: Create the trade in database (it was only in preview/WATCHING state before)
-          console.log("[v0] Creating loaded trade in database with full contract JSONB");
+          console.warn("[v0] Loading trade (memory only, will persist on ENTER)");
 
-          const dbTrade = await createTradeApi(userId, {
-            ticker: currentTrade.ticker,
-            contract: currentTrade.contract, // Store full contract object
-            targetPrice: currentTrade.targetPrice,
-            stopLoss: currentTrade.stopLoss,
-            discordChannelIds: channelIds,
-            challengeIds: challengeIds,
-          });
-
-          // Step 2: Create the final trade object with the real database ID
-          const persistedTrade: Trade = {
+          // Create trade object with temporary ID (no database persistence yet)
+          const loadedTrade: Trade = {
             ...currentTrade,
-            id: dbTrade.id, // Replace temporary ID with real database ID
             state: "LOADED",
             discordChannels: channelIds,
             challenges: challengeIds,
           };
 
-          // Step 3: Update UI state
-          setCurrentTrade(persistedTrade);
+          // Update UI state
+          setCurrentTrade(loadedTrade);
           setTradeState("LOADED");
 
-          // Step 4: Add to activeTrades list (so it shows in left sidebar)
-          setActiveTrades((prev) => [...prev, persistedTrade]);
+          // Add to activeTrades list (so it shows in left sidebar)
+          setActiveTrades((prev) => [...prev, loadedTrade]);
 
           setShowAlert(false);
           setContracts([]);
           // IMPORTANT: Do NOT clear activeTicker for load alerts - middle column needs it to display the chart
           // setActiveTicker(null);
-
-          // Note: Discord channels and challenges are already linked by the createTradeApi call
-          // No need to link them again here
 
           // Send Discord LOAD alert
           const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
@@ -384,7 +370,7 @@ export function useTradeStateMachine({
 
           if (discordAlertsEnabled && channels.length > 0) {
             try {
-              await discord.sendLoadAlert(channels, persistedTrade);
+              await discord.sendLoadAlert(channels, loadedTrade);
               console.log("[Discord] LOAD alert sent successfully");
             } catch (error) {
               console.error("[Discord] Failed to send LOAD alert:", error);
@@ -394,11 +380,11 @@ export function useTradeStateMachine({
             }
           }
 
-          showAlertToast("load", persistedTrade.ticker, selectedChannels as DiscordChannel[]);
+          showAlertToast("load", loadedTrade.ticker, selectedChannels as DiscordChannel[]);
         } catch (error) {
-          console.error("[v0] Failed to create loaded trade in database:", error);
+          console.error("[v0] Failed to load trade:", error);
           toast.error("Failed to load trade", {
-            description: "Trade setup was not saved. Please try again.",
+            description: error instanceof Error ? error.message : "Unknown error occurred",
           } as any);
           // Revert state on error
           setCurrentTrade(null);
@@ -539,8 +525,33 @@ export function useTradeStateMachine({
       try {
         const persistencePromises = [];
 
-        // Update trade state if changed
-        if (newTrade.state !== currentTrade.state) {
+        // Special case: LOADED → ENTERED means we need to CREATE the trade in DB for the first time
+        if (currentTrade.state === "LOADED" && newTrade.state === "ENTERED") {
+          console.warn(`[v0] Creating trade in database (LOADED → ENTERED transition)`);
+
+          const dbTrade = await createTradeApi(userId, {
+            ticker: newTrade.ticker,
+            contract: newTrade.contract,
+            targetPrice: newTrade.targetPrice,
+            stopLoss: newTrade.stopLoss,
+            entryPrice: newTrade.entryPrice,
+            entryTime: newTrade.entryTime,
+            status: "entered",
+            discordChannelIds: channelIds,
+            challengeIds: challengeIds,
+          });
+
+          // Update the trade with the real database ID
+          newTrade = { ...newTrade, id: dbTrade.id };
+          setCurrentTrade(newTrade);
+          setActiveTrades((prev) =>
+            prev.map((t) => (t.id === currentTrade.id ? newTrade : t))
+          );
+
+          console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
+        }
+        // Normal case: Update existing trade in database
+        else if (newTrade.state !== currentTrade.state) {
           const newStatus = newTrade.state === "ENTERED" ? "entered" : "exited";
           console.warn(`[v0] Updating trade ${newTrade.id} status: ${currentTrade.state} → ${newTrade.state} (DB status: ${newStatus})`);
 

@@ -442,37 +442,10 @@ async function scanUserWatchlist(userId: string): Promise<number> {
   try {
     // Fetch user's watchlist
     console.log(`[Composite Scanner] DEBUG: Querying watchlist with column='symbol' for user ${userId}`);
-    let watchlist: any[] | null = null;
-    let watchlistErr: any = null;
-
-    // Try querying with 'symbol' column first
-    {
-      const { data, error } = await supabase
-        .from("watchlist")
-        .select("symbol")
-        .eq("user_id", userId);
-      watchlist = data;
-      watchlistErr = error;
-    }
-
-    // If 'symbol' column doesn't exist, try fallback to 'ticker' column
-    if (watchlistErr && (watchlistErr.code === '42703' || /column.*symbol/i.test(watchlistErr.message || ''))) {
-      console.warn(`[Composite Scanner] 'symbol' column not found, trying fallback to 'ticker' column...`);
-      const { data, error } = await supabase
-        .from("watchlist")
-        .select("ticker")
-        .eq("user_id", userId);
-
-      if (!error && data) {
-        console.log(`[Composite Scanner] ✅ SUCCESS with 'ticker' column - DATABASE NEEDS MIGRATION!`);
-        console.log(`[Composite Scanner] Run this SQL in Supabase: ALTER TABLE watchlist RENAME COLUMN ticker TO symbol;`);
-        // Map ticker to symbol for compatibility
-        watchlist = data.map((row: any) => ({ symbol: row.ticker }));
-        watchlistErr = null;
-      } else {
-        watchlistErr = error;
-      }
-    }
+    const { data: watchlist, error: watchlistErr } = await supabase
+      .from("watchlist")
+      .select("ticker")
+      .eq("user_id", userId);
 
     if (watchlistErr) {
       console.error(
@@ -489,7 +462,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map((w) => w.symbol);
+    const symbols = watchlist.map((w) => w.ticker);
     console.log(
       `[Composite Scanner] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
     );
@@ -764,8 +737,8 @@ export class CompositeScannerWorker {
     console.log("[Composite Scanner] Configuration: OPTIMIZED (High Accuracy)");
     console.log("[Composite Scanner] Scan interval: 60 seconds");
     console.log("[Composite Scanner] Primary timeframe: 5m");
-    console.log("[Composite Scanner] Min Base Score: 80 (Equity), 85 (Index)");
-    console.log("[Composite Scanner] Min R:R Ratio: 2.0:1");
+    console.log(`[Composite Scanner] Min Base Score: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minBaseScore} (Equity), ${OPTIMIZED_SCANNER_CONFIG.assetClassThresholds?.INDEX?.minBaseScore || 85} (Index)`);
+    console.log(`[Composite Scanner] Min R:R Ratio: ${OPTIMIZED_SCANNER_CONFIG.defaultThresholds.minRiskReward}:1`);
     console.log("[Composite Scanner] Target Win Rate: 65%+");
     console.log("[Composite Scanner] ======================================\n");
 

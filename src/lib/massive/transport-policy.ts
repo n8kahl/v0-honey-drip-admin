@@ -2,12 +2,12 @@
 // Handles WebSocket subscriptions with jittered backoff reconnection
 // Falls back to 3s REST polling when WebSocket fails or disconnects
 
-import { massive } from '.';
-import { type WebSocketMessage } from './websocket';
-import type { MassiveQuote } from './types';
+import { massive } from ".";
+import { type WebSocketMessage } from "./websocket";
+import type { MassiveQuote } from "./types";
 
 function toNumber(value: unknown): number {
-  return typeof value === 'number' && !Number.isNaN(value) ? value : 0;
+  return typeof value === "number" && !Number.isNaN(value) ? value : 0;
 }
 
 function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuote | null {
@@ -19,23 +19,22 @@ function mapMassiveMessageToQuote(data: any, fallbackSymbol: string): MassiveQuo
   // If data is already a properly formatted MassiveQuote (has symbol, last, and all numeric fields), return it directly
   if (
     data.symbol &&
-    typeof data.last === 'number' &&
-    typeof data.change === 'number' &&
-    typeof data.changePercent === 'number'
+    typeof data.last === "number" &&
+    typeof data.change === "number" &&
+    typeof data.changePercent === "number"
   ) {
     // console.log(`[mapMassiveMessageToQuote] Data already formatted for ${data.symbol}:`, ...);
     return data as MassiveQuote;
   }
 
-  let symbol =
-    data.symbol || data.ticker || data.sym || data.underlying_ticker || fallbackSymbol;
+  let symbol = data.symbol || data.ticker || data.sym || data.underlying_ticker || fallbackSymbol;
   if (!symbol) {
     // console.log('[mapMassiveMessageToQuote] No symbol found in data:', data);
     return null;
   }
 
   // Remove I: prefix from indices (I:SPX → SPX) to match watchlist symbols
-  if (symbol.startsWith('I:')) {
+  if (symbol.startsWith("I:")) {
     symbol = symbol.substring(2);
   }
 
@@ -81,7 +80,11 @@ export interface TransportConfig {
   maxReconnectDelay?: number; // Default: 30000ms
 }
 
-export type TransportCallback = (data: MassiveQuote, source: 'websocket' | 'rest', timestamp: number) => void;
+export type TransportCallback = (
+  data: MassiveQuote,
+  source: "websocket" | "rest",
+  timestamp: number
+) => void;
 
 // Global REST data cache to prevent redundant API calls across multiple transports
 const restDataCache = new Map<string, { data: MassiveQuote; timestamp: number }>();
@@ -96,7 +99,7 @@ export class TransportPolicy {
   private reconnectAttempts = 0;
   private lastDataTimestamp = 0;
   private isActive = false;
-  private lastWsState: 'connecting' | 'open' | 'closed' = 'closed';
+  private lastWsState: "connecting" | "open" | "closed" = "closed";
   private fetchingBars = false;
   private consecutiveNoChange = 0;
   private lastRestPrice: number | null = null;
@@ -108,12 +111,16 @@ export class TransportPolicy {
   private consecutiveHealthFailures = 0;
   private readonly healthFailureThreshold = 1; // require 1 consecutive failure before switching to REST (faster fallback)
   // Staleness thresholds per architecture: >3s WebSocket, >4s REST
-  private readonly wsStaleThresholdMs = 3000;  // consider WS data stale after 3s
+  private readonly wsStaleThresholdMs = 3000; // consider WS data stale after 3s
   private readonly restStaleThresholdMs = 4000; // consider REST data stale after 4s
   private lastMarketStatusCheck = 0;
   private marketOpen = true;
   // Message batching: accumulate updates and flush every 100ms
-  private batchBuffer: Array<{ quote: MassiveQuote; source: 'websocket' | 'rest'; timestamp: number }> = [];
+  private batchBuffer: Array<{
+    quote: MassiveQuote;
+    source: "websocket" | "rest";
+    timestamp: number;
+  }> = [];
   private batchFlushTimer: any = null;
   private readonly BATCH_FLUSH_INTERVAL = 100; // ms
   private isPaused = false;
@@ -128,7 +135,7 @@ export class TransportPolicy {
     // Use adaptive interval instead of fixed 3s
     this.basePollInterval = this.getOptimalPollInterval();
     this.currentPollInterval = this.basePollInterval;
-    
+
     // Add visibility change listener
     this.setupVisibilityListener();
   }
@@ -136,10 +143,12 @@ export class TransportPolicy {
   private setupVisibilityListener() {
     // Check initial state - if page loads hidden, start paused
     if (document.hidden) {
-      console.log(`[TransportPolicy] Page loaded hidden, starting paused for ${this.config.symbol}`);
+      console.log(
+        `[TransportPolicy] Page loaded hidden, starting paused for ${this.config.symbol}`
+      );
       this.isPaused = true;
     }
-    
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
         console.log(`[TransportPolicy] Tab hidden, pausing updates for ${this.config.symbol}`);
@@ -149,8 +158,8 @@ export class TransportPolicy {
         this.resume();
       }
     };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
   }
 
   private pause() {
@@ -168,7 +177,7 @@ export class TransportPolicy {
 
   private getOptimalPollInterval(): number {
     const { isIndex, isOption, symbol } = this.config;
-    
+
     // Check market hours
     const now = new Date();
     const hour = now.getHours();
@@ -177,7 +186,7 @@ export class TransportPolicy {
     const isPreMarket = hour < 9;
     const isAfterHours = hour >= 16;
     const isMarketClosed = isWeekend || isPreMarket || isAfterHours;
-    
+
     // Base intervals by asset type
     if (isIndex) {
       // Indices are less volatile, can use longer intervals
@@ -191,9 +200,9 @@ export class TransportPolicy {
     }
   }
 
-  private enqueueMessage(quote: MassiveQuote, source: 'websocket' | 'rest', timestamp: number) {
+  private enqueueMessage(quote: MassiveQuote, source: "websocket" | "rest", timestamp: number) {
     this.batchBuffer.push({ quote, source, timestamp });
-    
+
     // Start flush timer if not already running
     if (!this.batchFlushTimer) {
       this.batchFlushTimer = setTimeout(() => this.flushBatch(), this.BATCH_FLUSH_INTERVAL);
@@ -226,7 +235,7 @@ export class TransportPolicy {
 
     // Try WebSocket first
     this.tryWebSocket();
-    
+
     // Monitor WebSocket health
     this.startHealthCheck();
   }
@@ -246,16 +255,16 @@ export class TransportPolicy {
       clearTimeout(this.batchFlushTimer);
       this.batchFlushTimer = null;
     }
-    
+
     // Clean up WebSocket
     if (this.wsUnsubscribe) {
       this.wsUnsubscribe();
       this.wsUnsubscribe = null;
     }
-    
+
     // Clean up polling
     this.clearPollTimer();
-    
+
     // Clean up reconnect
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -276,9 +285,11 @@ export class TransportPolicy {
     const wsState = massive.getConnectionState();
     // console.log(`[TransportPolicy] WebSocket state for ${this.config.symbol}:`, wsState);
 
-    if (wsState === 'closed') {
+    if (wsState === "closed") {
       // WebSocket is not connected, fall back to polling immediately
-      console.log(`[TransportPolicy] WebSocket closed, starting REST fallback for ${this.config.symbol}`);
+      console.log(
+        `[TransportPolicy] WebSocket closed, starting REST fallback for ${this.config.symbol}`
+      );
       this.startPolling();
       this.scheduleReconnect();
       return;
@@ -287,10 +298,16 @@ export class TransportPolicy {
     // Subscribe based on symbol type
     if (this.config.isOption) {
       // Options contract quote subscription
-      this.wsUnsubscribe = massive.subscribeOptionAggregates([this.config.symbol], this.handleWsMessage.bind(this));
+      this.wsUnsubscribe = massive.subscribeOptionAggregates(
+        [this.config.symbol],
+        this.handleWsMessage.bind(this)
+      );
     } else {
       // Index and stock/underlying quote subscription (both use subscribeQuotes)
-      this.wsUnsubscribe = massive.subscribeQuotes([this.config.symbol], this.handleWsMessage.bind(this));
+      this.wsUnsubscribe = massive.subscribeQuotes(
+        [this.config.symbol],
+        this.handleWsMessage.bind(this)
+      );
     }
 
     // console.log(`[TransportPolicy] Subscribed to WebSocket for ${this.config.symbol}`);
@@ -311,14 +328,13 @@ export class TransportPolicy {
       return;
     }
 
-    console.debug(
-      `[TransportPolicy] WebSocket data received for ${this.config.symbol}:`,
-      quote
-    );
+    console.debug(`[TransportPolicy] WebSocket data received for ${this.config.symbol}:`, quote);
 
     // Stop polling if running
     if (this.pollTimer) {
-      console.log(`[TransportPolicy] WebSocket recovered, stopping REST fallback for ${this.config.symbol}`);
+      console.log(
+        `[TransportPolicy] WebSocket recovered, stopping REST fallback for ${this.config.symbol}`
+      );
       this.clearPollTimer();
     }
 
@@ -326,7 +342,7 @@ export class TransportPolicy {
     this.reconnectAttempts = 0;
 
     // Enqueue for batched processing
-    this.enqueueMessage(quote, 'websocket', now);
+    this.enqueueMessage(quote, "websocket", now);
   }
 
   private startPolling() {
@@ -350,7 +366,7 @@ export class TransportPolicy {
 
   private scheduleNextPoll(delay?: number) {
     if (!this.isActive || this.isPaused) return;
-    const wait = typeof delay === 'number' ? delay : this.currentPollInterval;
+    const wait = typeof delay === "number" ? delay : this.currentPollInterval;
     this.clearPollTimer();
     this.pollTimer = setTimeout(() => {
       this.pollTimer = null;
@@ -359,7 +375,13 @@ export class TransportPolicy {
   }
 
   private async pollData() {
-    if (!this.isActive || this.isPaused) return;
+    if (!this.isActive) return;
+
+    // Allow polling even if paused - resume() will call this explicitly
+    // We just won't schedule the next poll if paused
+    if (this.isPaused) {
+      return;
+    }
 
     if (this.fetchingBars) {
       console.debug(
@@ -372,10 +394,12 @@ export class TransportPolicy {
     // Check cache first to avoid redundant API calls
     const cached = restDataCache.get(this.config.symbol);
     if (cached && Date.now() - cached.timestamp < REST_CACHE_TTL_MS) {
-      console.debug(`[TransportPolicy] Using cached REST data for ${this.config.symbol} (${Date.now() - cached.timestamp}ms old)`);
+      console.debug(
+        `[TransportPolicy] Using cached REST data for ${this.config.symbol} (${Date.now() - cached.timestamp}ms old)`
+      );
       const quote = mapMassiveMessageToQuote(cached.data, this.config.symbol);
       if (quote) {
-        this.enqueueMessage(quote, 'rest', cached.timestamp);
+        this.enqueueMessage(quote, "rest", cached.timestamp);
         this.lastDataTimestamp = cached.timestamp;
       }
       this.scheduleNextPoll();
@@ -404,19 +428,21 @@ export class TransportPolicy {
       }
 
       if (data) {
+        // Always update timestamp when we receive data from API (not just on successful mapping)
+        // This prevents false "stale" status when data exists but doesn't map to quote
+        this.lastDataTimestamp = now;
+
         const quote = mapMassiveMessageToQuote(data, this.config.symbol);
         if (quote) {
           const previousPrice = this.lastRestPrice;
-          priceChanged =
-            previousPrice === null || Math.abs(previousPrice - quote.last) > 1e-6;
+          priceChanged = previousPrice === null || Math.abs(previousPrice - quote.last) > 1e-6;
           this.lastRestPrice = quote.last;
-          this.lastDataTimestamp = now;
-          
+
           // Store in cache to prevent redundant API calls
           restDataCache.set(this.config.symbol, { data: quote, timestamp: now });
-          
+
           // Enqueue for batched processing
-          this.enqueueMessage(quote, 'rest', now);
+          this.enqueueMessage(quote, "rest", now);
         } else {
           console.debug(
             `[TransportPolicy] Ignoring non-quote REST message for ${this.config.symbol}:`,
@@ -440,11 +466,11 @@ export class TransportPolicy {
         return;
       }
 
-        const wsState = massive.getConnectionState();
-        const timeSinceLastData = Date.now() - this.lastDataTimestamp;
-        const usingRest = !!this.pollTimer;
-        const threshold = usingRest ? this.restStaleThresholdMs : this.wsStaleThresholdMs;
-        const isStale = timeSinceLastData > threshold; // No data within allowed freshness window
+      const wsState = massive.getConnectionState();
+      const timeSinceLastData = Date.now() - this.lastDataTimestamp;
+      const usingRest = !!this.pollTimer;
+      const threshold = usingRest ? this.restStaleThresholdMs : this.wsStaleThresholdMs;
+      const isStale = timeSinceLastData > threshold; // No data within allowed freshness window
 
       // Detect state changes
       if (wsState !== this.lastWsState) {
@@ -452,27 +478,33 @@ export class TransportPolicy {
         this.lastWsState = wsState;
       }
 
-      if (wsState === 'closed' || isStale) {
+      if (wsState === "closed" || isStale) {
         // Increment consecutive failure counter and only activate REST after threshold
         this.consecutiveHealthFailures += 1;
-        console.debug(`[TransportPolicy] Health check failure #${this.consecutiveHealthFailures} for ${this.config.symbol} (state: ${wsState}, stale: ${isStale})`);
+        console.debug(
+          `[TransportPolicy] Health check failure #${this.consecutiveHealthFailures} for ${this.config.symbol} (state: ${wsState}, stale: ${isStale})`
+        );
 
         if (this.consecutiveHealthFailures >= this.healthFailureThreshold) {
           if (!this.pollTimer) {
-            console.log(`[TransportPolicy] WebSocket considered unhealthy after ${this.consecutiveHealthFailures} checks; activating REST fallback for ${this.config.symbol}`);
+            console.log(
+              `[TransportPolicy] WebSocket considered unhealthy after ${this.consecutiveHealthFailures} checks; activating REST fallback for ${this.config.symbol}`
+            );
             this.startPolling();
           }
 
           // Try to reconnect WebSocket if it's closed
-          if (wsState === 'closed' && !this.reconnectTimer) {
+          if (wsState === "closed" && !this.reconnectTimer) {
             this.scheduleReconnect();
           }
         }
-      } else if (wsState === 'open' && !isStale) {
+      } else if (wsState === "open" && !isStale) {
         // WebSocket is healthy: reset failure counter and ensure subscription
         if (this.consecutiveHealthFailures > 0) this.consecutiveHealthFailures = 0;
         if (!this.wsUnsubscribe) {
-          console.log(`[TransportPolicy] WebSocket healthy but not subscribed, resubscribing for ${this.config.symbol}`);
+          console.log(
+            `[TransportPolicy] WebSocket healthy but not subscribed, resubscribing for ${this.config.symbol}`
+          );
           this.tryWebSocket();
         }
       } else {
@@ -495,20 +527,22 @@ export class TransportPolicy {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectAttempts++;
-      
+
       // Attempt to reconnect the WebSocket
       const wsState = massive.getConnectionState();
-      if (wsState === 'closed') {
-        console.log(`[TransportPolicy] Attempting to reconnect WebSocket for ${this.config.symbol}`);
+      if (wsState === "closed") {
+        console.log(
+          `[TransportPolicy] Attempting to reconnect WebSocket for ${this.config.symbol}`
+        );
         massive.connect();
       }
-      
+
       // Try subscribing again
       if (this.isActive) {
         this.tryWebSocket();
-        
+
         // Schedule another reconnect if still needed
-        if (massive.getConnectionState() === 'closed') {
+        if (massive.getConnectionState() === "closed") {
           this.scheduleReconnect();
         }
       }
@@ -530,10 +564,7 @@ export class TransportPolicy {
 
     this.consecutiveNoChange += 1;
     if (this.consecutiveNoChange >= 3) {
-      this.currentPollInterval = Math.min(
-        this.maxPollInterval,
-        this.currentPollInterval + 2000
-      );
+      this.currentPollInterval = Math.min(this.maxPollInterval, this.currentPollInterval + 2000);
     }
   }
 
@@ -546,8 +577,8 @@ export class TransportPolicy {
     this.lastMarketStatusCheck = now;
     try {
       const status = await massive.getMarketStatus();
-      const marketState = status?.market?.toLowerCase?.() ?? '';
-      this.marketOpen = marketState.includes('open');
+      const marketState = status?.market?.toLowerCase?.() ?? "";
+      this.marketOpen = marketState.includes("open");
     } catch (error) {
       // Fall back to recent activity if status endpoint fails
       this.marketOpen = now - this.lastDataTimestamp < 3 * 60 * 1000;
@@ -560,7 +591,7 @@ export class TransportPolicy {
   }
 
   isUsingWebSocket(): boolean {
-    return !!this.wsUnsubscribe && massive.getConnectionState() === 'open';
+    return !!this.wsUnsubscribe && massive.getConnectionState() === "open";
   }
 
   isUsingRest(): boolean {

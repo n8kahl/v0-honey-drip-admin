@@ -1,10 +1,10 @@
-import { Ticker } from '../../../types';
-import { formatPrice, cn } from '../../../lib/utils';
-import { X, Wifi, Zap } from 'lucide-react';
-import { useSymbolData } from '../../../stores/marketDataStore';
-import { useUIStore } from '../../../stores';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip';
-import { useRef, useEffect } from 'react';
+import { Ticker } from "../../../types";
+import { formatPrice, cn } from "../../../lib/utils";
+import { X, Wifi, Zap } from "lucide-react";
+import { useSymbolData } from "../../../stores/marketDataStore";
+import { useUIStore } from "../../../stores";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
+import { useRef, useEffect } from "react";
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
@@ -21,7 +21,7 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   const setMainCockpitSymbol = useUIStore((state) => state.setMainCockpitSymbol);
   // Explicit store instance for row click, per request
   const uiStore = useUIStore();
-  
+
   // Local timestamp tracking based on price changes since marketDataStore isn't updating quotes
   const lastUpdateRef = useRef<number>(Date.now());
   const prevPriceRef = useRef<number>(ticker.last);
@@ -34,39 +34,50 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   }, [ticker.last]);
 
   const currentPrice = ticker.last;
+  const changePercent = ticker.changePercent || 0;
+  const change = ticker.change || 0;
+
+  // Determine price direction color
+  const priceColor =
+    changePercent > 0
+      ? "text-green-500"
+      : changePercent < 0
+        ? "text-red-500"
+        : "text-[var(--text-high)]";
+
   // Prefer symbolData timestamp if present, else fallback to local ref
   const lastUpdated = symbolData?.lastUpdated || lastUpdateRef.current;
   const strategySignals = symbolData?.strategySignals || [];
   const activeCount = Array.isArray(strategySignals)
-    ? strategySignals.filter((s: any) => s?.active === true || s?.status === 'ACTIVE').length
+    ? strategySignals.filter((s: any) => s?.active === true || s?.status === "ACTIVE").length
     : 0;
   const indicators = symbolData?.indicators;
   const confluence = symbolData?.confluence;
-  
+
   // Filter active signals
-  const activeSignals = strategySignals.filter(s => s.status === 'ACTIVE');
+  const activeSignals = strategySignals.filter((s) => s.status === "ACTIVE");
   const activeSignalCount = activeSignals.length;
-  
+
   // Prepare tooltip lines with strategy IDs and confluence score
   const confluenceScore = symbolData?.confluence?.overall;
   const tooltipText = activeSignals.length
-    ? `${ticker.symbol}: ${activeSignals.map(s => s.strategyId).join(', ')} · conf ${
-        typeof confluenceScore === 'number' ? Math.round(confluenceScore) : '-'
+    ? `${ticker.symbol}: ${activeSignals.map((s) => s.strategyId).join(", ")} · conf ${
+        typeof confluenceScore === "number" ? Math.round(confluenceScore) : "-"
       }`
     : undefined;
-  
+
   // Handle badge click - navigate to chart at signal bar
   const handleBadgeClick = (signal: any) => {
-    console.log('[v0] Strategy badge clicked:', signal);
-    
+    console.log("[v0] Strategy badge clicked:", signal);
+
     // First, select this ticker if not already active
     if (!active) {
       onClick?.();
     }
-    
+
     // Switch to live tab to show chart
-    setActiveTab('live');
-    
+    setActiveTab("live");
+
     // Scroll chart to the bar where signal triggered
     if (signal.barTimeKey) {
       // Small delay to ensure chart is rendered
@@ -74,17 +85,20 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
         scrollChartToBar(signal.barTimeKey);
       }, 100);
     } else {
-      console.warn('[v0] Signal missing barTimeKey, cannot scroll chart');
+      console.warn("[v0] Signal missing barTimeKey, cannot scroll chart");
     }
   };
-  
+
   // Staleness check: stale if lastUpdated > 30s ago (aligned with marketDataStore)
-  const isStale = lastUpdated ? (Date.now() - lastUpdated > 30000) : true;
+  const isStale = lastUpdated ? Date.now() - lastUpdated > 30000 : true;
 
   // Defensive: fallback for missing price
-  const priceDisplay = typeof currentPrice === 'number' && !isNaN(currentPrice)
-    ? formatPrice(currentPrice)
-    : <span className="text-[var(--text-muted)] italic">N/A</span>;
+  const priceDisplay =
+    typeof currentPrice === "number" && !isNaN(currentPrice) ? (
+      formatPrice(currentPrice)
+    ) : (
+      <span className="text-[var(--text-muted)] italic">N/A</span>
+    );
 
   // Loading skeleton
   if (!ticker || !ticker.symbol) {
@@ -99,24 +113,24 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
   const getLastUpdatedText = () => {
     if (!lastUpdated) return null;
     const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
-    if (secondsAgo < 5) return 'Live';
+    if (secondsAgo < 5) return "Live";
     if (secondsAgo < 60) return `${secondsAgo}s ago`;
     const minutesAgo = Math.floor(secondsAgo / 60);
     return `${minutesAgo}m ago`;
   };
-  
+
   const lastUpdatedText = getLastUpdatedText();
-  
+
   // No animation per request
-  const pulseClass = '';
-  
+  const pulseClass = "";
+
   return (
     <div
       className={cn(
-        'w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[48px]',
-        'cursor-pointer hover:bg-zinc-800 transition-colors duration-150 ease-out touch-manipulation',
-        active && 'bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm',
-        isStale && 'opacity-60',
+        "w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[48px]",
+        "cursor-pointer hover:bg-zinc-800 transition-colors duration-150 ease-out touch-manipulation",
+        active && "bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm",
+        isStale && "opacity-60",
         pulseClass
       )}
       data-testid={`watchlist-item-${ticker.symbol}`}
@@ -127,7 +141,7 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
     >
       <div
         className="flex-1 flex items-center justify-between text-left"
-        title={isStale ? 'Data is stale' : undefined}
+        title={isStale ? "Data is stale" : undefined}
       >
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
@@ -136,8 +150,8 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
                 <TooltipTrigger asChild>
                   <span
                     className={cn(
-                      'px-1.5 py-0.5 text-xs font-medium rounded mr-1',
-                      'bg-zinc-700 text-zinc-300'
+                      "px-1.5 py-0.5 text-xs font-medium rounded mr-1",
+                      "bg-zinc-700 text-zinc-300"
                     )}
                     aria-label={`${activeSignalCount} active setups`}
                   >
@@ -145,16 +159,19 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
                   </span>
                 </TooltipTrigger>
                 {tooltipText && (
-                  <TooltipContent side="bottom" className="bg-zinc-800 text-zinc-200 border border-zinc-700">
+                  <TooltipContent
+                    side="bottom"
+                    className="bg-zinc-800 text-zinc-200 border border-zinc-700"
+                  >
                     <div className="max-w-xs whitespace-pre-wrap text-xs">{tooltipText}</div>
                   </TooltipContent>
                 )}
               </Tooltip>
             )}
             <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
-            
+
             {/* Minimal indicator only; no per-strategy badges */}
-            
+
             {confluence && confluence.overall > 70 && (
               <span title={`Confluence: ${confluence.overall}`}>
                 <Zap className="w-3 h-3 text-yellow-500" />
@@ -168,18 +185,28 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
           </div>
         </div>
         <div className="flex flex-col items-end gap-0.5">
-          <span className="text-[var(--text-high)] font-mono text-sm">{priceDisplay}</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={cn("font-mono text-sm font-medium", priceColor)}>{priceDisplay}</span>
+            {changePercent !== 0 && (
+              <span className={cn("text-[10px] font-mono font-medium", priceColor)}>
+                {changePercent > 0 ? "+" : ""}
+                {changePercent.toFixed(2)}%
+              </span>
+            )}
+          </div>
           {indicators?.ema9 && (
-            <span className={cn(
-              "text-[10px] font-mono",
-              currentPrice > indicators.ema9 ? "text-green-500" : "text-red-500"
-            )}>
+            <span
+              className={cn(
+                "text-[10px] font-mono",
+                currentPrice > indicators.ema9 ? "text-green-500" : "text-red-500"
+              )}
+            >
               EMA9: {indicators.ema9.toFixed(2)}
             </span>
           )}
         </div>
       </div>
-      
+
       {onRemove && (
         <button
           onClick={(e) => {
@@ -195,4 +222,3 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
     </div>
   );
 }
-
