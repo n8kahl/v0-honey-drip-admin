@@ -1,12 +1,8 @@
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { Ticker } from '../types';
-import { 
-  getWatchlist, 
-  addToWatchlist, 
-  removeFromWatchlist 
-} from '../lib/supabase/database';
-import { toast } from 'sonner';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { Ticker } from "../types";
+import { getWatchlist, addToWatchlist, removeFromWatchlist } from "../lib/supabase/database";
+import { toast } from "sonner";
 
 export interface MarketQuote {
   symbol: string;
@@ -14,7 +10,7 @@ export interface MarketQuote {
   change: number;
   changePercent: number;
   asOf?: number;
-  source?: 'websocket' | 'rest';
+  source?: "websocket" | "rest";
 }
 
 interface MarketStore {
@@ -29,21 +25,21 @@ interface MarketStore {
   setWatchlist: (tickers: Ticker[]) => void;
   setQuotes: (quotes: Map<string, MarketQuote>) => void;
   setSelectedTicker: (ticker: Ticker | null) => void;
-  
+
   // Watchlist operations
   addTicker: (userId: string, ticker: Ticker) => Promise<void>;
   removeTicker: (tickerId: string) => Promise<void>;
   loadWatchlist: (userId: string) => Promise<void>;
-  
+
   // Quote operations
   updateQuotes: (quotes: Map<string, MarketQuote>) => void;
   updateQuote: (symbol: string, quote: MarketQuote) => void;
   getQuote: (symbol: string) => MarketQuote | undefined;
-  
+
   // Utilities
   getWatchlistSymbols: () => string[];
   findTickerBySymbol: (symbol: string) => Ticker | undefined;
-  
+
   // Reset
   reset: () => void;
 }
@@ -66,10 +62,10 @@ export const useMarketStore = create<MarketStore>()(
       // Watchlist operations
       addTicker: async (userId, ticker) => {
         // Normalize and guard
-        const raw = (ticker?.symbol ?? '').trim();
+        const raw = (ticker?.symbol ?? "").trim();
         if (!raw) {
-          set({ error: 'Symbol is required' });
-          toast.error('Please enter a symbol');
+          set({ error: "Symbol is required" });
+          toast.error("Please enter a symbol");
           return;
         }
         const symbol = raw.toUpperCase();
@@ -100,17 +96,17 @@ export const useMarketStore = create<MarketStore>()(
           }));
           toast.success(`${newTicker.symbol} added to watchlist`);
         } catch (error: unknown) {
-          console.error('[MarketStore] Failed to add ticker:', error);
-          const err = error as {code?: string; status?: string; name?: string; message?: string};
+          console.error("[MarketStore] Failed to add ticker:", error);
+          const err = error as { code?: string; status?: string; name?: string; message?: string };
           const code = err?.code || err?.status || err?.name;
-          if (code === '23505') {
+          if (code === "23505") {
             // Unique violation
             toast.info(`${symbol} is already in your watchlist`);
             set({ isLoading: false });
             return;
           }
-          set({ error: 'Failed to add ticker', isLoading: false });
-          toast.error('Failed to add ticker');
+          set({ error: "Failed to add ticker", isLoading: false });
+          toast.error("Failed to add ticker");
         }
       },
 
@@ -118,16 +114,16 @@ export const useMarketStore = create<MarketStore>()(
         set({ isLoading: true, error: null });
         try {
           await removeFromWatchlist(tickerId);
-          
+
           set((state) => ({
             watchlist: state.watchlist.filter((t) => t.id !== tickerId),
             isLoading: false,
           }));
-          toast.success('Removed from watchlist');
+          toast.success("Removed from watchlist");
         } catch (error) {
-          console.error('[MarketStore] Failed to remove ticker:', error);
-          set({ error: 'Failed to remove ticker', isLoading: false });
-          toast.error('Failed to remove ticker');
+          console.error("[MarketStore] Failed to remove ticker:", error);
+          set({ error: "Failed to remove ticker", isLoading: false });
+          toast.error("Failed to remove ticker");
         }
       },
 
@@ -137,34 +133,38 @@ export const useMarketStore = create<MarketStore>()(
           const watchlistData = await getWatchlist(userId);
           const tickers: Ticker[] = watchlistData.map((w) => ({
             id: w.id,
-            symbol: (w.symbol ?? w.ticker ?? '').toUpperCase(),
+            symbol: (w.symbol ?? w.ticker ?? "").toUpperCase(),
             last: 0,
             change: 0,
             changePercent: 0,
           }));
-          
+
           set({ watchlist: tickers, isLoading: false });
         } catch (error) {
-          console.error('[MarketStore] Failed to load watchlist:', error);
-          set({ error: 'Failed to load watchlist', isLoading: false });
+          console.error("[MarketStore] Failed to load watchlist:", error);
+          set({ error: "Failed to load watchlist", isLoading: false });
         }
       },
 
       // Quote operations
       updateQuotes: (quotes) => {
-        console.log('[MarketStore] updateQuotes called with', quotes.size, 'quotes');
+        console.log("[MarketStore] updateQuotes called with", quotes.size, "quotes");
         quotes.forEach((q, symbol) => {
-          console.log(`[MarketStore]   ${symbol}: last=$${q.last}, change=${q.changePercent}%`);
+          console.log(
+            `[MarketStore]   ${symbol}: last=$${q.last}, change=${q.change}, changePercent=${q.changePercent}%`
+          );
         });
-        
-        set({ quotes });
-        
-        // Sync quote data to watchlist tickers
+
+        // Combine both updates into a single state mutation
         set((state) => ({
+          quotes,
+          // Sync quote data to watchlist tickers
           watchlist: state.watchlist.map((ticker) => {
             const quote = quotes.get(ticker.symbol);
             if (quote) {
-              console.log(`[MarketStore] Updating ${ticker.symbol}: $${ticker.last} → $${quote.last}`);
+              console.log(
+                `[MarketStore] Updating ${ticker.symbol}: $${ticker.last} → $${quote.last} (${quote.changePercent}%)`
+              );
               return {
                 ...ticker,
                 last: quote.last,
@@ -181,7 +181,7 @@ export const useMarketStore = create<MarketStore>()(
         set((state) => {
           const newQuotes = new Map(state.quotes);
           newQuotes.set(symbol, quote);
-          
+
           return {
             quotes: newQuotes,
             watchlist: state.watchlist.map((ticker) =>
@@ -221,6 +221,6 @@ export const useMarketStore = create<MarketStore>()(
           error: null,
         }),
     }),
-    { name: 'MarketStore' }
+    { name: "MarketStore" }
   )
 );
