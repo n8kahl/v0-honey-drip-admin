@@ -74,11 +74,11 @@ export const OPTIMIZED_DEFAULT_THRESHOLDS: SignalThresholds =
   process.env.NODE_ENV === 'development' || process.env.TESTING_MODE === 'true'
     ? TESTING_DEFAULT_THRESHOLDS
     : {
-        minBaseScore: 80, // Increased from 70 - only top 20% of setups
-        minStyleScore: 85, // Increased from 75 - must be ideal for trading style
-        minRiskReward: 2.0, // Increased from 1.5 - better R:R required
-        maxSignalsPerSymbolPerHour: 1, // Reduced from 2 - less overtrading
-        cooldownMinutes: 30, // Increased from 15 - more breathing room
+        minBaseScore: 70, // Realistic threshold - solid setups
+        minStyleScore: 75, // Good style fit required
+        minRiskReward: 1.8, // Healthy R:R required
+        maxSignalsPerSymbolPerHour: 2, // Allow reasonable signal frequency
+        cooldownMinutes: 20, // Adequate breathing room
       };
 
 /**
@@ -100,12 +100,12 @@ export const OPTIMIZED_INDEX_THRESHOLDS: SignalThresholds =
   process.env.NODE_ENV === 'development' || process.env.TESTING_MODE === 'true'
     ? TESTING_INDEX_THRESHOLDS
     : {
-        minBaseScore: 85, // Very high bar for indices
-        minStyleScore: 88, // Near-perfect style fit required
-        minRiskReward: 2.5, // Excellent R:R required
-        maxSignalsPerSymbolPerHour: 2, // Can handle slightly more due to liquidity
-  cooldownMinutes: 20, // Shorter due to faster movement
-};
+        minBaseScore: 75, // Strong setups for indices
+        minStyleScore: 80, // Very good style fit required
+        minRiskReward: 2.0, // Healthy R:R required
+        maxSignalsPerSymbolPerHour: 3, // Can handle more due to liquidity
+        cooldownMinutes: 15, // Shorter due to faster movement
+      };
 
 /**
  * Equity-specific optimized thresholds

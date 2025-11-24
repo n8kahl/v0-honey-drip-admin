@@ -1,5 +1,6 @@
 import type { SymbolFeatures } from '../../strategy/engine.js';
 import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
+import { shouldRunDetector } from './utils.js';
 
 /**
  * Breakout Bearish Detector
@@ -31,9 +32,8 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
     const belowVWAP = features.vwap?.distancePct && features.vwap.distancePct < 0;
     if (!belowVWAP) return false;
 
-    // 5. During regular hours
-    const regularHours = features.session?.isRegularHours === true;
-    if (!regularHours) return false;
+    // 5. Check if detector should run (market hours or weekend mode)
+    if (!shouldRunDetector(features)) return false;
 
     return true;
   },

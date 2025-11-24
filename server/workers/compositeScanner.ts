@@ -443,7 +443,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     // Fetch user's watchlist
     const { data: watchlist, error: watchlistErr } = await supabase
       .from("watchlist")
-      .select("ticker")
+      .select("symbol")
       .eq("user_id", userId);
 
     if (watchlistErr) {
