@@ -1,4 +1,4 @@
-import type { SymbolFeatures } from './engine.js';
+import type { SymbolFeatures } from "./engine.js";
 import {
   isPatientCandle,
   computeORBLevels,
@@ -15,15 +15,22 @@ import {
   detectRSIDivergence,
   detectMTFDivergenceFromRSI,
   type Bar,
-} from './patternDetection.js';
-import type { AggregatedFlowMetrics } from '../massive/aggregate-flow.js';
-import { detectMarketRegime } from './marketRegime.js';
-import { classifyVIXLevel } from './vixClassifier.js';
+} from "./patternDetection.js";
+import type { AggregatedFlowMetrics } from "../massive/aggregate-flow.js";
+import { detectMarketRegime } from "./marketRegime.js";
+import { classifyVIXLevel } from "./vixClassifier.js";
 
-export type TimeframeKey = '1m' | '5m' | '15m' | '60m' | '1d';
+export type TimeframeKey = "1m" | "5m" | "15m" | "60m" | "1d";
 
 export interface MTFIndicatorSnapshot {
-  price?: { current?: number; open?: number; high?: number; low?: number; prevClose?: number; prev?: number };
+  price?: {
+    current?: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    prevClose?: number;
+    prev?: number;
+  };
   vwap?: { value?: number; distancePct?: number; prev?: number };
   ema?: Record<string, number>;
   rsi?: Record<string, number>;
@@ -43,7 +50,7 @@ export interface BuildFeaturesOptions {
   bars?: Bar[]; // Historical bars for pattern detection (sorted chronologically)
   timezone?: string; // For session time calculations (default "America/New_York")
   flow?: AggregatedFlowMetrics | null; // Aggregated flow metrics from options chain
-  vixLevel?: 'low' | 'medium' | 'high' | 'extreme'; // Global VIX level (fetched once per scan)
+  vixLevel?: "low" | "medium" | "high" | "extreme"; // Global VIX level (fetched once per scan)
 }
 
 /**
@@ -54,7 +61,16 @@ export interface BuildFeaturesOptions {
  * - Computes pattern features (ORB, patient candle, consolidation, etc.) from bars.
  */
 export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures {
-  const { symbol, timeISO, mtf, primaryTf = '5m', bars = [], timezone = 'America/New_York', flow = null, vixLevel } = opts;
+  const {
+    symbol,
+    timeISO,
+    mtf,
+    primaryTf = "5m",
+    bars = [],
+    timezone = "America/New_York",
+    flow = null,
+    vixLevel,
+  } = opts;
   const primary = mtf[primaryTf] || {};
 
   const price = primary.price || {};
@@ -72,10 +88,21 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
 
   // Session time
   const minutesSinceOpen = currentBar ? getMinutesSinceOpen(currentBar.time, timezone) : undefined;
-  const isRegularHours = minutesSinceOpen !== undefined && minutesSinceOpen >= 0 && minutesSinceOpen < 390; // 9:30-16:00
+  const isRegularHours =
+    minutesSinceOpen !== undefined && minutesSinceOpen >= 0 && minutesSinceOpen < 390; // 9:30-16:00
+
+  // Debug logging for session detection
+  if (currentBar) {
+    const barDate = new Date(currentBar.time * 1000);
+    console.log(
+      `[featuresBuilder] ${symbol}: currentBar.time=${currentBar.time} (${barDate.toISOString()}), minutesSinceOpen=${minutesSinceOpen}, isRegularHours=${isRegularHours}`
+    );
+  }
 
   // ORB levels
-  const marketOpenTime = currentBar ? Math.floor(new Date(currentBar.time * 1000).setHours(9, 30, 0, 0) / 1000) : 0;
+  const marketOpenTime = currentBar
+    ? Math.floor(new Date(currentBar.time * 1000).setHours(9, 30, 0, 0) / 1000)
+    : 0;
   const orb = computeORBLevels(bars, marketOpenTime, 15);
 
   // Patient candle
@@ -90,16 +117,20 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
   const isConsol = atr > 0 ? isConsolidation(recentBars, atr) : false;
 
   // Breakout
-  const breakout = currentBar ? isBreakout(currentBar, consolidation.high, consolidation.low) : { bullish: false, bearish: false };
+  const breakout = currentBar
+    ? isBreakout(currentBar, consolidation.high, consolidation.low)
+    : { bullish: false, bearish: false };
 
   // Volume
   const avgVolume = computeAvgVolume(last10Bars);
-  const volumeSpike = currentBar && avgVolume > 0 ? isVolumeSpike(currentBar.volume, avgVolume) : false;
+  const volumeSpike =
+    currentBar && avgVolume > 0 ? isVolumeSpike(currentBar.volume, avgVolume) : false;
 
   // Calculate RVOL (Relative Volume)
-  const rvol = currentBar && avgVolume > 0
-    ? calculateRelativeVolume(currentBar.volume, previousBars, false)
-    : undefined;
+  const rvol =
+    currentBar && avgVolume > 0
+      ? calculateRelativeVolume(currentBar.volume, previousBars, false)
+      : undefined;
 
   // Near Fib levels
   const currentPrice = price.current ?? 0;
@@ -108,22 +139,23 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
 
   // RSI Divergence Detection (5m timeframe)
   // Requires at least 20 bars for reliable divergence detection
-  const rsiDiv5m = bars.length >= 20
-    ? detectRSIDivergence(bars.slice(-20), 14, 10)
-    : { type: 'none' as const, confidence: 0 };
+  const rsiDiv5m =
+    bars.length >= 20
+      ? detectRSIDivergence(bars.slice(-20), 14, 10)
+      : { type: "none" as const, confidence: 0 };
 
   // Multi-Timeframe Divergence Detection
   // Checks if RSI trends across timeframes align (bullish or bearish convergence)
   const mtfRsiData: Record<string, { rsi: number; price: number }> = {};
 
   // Build MTF RSI data from available timeframes
-  const timeframes = ['1m', '5m', '15m', '60m'] as const;
+  const timeframes = ["1m", "5m", "15m", "60m"] as const;
   for (const tf of timeframes) {
     const tfData = mtf[tf];
-    if (tfData?.rsi?.['14'] !== undefined && tfData?.price?.current !== undefined) {
+    if (tfData?.rsi?.["14"] !== undefined && tfData?.price?.current !== undefined) {
       mtfRsiData[tf] = {
-        rsi: tfData.rsi['14'],
-        price: tfData.price.current
+        rsi: tfData.rsi["14"],
+        price: tfData.price.current,
       };
     }
   }
@@ -134,28 +166,34 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
 
   // Market Regime Detection (Phase 2)
   // Requires at least 30 bars for reliable ADX calculation
-  const marketRegime = bars.length >= 30
-    ? detectMarketRegime(bars)
-    : { regime: 'ranging' as const, adx: 0, atr: 0, confidence: 0 };
+  const marketRegime =
+    bars.length >= 30
+      ? detectMarketRegime(bars)
+      : { regime: "ranging" as const, adx: 0, atr: 0, confidence: 0 };
 
   // Build previous snapshot for cross operations
-  const prevSnapshot = mtf[primaryTf]?.price?.prev !== undefined ? {
-    price: {
-      current: mtf[primaryTf]?.price?.prev,
-    },
-    vwap: {
-      value: mtf[primaryTf]?.vwap?.prev,
-    },
-    ema: ema || {}, // Could extract previous EMAs if available
-    rsi: rsi || {}, // Could extract previous RSIs if available
-  } : (prevBar ? {
-    price: {
-      current: prevBar.close,
-    },
-    volume: {
-      current: prevBar.volume,
-    },
-  } : {});
+  const prevSnapshot =
+    mtf[primaryTf]?.price?.prev !== undefined
+      ? {
+          price: {
+            current: mtf[primaryTf]?.price?.prev,
+          },
+          vwap: {
+            value: mtf[primaryTf]?.vwap?.prev,
+          },
+          ema: ema || {}, // Could extract previous EMAs if available
+          rsi: rsi || {}, // Could extract previous RSIs if available
+        }
+      : prevBar
+        ? {
+            price: {
+              current: prevBar.close,
+            },
+            volume: {
+              current: prevBar.volume,
+            },
+          }
+        : {};
 
   return {
     symbol,
@@ -174,14 +212,16 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       prev: previousBars.length > 0 ? previousBars[previousBars.length - 1].volume : undefined,
       relativeToAvg: rvol,
     },
-    flow: flow ? {
-      sweepCount: flow.sweepCount,
-      blockCount: flow.blockCount,
-      unusualActivity: flow.unusualActivity,
-      flowScore: flow.flowScore,
-      flowBias: flow.flowBias,
-      buyPressure: flow.buyPressure,
-    } : undefined,
+    flow: flow
+      ? {
+          sweepCount: flow.sweepCount,
+          blockCount: flow.blockCount,
+          unusualActivity: flow.unusualActivity,
+          flowScore: flow.flowScore,
+          flowBias: flow.flowBias,
+          buyPressure: flow.buyPressure,
+        }
+      : undefined,
     vwap: {
       value: vwap.value,
       distancePct: vwap.distancePct,
@@ -211,7 +251,7 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       breakoutBearish: breakout.bearish,
       volumeSpike,
       // Divergence Detection (Phase 1 - wired up existing functions)
-      rsi_divergence_5m: rsiDiv5m.type !== 'none',
+      rsi_divergence_5m: rsiDiv5m.type !== "none",
       mtf_divergence_aligned: mtfDiv.aligned,
       // Market Context (Phase 2 - NEW)
       market_regime: marketRegime.regime,

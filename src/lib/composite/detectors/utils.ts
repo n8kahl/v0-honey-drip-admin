@@ -3,7 +3,7 @@
  * Shared helper functions for all detectors
  */
 
-import type { SymbolFeatures } from '../../strategy/engine.js';
+import type { SymbolFeatures } from "../../strategy/engine.js";
 
 /**
  * Check if we should allow signals outside regular market hours
@@ -17,14 +17,15 @@ import type { SymbolFeatures } from '../../strategy/engine.js';
  */
 export function shouldAllowNonRegularHours(features: SymbolFeatures): boolean {
   // Check environment variable for explicit weekend mode
-  if (process.env.ALLOW_WEEKEND_SIGNALS === 'true') {
+  if (process.env.ALLOW_WEEKEND_SIGNALS === "true") {
     return true;
   }
 
   // Check if we're analyzing historical data
   // Historical analysis has a timestamp but isRegularHours is false
   const hasTimestamp = !!(features as any).timestamp;
-  const isNotRegularHours = features.session?.isRegularHours !== true;
+  // CRITICAL FIX: Explicitly check for false (undefined means unknown, not "not regular hours")
+  const isNotRegularHours = features.session?.isRegularHours === false;
 
   if (hasTimestamp && isNotRegularHours) {
     return true; // Historical/weekend analysis mode
