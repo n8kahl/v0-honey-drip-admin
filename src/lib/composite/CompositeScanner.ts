@@ -25,6 +25,16 @@ import {
 import { SignalDeduplication, checkDeduplication } from './SignalDeduplication.js';
 import { ALL_DETECTORS } from './detectors/index.js';
 
+// Phase 2: Import Context Engines
+import { contextEngines } from '../engines/index.js';
+import type {
+  IVContext,
+  GammaContext,
+  MTFContext,
+  FlowContext,
+  RegimeContext,
+} from '../engines/index.js';
+
 // Import trading style profiles (to be created in Phase 4)
 // For now, we'll use placeholder types
 interface TradingStyleProfile {
@@ -173,8 +183,15 @@ export class CompositeScanner {
     // Step 4: Score and rank opportunities
     const scoredOpportunities = this.scoreOpportunities(detectedOpportunities, features, optionsData);
 
-    // Pick best opportunity
-    const bestOpportunity = scoredOpportunities.sort(
+    // Step 4.5: Apply context engine boosts (Phase 2)
+    const contextEnhancedOpportunities = await this.applyContextBoosts(
+      scoredOpportunities,
+      symbol,
+      features
+    );
+
+    // Pick best opportunity (after context boosts)
+    const bestOpportunity = contextEnhancedOpportunities.sort(
       (a, b) => b.styleScores.recommendedStyleScore - a.styleScores.recommendedStyleScore
     )[0];
 
@@ -305,6 +322,122 @@ export class CompositeScanner {
         confluence: detectionResult.factorScores,
       };
     });
+  }
+
+  /**
+   * Apply context engine boosts to scored opportunities (Phase 2)
+   *
+   * Queries historical data warehouse and applies boosts/penalties based on:
+   * - IV Percentile (entry timing)
+   * - Gamma Exposure (pinning vs breakout)
+   * - MTF Alignment (trend confirmation)
+   * - Flow Analysis (smart money bias)
+   * - Market Regime (overall market context)
+   *
+   * @param opportunities - Scored opportunities
+   * @param symbol - Symbol being scanned
+   * @param features - Symbol features
+   * @returns Context-enhanced opportunities
+   */
+  private async applyContextBoosts(
+    opportunities: DetectedOpportunity[],
+    symbol: string,
+    features: SymbolFeatures
+  ): Promise<DetectedOpportunity[]> {
+    try {
+      // Fetch all context data in parallel for performance
+      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
+        contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
+        contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
+        contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
+        contextEngines.flowAnalysis.getFlowContext(symbol, 'medium').catch(() => null),
+        contextEngines.regimeDetection.getRegimeContext().catch(() => null),
+      ]);
+
+      // Apply boosts to each opportunity
+      return opportunities.map((opp) => {
+        const direction = opp.detector.direction;
+        const recommendedStyle = opp.styleScores.recommendedStyle.toUpperCase() as 'SCALP' | 'DAY' | 'SWING';
+
+        // Start with current scores
+        let scalpScore = opp.styleScores.scalpScore;
+        let dayTradeScore = opp.styleScores.dayTradeScore;
+        let swingScore = opp.styleScores.swingScore;
+        let recommendedStyleScore = opp.styleScores.recommendedStyleScore;
+
+        // Apply IV boost (if available)
+        if (ivContext) {
+          scalpScore = contextEngines.ivPercentile.applyIVBoost(scalpScore, ivContext, direction);
+          dayTradeScore = contextEngines.ivPercentile.applyIVBoost(dayTradeScore, ivContext, direction);
+          swingScore = contextEngines.ivPercentile.applyIVBoost(swingScore, ivContext, direction);
+        }
+
+        // Apply Gamma boost (if available)
+        if (gammaContext) {
+          const currentPrice = features.price?.current;
+          scalpScore = contextEngines.gammaExposure.applyGammaBoost(scalpScore, gammaContext, direction, currentPrice);
+          dayTradeScore = contextEngines.gammaExposure.applyGammaBoost(dayTradeScore, gammaContext, direction, currentPrice);
+          swingScore = contextEngines.gammaExposure.applyGammaBoost(swingScore, gammaContext, direction, currentPrice);
+        }
+
+        // Apply MTF boost (if available)
+        if (mtfContext) {
+          scalpScore = contextEngines.mtfAlignment.applyMTFBoost(scalpScore, mtfContext, direction);
+          dayTradeScore = contextEngines.mtfAlignment.applyMTFBoost(dayTradeScore, mtfContext, direction);
+          swingScore = contextEngines.mtfAlignment.applyMTFBoost(swingScore, mtfContext, direction);
+        }
+
+        // Apply Flow boost (if available)
+        if (flowContext) {
+          scalpScore = contextEngines.flowAnalysis.applyFlowBoost(scalpScore, flowContext, direction);
+          dayTradeScore = contextEngines.flowAnalysis.applyFlowBoost(dayTradeScore, flowContext, direction);
+          swingScore = contextEngines.flowAnalysis.applyFlowBoost(swingScore, flowContext, direction);
+        }
+
+        // Apply Regime boost (if available)
+        if (regimeContext) {
+          scalpScore = contextEngines.regimeDetection.applyRegimeBoost(scalpScore, regimeContext, direction, 'SCALP');
+          dayTradeScore = contextEngines.regimeDetection.applyRegimeBoost(dayTradeScore, regimeContext, direction, 'DAY');
+          swingScore = contextEngines.regimeDetection.applyRegimeBoost(swingScore, regimeContext, direction, 'SWING');
+        }
+
+        // Recalculate recommended style after boosts
+        const scores = {
+          scalp: scalpScore,
+          day_trade: dayTradeScore,
+          swing: swingScore,
+        };
+
+        const entries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+        const newRecommended = entries[0];
+
+        // Update scores
+        const enhancedStyleScores: StyleScoringResult = {
+          scalpScore,
+          dayTradeScore,
+          swingScore,
+          recommendedStyle: newRecommended[0] as 'scalp' | 'day_trade' | 'swing',
+          recommendedStyleScore: newRecommended[1],
+        };
+
+        // Store context metadata on the opportunity (for UI display)
+        return {
+          ...opp,
+          styleScores: enhancedStyleScores,
+          contextData: {
+            ivContext,
+            gammaContext,
+            mtfContext,
+            flowContext,
+            regimeContext,
+          },
+        };
+      });
+    } catch (error) {
+      console.error(`[CompositeScanner] Error applying context boosts:`, error);
+      // Return original opportunities on error
+      return opportunities;
+    }
   }
 
   /**
