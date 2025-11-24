@@ -39,23 +39,25 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     const vwapThreshold = isWeekend ? -0.2 : -0.3; // Less strict on weekends
     console.log(`[index-mean-reversion-long] ${symbol}: VWAP dist=${vwapDist}, threshold=${vwapThreshold}`);
 
-    // On weekends, VWAP data may be unavailable - skip this check
+    // On weekends, VWAP data may be unavailable or return 0 (data quality issue)
+    const hasValidVwap = vwapDist !== undefined && vwapDist !== null && vwapDist !== 0;
+
     if (!isWeekend) {
       // Regular hours: VWAP is required
-      if (!vwapDist || vwapDist >= vwapThreshold) {
+      if (!hasValidVwap || vwapDist >= vwapThreshold) {
         console.log(`[index-mean-reversion-long] ${symbol}: ❌ VWAP check failed (regular hours)`);
         return false;
       }
-    } else if (vwapDist !== undefined) {
-      // Weekend with VWAP data: apply lenient threshold
+    } else if (hasValidVwap) {
+      // Weekend with valid VWAP data: apply lenient threshold
       if (vwapDist >= vwapThreshold) {
         console.log(`[index-mean-reversion-long] ${symbol}: ❌ VWAP check failed (weekend with data)`);
         return false;
       }
     } else {
-      console.log(`[index-mean-reversion-long] ${symbol}: ⚠️ VWAP unavailable on weekend, skipping check`);
+      console.log(`[index-mean-reversion-long] ${symbol}: ⚠️ VWAP unavailable or invalid (${vwapDist}), skipping check`);
     }
-    // Weekend without VWAP data: skip check entirely (rely on RSI + patterns)
+    // Weekend without valid VWAP data: skip check entirely (rely on RSI + patterns)
 
     // 4. Not in extreme downtrend
     const regime = features.pattern?.market_regime;
