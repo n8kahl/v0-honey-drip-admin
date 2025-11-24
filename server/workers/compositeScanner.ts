@@ -21,6 +21,15 @@ import { config } from "dotenv";
 config({ path: ".env.local", override: true });
 config();
 
+// Polyfill fetch for Node.js compatibility
+import fetch, { Headers, Request, Response } from "cross-fetch";
+if (!globalThis.fetch) {
+  globalThis.fetch = fetch as any;
+  globalThis.Headers = Headers as any;
+  globalThis.Request = Request as any;
+  globalThis.Response = Response as any;
+}
+
 import { createClient } from "@supabase/supabase-js";
 import { CompositeScanner } from "../../src/lib/composite/CompositeScanner.js";
 import type { CompositeSignal } from "../../src/lib/composite/CompositeSignal.js";
