@@ -13,6 +13,10 @@
     "dev:all": "concurrently \"vite\" \"tsx watch server/index.ts\" \"tsx watch server/workers/compositeScanner.ts\"",
     "dev:full": "concurrently \"vite\" \"tsx watch server/index.ts\" \"tsx watch server/workers/compositeScanner.ts\" \"tsx watch server/workers/historicalDataIngestion.ts\"",
     "backfill": "tsx server/workers/historicalDataBackfill.ts",
+    "backfill:api": "tsx server/workers/historicalDataBackfill.ts",
+    "backfill:hybrid": "tsx server/workers/flatFiles/HybridBackfillOrchestrator.ts",
+    "backfill:download": "tsx server/workers/flatFiles/FlatFileDownloader.ts",
+    "backfill:parse": "tsx server/workers/flatFiles/FlatFileParser.ts",
     "backtest": "tsx server/workers/backtestRunner.ts",
     "backtest:detector": "tsx server/workers/backtestRunner.ts --detector",
     "preview": "vite preview",
@@ -41,6 +45,7 @@
     "session-check": "bash scripts/session-end-check.sh"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.705.0",
     "@edge-runtime/vm": "latest",
     "@radix-ui/react-accordion": "1.2.3",
     "@radix-ui/react-alert-dialog": "1.1.6",
@@ -81,6 +86,7 @@
     "cmdk": "1.1.1",
     "compression": "^1.8.1",
     "crypto": "latest",
+    "csv-parse": "^5.6.0",
     "dotenv": "^17.2.3",
     "embla-carousel-react": "8.6.0",
     "express-rate-limit": "^8.2.1",
