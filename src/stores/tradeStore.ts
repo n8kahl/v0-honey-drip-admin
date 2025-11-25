@@ -212,6 +212,18 @@ export const useTradeStore = create<TradeStore>()(
               openInterest: 0,
             };
 
+            // Extract discord channel IDs from junction table data
+            const discordChannelRows = (t as any).trades_discord_channels || [];
+            const discordChannels = discordChannelRows.map(
+              (row: { discord_channel_id: string }) => row.discord_channel_id
+            );
+
+            // Extract challenge IDs from junction table data
+            const challengeRows = (t as any).trades_challenges || [];
+            const challenges = challengeRows.map(
+              (row: { challenge_id: string }) => row.challenge_id
+            );
+
             return {
               id: t.id,
               ticker: t.ticker,
@@ -224,8 +236,9 @@ export const useTradeStore = create<TradeStore>()(
               state: mapStatusToState(t.status),
               updates: t.trade_updates || [],
               tradeType: "Day" as TradeType,
-              discordChannels: [],
-              challenges: t.challenge_id ? [t.challenge_id] : [],
+              discordChannels,
+              challenges:
+                challenges.length > 0 ? challenges : t.challenge_id ? [t.challenge_id] : [],
               // Restore confluence and setup type from database
               setupType: (t as any).setup_type || undefined,
               confluence: (t as any).confluence || undefined,
