@@ -321,7 +321,13 @@ export async function removeFromWatchlist(id: string) {
 export async function getTrades(userId: string, status?: string) {
   const supabase = createClient();
 
-  let query = supabase.from("trades").select("*, trade_updates(*)").eq("user_id", userId);
+  // Fetch trades with related data from junction tables
+  let query = supabase
+    .from("trades")
+    .select(
+      "*, trade_updates(*), trades_discord_channels(discord_channel_id), trades_challenges(challenge_id)"
+    )
+    .eq("user_id", userId);
 
   if (status) {
     query = query.eq("status", status);
@@ -465,7 +471,17 @@ export async function getTradeUpdates(tradeId: string) {
 export async function recordAlertHistory(params: {
   userId: string;
   tradeId?: string;
-  alertType: 'load' | 'enter' | 'trim' | 'update' | 'update-sl' | 'trail-stop' | 'add' | 'exit' | 'summary' | 'challenge';
+  alertType:
+    | "load"
+    | "enter"
+    | "trim"
+    | "update"
+    | "update-sl"
+    | "trail-stop"
+    | "add"
+    | "exit"
+    | "summary"
+    | "challenge";
   channelIds: string[];
   challengeIds?: string[];
   successCount: number;
@@ -475,7 +491,7 @@ export async function recordAlertHistory(params: {
 }) {
   const supabase = createClient();
 
-  const { data, error} = await supabase
+  const { data, error } = await supabase
     .from("alert_history")
     .insert({
       user_id: params.userId,
