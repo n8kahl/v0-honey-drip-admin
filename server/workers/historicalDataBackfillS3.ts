@@ -4,13 +4,18 @@
  *
  * Data Sources:
  * - INDICES (SPX, VIX, NDX): Massive.com S3 flatfiles (10-100x faster, no limits)
- * - STOCKS (SPY, QQQ, etc.): Tradier API (S3 access denied, API limits: 20-40 days)
+ * - STOCKS (SPY, QQQ, etc.): Massive.com REST API (rate limited but supports intraday)
  * - OPTIONS: Massive.com S3 flatfiles (future implementation)
+ *
+ * Why not Tradier for stocks?
+ * - Tradier /markets/history only supports daily/weekly/monthly intervals
+ * - No intraday (1m, 5m, 15m) support via their free tier
+ * - Massive REST API provides full intraday bars for stocks
  *
  * Advantages:
  * - Automatic routing based on asset type
- * - No more S3 403 errors for stocks
- * - Optimal performance per asset class
+ * - Full intraday support for both indices and stocks
+ * - S3 for indices (fast bulk), REST for stocks (intraday)
  *
  * Usage:
  *   pnpm backfill:s3                    # All symbols, 90 days, all timeframes
@@ -24,6 +29,7 @@ config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { downloadSymbolHistory, aggregateBars, cleanupTempFiles } from "../lib/massiveFlatfiles.js";
 import { fetchTradierBars } from "../lib/tradierAPI.js";
+import { massiveFetch } from "../massive/client.js";
 
 // ============================================================================
 // Configuration
@@ -64,13 +70,62 @@ type AssetType = "index" | "stock";
 
 /**
  * Determine asset type from symbol
- * Indices: Use Massive.com S3 (fast, no limits)
- * Stocks: Use Tradier API (S3 access denied)
+ * Indices: Use Massive.com S3 flatfiles (fast, no limits)
+ * Stocks: Use Massive.com REST API (rate limited but supports intraday)
  */
 function getAssetType(symbol: string): AssetType {
   const indexSymbols = ["SPX", "NDX", "VIX", "RUT", "DJI"];
   const cleanSymbol = symbol.replace(/^I:/, "");
   return indexSymbols.includes(cleanSymbol) ? "index" : "stock";
+}
+
+/**
+ * Fetch stock bars from Massive.com REST API
+ * Used for stocks since S3 flatfiles give 403 errors
+ */
+async function fetchMassiveStockBars(
+  symbol: string,
+  startDate: Date,
+  endDate: Date
+): Promise<any[]> {
+  const allBars: any[] = [];
+
+  // Massive REST API accepts YYYY-MM-DD format
+  const from = startDate.toISOString().split("T")[0];
+  const to = endDate.toISOString().split("T")[0];
+
+  try {
+    console.log(`[MassiveAPI] Fetching ${symbol} 1m bars from ${from} to ${to}...`);
+
+    // Use Massive v2/aggs endpoint for stocks
+    const path = `/v2/aggs/ticker/${symbol}/range/1/minute/${from}/${to}?adjusted=true&sort=asc&limit=50000`;
+
+    const response = await massiveFetch(path);
+
+    if (!response.results || response.results.length === 0) {
+      console.warn(`[MassiveAPI] No results returned for ${symbol}`);
+      return [];
+    }
+
+    // Normalize to our bar format
+    const bars = response.results.map((bar: any) => ({
+      ticker: symbol,
+      t: bar.t, // Already in milliseconds
+      o: bar.o,
+      h: bar.h,
+      l: bar.l,
+      c: bar.c,
+      v: bar.v || 0,
+      vw: bar.vw || bar.c, // VWAP or fallback to close
+      n: bar.n || 0,
+    }));
+
+    console.log(`[MassiveAPI] ✅ Fetched ${bars.length} bars for ${symbol}`);
+    return bars;
+  } catch (error) {
+    console.error(`[MassiveAPI] Error fetching ${symbol}:`, error);
+    throw error;
+  }
 }
 
 // ============================================================================
@@ -88,24 +143,13 @@ interface BackfillStats {
 
 async function backfillSymbol(symbol: string, stats: BackfillStats): Promise<void> {
   const assetType = getAssetType(symbol);
-  const source = assetType === "index" ? "Massive S3" : "Tradier API";
+  const source = assetType === "index" ? "Massive S3" : "Massive REST API";
 
   console.log(`\n[Backfill] 📥 Processing ${symbol} (${assetType}) via ${source}...`);
 
   // Date range
   const endDate = new Date();
-  let startDate = new Date(endDate.getTime() - DAYS_TO_BACKFILL * 24 * 60 * 60 * 1000);
-
-  // Tradier API has lookback limits - enforce them
-  if (assetType === "stock") {
-    const maxDays = 20; // Conservative limit for 1-minute bars
-    if (DAYS_TO_BACKFILL > maxDays) {
-      console.warn(
-        `[Backfill] ⚠️  Tradier API limit: ${maxDays} days for stocks. Adjusting from ${DAYS_TO_BACKFILL} days.`
-      );
-      startDate = new Date(endDate.getTime() - maxDays * 24 * 60 * 60 * 1000);
-    }
-  }
+  const startDate = new Date(endDate.getTime() - DAYS_TO_BACKFILL * 24 * 60 * 60 * 1000);
 
   try {
     // Check if data already exists (skip check if --skip-check flag)
@@ -132,11 +176,9 @@ async function backfillSymbol(symbol: string, stats: BackfillStats): Promise<voi
       console.log(`[Backfill] Downloading 1m bars from Massive S3...`);
       minuteBars = await downloadSymbolHistory(symbol, startDate, endDate);
     } else {
-      // Use Tradier API (stocks have S3 access denied)
-      console.log(`[Backfill] Fetching 1m bars from Tradier API...`);
-      const startDateStr = startDate.toISOString().split("T")[0];
-      const endDateStr = endDate.toISOString().split("T")[0];
-      minuteBars = await fetchTradierBars(symbol, "1m", startDateStr, endDateStr);
+      // Use Massive.com REST API (stocks have S3 access denied)
+      console.log(`[Backfill] Fetching 1m bars from Massive REST API...`);
+      minuteBars = await fetchMassiveStockBars(symbol, startDate, endDate);
     }
 
     if (minuteBars.length === 0) {
@@ -217,8 +259,8 @@ async function main() {
   console.log("\n=================================================");
   console.log("📦 HISTORICAL DATA BACKFILL (Multi-Source)");
   console.log("=================================================");
-  console.log("  • Indices: Massive.com S3 (fast, unlimited)");
-  console.log("  • Stocks: Tradier API (20-day limit)");
+  console.log("  • Indices: Massive.com S3 flatfiles (fast, bulk)");
+  console.log("  • Stocks: Massive.com REST API (intraday support)");
   console.log("=================================================\n");
 
   const stats: BackfillStats = {

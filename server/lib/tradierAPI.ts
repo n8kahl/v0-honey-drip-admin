@@ -3,11 +3,12 @@
  *
  * Used for stocks (SPY, QQQ, etc.) since Massive.com S3 bucket access is limited to indices.
  *
+ * IMPORTANT: Tradier's /markets/history endpoint only supports daily/weekly/monthly intervals.
+ * For intraday data (1m, 5m, 15m), use Massive.com API or other sources.
+ *
  * API Limits:
- * - 1-minute bars: ~20 days history
- * - 5-minute bars: ~40 days history
- * - 15-minute bars: ~40 days history
  * - Daily bars: Full company lifetime
+ * - Intraday bars: NOT SUPPORTED via /markets/history endpoint
  *
  * Rate Limits: 120 requests/minute (free tier), 180 requests/minute (paid)
  *
@@ -89,22 +90,14 @@ export async function fetchTradierBars(
     throw new Error("TRADIER_ACCESS_TOKEN not configured in environment");
   }
 
-  // Check lookback limits
-  const maxDays = getMaxLookbackDays(timeframe);
-  const daysDiff = Math.ceil(
-    (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (daysDiff > maxDays) {
-    console.warn(
-      `[TradierAPI] Requested ${daysDiff} days for ${timeframe}, but Tradier limit is ${maxDays} days. Adjusting start date.`
+  // Tradier only supports daily intervals via /markets/history
+  if (timeframe !== "day" && timeframe !== "daily") {
+    throw new Error(
+      `Tradier API does not support intraday intervals (${timeframe}). Use Massive.com REST API for intraday stock data.`
     );
-    const adjustedStart = new Date(endDate);
-    adjustedStart.setDate(adjustedStart.getDate() - maxDays);
-    startDate = adjustedStart.toISOString().split("T")[0];
   }
 
-  const interval = mapIntervalToTradier(timeframe);
+  const interval = "daily";
   const url = `${TRADIER_BASE_URL}/markets/history`;
 
   try {
