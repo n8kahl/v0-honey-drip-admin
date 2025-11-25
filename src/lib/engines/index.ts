@@ -5,20 +5,20 @@
  * by leveraging historical data warehouse (Phase 1).
  */
 
-// Import engines
+// Import engines (no .js extensions for Vite bundling)
 import {
   IVPercentileEngine,
   ivPercentileEngine as _ivPercentileEngine,
   type IVContext,
   type IVBoostConfig,
-} from "./IVPercentileEngine.js";
+} from "./IVPercentileEngine";
 
 import {
   GammaExposureEngine,
   gammaExposureEngine as _gammaExposureEngine,
   type GammaContext,
   type GammaBoostConfig,
-} from "./GammaExposureEngine.js";
+} from "./GammaExposureEngine";
 
 import {
   MTFAlignmentEngine,
@@ -27,7 +27,7 @@ import {
   type MTFBoostConfig,
   type TrendDirection,
   type TimeframeAnalysis,
-} from "./MTFAlignmentEngine.js";
+} from "./MTFAlignmentEngine";
 
 import {
   FlowAnalysisEngine,
@@ -37,7 +37,7 @@ import {
   type FlowType,
   type FlowSentiment,
   type FlowAggressiveness,
-} from "./FlowAnalysisEngine.js";
+} from "./FlowAnalysisEngine";
 
 import {
   RegimeDetectionEngine,
@@ -47,7 +47,7 @@ import {
   type MarketRegime,
   type VIXRegime,
   type BreadthRegime,
-} from "./RegimeDetectionEngine.js";
+} from "./RegimeDetectionEngine";
 
 // Export classes
 export { IVPercentileEngine };

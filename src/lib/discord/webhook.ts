@@ -36,6 +36,11 @@ export const DISCORD_COLORS = {
   profit: 0x27ae60, // Profit green
   loss: 0xe74c3c, // Loss red
   info: 0x95a5a6, // Gray
+  // Escalation severity colors
+  escalation_info: 0x16a34a, // Green
+  escalation_warning: 0xf59e0b, // Yellow/Amber
+  escalation_urgent: 0xf97316, // Orange
+  escalation_critical: 0xef4444, // Red
 };
 
 class DiscordWebhookClient {
@@ -457,9 +462,7 @@ class DiscordWebhookClient {
     const avgPnL = avgPnLMatch ? parseFloat(avgPnLMatch[1]) : 0;
     const pnlColor = avgPnL >= 0 ? DISCORD_COLORS.profit : DISCORD_COLORS.loss;
 
-    const description = data.comment
-      ? `${data.summaryText}\n\n${data.comment}`
-      : data.summaryText;
+    const description = data.comment ? `${data.summaryText}\n\n${data.comment}` : data.summaryText;
 
     return this.sendMessage(webhookUrl, {
       embeds: [
@@ -469,6 +472,108 @@ class DiscordWebhookClient {
           color: pnlColor,
           footer: {
             text: "Honey Drip • Trade Summary",
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+  }
+
+  // Send an escalation alert (for urgent/critical alerts)
+  async sendEscalationAlert(
+    webhookUrl: string,
+    data: {
+      ticker: string;
+      severity: "INFO" | "WARNING" | "URGENT" | "CRITICAL";
+      title: string;
+      message: string;
+      category: string;
+      actionLabel?: string;
+      metadata?: {
+        pnlPercent?: number;
+        currentPrice?: number;
+        entryPrice?: number;
+        stopLoss?: number;
+        confluence?: number;
+        [key: string]: string | number | boolean | undefined;
+      };
+    }
+  ): Promise<boolean> {
+    // Get severity-specific styling
+    const severityEmoji = {
+      INFO: "🟢",
+      WARNING: "🟡",
+      URGENT: "🟠",
+      CRITICAL: "🔴",
+    }[data.severity];
+
+    const severityColor = {
+      INFO: DISCORD_COLORS.escalation_info,
+      WARNING: DISCORD_COLORS.escalation_warning,
+      URGENT: DISCORD_COLORS.escalation_urgent,
+      CRITICAL: DISCORD_COLORS.escalation_critical,
+    }[data.severity];
+
+    const fields: Array<{ name: string; value: string; inline?: boolean }> = [
+      { name: "Category", value: data.category.toUpperCase(), inline: true },
+      { name: "Severity", value: data.severity, inline: true },
+    ];
+
+    // Add metadata fields if provided
+    if (data.metadata) {
+      if (data.metadata.pnlPercent !== undefined) {
+        const pnlSign = data.metadata.pnlPercent >= 0 ? "+" : "";
+        fields.push({
+          name: "P&L",
+          value: `${pnlSign}${data.metadata.pnlPercent.toFixed(1)}%`,
+          inline: true,
+        });
+      }
+      if (data.metadata.currentPrice !== undefined) {
+        fields.push({
+          name: "Current Price",
+          value: `$${data.metadata.currentPrice.toFixed(2)}`,
+          inline: true,
+        });
+      }
+      if (data.metadata.stopLoss !== undefined) {
+        fields.push({
+          name: "Stop Loss",
+          value: `$${data.metadata.stopLoss.toFixed(2)}`,
+          inline: true,
+        });
+      }
+      if (data.metadata.confluence !== undefined) {
+        fields.push({
+          name: "Confluence",
+          value: `${data.metadata.confluence.toFixed(0)}`,
+          inline: true,
+        });
+      }
+    }
+
+    // Add action button hint if actionable
+    if (data.actionLabel) {
+      fields.push({
+        name: "Suggested Action",
+        value: `**${data.actionLabel}**`,
+        inline: false,
+      });
+    }
+
+    return this.sendMessage(webhookUrl, {
+      content:
+        data.severity === "CRITICAL"
+          ? "@here **CRITICAL ALERT** - Immediate action required!"
+          : undefined,
+      embeds: [
+        {
+          title: `${severityEmoji} ${data.title}: ${data.ticker}`,
+          description: data.message,
+          color: severityColor,
+          fields,
+          footer: {
+            text: `Honey Drip • ${data.severity} Escalation`,
           },
           timestamp: new Date().toISOString(),
         },
@@ -493,4 +598,64 @@ export async function sendToMultipleChannels(
   const failed = results.length - success;
 
   return { success, failed };
+}
+
+/**
+ * Send escalation alert to multiple Discord channels
+ * Only sends URGENT and CRITICAL alerts by default
+ */
+export async function sendEscalationToDiscord(
+  webhookUrls: string[],
+  alert: {
+    ticker: string;
+    severity: "INFO" | "WARNING" | "URGENT" | "CRITICAL";
+    title: string;
+    message: string;
+    category: string;
+    actionLabel?: string;
+    metadata?: Record<string, unknown>;
+  },
+  options: {
+    minSeverity?: "INFO" | "WARNING" | "URGENT" | "CRITICAL";
+  } = {}
+): Promise<{ success: number; failed: number; skipped: boolean }> {
+  const { minSeverity = "URGENT" } = options;
+
+  // Define severity levels for comparison
+  const severityLevels = { INFO: 1, WARNING: 2, URGENT: 3, CRITICAL: 4 };
+  const alertLevel = severityLevels[alert.severity];
+  const minLevel = severityLevels[minSeverity];
+
+  // Skip if alert severity is below minimum
+  if (alertLevel < minLevel) {
+    return { success: 0, failed: 0, skipped: true };
+  }
+
+  if (webhookUrls.length === 0) {
+    console.log("[Discord] No webhook URLs provided for escalation alert");
+    return { success: 0, failed: 0, skipped: true };
+  }
+
+  const results = await Promise.allSettled(
+    webhookUrls.map((url) =>
+      discordWebhook.sendEscalationAlert(url, {
+        ticker: alert.ticker,
+        severity: alert.severity,
+        title: alert.title,
+        message: alert.message,
+        category: alert.category,
+        actionLabel: alert.actionLabel,
+        metadata: alert.metadata as any,
+      })
+    )
+  );
+
+  const success = results.filter((r) => r.status === "fulfilled" && r.value === true).length;
+  const failed = results.length - success;
+
+  console.log(
+    `[Discord] Escalation alert sent: ${alert.severity} "${alert.title}" to ${success}/${webhookUrls.length} channels`
+  );
+
+  return { success, failed, skipped: false };
 }

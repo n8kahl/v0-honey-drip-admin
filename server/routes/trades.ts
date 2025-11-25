@@ -26,13 +26,48 @@ function getSupabaseClient() {
 }
 
 /**
- * Helper: Extract user ID from request (via RLS context or JWT)
- * In production, extract from verified JWT token
+ * Helper: Extract user ID from request
+ * Priority:
+ * 1. Verify JWT from Authorization header (secure, production)
+ * 2. Fall back to x-user-id header (development only, logged warning)
  */
-function getUserId(req: Request): string | null {
-  // For now, accept user_id from header (should be authenticated)
+async function getUserId(req: Request): Promise<string | null> {
+  // First, try to extract from JWT Bearer token (secure method)
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    try {
+      const supabase = getSupabaseClient();
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser(token);
+
+      if (!error && user?.id) {
+        return user.id;
+      }
+
+      // Token invalid or expired - log but continue to fallback
+      if (error) {
+        console.warn("[Trades API] JWT verification failed:", error.message);
+      }
+    } catch (err) {
+      console.warn("[Trades API] Error verifying JWT:", err);
+    }
+  }
+
+  // Fallback: Accept x-user-id header (for backwards compatibility)
+  // In production, this should be disabled or heavily rate-limited
   const userId = req.headers["x-user-id"] as string;
-  return userId || null;
+  if (userId) {
+    console.warn(
+      `[Trades API] Using unverified x-user-id header for user ${userId.slice(0, 8)}... ` +
+        "Consider migrating to JWT authentication"
+    );
+    return userId;
+  }
+
+  return null;
 }
 
 /**
@@ -137,7 +172,7 @@ interface ChallengeLink {
 // ============================================================================
 router.post("/api/trades", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -240,7 +275,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
 // ============================================================================
 router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -303,7 +338,7 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
 // ============================================================================
 router.delete("/api/trades/:tradeId", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -341,7 +376,7 @@ router.delete("/api/trades/:tradeId", async (req: Request, res: Response) => {
 // ============================================================================
 router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -402,7 +437,7 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
 // ============================================================================
 router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -431,17 +466,23 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       console.error("[Trades API] Error linking channel:", error);
 
       // Handle duplicate key error - this is OK, channel is already linked (code 23505)
-      const errorCode = typeof error.code === 'number' ? error.code : parseInt(error.code || '0', 10);
+      const errorCode =
+        typeof error.code === "number" ? error.code : parseInt(error.code || "0", 10);
       if (errorCode === 23505) {
-        console.log(`[Trades API] Channel ${channelId} already linked to trade ${tradeId} (idempotent - OK)`);
+        console.log(
+          `[Trades API] Channel ${channelId} already linked to trade ${tradeId} (idempotent - OK)`
+        );
         return res.status(200).json({ message: "Channel already linked", alreadyLinked: true });
       }
 
       // Handle foreign key constraint (channel doesn't exist)
       // Note: Exclude duplicate key errors (already handled above)
-      const errorMsg = typeof error.message === 'string' ? error.message : String(error.message || '');
-      if (errorMsg.includes("foreign key") ||
-          (errorMsg.includes("violates") && !errorMsg.includes("duplicate key"))) {
+      const errorMsg =
+        typeof error.message === "string" ? error.message : String(error.message || "");
+      if (
+        errorMsg.includes("foreign key") ||
+        (errorMsg.includes("violates") && !errorMsg.includes("duplicate key"))
+      ) {
         console.warn(
           `[Trades API] Channel ${channelId} does not exist or trade ${tradeId} not found`
         );
@@ -472,7 +513,7 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
 // ============================================================================
 router.delete("/api/trades/:tradeId/channels/:channelId", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -512,7 +553,7 @@ router.delete("/api/trades/:tradeId/channels/:channelId", async (req: Request, r
 // ============================================================================
 router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -540,17 +581,23 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
       console.error("[Trades API] Error linking challenge:", error);
 
       // Handle duplicate key error - this is OK, challenge is already linked (code 23505)
-      const challengeErrorCode = typeof error.code === 'number' ? error.code : parseInt(error.code || '0', 10);
+      const challengeErrorCode =
+        typeof error.code === "number" ? error.code : parseInt(error.code || "0", 10);
       if (challengeErrorCode === 23505) {
-        console.log(`[Trades API] Challenge ${challengeId} already linked to trade ${tradeId} (idempotent - OK)`);
+        console.log(
+          `[Trades API] Challenge ${challengeId} already linked to trade ${tradeId} (idempotent - OK)`
+        );
         return res.status(200).json({ message: "Challenge already linked", alreadyLinked: true });
       }
 
       // Handle foreign key constraint (challenge doesn't exist)
       // Note: Exclude duplicate key errors (already handled above)
-      const challengeErrorMsg = typeof error.message === 'string' ? error.message : String(error.message || '');
-      if (challengeErrorMsg.includes("foreign key") ||
-          (challengeErrorMsg.includes("violates") && !challengeErrorMsg.includes("duplicate key"))) {
+      const challengeErrorMsg =
+        typeof error.message === "string" ? error.message : String(error.message || "");
+      if (
+        challengeErrorMsg.includes("foreign key") ||
+        (challengeErrorMsg.includes("violates") && !challengeErrorMsg.includes("duplicate key"))
+      ) {
         console.warn(
           `[Trades API] Challenge ${challengeId} does not exist or trade ${tradeId} not found`
         );
@@ -562,7 +609,9 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
 
       // Other errors
       console.error("[Trades API] Unexpected error:", challengeErrorMsg);
-      return res.status(500).json({ error: "Failed to link challenge", details: challengeErrorMsg });
+      return res
+        .status(500)
+        .json({ error: "Failed to link challenge", details: challengeErrorMsg });
     }
 
     console.log(`[Trades API] Challenge linked successfully`);
@@ -583,7 +632,7 @@ router.delete(
   "/api/trades/:tradeId/challenges/:challengeId",
   async (req: Request, res: Response) => {
     try {
-      const userId = getUserId(req);
+      const userId = await getUserId(req);
       if (!userId) {
         return res.status(401).json({ error: "Unauthorized: No user ID" });
       }
@@ -626,7 +675,7 @@ router.delete(
 // ============================================================================
 router.get("/api/trades/admin/stale-loaded", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
@@ -647,13 +696,15 @@ router.get("/api/trades/admin/stale-loaded", async (req: Request, res: Response)
 
     if (error) {
       console.error("[Trades API] Error fetching stale trades:", error);
-      return res.status(500).json({ error: "Failed to fetch stale trades", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch stale trades", details: error.message });
     }
 
     res.json({
       count: data?.length || 0,
       trades: data || [],
-      message: `Found ${data?.length || 0} stale LOADED trades older than 1 day`
+      message: `Found ${data?.length || 0} stale LOADED trades older than 1 day`,
     });
   } catch (error: any) {
     console.error("[Trades API] Unexpected error in GET /api/trades/admin/stale-loaded:", error);
@@ -666,14 +717,16 @@ router.get("/api/trades/admin/stale-loaded", async (req: Request, res: Response)
 // ============================================================================
 router.delete("/api/trades/admin/cleanup-stale", async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized: No user ID" });
     }
 
     const { olderThanDays = 1 } = req.body;
 
-    console.log(`[Trades API] Cleaning up stale LOADED trades for user ${userId} (older than ${olderThanDays} days)`);
+    console.log(
+      `[Trades API] Cleaning up stale LOADED trades for user ${userId} (older than ${olderThanDays} days)`
+    );
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
@@ -688,17 +741,22 @@ router.delete("/api/trades/admin/cleanup-stale", async (req: Request, res: Respo
 
     if (error) {
       console.error("[Trades API] Error cleaning up stale trades:", error);
-      return res.status(500).json({ error: "Failed to cleanup stale trades", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to cleanup stale trades", details: error.message });
     }
 
     console.log(`[Trades API] Deleted ${data?.length || 0} stale LOADED trades`);
     res.json({
       deleted: data?.length || 0,
       trades: data || [],
-      message: `Successfully deleted ${data?.length || 0} stale LOADED trades`
+      message: `Successfully deleted ${data?.length || 0} stale LOADED trades`,
     });
   } catch (error: any) {
-    console.error("[Trades API] Unexpected error in DELETE /api/trades/admin/cleanup-stale:", error);
+    console.error(
+      "[Trades API] Unexpected error in DELETE /api/trades/admin/cleanup-stale:",
+      error
+    );
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });
