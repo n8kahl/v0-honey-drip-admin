@@ -1,368 +1,447 @@
 /**
  * Historical Data Backfill Worker
- * Phase 2/3: One-time backfill of historical data for backtesting
+ * Phase 2: One-time script to populate historical_bars table with 90 days of OHLCV data
  *
- * Fetches 90 days of historical options chains, indices, and market data
- * from Massive.com to populate the data warehouse for backtesting.
+ * Usage:
+ *   pnpm backfill                    # Backfill all symbols, all timeframes (90 days)
+ *   pnpm backfill --days=30          # Backfill 30 days
+ *   pnpm backfill --symbol=SPY       # Backfill single symbol
+ *   pnpm backfill --timeframe=15m    # Backfill single timeframe
+ *   pnpm backfill --skip-check       # Skip existing data check (force re-fetch)
  *
- * Run once to backfill, then use historicalDataIngestion.ts for ongoing updates.
+ * Features:
+ * - Parallel fetching (5 symbols at a time to respect rate limits)
+ * - Resume capability (skips already fetched data)
+ * - Progress tracking with ETA
+ * - Error recovery with exponential backoff
+ * - Stores all data in historical_bars table for fast backtesting
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { getOptionChain, getIndicesSnapshot, massiveFetch } from '../massive/client.js';
-import { snapshotGammaExposure } from './ingestion/gammaExposureSnapshot.js';
-import { calculateIVPercentile } from './ingestion/ivPercentileCalculation.js';
-import { calculateMarketRegime } from './ingestion/marketRegimeCalculation.js';
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+config();
 
-// Environment
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { createClient } from "@supabase/supabase-js";
+import { normalizeSymbolForMassive, isIndex } from "../lib/symbolUtils.js";
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('[BackfillWorker] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-  process.exit(1);
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
+// ============================================================================
 // Configuration
-const SYMBOLS_TO_BACKFILL = ['SPX', 'NDX'];
-const BACKFILL_DAYS = 90;
-const BATCH_SIZE = 5; // Process 5 days at a time to avoid rate limits
-const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds between batches
+// ============================================================================
 
-interface BackfillStats {
-  symbol: string;
-  startDate: string;
-  endDate: string;
-  daysProcessed: number;
-  greeksRecords: number;
-  gammaSnapshots: number;
-  ivRecords: number;
-  regimeRecords: number;
-  errors: number;
-  duration: number;
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY!;
+
+// Timeframes to backfill (all needed for backtesting)
+const TIMEFRAMES = [
+  { key: "1m", mult: 1, span: "minute" },
+  { key: "5m", mult: 5, span: "minute" },
+  { key: "15m", mult: 15, span: "minute" },
+  { key: "1h", mult: 1, span: "hour" },
+  { key: "4h", mult: 4, span: "hour" },
+  { key: "day", mult: 1, span: "day" },
+];
+
+const CONCURRENCY_LIMIT = 5; // Max parallel API calls
+const RETRY_LIMIT = 3; // Max retries per failed request
+const RATE_LIMIT_DELAY = 1000; // 1 second between batches
+
+// ============================================================================
+// Command Line Arguments
+// ============================================================================
+
+const args = process.argv.slice(2);
+const daysArg = args.find((a) => a.startsWith("--days="))?.split("=")[1];
+const symbolArg = args.find((a) => a.startsWith("--symbol="))?.split("=")[1];
+const timeframeArg = args.find((a) => a.startsWith("--timeframe="))?.split("=")[1];
+const skipCheck = args.includes("--skip-check");
+
+const DAYS_TO_BACKFILL = daysArg ? parseInt(daysArg) : 90;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+function formatDate(date: Date): string {
+  return date.toISOString().split("T")[0]; // YYYY-MM-DD
 }
 
-/**
- * Main backfill orchestrator
- */
-async function backfillHistoricalData() {
-  console.log('[BackfillWorker] 🚀 Starting historical data backfill...');
-  console.log(`[BackfillWorker] Symbols: ${SYMBOLS_TO_BACKFILL.join(', ')}`);
-  console.log(`[BackfillWorker] Backfill period: ${BACKFILL_DAYS} days`);
-
-  const startTime = Date.now();
-  const allStats: BackfillStats[] = [];
-
-  for (const symbol of SYMBOLS_TO_BACKFILL) {
-    const stats = await backfillSymbol(symbol);
-    allStats.push(stats);
-  }
-
-  const totalDuration = Date.now() - startTime;
-
-  // Print summary
-  console.log('\n[BackfillWorker] ✅ Backfill Complete!');
-  console.log('==========================================');
-  for (const stats of allStats) {
-    console.log(`\n${stats.symbol}:`);
-    console.log(`  Days Processed: ${stats.daysProcessed}`);
-    console.log(`  Greeks Records: ${stats.greeksRecords}`);
-    console.log(`  Gamma Snapshots: ${stats.gammaSnapshots}`);
-    console.log(`  IV Records: ${stats.ivRecords}`);
-    console.log(`  Regime Records: ${stats.regimeRecords}`);
-    console.log(`  Errors: ${stats.errors}`);
-    console.log(`  Duration: ${(stats.duration / 1000 / 60).toFixed(1)} minutes`);
-  }
-  console.log(`\nTotal Duration: ${(totalDuration / 1000 / 60).toFixed(1)} minutes`);
-  console.log('==========================================\n');
+function getDateNDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return formatDate(date);
 }
 
-/**
- * Backfill data for a single symbol
- */
-async function backfillSymbol(symbol: string): Promise<BackfillStats> {
-  console.log(`\n[BackfillWorker] Processing ${symbol}...`);
-
-  const startTime = Date.now();
-  const stats: BackfillStats = {
-    symbol,
-    startDate: '',
-    endDate: '',
-    daysProcessed: 0,
-    greeksRecords: 0,
-    gammaSnapshots: 0,
-    ivRecords: 0,
-    regimeRecords: 0,
-    errors: 0,
-    duration: 0,
-  };
-
-  // Calculate date range
-  const endDate = new Date();
-  endDate.setHours(16, 0, 0, 0); // 4pm ET close
-  const startDate = new Date(endDate);
-  startDate.setDate(startDate.getDate() - BACKFILL_DAYS);
-
-  stats.startDate = startDate.toISOString().split('T')[0];
-  stats.endDate = endDate.toISOString().split('T')[0];
-
-  console.log(`[BackfillWorker] Date range: ${stats.startDate} to ${stats.endDate}`);
-
-  // Generate list of market dates (skip weekends)
-  const marketDates = generateMarketDates(startDate, endDate);
-  console.log(`[BackfillWorker] Market days to process: ${marketDates.length}`);
-
-  // Process in batches
-  for (let i = 0; i < marketDates.length; i += BATCH_SIZE) {
-    const batch = marketDates.slice(i, i + BATCH_SIZE);
-    console.log(`\n[BackfillWorker] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(marketDates.length / BATCH_SIZE)}...`);
-
-    for (const date of batch) {
-      try {
-        await backfillDate(symbol, date, stats);
-      } catch (error) {
-        console.error(`[BackfillWorker] Error processing ${symbol} ${date}:`, error);
-        stats.errors++;
-      }
-    }
-
-    // Delay between batches to avoid rate limits
-    if (i + BATCH_SIZE < marketDates.length) {
-      console.log(`[BackfillWorker] Waiting ${DELAY_BETWEEN_BATCHES}ms before next batch...`);
-      await delay(DELAY_BETWEEN_BATCHES);
-    }
-  }
-
-  stats.duration = Date.now() - startTime;
-  return stats;
+function getTodayDate(): string {
+  return formatDate(new Date());
 }
 
-/**
- * Backfill data for a single date
- */
-async function backfillDate(symbol: string, date: Date, stats: BackfillStats) {
-  const dateStr = date.toISOString().split('T')[0];
-  console.log(`[BackfillWorker]   ${dateStr}...`);
-
-  // Check if already processed
-  const existing = await checkExistingData(symbol, dateStr);
-  if (existing.greeks && existing.gamma && existing.iv) {
-    console.log(`[BackfillWorker]   ${dateStr} - Already processed, skipping`);
-    return;
-  }
-
-  // Set timestamp to 4pm ET (market close)
-  const timestamp = date.getTime();
-
-  try {
-    // 1. Fetch historical options chain snapshot
-    // Note: Massive.com may not have historical snapshots, so we may need to use aggregates
-    // For now, we'll use current snapshot as a reference and note this limitation
-    const chain = await getOptionChain(symbol, 250);
-
-    if (!chain || !chain.contracts || chain.contracts.length === 0) {
-      console.warn(`[BackfillWorker]   ${dateStr} - No options chain data`);
-      return;
-    }
-
-    // 2. Store Greeks data
-    if (!existing.greeks) {
-      const greeksStored = await storeHistoricalGreeks(symbol, timestamp, chain.contracts);
-      stats.greeksRecords += greeksStored;
-    }
-
-    // 3. Calculate and store gamma snapshot
-    if (!existing.gamma) {
-      const gammaResult = await snapshotGammaExposure(supabase, symbol);
-      if (gammaResult.success) {
-        stats.gammaSnapshots++;
-      }
-    }
-
-    // 4. Calculate and store IV percentile (once we have enough data)
-    if (!existing.iv && stats.daysProcessed >= 52 * 5) {
-      const ivResult = await calculateIVPercentile(supabase, symbol);
-      if (ivResult.success) {
-        stats.ivRecords++;
-      }
-    }
-
-    stats.daysProcessed++;
-    console.log(`[BackfillWorker]   ${dateStr} - ✓ Complete`);
-  } catch (error) {
-    console.error(`[BackfillWorker]   ${dateStr} - Error:`, error);
-    stats.errors++;
-  }
-}
-
-/**
- * Store historical Greeks data
- */
-async function storeHistoricalGreeks(
-  symbol: string,
-  timestamp: number,
-  contracts: any[]
-): Promise<number> {
-  const records = contracts.map((contract) => ({
-    symbol,
-    timestamp,
-    strike: contract.strike,
-    expiration: contract.expiration,
-    option_type: contract.option_type,
-    bid: contract.bid || 0,
-    ask: contract.ask || 0,
-    last: contract.last || 0,
-    volume: contract.volume || 0,
-    open_interest: contract.open_interest || 0,
-    implied_volatility: contract.greeks?.iv || contract.implied_volatility || null,
-    delta: contract.greeks?.delta || null,
-    gamma: contract.greeks?.gamma || null,
-    theta: contract.greeks?.theta || null,
-    vega: contract.greeks?.vega || null,
-    rho: contract.greeks?.rho || null,
-  }));
-
-  const { error } = await supabase.from('historical_greeks').upsert(records as any, {
-    onConflict: 'symbol,timestamp,strike,expiration,option_type',
-    ignoreDuplicates: true,
-  });
-
-  if (error) {
-    console.error(`[BackfillWorker] Error storing Greeks:`, error);
-    return 0;
-  }
-
-  return records.length;
-}
-
-/**
- * Check if data already exists for a date
- */
-async function checkExistingData(symbol: string, dateStr: string): Promise<{
-  greeks: boolean;
-  gamma: boolean;
-  iv: boolean;
-}> {
-  // Check Greeks
-  const { data: greeksData } = await supabase
-    .from('historical_greeks')
-    .select('id')
-    .eq('symbol', symbol)
-    .gte('timestamp', new Date(dateStr + 'T00:00:00Z').getTime())
-    .lte('timestamp', new Date(dateStr + 'T23:59:59Z').getTime())
-    .limit(1);
-
-  // Check Gamma
-  const { data: gammaData } = await supabase
-    .from('gamma_exposure_snapshots')
-    .select('id')
-    .eq('symbol', symbol)
-    .gte('timestamp', new Date(dateStr + 'T00:00:00Z').getTime())
-    .lte('timestamp', new Date(dateStr + 'T23:59:59Z').getTime())
-    .limit(1);
-
-  // Check IV Percentile
-  const { data: ivData } = await supabase
-    .from('iv_percentile_cache')
-    .select('symbol')
-    .eq('symbol', symbol)
-    .eq('date', dateStr)
-    .limit(1);
-
-  return {
-    greeks: (greeksData?.length || 0) > 0,
-    gamma: (gammaData?.length || 0) > 0,
-    iv: (ivData?.length || 0) > 0,
-  };
-}
-
-/**
- * Generate list of market dates (excluding weekends)
- */
-function generateMarketDates(startDate: Date, endDate: Date): Date[] {
-  const dates: Date[] = [];
-  const current = new Date(startDate);
-
-  while (current <= endDate) {
-    const dayOfWeek = current.getDay();
-    // Skip weekends (0 = Sunday, 6 = Saturday)
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      dates.push(new Date(current));
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  return dates;
-}
-
-/**
- * Delay helper
- */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Backfill market regime history
+ * Fetch bars from Massive.com API
  */
-async function backfillMarketRegimes() {
-  console.log('\n[BackfillWorker] Backfilling market regime history...');
+async function fetchBarsFromMassive(
+  symbol: string,
+  mult: number,
+  span: string,
+  from: string,
+  to: string,
+  retries = 0
+): Promise<any[]> {
+  const normalizedSymbol = normalizeSymbolForMassive(symbol);
+  const url = `https://api.massive.com/v2/aggs/ticker/${encodeURIComponent(
+    normalizedSymbol
+  )}/range/${mult}/${span}/${from}/${to}?adjusted=true&sort=asc&limit=50000`;
 
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - BACKFILL_DAYS);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${MASSIVE_API_KEY}`,
+      },
+    });
 
-  const marketDates = generateMarketDates(startDate, endDate);
-  let successCount = 0;
-  let errorCount = 0;
-
-  for (const date of marketDates) {
-    const dateStr = date.toISOString().split('T')[0];
-
-    try {
-      // Check if already exists
-      const { data: existing } = await supabase
-        .from('market_regime_history')
-        .select('date')
-        .eq('date', dateStr)
-        .single();
-
-      if (existing) {
-        console.log(`[BackfillWorker]   ${dateStr} - Already exists, skipping`);
-        continue;
+    if (!response.ok) {
+      if (response.status === 429 && retries < RETRY_LIMIT) {
+        // Rate limited - wait and retry with exponential backoff
+        const backoffMs = Math.pow(2, retries) * 2000; // 2s, 4s, 8s
+        console.warn(
+          `[Backfill] ⚠️ Rate limited for ${symbol}, retrying in ${backoffMs / 1000}s...`
+        );
+        await delay(backoffMs);
+        return fetchBarsFromMassive(symbol, mult, span, from, to, retries + 1);
       }
 
-      // Calculate regime (this will use current VIX, but we'd ideally use historical)
-      const result = await calculateMarketRegime(supabase);
-
-      if (result.success) {
-        successCount++;
-        console.log(`[BackfillWorker]   ${dateStr} - ✓ Regime calculated`);
-      } else {
-        errorCount++;
-        console.error(`[BackfillWorker]   ${dateStr} - Failed:`, result.error);
-      }
-    } catch (error) {
-      errorCount++;
-      console.error(`[BackfillWorker]   ${dateStr} - Error:`, error);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // Small delay to avoid rate limits
-    await delay(500);
-  }
+    const data = await response.json();
+    return Array.isArray(data?.results) ? data.results : [];
+  } catch (error) {
+    if (retries < RETRY_LIMIT) {
+      const backoffMs = Math.pow(2, retries) * 2000;
+      console.warn(`[Backfill] ⚠️ Error fetching ${symbol}, retrying in ${backoffMs / 1000}s...`);
+      await delay(backoffMs);
+      return fetchBarsFromMassive(symbol, mult, span, from, to, retries + 1);
+    }
 
-  console.log(`[BackfillWorker] Market regime backfill complete: ${successCount} success, ${errorCount} errors`);
+    console.error(`[Backfill] ❌ Failed to fetch ${symbol} after ${retries} retries:`, error);
+    return [];
+  }
 }
 
-// Run backfill
-backfillHistoricalData()
-  .then(() => {
-    console.log('[BackfillWorker] 🎉 All done!');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('[BackfillWorker] Fatal error:', error);
+/**
+ * Check if data already exists in database
+ */
+async function checkExistingData(
+  supabase: any,
+  symbol: string,
+  timeframe: string,
+  from: string,
+  to: string
+): Promise<boolean> {
+  if (skipCheck) {
+    return false; // Force re-fetch
+  }
+
+  try {
+    const fromMs = new Date(from).getTime();
+    const toMs = new Date(to).getTime() + 86400000 - 1; // End of day
+
+    const { data, error } = await supabase
+      .from("historical_bars")
+      .select("timestamp")
+      .eq("symbol", symbol)
+      .eq("timeframe", timeframe)
+      .gte("timestamp", fromMs)
+      .lte("timestamp", toMs)
+      .limit(1);
+
+    if (error) {
+      console.warn(`[Backfill] Error checking existing data for ${symbol}:`, error);
+      return false;
+    }
+
+    return data && data.length > 0;
+  } catch (error) {
+    console.warn(`[Backfill] Exception checking existing data:`, error);
+    return false;
+  }
+}
+
+/**
+ * Store bars in historical_bars table
+ */
+async function storeBars(
+  supabase: any,
+  symbol: string,
+  timeframe: string,
+  bars: any[]
+): Promise<boolean> {
+  if (bars.length === 0) {
+    return false;
+  }
+
+  try {
+    const rows = bars.map((bar) => ({
+      symbol,
+      timeframe,
+      timestamp: bar.t,
+      open: Number(bar.o),
+      high: Number(bar.h),
+      low: Number(bar.l),
+      close: Number(bar.c),
+      volume: Number(bar.v || 0),
+      vwap: bar.vw || null,
+      trades: bar.n || null,
+    }));
+
+    const { error } = await supabase.from("historical_bars").upsert(rows, {
+      onConflict: "symbol,timeframe,timestamp",
+      ignoreDuplicates: true,
+    });
+
+    if (error) {
+      console.error(`[Backfill] ❌ Error storing bars for ${symbol}:`, error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`[Backfill] ❌ Exception storing bars:`, error);
+    return false;
+  }
+}
+
+/**
+ * Backfill single symbol-timeframe combination
+ */
+async function backfillSymbolTimeframe(
+  supabase: any,
+  symbol: string,
+  timeframe: { key: string; mult: number; span: string },
+  from: string,
+  to: string
+): Promise<{ success: boolean; bars: number; skipped: boolean }> {
+  // Check if data already exists
+  const exists = await checkExistingData(supabase, symbol, timeframe.key, from, to);
+
+  if (exists) {
+    return { success: true, bars: 0, skipped: true };
+  }
+
+  // Fetch from Massive.com
+  const bars = await fetchBarsFromMassive(symbol, timeframe.mult, timeframe.span, from, to);
+
+  if (bars.length === 0) {
+    console.warn(`[Backfill] ⚠️ No data returned for ${symbol} ${timeframe.key}`);
+    return { success: false, bars: 0, skipped: false };
+  }
+
+  // Store in database
+  const stored = await storeBars(supabase, symbol, timeframe.key, bars);
+
+  return { success: stored, bars: bars.length, skipped: false };
+}
+
+/**
+ * Backfill all timeframes for a symbol
+ */
+async function backfillSymbol(
+  supabase: any,
+  symbol: string,
+  from: string,
+  to: string
+): Promise<{ total: number; skipped: number; failed: number }> {
+  let total = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  const timeframesToFetch = timeframeArg
+    ? TIMEFRAMES.filter((tf) => tf.key === timeframeArg)
+    : TIMEFRAMES;
+
+  for (const timeframe of timeframesToFetch) {
+    const result = await backfillSymbolTimeframe(supabase, symbol, timeframe, from, to);
+
+    if (result.skipped) {
+      skipped++;
+      console.log(`[Backfill] ⏭️  ${symbol} ${timeframe.key} - Already exists, skipping`);
+    } else if (result.success) {
+      total += result.bars;
+      console.log(`[Backfill] ✅ ${symbol} ${timeframe.key} - Stored ${result.bars} bars`);
+    } else {
+      failed++;
+      console.error(`[Backfill] ❌ ${symbol} ${timeframe.key} - Failed`);
+    }
+
+    // Small delay between timeframes to respect rate limits
+    await delay(200);
+  }
+
+  return { total, skipped, failed };
+}
+
+/**
+ * Process symbols in parallel batches
+ */
+async function backfillBatch(
+  supabase: any,
+  symbols: string[],
+  from: string,
+  to: string,
+  batchIndex: number,
+  totalBatches: number
+): Promise<{ total: number; skipped: number; failed: number }> {
+  const startTime = Date.now();
+
+  const results = await Promise.allSettled(
+    symbols.map((symbol) => backfillSymbol(supabase, symbol, from, to))
+  );
+
+  const stats = results.reduce(
+    (acc, result) => {
+      if (result.status === "fulfilled") {
+        acc.total += result.value.total;
+        acc.skipped += result.value.skipped;
+        acc.failed += result.value.failed;
+      } else {
+        acc.failed += TIMEFRAMES.length; // All timeframes failed for this symbol
+      }
+      return acc;
+    },
+    { total: 0, skipped: 0, failed: 0 }
+  );
+
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  const avgPerSymbol = (Date.now() - startTime) / symbols.length / 1000;
+  const remainingBatches = totalBatches - batchIndex - 1;
+  const etaSeconds = Math.round(remainingBatches * avgPerSymbol * CONCURRENCY_LIMIT);
+  const etaMinutes = Math.floor(etaSeconds / 60);
+
+  console.log(
+    `[Backfill] 📊 Batch ${batchIndex + 1}/${totalBatches} complete (${duration}s) - ETA: ${etaMinutes}m ${etaSeconds % 60}s`
+  );
+
+  return stats;
+}
+
+/**
+ * Main backfill function
+ */
+async function main() {
+  console.log("╔════════════════════════════════════════════════════════════════╗");
+  console.log("║         Historical Data Backfill - Phase 2                    ║");
+  console.log("╚════════════════════════════════════════════════════════════════╝\n");
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !MASSIVE_API_KEY) {
+    console.error("❌ Missing required environment variables");
+    console.error("   Required: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MASSIVE_API_KEY");
     process.exit(1);
-  });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // Date range
+  const from = getDateNDaysAgo(DAYS_TO_BACKFILL);
+  const to = getTodayDate();
+
+  console.log(`Date Range: ${from} to ${to} (${DAYS_TO_BACKFILL} days)`);
+  console.log(`Timeframes: ${TIMEFRAMES.map((tf) => tf.key).join(", ")}`);
+  console.log(`Concurrency: ${CONCURRENCY_LIMIT} symbols in parallel`);
+  console.log(`Rate Limit Delay: ${RATE_LIMIT_DELAY}ms between batches\n`);
+
+  // Fetch watchlist symbols
+  console.log("[Backfill] 🔄 Fetching watchlist symbols...");
+  const { data: watchlistData, error: watchlistError } = await supabase
+    .from("watchlist")
+    .select("symbol");
+
+  if (watchlistError) {
+    console.error("❌ Error fetching watchlist:", watchlistError);
+    process.exit(1);
+  }
+
+  let symbols = [...new Set((watchlistData || []).map((row: any) => row.symbol))];
+
+  // Filter by symbol if specified
+  if (symbolArg) {
+    symbols = symbols.filter((s) => s === symbolArg.toUpperCase());
+    if (symbols.length === 0) {
+      console.error(`❌ Symbol ${symbolArg} not found in watchlist`);
+      process.exit(1);
+    }
+  }
+
+  const indexSymbols = symbols.filter((s) => isIndex(s));
+  const equitySymbols = symbols.filter((s) => !isIndex(s));
+
+  console.log(`[Backfill] ✅ Found ${symbols.length} symbols to backfill`);
+  console.log(`   Indices: ${indexSymbols.join(", ")}`);
+  console.log(`   Equities: ${equitySymbols.join(", ")}\n`);
+
+  // Calculate total tasks
+  const timeframeCount = timeframeArg ? 1 : TIMEFRAMES.length;
+  const totalTasks = symbols.length * timeframeCount;
+  console.log(
+    `[Backfill] Total tasks: ${totalTasks} (${symbols.length} symbols × ${timeframeCount} timeframes)\n`
+  );
+
+  // Process in batches
+  const batches: string[][] = [];
+  for (let i = 0; i < symbols.length; i += CONCURRENCY_LIMIT) {
+    batches.push(symbols.slice(i, i + CONCURRENCY_LIMIT));
+  }
+
+  console.log(`[Backfill] Processing ${batches.length} batches...\n`);
+
+  const overallStart = Date.now();
+  let totalBars = 0;
+  let totalSkipped = 0;
+  let totalFailed = 0;
+
+  for (let i = 0; i < batches.length; i++) {
+    const stats = await backfillBatch(supabase, batches[i], from, to, i, batches.length);
+    totalBars += stats.total;
+    totalSkipped += stats.skipped;
+    totalFailed += stats.failed;
+
+    // Delay between batches to respect rate limits
+    if (i < batches.length - 1) {
+      await delay(RATE_LIMIT_DELAY);
+    }
+  }
+
+  const overallDuration = ((Date.now() - overallStart) / 1000 / 60).toFixed(1);
+
+  console.log("\n" + "=".repeat(60));
+  console.log("📊 Backfill Complete!");
+  console.log("=".repeat(60));
+  console.log(`Duration: ${overallDuration} minutes`);
+  console.log(`Symbols Processed: ${symbols.length}`);
+  console.log(`Total Bars Stored: ${totalBars.toLocaleString()}`);
+  console.log(`Tasks Skipped (already exists): ${totalSkipped}`);
+  console.log(`Tasks Failed: ${totalFailed}`);
+  console.log("=".repeat(60) + "\n");
+
+  if (totalFailed > 0) {
+    console.warn("⚠️ Some tasks failed. Re-run the script to retry failed tasks.");
+  } else {
+    console.log("✅ All tasks completed successfully!");
+  }
+
+  console.log("\n💡 Next steps:");
+  console.log("   1. Verify data: SELECT COUNT(*) FROM historical_bars;");
+  console.log("   2. Run backtests: pnpm backtest");
+  console.log("   3. Optimize strategies: pnpm optimize\n");
+
+  process.exit(0);
+}
+
+// Run the backfill
+main().catch((error) => {
+  console.error("💥 Fatal error:", error);
+  process.exit(1);
+});

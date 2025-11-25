@@ -117,7 +117,7 @@ class HistoricalDataIngestionWorker {
       }
 
       // Get unique symbols
-      const allSymbols = [...new Set((data || []).map((row) => row.symbol))];
+      const allSymbols = [...new Set((data || []).map((row: any) => row.symbol as string))];
 
       // Categorize into indices vs equities
       this.indexSymbols = allSymbols.filter((symbol) => isIndex(symbol));
