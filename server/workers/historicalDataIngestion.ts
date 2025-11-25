@@ -177,11 +177,10 @@ class HistoricalDataIngestionWorker {
         `[HistoricalIngestion] 📥 Processing queue: ${queueEntries.length} pending symbols`
       );
 
-      for (const entry of queueEntries) {
+      for (const entry of queueEntries as any[]) {
         try {
           // Update status to processing
-          await this.supabase
-            .from("historical_ingestion_queue")
+          await (this.supabase.from("historical_ingestion_queue") as any)
             .update({
               status: "processing",
               started_at: new Date().toISOString(),
@@ -196,8 +195,7 @@ class HistoricalDataIngestionWorker {
           await this.backfillSymbolData(entry.symbol, entry.days_to_backfill || 90);
 
           // Update status to completed
-          await this.supabase
-            .from("historical_ingestion_queue")
+          await (this.supabase.from("historical_ingestion_queue") as any)
             .update({
               status: "completed",
               completed_at: new Date().toISOString(),
@@ -218,8 +216,7 @@ class HistoricalDataIngestionWorker {
 
           if (newRetryCount >= maxRetries) {
             // Max retries reached - mark as failed
-            await this.supabase
-              .from("historical_ingestion_queue")
+            await (this.supabase.from("historical_ingestion_queue") as any)
               .update({
                 status: "failed",
                 completed_at: new Date().toISOString(),
@@ -233,8 +230,7 @@ class HistoricalDataIngestionWorker {
             );
           } else {
             // Reset to pending for retry
-            await this.supabase
-              .from("historical_ingestion_queue")
+            await (this.supabase.from("historical_ingestion_queue") as any)
               .update({
                 status: "pending",
                 retry_count: newRetryCount,
