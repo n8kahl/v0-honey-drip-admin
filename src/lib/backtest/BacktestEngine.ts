@@ -391,9 +391,11 @@ export class BacktestEngine {
     // RSI calculation
     const rsi14 = this.calculateRSI(closes, 14);
 
-    // VWAP distance (if VWAP available in bars)
-    const vwapValue = current.vwap || current.close;
-    const vwapDistancePct = ((current.close - vwapValue) / vwapValue) * 100;
+    // VWAP calculation - recalculate from bars instead of using database value
+    // Calculate VWAP over the previous bars (includes current bar)
+    const barsForVWAP = bars.slice(Math.max(0, currentIndex - 50), currentIndex + 1);
+    const vwapValue = this.calculateVWAP(barsForVWAP);
+    const vwapDistancePct = vwapValue > 0 ? ((current.close - vwapValue) / vwapValue) * 100 : 0;
 
     // Market regime determination
     const marketRegime = this.determineMarketRegime(
@@ -697,6 +699,27 @@ export class BacktestEngine {
     const rsi = 100 - 100 / (1 + rs);
 
     return rsi;
+  }
+
+  /**
+   * Helper: Calculate VWAP from historical bars
+   * VWAP = sum(typical_price * volume) / sum(volume)
+   * where typical_price = (high + low + close) / 3
+   */
+  private calculateVWAP(bars: any[]): number {
+    if (bars.length === 0) return 0;
+
+    let cumulativePV = 0;
+    let cumulativeVolume = 0;
+
+    for (const bar of bars) {
+      const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+      const volume = bar.volume || 0;
+      cumulativePV += typicalPrice * volume;
+      cumulativeVolume += volume;
+    }
+
+    return cumulativeVolume > 0 ? cumulativePV / cumulativeVolume : bars[bars.length - 1].close;
   }
 
   /**

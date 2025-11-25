@@ -271,8 +271,51 @@ async function fetchSymbolFeatures(
       }
     }
 
+    // Database fallback: If Massive API returns insufficient data (e.g., weekends/after-hours),
+    // query historical_bars table for 24/7 operation
     if (rawBars.length < 20) {
-      console.warn(`[Composite Scanner] Insufficient data for ${symbol} (${rawBars.length} bars)`);
+      console.log(
+        `[Composite Scanner] Massive API returned ${rawBars.length} bars for ${symbol}, falling back to database...`
+      );
+
+      const fromTimestamp = new Date(from).getTime();
+      const toTimestamp = new Date(to).getTime();
+
+      const { data: dbBars, error: dbError } = await supabase
+        .from("historical_bars")
+        .select("*")
+        .eq("symbol", normalized)
+        .eq("timeframe", "5m")
+        .gte("timestamp", fromTimestamp)
+        .lte("timestamp", toTimestamp)
+        .order("timestamp", { ascending: true })
+        .limit(BARS_TO_FETCH);
+
+      if (dbError) {
+        console.error(`[Composite Scanner] Database query error for ${symbol}:`, dbError);
+      } else if (dbBars && dbBars.length > 0) {
+        // Convert database format to API format
+        rawBars = dbBars.map((bar) => ({
+          t: bar.timestamp,
+          o: bar.open,
+          h: bar.high,
+          l: bar.low,
+          c: bar.close,
+          v: bar.volume || 0,
+        }));
+        console.log(
+          `[Composite Scanner] ✅ Fetched ${rawBars.length} bars from database for ${symbol}`
+        );
+      } else {
+        console.warn(`[Composite Scanner] No data in database for ${symbol}`);
+      }
+    }
+
+    // Final check after database fallback
+    if (rawBars.length < 20) {
+      console.warn(
+        `[Composite Scanner] Insufficient data for ${symbol} (${rawBars.length} bars) after database fallback`
+      );
       return null;
     }
 

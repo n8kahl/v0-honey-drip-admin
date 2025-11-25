@@ -21,6 +21,10 @@ import { config } from "dotenv";
 config({ path: ".env.local", override: true });
 config();
 
+// Fix Node 22 fetch issues - use cross-fetch polyfill for Supabase and HTTP requests
+import fetch from "cross-fetch";
+globalThis.fetch = fetch as any;
+
 import { BacktestEngine, type BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
 import { createClient } from "@supabase/supabase-js";
 import { writeFileSync, readFileSync, existsSync } from "fs";
