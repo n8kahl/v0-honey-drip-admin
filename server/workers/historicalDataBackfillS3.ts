@@ -30,7 +30,10 @@ config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { downloadSymbolHistory, aggregateBars, cleanupTempFiles } from "../lib/massiveFlatfiles.js";
 import { fetchTradierBars } from "../lib/tradierAPI.js";
-import yahooFinance from "yahoo-finance2";
+import YahooFinance from "yahoo-finance2";
+
+// Initialize Yahoo Finance client
+const yahooFinance = new YahooFinance();
 
 // ============================================================================
 // Configuration
@@ -81,10 +84,10 @@ function getAssetType(symbol: string): AssetType {
 }
 
 /**
- * Fetch stock bars from Yahoo Finance API
+ * Fetch stock bars from Yahoo Finance API using chart() method
  * Free alternative to Massive.com for intraday stock data
  *
- * Yahoo Finance provides:
+ * Yahoo Finance chart() provides:
  * - 1-minute bars for last 7 days
  * - 2-minute bars for last 60 days
  * - 5-minute bars for last 60 days
@@ -112,14 +115,15 @@ async function fetchYahooStockBars(symbol: string, startDate: Date, endDate: Dat
         `[YahooFinance]   Fetching 1m bars from ${oneMinStart.toISOString().split("T")[0]} to ${endDate.toISOString().split("T")[0]}...`
       );
 
-      const oneMinBars = await yahooFinance.historical(symbol, {
+      const result = await yahooFinance.chart(symbol, {
         period1: oneMinStart,
         period2: endDate,
         interval: "1m",
       });
 
-      // Normalize to our bar format
-      const normalized1m = oneMinBars.map((bar: any) => ({
+      // Normalize quotes to our bar format
+      const quotes = result.quotes || [];
+      const normalized1m = quotes.map((bar: any) => ({
         ticker: symbol,
         t: bar.date.getTime(), // Convert Date to milliseconds
         o: bar.open,
@@ -143,15 +147,17 @@ async function fetchYahooStockBars(symbol: string, startDate: Date, endDate: Dat
         `[YahooFinance]   Fetching 5m bars from ${startDate.toISOString().split("T")[0]} to ${fiveMinEnd.toISOString().split("T")[0]}...`
       );
 
-      const fiveMinBars = await yahooFinance.historical(symbol, {
+      const result = await yahooFinance.chart(symbol, {
         period1: startDate,
         period2: fiveMinEnd,
         interval: "5m",
       });
 
+      const quotes = result.quotes || [];
+
       // Normalize 5m bars - we'll downsample to 1m by duplicating
       // This is a compromise since Yahoo doesn't provide 1m data beyond 7 days
-      const normalized5m = fiveMinBars.flatMap((bar: any) => {
+      const normalized5m = quotes.flatMap((bar: any) => {
         const baseBar = {
           ticker: symbol,
           t: bar.date.getTime(),
@@ -173,7 +179,7 @@ async function fetchYahooStockBars(symbol: string, startDate: Date, endDate: Dat
 
       allBars.push(...normalized5m);
       console.log(
-        `[YahooFinance]   ✅ Fetched ${fiveMinBars.length} 5m bars (expanded to ${normalized5m.length} 1m bars)`
+        `[YahooFinance]   ✅ Fetched ${quotes.length} 5m bars (expanded to ${normalized5m.length} 1m bars)`
       );
     }
 
