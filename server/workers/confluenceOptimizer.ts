@@ -616,7 +616,7 @@ export class ConfluenceOptimizer {
 async function main() {
   // Backtest configuration
   const backtestConfig: BacktestConfig = {
-    symbols: ["SPX", "NDX"],
+    symbols: ["SPX", "NDX", "SPY", "QQQ"], // Test both indices and equities
     startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     endDate: new Date().toISOString().split("T")[0],
     timeframe: "15m",
