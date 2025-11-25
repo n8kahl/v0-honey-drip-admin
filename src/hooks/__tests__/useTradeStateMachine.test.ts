@@ -179,7 +179,7 @@ describe("useTradeStateMachine", () => {
     expect(result.current.currentTrade?.updates[0].type).toBe("enter");
   });
 
-  it("should add trim update to ENTERED trade", () => {
+  it("should add trim update to ENTERED trade", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -192,8 +192,8 @@ describe("useTradeStateMachine", () => {
     act(() => {
       result.current.actions.handleTickerClick(mockTicker);
     });
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
     });
     act(() => {
       result.current.actions.handleEnterTrade(["channel-1"], ["challenge-1"]);
@@ -271,7 +271,7 @@ describe("useTradeStateMachine", () => {
     );
   });
 
-  it("should add update-sl alert to ENTERED trade", () => {
+  it("should add update-sl alert to ENTERED trade", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -284,8 +284,8 @@ describe("useTradeStateMachine", () => {
     act(() => {
       result.current.actions.handleTickerClick(mockTicker);
     });
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
     });
     act(() => {
       result.current.actions.handleEnterTrade();
@@ -339,7 +339,7 @@ describe("useTradeStateMachine", () => {
     expect(result.current.currentTrade).toBeNull();
   });
 
-  it("should add trail-stop update to ENTERED trade", () => {
+  it("should add trail-stop update to ENTERED trade", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -352,8 +352,8 @@ describe("useTradeStateMachine", () => {
     act(() => {
       result.current.actions.handleTickerClick(mockTicker);
     });
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
     });
     act(() => {
       result.current.actions.handleEnterTrade();
@@ -376,7 +376,7 @@ describe("useTradeStateMachine", () => {
     expect(result.current.currentTrade?.updates[1].type).toBe("trail-stop");
   });
 
-  it("should add position (add alert) to ENTERED trade", () => {
+  it("should add position (add alert) to ENTERED trade", async () => {
     const { result } = renderHook(() =>
       useTradeStateMachine({
         hotTrades: [],
@@ -389,8 +389,8 @@ describe("useTradeStateMachine", () => {
     act(() => {
       result.current.actions.handleTickerClick(mockTicker);
     });
-    act(() => {
-      result.current.actions.handleContractSelect(mockContract);
+    await act(async () => {
+      await result.current.actions.handleContractSelect(mockContract);
     });
     act(() => {
       result.current.actions.handleEnterTrade();

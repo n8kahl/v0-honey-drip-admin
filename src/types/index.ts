@@ -70,12 +70,54 @@ export interface Challenge {
   defaultChannel?: string;
 }
 
+// Setup types from CompositeScanner detectors
+export type SetupType =
+  | "BREAKOUT"
+  | "REVERSAL"
+  | "MOMENTUM"
+  | "BREAK_AND_RETEST"
+  | "TREND_CONTINUATION"
+  | "RANGE_FADE"
+  | "VWAP_BOUNCE"
+  | "GAP_FILL"
+  | "SQUEEZE_BREAKOUT"
+  | "DIVERGENCE"
+  | "SUPPORT_BOUNCE"
+  | "RESISTANCE_REJECTION"
+  | "CUSTOM";
+
+// Individual confluence factor with value and status
+export interface ConfluenceFactor {
+  value: number; // Raw value (e.g., IV percentile = 85)
+  status: "bullish" | "bearish" | "neutral"; // Direction indicator
+  label: string; // Human readable (e.g., "IV 85%")
+  weight?: number; // How much this factor contributed to score
+}
+
+// Full confluence breakdown for a trade
+export interface TradeConfluence {
+  score: number; // Overall confluence score 0-100
+  direction: "LONG" | "SHORT";
+  factors: {
+    ivPercentile?: ConfluenceFactor;
+    mtfAlignment?: ConfluenceFactor;
+    flowPressure?: ConfluenceFactor;
+    gammaExposure?: ConfluenceFactor;
+    regime?: ConfluenceFactor;
+    vwapPosition?: ConfluenceFactor;
+    volumeProfile?: ConfluenceFactor;
+  };
+  updatedAt: Date;
+  isStale?: boolean; // True if data is >60s old
+}
+
 export interface Trade {
   id: string;
   ticker: string;
   contract: Contract;
   tradeType: TradeType;
   state: TradeState;
+  setupType?: SetupType; // Detected pattern type
   entryPrice?: number;
   entryTime?: Date;
   currentPrice?: number;
@@ -89,7 +131,11 @@ export interface Trade {
   updates: TradeUpdate[];
   discordChannels: string[];
   challenges: string[];
-  confluence?: {
+  // Rich confluence data with factor breakdown
+  confluence?: TradeConfluence;
+  confluenceUpdatedAt?: Date;
+  // Legacy confluence fields (deprecated, use confluence.factors)
+  legacyConfluence?: {
     trend?: string;
     volatility?: string;
     liquidity?: string;

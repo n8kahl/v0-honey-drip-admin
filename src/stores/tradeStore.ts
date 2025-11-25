@@ -226,6 +226,12 @@ export const useTradeStore = create<TradeStore>()(
               tradeType: "Day" as TradeType,
               discordChannels: [],
               challenges: t.challenge_id ? [t.challenge_id] : [],
+              // Restore confluence and setup type from database
+              setupType: (t as any).setup_type || undefined,
+              confluence: (t as any).confluence || undefined,
+              confluenceUpdatedAt: (t as any).confluence_updated_at
+                ? new Date((t as any).confluence_updated_at)
+                : undefined,
             };
           });
 
