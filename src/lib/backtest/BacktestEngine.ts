@@ -13,7 +13,7 @@
 
 import type { OpportunityDetector } from "../composite/OpportunityDetector";
 import type { SymbolFeatures } from "../strategy/engine";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * Backtest configuration
@@ -118,8 +118,43 @@ export class BacktestEngine {
 
   constructor(config?: Partial<BacktestConfig>, supabaseClient?: any) {
     this.config = { ...DEFAULT_BACKTEST_CONFIG, ...config };
-    // Use provided client (for server-side with service role) or create frontend client
-    this.supabase = supabaseClient || createClient();
+
+    // Use provided client (for server-side with service role) or create one with env vars
+    if (supabaseClient) {
+      this.supabase = supabaseClient;
+    } else {
+      // Create server-side Supabase client with service role key
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+      console.log(
+        "[BacktestEngine] Supabase URL:",
+        supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : "MISSING"
+      );
+      console.log("[BacktestEngine] Supabase Key:", supabaseKey ? "Present" : "MISSING");
+
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error(
+          "Missing Supabase environment variables (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)"
+        );
+      }
+
+      this.supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+        global: {
+          fetch: (...args) => {
+            console.log("[BacktestEngine] Supabase fetch to:", args[0]);
+            return fetch(...args).catch((err) => {
+              console.error("[BacktestEngine] Fetch error:", err.message);
+              throw err;
+            });
+          },
+        },
+      });
+    }
   }
 
   /**
