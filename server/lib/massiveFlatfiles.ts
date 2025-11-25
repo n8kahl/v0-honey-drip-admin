@@ -14,31 +14,32 @@
  * Example: us_indices/minute_aggs_v1/2025/11/2025-11-21.csv.gz
  */
 
-import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { createReadStream } from 'fs';
-import { createGunzip } from 'zlib';
-import { pipeline } from 'stream/promises';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { createReadStream } from "fs";
+import { createGunzip } from "zlib";
+import { pipeline } from "stream/promises";
+import { parse } from "csv-parse";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 // S3 Configuration
-const S3_ENDPOINT = 'https://files.massive.com';
-const S3_ACCESS_KEY = '702efe59-fd51-4674-a7fb-16584e982261';
-const S3_SECRET_KEY = '9Cdq8BI5iFsF8NZ2niJPn3zqJrrLk7X5';
-const S3_BUCKET = 'flatfiles';
+const S3_ENDPOINT = "https://files.massive.com";
+const S3_ACCESS_KEY = "702efe59-fd51-4674-a7fb-16584e982261";
+const S3_SECRET_KEY = "9Cdq8BI5iFsF8NZ2niJPn3zqJrrLk7X5";
+const S3_BUCKET = "flatfiles";
 
 // S3 Paths by asset type
 const S3_PATHS = {
-  indices: 'us_indices/minute_aggs_v1',
-  equities: 'us_stocks_sip/minute_aggs_v1',
-  options: 'us_options_opra/minute_aggs_v1',
+  indices: "us_indices/minute_aggs_v1",
+  equities: "us_stocks_sip/minute_aggs_v1",
+  options: "us_options_opra/minute_aggs_v1",
 };
 
 // Initialize S3 client
 const s3Client = new S3Client({
   endpoint: S3_ENDPOINT,
-  region: 'us-east-1', // Required but not used by Massive.com
+  region: "us-east-1", // Required but not used by Massive.com
   credentials: {
     accessKeyId: S3_ACCESS_KEY,
     secretAccessKey: S3_SECRET_KEY,
@@ -49,10 +50,10 @@ const s3Client = new S3Client({
 /**
  * Determine asset type from symbol
  */
-function getAssetType(symbol: string): 'indices' | 'equities' {
-  const indexSymbols = ['SPX', 'NDX', 'VIX', 'RUT', 'DJI'];
-  const cleanSymbol = symbol.replace(/^I:/, '');
-  return indexSymbols.includes(cleanSymbol) ? 'indices' : 'equities';
+function getAssetType(symbol: string): "indices" | "equities" {
+  const indexSymbols = ["SPX", "NDX", "VIX", "RUT", "DJI"];
+  const cleanSymbol = symbol.replace(/^I:/, "");
+  return indexSymbols.includes(cleanSymbol) ? "indices" : "equities";
 }
 
 /**
@@ -64,8 +65,8 @@ function getS3Key(symbol: string, date: Date): string {
   const basePath = S3_PATHS[assetType];
 
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   const dateStr = `${year}-${month}-${day}`;
 
   return `${basePath}/${year}/${month}/${dateStr}.csv.gz`;
@@ -78,8 +79,11 @@ function getS3Key(symbol: string, date: Date): string {
 export async function downloadDayFile(symbol: string, date: Date): Promise<string> {
   const s3Key = getS3Key(symbol, date);
   const tempDir = os.tmpdir();
-  const gzipPath = path.join(tempDir, `massive-${symbol}-${date.toISOString().split('T')[0]}.csv.gz`);
-  const csvPath = gzipPath.replace('.gz', '');
+  const gzipPath = path.join(
+    tempDir,
+    `massive-${symbol}-${date.toISOString().split("T")[0]}.csv.gz`
+  );
+  const csvPath = gzipPath.replace(".gz", "");
 
   console.log(`[MassiveFlatfiles] Downloading ${s3Key}...`);
 
@@ -99,13 +103,13 @@ export async function downloadDayFile(symbol: string, date: Date): Promise<strin
     const response = await s3Client.send(command);
 
     if (!response.Body) {
-      throw new Error('No data received from S3');
+      throw new Error("No data received from S3");
     }
 
     // Save gzipped file
     const writeStream = fs.createWriteStream(gzipPath);
 
-    // @ts-ignore - AWS SDK stream typing issue
+    // @ts-expect-error - AWS SDK stream typing issue
     await pipeline(response.Body, writeStream);
 
     console.log(`[MassiveFlatfiles] Downloaded to ${gzipPath}, decompressing...`);
@@ -130,62 +134,50 @@ export async function downloadDayFile(symbol: string, date: Date): Promise<strin
 }
 
 /**
- * Parse CSV line into bar object
- * CSV Format for indices/equities:
- * ticker,timestamp,open,high,low,close,volume,vwap,transactions
- */
-function parseCSVLine(line: string): any | null {
-  const parts = line.split(',');
-
-  if (parts.length < 9) {
-    return null; // Invalid line
-  }
-
-  const [ticker, timestamp, open, high, low, close, volume, vwap, transactions] = parts;
-
-  return {
-    ticker: ticker.trim(),
-    t: parseInt(timestamp), // Epoch milliseconds
-    o: parseFloat(open),
-    h: parseFloat(high),
-    l: parseFloat(low),
-    c: parseFloat(close),
-    v: parseInt(volume),
-    vw: parseFloat(vwap),
-    n: parseInt(transactions),
-  };
-}
-
-/**
  * Read and parse CSV file, filtering by symbol
  * Returns array of OHLCV bars for the specified symbol
+ * Uses streaming to handle large files without memory issues
  */
 export async function parseDayFile(csvPath: string, symbol: string): Promise<any[]> {
-  const cleanSymbol = symbol.replace(/^I:/, ''); // Remove I: prefix for matching
+  const cleanSymbol = symbol.replace(/^I:/, ""); // Remove I: prefix for matching
   const bars: any[] = [];
 
   console.log(`[MassiveFlatfiles] Parsing ${csvPath} for symbol ${symbol}...`);
 
-  const content = fs.readFileSync(csvPath, 'utf-8');
-  const lines = content.split('\n');
-
-  // Skip header line
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const bar = parseCSVLine(line);
-    if (!bar) continue;
-
-    // Filter by symbol
-    if (bar.ticker === cleanSymbol) {
-      bars.push(bar);
-    }
-  }
-
-  console.log(`[MassiveFlatfiles] Found ${bars.length} bars for ${symbol}`);
-
-  return bars;
+  return new Promise((resolve, reject) => {
+    createReadStream(csvPath)
+      .pipe(
+        parse({
+          columns: true, // Use first row as column names
+          skip_empty_lines: true,
+          trim: true,
+        })
+      )
+      .on("data", (row: any) => {
+        // Filter by symbol and parse the row
+        if (row.ticker === cleanSymbol) {
+          bars.push({
+            ticker: row.ticker,
+            t: parseInt(row.timestamp), // Epoch milliseconds
+            o: parseFloat(row.open),
+            h: parseFloat(row.high),
+            l: parseFloat(row.low),
+            c: parseFloat(row.close),
+            v: parseInt(row.volume),
+            vw: parseFloat(row.vwap),
+            n: parseInt(row.transactions),
+          });
+        }
+      })
+      .on("end", () => {
+        console.log(`[MassiveFlatfiles] Found ${bars.length} bars for ${symbol}`);
+        resolve(bars);
+      })
+      .on("error", (error) => {
+        console.error(`[MassiveFlatfiles] Error parsing ${csvPath}:`, error);
+        reject(error);
+      });
+  });
 }
 
 /**
@@ -220,7 +212,10 @@ export async function downloadSymbolHistory(
       const dayBars = await parseDayFile(csvPath, symbol);
       allBars.push(...dayBars);
     } catch (error) {
-      console.warn(`[MassiveFlatfiles] Failed to fetch ${symbol} for ${date.toISOString().split('T')[0]}:`, error);
+      console.warn(
+        `[MassiveFlatfiles] Failed to fetch ${symbol} for ${date.toISOString().split("T")[0]}:`,
+        error
+      );
       // Continue with other days
     }
   }
@@ -275,7 +270,7 @@ export function aggregateBars(minuteBars: any[], timeframeMinutes: number): any[
       currentBar.v += bar.v;
       currentBar.n += bar.n;
       // Recalculate VWAP
-      currentBar.vw = ((currentBar.vw * (currentBar.v - bar.v)) + (bar.vw * bar.v)) / currentBar.v;
+      currentBar.vw = (currentBar.vw * (currentBar.v - bar.v) + bar.vw * bar.v) / currentBar.v;
     }
   }
 
@@ -299,7 +294,7 @@ export function cleanupTempFiles(): void {
   let cleaned = 0;
 
   for (const file of files) {
-    if (file.startsWith('massive-') && file.endsWith('.csv')) {
+    if (file.startsWith("massive-") && file.endsWith(".csv")) {
       const filePath = path.join(tempDir, file);
       try {
         const stats = fs.statSync(filePath);
