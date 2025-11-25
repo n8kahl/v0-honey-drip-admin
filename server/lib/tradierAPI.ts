@@ -15,10 +15,13 @@
  */
 
 const TRADIER_BASE_URL = "https://api.tradier.com/v1";
-const TRADIER_API_TOKEN = process.env.TRADIER_ACCESS_TOKEN;
 
-if (!TRADIER_API_TOKEN) {
-  console.warn("[TradierAPI] TRADIER_ACCESS_TOKEN not found in environment variables");
+/**
+ * Get Tradier API token from environment
+ * Read dynamically to support dotenv loading after module import
+ */
+function getTradierToken(): string | undefined {
+  return process.env.TRADIER_ACCESS_TOKEN;
 }
 
 export interface TradierBar {
@@ -81,8 +84,9 @@ export async function fetchTradierBars(
   startDate: string,
   endDate: string
 ): Promise<any[]> {
-  if (!TRADIER_API_TOKEN) {
-    throw new Error("TRADIER_ACCESS_TOKEN not configured");
+  const token = getTradierToken();
+  if (!token) {
+    throw new Error("TRADIER_ACCESS_TOKEN not configured in environment");
   }
 
   // Check lookback limits
@@ -120,7 +124,7 @@ export async function fetchTradierBars(
 
     const response = await fetch(fullUrl, {
       headers: {
-        Authorization: `Bearer ${TRADIER_API_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/json",
       },
       signal: AbortSignal.timeout(30000), // 30-second timeout
