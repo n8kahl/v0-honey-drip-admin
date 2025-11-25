@@ -105,6 +105,7 @@ interface HDLiveChartProps {
   showHeader?: boolean; // whether to show header at all (default true)
   onTimeframeChange?: (tf: TfKey) => void;
   stickyHeader?: boolean;
+  loadDelay?: number; // Delay initial data fetch (ms) to stagger multiple charts
 }
 
 export function HDLiveChart({
@@ -122,6 +123,7 @@ export function HDLiveChart({
   showHeader = true,
   onTimeframeChange,
   stickyHeader = false,
+  loadDelay = 0,
 }: HDLiveChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -695,8 +697,17 @@ export function HDLiveChart({
     // Reset auto-fit flag when ticker changes so new chart gets fitted
     hasAutoFitRef.current = false;
     tickerRef.current = ticker;
-    loadHistoricalBars();
-  }, [ticker, currentTf, loadHistoricalBars]); // Only reload when ticker or timeframe changes
+
+    // Stagger data fetches to avoid rate limiting when multiple charts load simultaneously
+    if (loadDelay > 0) {
+      const timeoutId = setTimeout(() => {
+        loadHistoricalBars();
+      }, loadDelay);
+      return () => clearTimeout(timeoutId);
+    } else {
+      loadHistoricalBars();
+    }
+  }, [ticker, currentTf, loadHistoricalBars, loadDelay]); // Only reload when ticker or timeframe changes
 
   // Separate effect: ONLY set initial viewport once, never runs again
   useEffect(() => {
@@ -1268,17 +1279,38 @@ export function HDLiveChart({
     onTimeframeChange?.(tf);
   };
 
+  const handleRetryFetch = useCallback(() => {
+    // Clear failed fetch cache and retry
+    failedFetchesRef.current.clear();
+    setRateLimited(false);
+    setRateLimitMessage(null);
+    loadHistoricalBars();
+  }, [loadHistoricalBars]);
+
   if (!ready) {
     const hasFailures = failedFetchesRef.current.size > 0;
     return (
-      <div className="h-[var(--chart-height,400px)] flex flex-col items-center justify-center gap-2 bg-[var(--surface-2)] rounded-[var(--radius)] border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] text-xs px-4 text-center">
-        {!hasFailures && <span>Loading market data…</span>}
+      <div
+        className="flex flex-col items-center justify-center gap-2 bg-[var(--surface-2)] rounded-[var(--radius)] border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] text-xs px-4 text-center"
+        style={{ height: `${height}px` }}
+      >
+        {!hasFailures && (
+          <span className="animate-pulse">
+            Loading {currentTf === "1D" ? "daily" : `${currentTf}m`} data…
+          </span>
+        )}
         {hasFailures && (
           <>
-            <span className="text-[var(--text-high)]">No historical bars available.</span>
-            <span className="opacity-80">
-              Configure MASSIVE_API_KEY in .env.local to enable chart history.
+            <span className="text-[var(--text-high)]">
+              Failed to load {currentTf === "1D" ? "daily" : `${currentTf}m`} chart data
             </span>
+            <span className="opacity-80 text-[10px]">API may be temporarily unavailable</span>
+            <button
+              onClick={handleRetryFetch}
+              className="mt-2 px-3 py-1 text-xs rounded border border-[var(--border-strong)] hover:bg-[var(--surface-3)] transition-colors"
+            >
+              Retry
+            </button>
           </>
         )}
       </div>

@@ -131,9 +131,10 @@ export function HDLiveChartContextAware({
               className="w-full"
               showControls={false}
               showHeader={true}
+              loadDelay={0}
             />
           </div>
-          {/* Right: 5-minute chart for context (50% width) */}
+          {/* Right: 5-minute chart for context (50% width) - staggered load */}
           <div className="flex-1 min-w-0" style={{ minWidth: 0 }}>
             <HDLiveChart
               ticker={chartTicker}
@@ -145,6 +146,7 @@ export function HDLiveChartContextAware({
               className="w-full"
               showControls={false}
               showHeader={true}
+              loadDelay={500}
             />
           </div>
         </div>
