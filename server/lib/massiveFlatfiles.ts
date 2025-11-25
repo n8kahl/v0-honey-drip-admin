@@ -49,8 +49,16 @@ const s3Client = new S3Client({
 
 /**
  * Determine asset type from symbol
+ * - Options: Tickers starting with "O:" (e.g., "O:SPY241123C00660000")
+ * - Indices: SPX, NDX, VIX, RUT, DJI (with or without "I:" prefix)
+ * - Equities: Everything else (stocks, ETFs)
  */
-function getAssetType(symbol: string): "indices" | "equities" {
+function getAssetType(symbol: string): "indices" | "equities" | "options" {
+  // Options tickers start with "O:"
+  if (symbol.startsWith("O:")) {
+    return "options";
+  }
+
   const indexSymbols = ["SPX", "NDX", "VIX", "RUT", "DJI"];
   const cleanSymbol = symbol.replace(/^I:/, "");
   return indexSymbols.includes(cleanSymbol) ? "indices" : "equities";
@@ -299,6 +307,147 @@ export function aggregateBars(minuteBars: any[], timeframeMinutes: number): any[
   }
 
   return aggregated;
+}
+
+/**
+ * Download options chain data for an underlying symbol on a specific date
+ * Returns all option contracts for that underlying with minute-level OHLCV data
+ *
+ * @param underlying Underlying symbol (e.g., "SPY", "SPX")
+ * @param date Date to fetch options data for
+ * @returns Array of option contracts with their minute bars
+ */
+export async function downloadOptionsForUnderlying(
+  underlying: string,
+  date: Date
+): Promise<Map<string, any[]>> {
+  // Download the full options day file
+  const s3Key = `${S3_PATHS.options}/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}.csv.gz`;
+
+  const tempDir = os.tmpdir();
+  const gzipPath = path.join(
+    tempDir,
+    `massive-options-${underlying}-${date.toISOString().split("T")[0]}.csv.gz`
+  );
+  const csvPath = gzipPath.replace(".gz", "");
+
+  console.log(
+    `[MassiveFlatfiles] Downloading options data for ${underlying} on ${date.toISOString().split("T")[0]}...`
+  );
+
+  try {
+    // Check if already downloaded
+    if (!fs.existsSync(csvPath)) {
+      const command = new GetObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: s3Key,
+      });
+
+      const response = await s3Client.send(command);
+
+      if (!response.Body) {
+        throw new Error("No data received from S3");
+      }
+
+      // Save and decompress
+      const writeStream = fs.createWriteStream(gzipPath);
+      // @ts-expect-error - AWS SDK stream typing issue
+      await pipeline(response.Body, writeStream);
+
+      const readStream = createReadStream(gzipPath);
+      const gunzip = createGunzip();
+      const outputStream = fs.createWriteStream(csvPath);
+      await pipeline(readStream, gunzip, outputStream);
+
+      fs.unlinkSync(gzipPath);
+    }
+
+    // Parse options data for the specified underlying
+    return await parseOptionsFile(csvPath, underlying);
+  } catch (error) {
+    console.error(`[MassiveFlatfiles] Error downloading options for ${underlying}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Parse options CSV file and extract all contracts for a specific underlying
+ * Returns a map of option ticker -> array of minute bars
+ *
+ * Options ticker format: O:SPY241123C00450000
+ * Where: O: = options prefix, SPY = underlying, 241123 = expiry (YYMMDD),
+ *        C = call/P = put, 00450000 = strike * 1000
+ */
+async function parseOptionsFile(csvPath: string, underlying: string): Promise<Map<string, any[]>> {
+  const contractBars = new Map<string, any[]>();
+  let totalRows = 0;
+  let matchedRows = 0;
+
+  console.log(`[MassiveFlatfiles] Parsing options file for ${underlying}...`);
+
+  // Create regex to match options for this underlying
+  // Format: O:SPY241123C00450000 -> Match "O:SPY" at start
+  const tickerPattern = new RegExp(`^O:${underlying}\\d{6}[CP]\\d{8}$`, "i");
+
+  return new Promise((resolve, reject) => {
+    createReadStream(csvPath)
+      .pipe(
+        parse({
+          columns: true,
+          skip_empty_lines: true,
+          trim: true,
+        })
+      )
+      .on("data", (row: any) => {
+        totalRows++;
+
+        // Check if this row is for an option on our underlying
+        if (tickerPattern.test(row.ticker)) {
+          matchedRows++;
+
+          // Parse timestamp
+          const timestampNs = row.window_start || row.timestamp;
+          const timestampMs = timestampNs ? Math.floor(parseInt(timestampNs) / 1000000) : 0;
+
+          const bar = {
+            ticker: row.ticker,
+            t: timestampMs,
+            o: parseFloat(row.open),
+            h: parseFloat(row.high),
+            l: parseFloat(row.low),
+            c: parseFloat(row.close),
+            v: row.volume ? parseInt(row.volume) : 0,
+            vw: row.vwap ? parseFloat(row.vwap) : parseFloat(row.close),
+            n: row.transactions ? parseInt(row.transactions) : 0,
+          };
+
+          // Group bars by contract ticker
+          if (!contractBars.has(row.ticker)) {
+            contractBars.set(row.ticker, []);
+          }
+          contractBars.get(row.ticker)!.push(bar);
+        }
+      })
+      .on("end", () => {
+        console.log(
+          `[MassiveFlatfiles] Parsed ${matchedRows.toLocaleString()} option bars from ${totalRows.toLocaleString()} total rows`
+        );
+        console.log(
+          `[MassiveFlatfiles] Found ${contractBars.size} unique option contracts for ${underlying}`
+        );
+
+        // Sort bars by timestamp for each contract
+        for (const [ticker, bars] of contractBars.entries()) {
+          bars.sort((a, b) => a.t - b.t);
+        }
+
+        resolve(contractBars);
+      })
+      .on("error", (error) => {
+        console.error(`[MassiveFlatfiles] Error parsing options file:`, error);
+        reject(error);
+      });
+  });
 }
 
 /**
