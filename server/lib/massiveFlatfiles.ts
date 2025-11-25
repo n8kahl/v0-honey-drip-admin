@@ -141,8 +141,11 @@ export async function downloadDayFile(symbol: string, date: Date): Promise<strin
 export async function parseDayFile(csvPath: string, symbol: string): Promise<any[]> {
   const cleanSymbol = symbol.replace(/^I:/, ""); // Remove I: prefix for matching
   const bars: any[] = [];
+  const uniqueTickers = new Set<string>();
+  let sampleCount = 0;
 
   console.log(`[MassiveFlatfiles] Parsing ${csvPath} for symbol ${symbol}...`);
+  console.log(`[MassiveFlatfiles] Looking for ticker: "${cleanSymbol}"`);
 
   return new Promise((resolve, reject) => {
     createReadStream(csvPath)
@@ -154,8 +157,15 @@ export async function parseDayFile(csvPath: string, symbol: string): Promise<any
         })
       )
       .on("data", (row: any) => {
+        // Debug: Collect unique tickers for first 100 rows
+        if (sampleCount < 100) {
+          uniqueTickers.add(row.ticker);
+          sampleCount++;
+        }
+
         // Filter by symbol and parse the row
-        if (row.ticker === cleanSymbol) {
+        // Match both "SPX" and "I:SPX" formats
+        if (row.ticker === cleanSymbol || row.ticker === `I:${cleanSymbol}`) {
           bars.push({
             ticker: row.ticker,
             t: parseInt(row.timestamp), // Epoch milliseconds
@@ -170,6 +180,11 @@ export async function parseDayFile(csvPath: string, symbol: string): Promise<any
         }
       })
       .on("end", () => {
+        if (bars.length === 0 && uniqueTickers.size > 0) {
+          console.log(
+            `[MassiveFlatfiles] ⚠️ No bars found. Sample tickers in file: ${Array.from(uniqueTickers).slice(0, 10).join(", ")}`
+          );
+        }
         console.log(`[MassiveFlatfiles] Found ${bars.length} bars for ${symbol}`);
         resolve(bars);
       })
