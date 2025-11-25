@@ -15,6 +15,7 @@
     "dev:full": "concurrently \"vite\" \"tsx watch server/index.ts\" \"tsx watch server/workers/compositeScanner.ts\" \"tsx watch server/workers/historicalDataIngestion.ts\"",
     "backfill": "tsx server/workers/historicalDataBackfill.ts",
     "backfill:api": "tsx server/workers/historicalDataBackfill.ts",
+    "backfill:s3": "tsx server/workers/historicalDataBackfillS3.ts",
     "backfill:hybrid": "tsx server/workers/flatFiles/HybridBackfillOrchestrator.ts",
     "backfill:download": "tsx server/workers/flatFiles/FlatFileDownloader.ts",
     "backfill:parse": "tsx server/workers/flatFiles/FlatFileParser.ts",

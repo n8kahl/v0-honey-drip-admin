@@ -13,7 +13,7 @@
 
 import type { OpportunityDetector } from "../composite/OpportunityDetector";
 import type { SymbolFeatures } from "../strategy/engine";
-import { createClient } from "../supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Backtest configuration
@@ -204,23 +204,127 @@ export class BacktestEngine {
 
   /**
    * Fetch historical bars for a symbol
+   * Primary: Database (fast)
+   * Fallback: Massive.com REST API (slower but reliable)
    */
   private async fetchHistoricalBars(symbol: string): Promise<any[]> {
-    const { data, error } = await this.supabase
-      .from("historical_bars")
-      .select("*")
-      .eq("symbol", symbol)
-      .eq("timeframe", this.config.timeframe)
-      .gte("timestamp", new Date(this.config.startDate).getTime())
-      .lte("timestamp", new Date(this.config.endDate).getTime())
-      .order("timestamp", { ascending: true });
+    // Try database first
+    try {
+      const { data, error } = await this.supabase
+        .from("historical_bars")
+        .select("*")
+        .eq("symbol", symbol)
+        .eq("timeframe", this.config.timeframe)
+        .gte("timestamp", new Date(this.config.startDate).getTime())
+        .lte("timestamp", new Date(this.config.endDate).getTime())
+        .order("timestamp", { ascending: true });
 
-    if (error) {
-      console.error(`[BacktestEngine] Error fetching bars for ${symbol}:`, error);
-      return [];
+      if (!error && data && data.length > 0) {
+        console.log(`[BacktestEngine] ✅ Database: ${data.length} bars for ${symbol}`);
+        return data;
+      }
+
+      if (error) {
+        console.warn(`[BacktestEngine] ⚠️ Database error for ${symbol}:`, error.message);
+      } else {
+        console.warn(`[BacktestEngine] ⚠️ No database data for ${symbol}`);
+      }
+    } catch (dbError: any) {
+      console.warn(`[BacktestEngine] ⚠️ Database fetch failed for ${symbol}:`, dbError.message);
     }
 
-    return data || [];
+    // Fallback to Massive.com REST API
+    console.log(`[BacktestEngine] 🔄 Falling back to Massive.com API for ${symbol}...`);
+    return await this.fetchFromMassiveAPI(symbol);
+  }
+
+  /**
+   * Fetch historical bars from Massive.com REST API
+   */
+  private async fetchFromMassiveAPI(symbol: string): Promise<any[]> {
+    try {
+      const timeframeMap: Record<string, string> = {
+        '1m': 'minute',
+        '5m': 'minute',
+        '15m': 'minute',
+        '1h': 'hour',
+        '4h': 'hour',
+        'day': 'day',
+      };
+
+      const multiplierMap: Record<string, number> = {
+        '1m': 1,
+        '5m': 5,
+        '15m': 15,
+        '1h': 1,
+        '4h': 4,
+        'day': 1,
+      };
+
+      const timespan = timeframeMap[this.config.timeframe] || 'minute';
+      const multiplier = multiplierMap[this.config.timeframe] || 1;
+
+      // Format dates for API (YYYY-MM-DD)
+      const from = this.config.startDate;
+      const to = this.config.endDate;
+
+      // Determine if this is an index or equity
+      const indexSymbols = ['SPX', 'NDX', 'VIX', 'RUT', 'DJI'];
+      const cleanSymbol = symbol.replace(/^I:/, '');
+      const isIndex = indexSymbols.includes(cleanSymbol);
+
+      // Use appropriate ticker format
+      const apiTicker = isIndex ? `I:${cleanSymbol}` : symbol;
+
+      const apiKey = process.env.MASSIVE_API_KEY;
+      if (!apiKey) {
+        console.error('[BacktestEngine] ❌ MASSIVE_API_KEY not found');
+        return [];
+      }
+
+      const url = `https://api.massive.com/v2/aggs/ticker/${apiTicker}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=50000`;
+
+      console.log(`[BacktestEngine] 📡 Fetching from: ${url.substring(0, 80)}...`);
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`[BacktestEngine] ❌ API error: ${response.status} ${response.statusText}`);
+        return [];
+      }
+
+      const json = await response.json();
+      const results = json.results || [];
+
+      if (results.length === 0) {
+        console.warn(`[BacktestEngine] ⚠️ API returned 0 results for ${symbol}`);
+        return [];
+      }
+
+      // Convert Massive API format to database format
+      const bars = results.map((bar: any) => ({
+        symbol,
+        timeframe: this.config.timeframe,
+        timestamp: bar.t,  // Epoch milliseconds
+        open: bar.o,
+        high: bar.h,
+        low: bar.l,
+        close: bar.c,
+        volume: bar.v || 0,
+        vwap: bar.vw || bar.c,
+        trades: bar.n || 0,
+      }));
+
+      console.log(`[BacktestEngine] ✅ API: ${bars.length} bars for ${symbol}`);
+      return bars;
+    } catch (error: any) {
+      console.error(`[BacktestEngine] ❌ API fetch failed for ${symbol}:`, error.message);
+      return [];
+    }
   }
 
   /**
@@ -305,7 +409,7 @@ export class BacktestEngine {
   ): Promise<BacktestTrade | null> {
     const direction = detector.direction;
     const entryPrice = entryBar.close;
-    const atr = features.indicators?.atr || 2.0;
+    const atr = features.pattern?.atr || features.indicators?.atr || 2.0;
 
     // Calculate target and stop based on ATR
     let targetPrice: number;

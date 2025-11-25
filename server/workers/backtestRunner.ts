@@ -8,16 +8,25 @@
  *   pnpm backtest --symbol SPY  # Run on single symbol
  */
 
-import { BacktestEngine, type BacktestStats, DEFAULT_BACKTEST_CONFIG } from '../../src/lib/backtest/BacktestEngine.js';
-import { ALL_DETECTORS } from '../../src/lib/composite/detectors/index.js';
-import * as fs from 'fs';
-import * as path from 'path';
+// Load environment variables from .env.local
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
+import {
+  BacktestEngine,
+  type BacktestStats,
+  DEFAULT_BACKTEST_CONFIG,
+} from "../../src/lib/backtest/BacktestEngine.js";
+import { ALL_DETECTORS } from "../../src/lib/composite/detectors/index.js";
+import * as fs from "fs";
+import * as path from "path";
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const detectorFilter = args.find((arg) => arg.startsWith('--detector='))?.split('=')[1];
-const symbolFilter = args.find((arg) => arg.startsWith('--symbol='))?.split('=')[1];
-const outputDir = args.find((arg) => arg.startsWith('--output='))?.split('=')[1] || './backtest-results';
+const detectorFilter = args.find((arg) => arg.startsWith("--detector="))?.split("=")[1];
+const symbolFilter = args.find((arg) => arg.startsWith("--symbol="))?.split("=")[1];
+const outputDir =
+  args.find((arg) => arg.startsWith("--output="))?.split("=")[1] || "./backtest-results";
 
 interface BacktestReport {
   timestamp: string;
@@ -38,9 +47,9 @@ interface BacktestReport {
  * Main backtest runner
  */
 async function runBacktests() {
-  console.log('\n===========================================');
-  console.log('🧪 BACKTEST RUNNER - Phase 3');
-  console.log('===========================================\n');
+  console.log("\n===========================================");
+  console.log("🧪 BACKTEST RUNNER - Phase 3");
+  console.log("===========================================\n");
 
   // Initialize engine
   const config = { ...DEFAULT_BACKTEST_CONFIG };
@@ -50,8 +59,8 @@ async function runBacktests() {
 
   const engine = new BacktestEngine(config);
 
-  console.log('Configuration:');
-  console.log(`  Symbols: ${config.symbols.join(', ')}`);
+  console.log("Configuration:");
+  console.log(`  Symbols: ${config.symbols.join(", ")}`);
   console.log(`  Date Range: ${config.startDate} to ${config.endDate}`);
   console.log(`  Timeframe: ${config.timeframe}`);
   console.log(`  Target: ${config.targetMultiple}R`);
@@ -105,8 +114,8 @@ async function runBacktests() {
  * Print detector summary
  */
 function printDetectorSummary(stats: BacktestStats) {
-  const winRateColor = stats.winRate >= 0.65 ? '✅' : stats.winRate >= 0.55 ? '⚠️ ' : '❌';
-  const pfColor = stats.profitFactor >= 2.0 ? '✅' : stats.profitFactor >= 1.5 ? '⚠️ ' : '❌';
+  const winRateColor = stats.winRate >= 0.65 ? "✅" : stats.winRate >= 0.55 ? "⚠️ " : "❌";
+  const pfColor = stats.profitFactor >= 2.0 ? "✅" : stats.profitFactor >= 1.5 ? "⚠️ " : "❌";
 
   console.log(`\n${stats.detector}:`);
   console.log(`  Trades: ${stats.totalTrades}`);
@@ -131,15 +140,13 @@ function generateReport(
   const totalWinners = results.reduce((sum, r) => sum + r.winners, 0);
   const overallWinRate = totalTrades > 0 ? totalWinners / totalTrades : 0;
 
-  const avgProfitFactor =
-    results.reduce((sum, r) => sum + r.profitFactor, 0) / results.length;
-  const avgExpectancy =
-    results.reduce((sum, r) => sum + r.expectancy, 0) / results.length;
+  const avgProfitFactor = results.reduce((sum, r) => sum + r.profitFactor, 0) / results.length;
+  const avgExpectancy = results.reduce((sum, r) => sum + r.expectancy, 0) / results.length;
 
   // Find best/worst detectors
   const sortedByWinRate = [...results].sort((a, b) => b.winRate - a.winRate);
-  const bestDetector = sortedByWinRate[0]?.detector || 'N/A';
-  const worstDetector = sortedByWinRate[sortedByWinRate.length - 1]?.detector || 'N/A';
+  const bestDetector = sortedByWinRate[0]?.detector || "N/A";
+  const worstDetector = sortedByWinRate[sortedByWinRate.length - 1]?.detector || "N/A";
 
   return {
     timestamp: new Date().toISOString(),
@@ -167,7 +174,7 @@ function saveReport(report: BacktestReport, outputDir: string) {
   }
 
   // Generate filename
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").split("T")[0];
   const filename = `backtest-${timestamp}.json`;
   const filepath = path.join(outputDir, filename);
 
@@ -189,20 +196,20 @@ function saveReport(report: BacktestReport, outputDir: string) {
  */
 function generateCSV(report: BacktestReport, filepath: string) {
   const headers = [
-    'Detector',
-    'Total Trades',
-    'Winners',
-    'Losers',
-    'Win Rate %',
-    'Profit Factor',
-    'Expectancy (R)',
-    'Avg Win %',
-    'Avg Loss %',
-    'Largest Win %',
-    'Largest Loss %',
-    'Total P&L %',
-    'Avg Bars Held',
-  ].join(',');
+    "Detector",
+    "Total Trades",
+    "Winners",
+    "Losers",
+    "Win Rate %",
+    "Profit Factor",
+    "Expectancy (R)",
+    "Avg Win %",
+    "Avg Loss %",
+    "Largest Win %",
+    "Largest Loss %",
+    "Total P&L %",
+    "Avg Bars Held",
+  ].join(",");
 
   const rows = report.results.map((r) => {
     return [
@@ -219,10 +226,10 @@ function generateCSV(report: BacktestReport, filepath: string) {
       r.largestLoss.toFixed(2),
       r.totalPnlPercent.toFixed(2),
       r.avgBarsHeld.toFixed(1),
-    ].join(',');
+    ].join(",");
   });
 
-  const csv = [headers, ...rows].join('\n');
+  const csv = [headers, ...rows].join("\n");
   fs.writeFileSync(filepath, csv);
 }
 
@@ -230,9 +237,9 @@ function generateCSV(report: BacktestReport, filepath: string) {
  * Print final summary
  */
 function printFinalSummary(report: BacktestReport) {
-  console.log('\n===========================================');
-  console.log('📊 BACKTEST SUMMARY');
-  console.log('===========================================\n');
+  console.log("\n===========================================");
+  console.log("📊 BACKTEST SUMMARY");
+  console.log("===========================================\n");
 
   console.log(`Detectors Tested: ${report.summary.totalDetectors}`);
   console.log(`Total Trades: ${report.summary.totalTrades}`);
@@ -241,7 +248,7 @@ function printFinalSummary(report: BacktestReport) {
   console.log(`Avg Expectancy: ${report.summary.avgExpectancy.toFixed(2)}R`);
   console.log();
 
-  console.log('🏆 Top Performers:');
+  console.log("🏆 Top Performers:");
   const sorted = [...report.results].sort((a, b) => b.winRate - a.winRate).slice(0, 5);
   sorted.forEach((r, i) => {
     console.log(
@@ -249,7 +256,7 @@ function printFinalSummary(report: BacktestReport) {
     );
   });
 
-  console.log('\n📉 Needs Improvement:');
+  console.log("\n📉 Needs Improvement:");
   const bottom = [...report.results].sort((a, b) => a.winRate - b.winRate).slice(0, 3);
   bottom.forEach((r, i) => {
     console.log(
@@ -257,18 +264,20 @@ function printFinalSummary(report: BacktestReport) {
     );
   });
 
-  console.log('\n===========================================');
-  console.log('✅ Backtest Complete!');
-  console.log('===========================================\n');
+  console.log("\n===========================================");
+  console.log("✅ Backtest Complete!");
+  console.log("===========================================\n");
 
   // Recommendations
-  console.log('💡 Recommendations:');
+  console.log("💡 Recommendations:");
   const highPerformers = report.results.filter((r) => r.winRate >= 0.65 && r.totalTrades >= 10);
   const lowPerformers = report.results.filter((r) => r.winRate < 0.45 && r.totalTrades >= 10);
 
   if (highPerformers.length > 0) {
     console.log(`  ✅ ${highPerformers.length} detector(s) meet 65%+ win rate target`);
-    console.log(`     Consider increasing weight for: ${highPerformers.map((r) => r.detector).join(', ')}`);
+    console.log(
+      `     Consider increasing weight for: ${highPerformers.map((r) => r.detector).join(", ")}`
+    );
   } else {
     console.log(`  ⚠️  No detectors meet 65%+ win rate target`);
     console.log(`     Consider optimizing detector logic or confluence weights`);
@@ -276,7 +285,7 @@ function printFinalSummary(report: BacktestReport) {
 
   if (lowPerformers.length > 0) {
     console.log(`  ❌ ${lowPerformers.length} detector(s) have <45% win rate`);
-    console.log(`     Consider disabling: ${lowPerformers.map((r) => r.detector).join(', ')}`);
+    console.log(`     Consider disabling: ${lowPerformers.map((r) => r.detector).join(", ")}`);
   }
 
   console.log();
@@ -284,6 +293,6 @@ function printFinalSummary(report: BacktestReport) {
 
 // Run backtests
 runBacktests().catch((error) => {
-  console.error('Fatal error:', error);
+  console.error("Fatal error:", error);
   process.exit(1);
 });

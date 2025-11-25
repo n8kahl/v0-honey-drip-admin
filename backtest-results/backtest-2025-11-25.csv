@@ -1,0 +1,18 @@
+Detector,Total Trades,Winners,Losers,Win Rate %,Profit Factor,Expectancy (R),Avg Win %,Avg Loss %,Largest Win %,Largest Loss %,Total P&L %,Avg Bars Held
+breakout_bullish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+breakout_bearish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+mean_reversion_long,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+mean_reversion_short,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+trend_continuation_long,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+trend_continuation_short,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+gamma_squeeze_bullish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+gamma_squeeze_bearish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+power_hour_reversal_bullish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+power_hour_reversal_bearish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+index_mean_reversion_long,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+index_mean_reversion_short,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+opening_drive_bullish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+opening_drive_bearish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+gamma_flip_bullish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+gamma_flip_bearish,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+eod_pin_setup,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
