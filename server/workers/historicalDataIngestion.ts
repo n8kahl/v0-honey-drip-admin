@@ -35,6 +35,7 @@ const INGESTION_INTERVALS = {
   gamma: 15 * 60 * 1000, // 15 minutes
   regime: 24 * 60 * 60 * 1000, // Daily at market close
   watchlistRefresh: 15 * 60 * 1000, // 15 minutes - refresh watchlist to catch new symbols
+  queueProcessing: 60 * 1000, // 1 minute - process ingestion queue
 };
 
 // Market close time (4:00pm ET = 9:00pm UTC)
@@ -54,12 +55,14 @@ interface WorkerStats {
   gammaSnapshots: number;
   regimeCalculations: number;
   watchlistRefreshes: number;
+  queueEntriesProcessed: number;
   lastGreeksTime: Date | null;
   lastFlowTime: Date | null;
   lastIVTime: Date | null;
   lastGammaTime: Date | null;
   lastRegimeTime: Date | null;
   lastWatchlistRefresh: Date | null;
+  lastQueueProcessing: Date | null;
   errors: number;
   lastError: string | null;
 }
@@ -92,12 +95,14 @@ class HistoricalDataIngestionWorker {
       gammaSnapshots: 0,
       regimeCalculations: 0,
       watchlistRefreshes: 0,
+      queueEntriesProcessed: 0,
       lastGreeksTime: null,
       lastFlowTime: null,
       lastIVTime: null,
       lastGammaTime: null,
       lastRegimeTime: null,
       lastWatchlistRefresh: null,
+      lastQueueProcessing: null,
       errors: 0,
       lastError: null,
     };
@@ -142,6 +147,250 @@ class HistoricalDataIngestionWorker {
         console.warn("[HistoricalIngestion] ⚠️ Falling back to default indices: SPX, NDX");
         this.indexSymbols = ["SPX", "NDX"];
       }
+    }
+  }
+
+  /**
+   * Process historical ingestion queue (Phase 3)
+   * Automatically backfills historical data when new symbols added to watchlist
+   */
+  private async processIngestionQueue(): Promise<void> {
+    try {
+      // Get pending queue entries (limit to 5 for rate limiting)
+      const { data: queueEntries, error } = await this.supabase
+        .from("historical_ingestion_queue")
+        .select("*")
+        .eq("status", "pending")
+        .order("requested_at", { ascending: true })
+        .limit(5);
+
+      if (error) {
+        throw error;
+      }
+
+      if (!queueEntries || queueEntries.length === 0) {
+        // No pending entries - this is normal
+        return;
+      }
+
+      console.log(
+        `[HistoricalIngestion] 📥 Processing queue: ${queueEntries.length} pending symbols`
+      );
+
+      for (const entry of queueEntries) {
+        try {
+          // Update status to processing
+          await this.supabase
+            .from("historical_ingestion_queue")
+            .update({
+              status: "processing",
+              started_at: new Date().toISOString(),
+            })
+            .eq("id", entry.id);
+
+          console.log(
+            `[HistoricalIngestion] 🔄 Backfilling ${entry.symbol} (${entry.days_to_backfill} days)...`
+          );
+
+          // Call backfill logic (imported from backfill script)
+          await this.backfillSymbolData(entry.symbol, entry.days_to_backfill || 90);
+
+          // Update status to completed
+          await this.supabase
+            .from("historical_ingestion_queue")
+            .update({
+              status: "completed",
+              completed_at: new Date().toISOString(),
+              error_message: null,
+            })
+            .eq("id", entry.id);
+
+          this.stats.queueEntriesProcessed++;
+          this.stats.lastQueueProcessing = new Date();
+
+          console.log(`[HistoricalIngestion] ✅ Queue entry completed: ${entry.symbol}`);
+        } catch (error) {
+          console.error(`[HistoricalIngestion] ❌ Queue entry failed for ${entry.symbol}:`, error);
+
+          // Increment retry count
+          const newRetryCount = (entry.retry_count || 0) + 1;
+          const maxRetries = 3;
+
+          if (newRetryCount >= maxRetries) {
+            // Max retries reached - mark as failed
+            await this.supabase
+              .from("historical_ingestion_queue")
+              .update({
+                status: "failed",
+                completed_at: new Date().toISOString(),
+                error_message: error instanceof Error ? error.message : String(error),
+                retry_count: newRetryCount,
+              })
+              .eq("id", entry.id);
+
+            console.warn(
+              `[HistoricalIngestion] ⚠️ Max retries reached for ${entry.symbol}, marked as failed`
+            );
+          } else {
+            // Reset to pending for retry
+            await this.supabase
+              .from("historical_ingestion_queue")
+              .update({
+                status: "pending",
+                retry_count: newRetryCount,
+                error_message: error instanceof Error ? error.message : String(error),
+              })
+              .eq("id", entry.id);
+
+            console.log(
+              `[HistoricalIngestion] 🔄 Retrying ${entry.symbol} (attempt ${newRetryCount}/${maxRetries})`
+            );
+          }
+
+          this.stats.errors++;
+        }
+
+        // Small delay between queue entries
+        await this.sleep(1000);
+      }
+    } catch (error) {
+      console.error("[HistoricalIngestion] ❌ Error processing queue:", error);
+      this.stats.errors++;
+      this.stats.lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  /**
+   * Backfill historical data for a single symbol (all timeframes)
+   * Uses same logic as backfill script but integrated into worker
+   */
+  private async backfillSymbolData(symbol: string, days: number): Promise<void> {
+    const TIMEFRAMES = [
+      { key: "1m", mult: 1, span: "minute" },
+      { key: "5m", mult: 5, span: "minute" },
+      { key: "15m", mult: 15, span: "minute" },
+      { key: "1h", mult: 1, span: "hour" },
+      { key: "4h", mult: 4, span: "hour" },
+      { key: "day", mult: 1, span: "day" },
+    ];
+
+    const toDate = new Date();
+    const fromDate = new Date(toDate.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const from = fromDate.toISOString().split("T")[0]; // YYYY-MM-DD
+    const to = toDate.toISOString().split("T")[0];
+
+    for (const tf of TIMEFRAMES) {
+      try {
+        // Check if data already exists
+        const { data: existing } = await this.supabase
+          .from("historical_bars")
+          .select("timestamp")
+          .eq("symbol", symbol)
+          .eq("timeframe", tf.key)
+          .gte("timestamp", fromDate.getTime())
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          console.log(`[HistoricalIngestion]   ⏭️  ${symbol} ${tf.key} - Already exists, skipping`);
+          continue;
+        }
+
+        // Fetch from Massive.com
+        const bars = await this.fetchBarsFromMassive(symbol, tf.mult, tf.span, from, to);
+
+        if (bars.length === 0) {
+          console.warn(`[HistoricalIngestion]   ⚠️ No data for ${symbol} ${tf.key}`);
+          continue;
+        }
+
+        // Transform and store in database
+        const rows = bars.map((bar: any) => ({
+          symbol,
+          timeframe: tf.key,
+          timestamp: bar.t,
+          open: bar.o,
+          high: bar.h,
+          low: bar.l,
+          close: bar.c,
+          volume: bar.v,
+          vwap: bar.vw || null,
+          trades: bar.n || null,
+        }));
+
+        const { error } = await this.supabase.from("historical_bars").upsert(rows as any, {
+          onConflict: "symbol,timeframe,timestamp",
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        console.log(`[HistoricalIngestion]   ✅ ${symbol} ${tf.key} - Stored ${bars.length} bars`);
+      } catch (error) {
+        console.error(`[HistoricalIngestion]   ❌ ${symbol} ${tf.key} - Failed:`, error);
+        throw error; // Propagate error to retry logic
+      }
+
+      // Small delay between timeframes
+      await this.sleep(500);
+    }
+  }
+
+  /**
+   * Fetch bars from Massive.com with retry logic
+   */
+  private async fetchBarsFromMassive(
+    symbol: string,
+    mult: number,
+    span: string,
+    from: string,
+    to: string,
+    retries = 0
+  ): Promise<any[]> {
+    const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY!;
+    const MAX_RETRIES = 3;
+
+    // Import symbol normalization
+    const { normalizeSymbolForMassive } = await import("../lib/symbolUtils.js");
+    const normalizedSymbol = normalizeSymbolForMassive(symbol);
+
+    const isIndexSymbol = normalizedSymbol.startsWith("I:");
+    const endpoint = isIndexSymbol ? "v2/aggs/ticker" : "v2/aggs/ticker";
+
+    const url = `https://api.massive.com/${endpoint}/${encodeURIComponent(
+      normalizedSymbol
+    )}/range/${mult}/${span}/${from}/${to}?adjusted=true&sort=asc&limit=50000`;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${MASSIVE_API_KEY}`,
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 && retries < MAX_RETRIES) {
+          // Rate limited - exponential backoff
+          const backoffMs = Math.pow(2, retries) * 2000; // 2s, 4s, 8s
+          console.warn(
+            `[HistoricalIngestion]   ⚠️ Rate limited for ${symbol}, retrying in ${backoffMs / 1000}s...`
+          );
+          await this.sleep(backoffMs);
+          return this.fetchBarsFromMassive(symbol, mult, span, from, to, retries + 1);
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const json = await response.json();
+      return json.results || [];
+    } catch (error) {
+      if (retries < MAX_RETRIES) {
+        const backoffMs = Math.pow(2, retries) * 2000;
+        await this.sleep(backoffMs);
+        return this.fetchBarsFromMassive(symbol, mult, span, from, to, retries + 1);
+      }
+      throw error;
     }
   }
 
@@ -196,6 +445,12 @@ class HistoricalDataIngestionWorker {
     this.intervals.watchlist = setInterval(
       () => this.refreshWatchlistSymbols(),
       INGESTION_INTERVALS.watchlistRefresh
+    );
+
+    // Queue processing - every 1 minute (Phase 3: auto-backfill new symbols)
+    this.intervals.queue = setInterval(
+      () => this.processIngestionQueue(),
+      INGESTION_INTERVALS.queueProcessing
     );
 
     // Greeks ingestion - every 15 minutes
@@ -449,6 +704,7 @@ class HistoricalDataIngestionWorker {
       `Watchlist Symbols: ${totalSymbols} (${this.indexSymbols.length} indices, ${this.equitySymbols.length} equities)`
     );
     console.log(`Watchlist Refreshes: ${this.stats.watchlistRefreshes}`);
+    console.log(`Queue Entries Processed: ${this.stats.queueEntriesProcessed}`);
     console.log(`Cycles Completed: ${this.stats.cyclesCompleted}`);
     console.log(`Greeks Ingestions: ${this.stats.greeksIngestions}`);
     console.log(`Flow Ingestions: ${this.stats.flowIngestions}`);
@@ -459,6 +715,9 @@ class HistoricalDataIngestionWorker {
 
     if (this.stats.lastWatchlistRefresh) {
       console.log(`Last Watchlist Refresh: ${this.stats.lastWatchlistRefresh.toLocaleString()}`);
+    }
+    if (this.stats.lastQueueProcessing) {
+      console.log(`Last Queue Processing: ${this.stats.lastQueueProcessing.toLocaleString()}`);
     }
     if (this.stats.lastGreeksTime) {
       console.log(`Last Greeks: ${this.stats.lastGreeksTime.toLocaleString()}`);
