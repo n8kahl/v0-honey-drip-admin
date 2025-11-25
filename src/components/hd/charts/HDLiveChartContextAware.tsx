@@ -100,30 +100,30 @@ export function HDLiveChartContextAware({
   // Show key levels when in LOADED or ENTERED mode
   const showKeyLevels = mode === "LOADED" || mode === "ENTERED";
 
-  // Always use dual view on desktop - split height equally between 1m and 5m charts
+  // Side-by-side layout: both charts get full height (not split)
+  // Minimum height of 280px ensures charts render properly
   const chartHeight = useMemo(() => {
-    // Always show dual 1m+5m view, split the height
-    return height ? Math.floor(height / 2) - 10 : 180;
+    return Math.max(280, height || 400);
   }, [height]);
 
   // For ENTERED state, reduce chart height to make room for metrics panel
   const finalChartHeight = useMemo(() => {
     if (mode === "ENTERED") {
-      return Math.max(200, chartHeight - 40);
+      return Math.max(260, chartHeight - 60);
     }
     return chartHeight;
   }, [mode, chartHeight]);
 
   return (
     <div className={className}>
-      {/* Always show dual 1m+5m view wrapped in collapsible container */}
+      {/* Dual 1m+5m side-by-side view for day trading */}
       <HDChartContainer title="📊 Charts" defaultExpanded={true}>
-        <div className="flex gap-6 w-full p-4">
-          {/* Left: 5-minute chart (50% width) */}
-          <div className="flex-1 min-w-0">
+        <div className="flex flex-row gap-4 w-full p-4">
+          {/* Left: 1-minute chart for entry precision (50% width) */}
+          <div className="flex-1 min-w-0" style={{ minWidth: 0 }}>
             <HDLiveChart
               ticker={chartTicker}
-              initialTimeframe="5"
+              initialTimeframe="1"
               indicators={indicatorConfig}
               events={[]}
               levels={showKeyLevels ? levels : []}
@@ -133,11 +133,11 @@ export function HDLiveChartContextAware({
               showHeader={true}
             />
           </div>
-          {/* Right: 1-minute chart for entry precision (50% width) */}
-          <div className="flex-1 min-w-0">
+          {/* Right: 5-minute chart for context (50% width) */}
+          <div className="flex-1 min-w-0" style={{ minWidth: 0 }}>
             <HDLiveChart
               ticker={chartTicker}
-              initialTimeframe="1"
+              initialTimeframe="5"
               indicators={indicatorConfig}
               events={[]}
               levels={showKeyLevels ? levels : []}
