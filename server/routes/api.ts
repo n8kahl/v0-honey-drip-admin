@@ -1344,6 +1344,115 @@ router.all("/massive/*", requireProxyToken, async (req, res) => {
   }
 });
 
+// ===== Backfill Trigger Endpoint =====
+/**
+ * POST /api/backfill/trigger
+ * Triggers historical data backfill for a specific symbol
+ * Called automatically when watchlist items are added
+ */
+router.post("/backfill/trigger", async (req: Request, res: Response) => {
+  try {
+    const { symbol, days = 90 } = req.body;
+
+    if (!symbol || typeof symbol !== "string") {
+      return res.status(400).json({ error: "Symbol is required" });
+    }
+
+    const cleanSymbol = symbol.toUpperCase().trim();
+
+    console.log(`[Backfill] Trigger requested for ${cleanSymbol} (${days} days)`);
+
+    // Import and run backfill dynamically
+    const { spawn } = await import("child_process");
+
+    const backfillProcess = spawn(
+      "pnpm",
+      ["backfill:s3", "--", `--symbol=${cleanSymbol}`, `--days=${days}`],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        detached: true, // Run in background
+        stdio: "ignore", // Don't pipe output
+      }
+    );
+
+    // Don't wait for process to finish
+    backfillProcess.unref();
+
+    res.json({
+      success: true,
+      symbol: cleanSymbol,
+      days,
+      message: `Backfill started for ${cleanSymbol}`,
+      eta_seconds: 10, // Estimated time
+    });
+  } catch (error: any) {
+    console.error("[Backfill] Trigger failed:", error);
+    res.status(500).json({
+      error: "Failed to trigger backfill",
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/backfill/status
+ * Check status of historical data for symbols
+ */
+router.get("/backfill/status", async (req: Request, res: Response) => {
+  try {
+    const symbols = String(req.query.symbols || "")
+      .split(",")
+      .filter(Boolean);
+
+    if (symbols.length === 0) {
+      return res.status(400).json({ error: "Symbols parameter required" });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ error: "Supabase not configured" });
+    }
+
+    const status: Record<string, any> = {};
+
+    for (const symbol of symbols) {
+      const cleanSymbol = symbol.toUpperCase().trim();
+
+      // Check if we have data for this symbol
+      const { data, error } = await supabase
+        .from("historical_bars")
+        .select("timestamp, timeframe")
+        .eq("symbol", cleanSymbol)
+        .eq("timeframe", "1m")
+        .order("timestamp", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        status[cleanSymbol] = { hasData: false, error: error.message };
+      } else if (data && data.length > 0) {
+        const lastTimestamp = data[0].timestamp;
+        const lastDate = new Date(lastTimestamp);
+        const ageHours = (Date.now() - lastTimestamp) / (1000 * 60 * 60);
+
+        status[cleanSymbol] = {
+          hasData: true,
+          lastUpdate: lastDate.toISOString(),
+          ageHours: Math.round(ageHours),
+          needsRefresh: ageHours > 168, // 7 days
+        };
+      } else {
+        status[cleanSymbol] = { hasData: false };
+      }
+    }
+
+    res.json({ status });
+  } catch (error: any) {
+    console.error("[Backfill] Status check failed:", error);
+    res.status(500).json({ error: "Failed to check status", message: error.message });
+  }
+});
+
 // ===== Strategy Scanner Routes =====
 // NOTE: Scanner runs client-side via hooks, server endpoint moved to future iteration
 // import strategiesRouter from './strategies';

@@ -5,6 +5,31 @@ import { getWatchlist, addToWatchlist, removeFromWatchlist } from "../lib/supaba
 import { useMarketDataStore } from "./marketDataStore";
 import { toast } from "sonner";
 
+/**
+ * Trigger automatic backfill for a symbol
+ * Called when a new ticker is added to the watchlist
+ */
+async function triggerBackfill(symbol: string, days: number = 90): Promise<void> {
+  try {
+    const response = await fetch("/api/backfill/trigger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, days }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || `HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`[Backfill] Triggered for ${symbol}:`, result);
+  } catch (error) {
+    console.error(`[Backfill] Failed to trigger for ${symbol}:`, error);
+    throw error;
+  }
+}
+
 export interface MarketQuote {
   symbol: string;
   last: number;
@@ -96,6 +121,12 @@ export const useMarketStore = create<MarketStore>()(
             isLoading: false,
           }));
           toast.success(`${newTicker.symbol} added to watchlist`);
+
+          // Trigger automatic backfill for the new symbol
+          triggerBackfill(newTicker.symbol).catch((err) => {
+            console.warn(`[MarketStore] Backfill trigger failed for ${newTicker.symbol}:`, err);
+            // Don't show error to user - backfill is a background operation
+          });
         } catch (error: unknown) {
           console.error("[MarketStore] Failed to add ticker:", error);
           const err = error as { code?: string; status?: string; name?: string; message?: string };
