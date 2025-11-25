@@ -125,7 +125,8 @@ export class BacktestEngine {
     } else {
       // Create server-side Supabase client with service role key
       const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+      const supabaseKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
       console.log(
         "[BacktestEngine] Supabase URL:",
@@ -279,24 +280,24 @@ export class BacktestEngine {
   private async fetchFromMassiveAPI(symbol: string): Promise<any[]> {
     try {
       const timeframeMap: Record<string, string> = {
-        '1m': 'minute',
-        '5m': 'minute',
-        '15m': 'minute',
-        '1h': 'hour',
-        '4h': 'hour',
-        'day': 'day',
+        "1m": "minute",
+        "5m": "minute",
+        "15m": "minute",
+        "1h": "hour",
+        "4h": "hour",
+        day: "day",
       };
 
       const multiplierMap: Record<string, number> = {
-        '1m': 1,
-        '5m': 5,
-        '15m': 15,
-        '1h': 1,
-        '4h': 4,
-        'day': 1,
+        "1m": 1,
+        "5m": 5,
+        "15m": 15,
+        "1h": 1,
+        "4h": 4,
+        day: 1,
       };
 
-      const timespan = timeframeMap[this.config.timeframe] || 'minute';
+      const timespan = timeframeMap[this.config.timeframe] || "minute";
       const multiplier = multiplierMap[this.config.timeframe] || 1;
 
       // Format dates for API (YYYY-MM-DD)
@@ -304,8 +305,8 @@ export class BacktestEngine {
       const to = this.config.endDate;
 
       // Determine if this is an index or equity
-      const indexSymbols = ['SPX', 'NDX', 'VIX', 'RUT', 'DJI'];
-      const cleanSymbol = symbol.replace(/^I:/, '');
+      const indexSymbols = ["SPX", "NDX", "VIX", "RUT", "DJI"];
+      const cleanSymbol = symbol.replace(/^I:/, "");
       const isIndex = indexSymbols.includes(cleanSymbol);
 
       // Use appropriate ticker format
@@ -313,7 +314,7 @@ export class BacktestEngine {
 
       const apiKey = process.env.MASSIVE_API_KEY;
       if (!apiKey) {
-        console.error('[BacktestEngine] ❌ MASSIVE_API_KEY not found');
+        console.error("[BacktestEngine] ❌ MASSIVE_API_KEY not found");
         return [];
       }
 
@@ -323,7 +324,7 @@ export class BacktestEngine {
 
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
       });
 
@@ -344,7 +345,7 @@ export class BacktestEngine {
       const bars = results.map((bar: any) => ({
         symbol,
         timeframe: this.config.timeframe,
-        timestamp: bar.t,  // Epoch milliseconds
+        timestamp: bar.t, // Epoch milliseconds
         open: bar.o,
         high: bar.h,
         low: bar.l,
@@ -387,6 +388,20 @@ export class BacktestEngine {
     // ATR
     const atr = this.calculateATR(highs, lows, closes, 14);
 
+    // RSI calculation
+    const rsi14 = this.calculateRSI(closes, 14);
+
+    // VWAP distance (if VWAP available in bars)
+    const vwapValue = current.vwap || current.close;
+    const vwapDistancePct = ((current.close - vwapValue) / vwapValue) * 100;
+
+    // Market regime determination
+    const marketRegime = this.determineMarketRegime(
+      current.close,
+      ema9[ema9.length - 1],
+      ema21[ema21.length - 1]
+    );
+
     // Construct features (simplified version)
     const features: SymbolFeatures = {
       symbol,
@@ -406,16 +421,26 @@ export class BacktestEngine {
           current.volume /
           (volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length),
       },
+      vwap: {
+        value: vwapValue,
+        distancePct: vwapDistancePct,
+      },
       ema: {
         "9": ema9[ema9.length - 1],
         "21": ema21[ema21.length - 1],
         "50": ema50[ema50.length - 1],
+      },
+      rsi: {
+        "14": rsi14,
       },
       mtf: {
         [this.config.timeframe]: {
           ema: {
             "9": ema9[ema9.length - 1],
             "21": ema21[ema21.length - 1],
+          },
+          rsi: {
+            "14": rsi14,
           },
         },
       },
@@ -426,6 +451,7 @@ export class BacktestEngine {
       pattern: {
         atr,
         trend: this.determineTrend(current.close, ema9[ema9.length - 1], ema21[ema21.length - 1]),
+        market_regime: marketRegime,
       },
     };
 
@@ -646,6 +672,40 @@ export class BacktestEngine {
 
     const atr = trueRanges.slice(-period).reduce((sum, tr) => sum + tr, 0) / period;
     return atr;
+  }
+
+  /**
+   * Helper: Calculate RSI
+   */
+  private calculateRSI(prices: number[], period: number): number {
+    if (prices.length < period + 1) return 50; // Default neutral RSI
+
+    const changes: number[] = [];
+    for (let i = 1; i < prices.length; i++) {
+      changes.push(prices[i] - prices[i - 1]);
+    }
+
+    const gains: number[] = changes.map((c) => (c > 0 ? c : 0));
+    const losses: number[] = changes.map((c) => (c < 0 ? Math.abs(c) : 0));
+
+    // Calculate average gain and loss
+    const avgGain = gains.slice(-period).reduce((sum, g) => sum + g, 0) / period;
+    const avgLoss = losses.slice(-period).reduce((sum, l) => sum + l, 0) / period;
+
+    if (avgLoss === 0) return 100; // No losses = overbought
+    const rs = avgGain / avgLoss;
+    const rsi = 100 - 100 / (1 + rs);
+
+    return rsi;
+  }
+
+  /**
+   * Helper: Determine market regime
+   */
+  private determineMarketRegime(price: number, ema9: number, ema21: number): string {
+    if (price > ema9 && ema9 > ema21) return "trending_up";
+    if (price < ema9 && ema9 < ema21) return "trending_down";
+    return "ranging";
   }
 
   /**
