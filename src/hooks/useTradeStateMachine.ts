@@ -879,7 +879,10 @@ export function useTradeStateMachine({
 
   const handleEnterAndAlert = useCallback(
     async (channelIds: string[], challengeIds: string[], comment?: string, entryPrice?: number) => {
-      if (!currentTrade) return;
+      if (!currentTrade || !userId) {
+        toast.error("Unable to enter trade: Trade or user missing");
+        return;
+      }
 
       const finalEntryPrice = entryPrice || currentTrade.contract.mid;
 
@@ -937,15 +940,16 @@ export function useTradeStateMachine({
         console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
       }
 
-      const enteredTrade: Trade = {
+      let enteredTrade: Trade = {
         ...currentTrade,
         state: "ENTERED",
         entryPrice: finalEntryPrice,
+        entryTime: new Date(),
         currentPrice: finalEntryPrice,
         targetPrice,
         stopLoss,
         movePercent: 0,
-        // Ensure arrays are always valid
+        // Persist selected channels/challenges with the trade
         discordChannels: Array.isArray(channelIds) ? channelIds : [],
         challenges: Array.isArray(challengeIds) ? challengeIds : [],
         updates: [
@@ -960,7 +964,7 @@ export function useTradeStateMachine({
         ],
       };
 
-      // Update local state
+      // Update local state optimistically
       setActiveTrades((prev) => {
         const existing = prev.find((t) => t.id === currentTrade.id);
         if (existing) {
@@ -973,19 +977,75 @@ export function useTradeStateMachine({
       setTradeState("ENTERED");
       setShowAlert(false);
 
+      // Persist to database - create trade if WATCHING/LOADED → ENTERED
+      try {
+        if (currentTrade.state === "WATCHING" || currentTrade.state === "LOADED") {
+          console.warn("[v0] Creating trade in database (Enter and Alert)");
+
+          const dbTrade = await createTradeApi(userId, {
+            ticker: enteredTrade.ticker,
+            contract: enteredTrade.contract,
+            targetPrice: enteredTrade.targetPrice,
+            stopLoss: enteredTrade.stopLoss,
+            entryPrice: enteredTrade.entryPrice,
+            entryTime: enteredTrade.entryTime,
+            status: "entered",
+            discordChannelIds: channelIds,
+            challengeIds: challengeIds,
+            setupType: enteredTrade.setupType,
+            confluence: enteredTrade.confluence,
+            confluenceUpdatedAt: enteredTrade.confluenceUpdatedAt?.toISOString(),
+          });
+
+          // Update with real database ID
+          enteredTrade = { ...enteredTrade, id: dbTrade.id };
+          setCurrentTrade(enteredTrade);
+          setActiveTrades((prev) => prev.map((t) => (t.id === currentTrade.id ? enteredTrade : t)));
+
+          console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
+        }
+      } catch (error) {
+        console.error("[v0] Failed to persist trade to database:", error);
+        toast.error("Failed to save trade", {
+          description: "Trade entered locally but may not persist on refresh.",
+        } as any);
+      }
+
       // Send Discord alerts
       const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
       const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
       if (discordAlertsEnabled && channels.length > 0) {
-        try {
-          await discord.sendEntryAlert(channels, enteredTrade, comment);
-          console.log("[Discord] ENTER alert sent successfully");
-        } catch (error) {
-          console.error("[Discord] Failed to send ENTER alert:", error);
-          toast.error("Discord alert failed", {
-            description: "Check console for details",
+        // Check rate limit
+        if (!discordAlertLimiter.canProceed()) {
+          const waitTime = discordAlertLimiter.getWaitTime();
+          toast.error("Discord alert rate limit exceeded", {
+            description: `Too many alerts sent. Wait ${formatWaitTime(waitTime)} before sending more.`,
           } as any);
+        } else {
+          try {
+            const results = await discord.sendEntryAlert(channels, enteredTrade, comment);
+            console.log("[Discord] ENTER alert sent successfully");
+
+            // Record alert history
+            recordAlertHistory({
+              userId,
+              tradeId: enteredTrade.id,
+              alertType: "enter",
+              channelIds: channels.map((c) => c.id),
+              challengeIds: challengeIds,
+              successCount: results.success,
+              failedCount: results.failed,
+              tradeTicker: enteredTrade.ticker,
+            }).catch((err) => {
+              console.error("[Database] Failed to record alert history:", err);
+            });
+          } catch (error) {
+            console.error("[Discord] Failed to send ENTER alert:", error);
+            toast.error("Discord alert failed", {
+              description: "Check console for details",
+            } as any);
+          }
         }
       }
 
@@ -999,6 +1059,7 @@ export function useTradeStateMachine({
     },
     [
       currentTrade,
+      userId,
       discord,
       getDiscordChannelsForAlert,
       setActiveTrades,

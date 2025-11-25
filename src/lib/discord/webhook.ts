@@ -116,33 +116,89 @@ class DiscordWebhookClient {
       targetPrice?: number;
       stopLoss?: number;
       notes?: string;
+      // Enhanced fields
+      dte?: number;
+      riskReward?: number;
+      delta?: number;
+      iv?: number;
+      underlyingPrice?: number;
+      setupType?: string;
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
 
-    const fields = [
+    // DTE badge in title
+    const dteBadge =
+      data.dte !== undefined
+        ? data.dte === 0
+          ? " ⚠️ 0DTE"
+          : data.dte <= 2
+            ? ` 🔥 ${data.dte}DTE`
+            : ` 📅 ${data.dte}DTE`
+        : "";
+
+    const fields: Array<{ name: string; value: string; inline?: boolean }> = [
       { name: "Option", value: `$${data.strike} ${optionType}`, inline: true },
       { name: "Expiry", value: data.expiry, inline: true },
       { name: "Trade Type", value: data.tradeType, inline: true },
-      { name: "Current Price", value: `$${data.price.toFixed(2)}`, inline: true },
     ];
 
+    // Underlying price context
+    if (data.underlyingPrice) {
+      fields.push({
+        name: `${data.ticker} Price`,
+        value: `$${data.underlyingPrice.toFixed(2)}`,
+        inline: true,
+      });
+    }
+
+    fields.push({ name: "Current Price", value: `$${data.price.toFixed(2)}`, inline: true });
+
     if (data.targetPrice) {
-      fields.push({ name: "Target", value: `$${data.targetPrice.toFixed(2)}`, inline: true });
+      fields.push({ name: "🎯 Target", value: `$${data.targetPrice.toFixed(2)}`, inline: true });
     }
 
     if (data.stopLoss) {
-      fields.push({ name: "Stop Loss", value: `$${data.stopLoss.toFixed(2)}`, inline: true });
+      fields.push({ name: "🛡️ Stop Loss", value: `$${data.stopLoss.toFixed(2)}`, inline: true });
+    }
+
+    // Risk/Reward ratio
+    if (data.riskReward) {
+      const rrRating =
+        data.riskReward >= 3 ? "🔥 Excellent" : data.riskReward >= 2 ? "✅ Good" : "⚠️ Fair";
+      fields.push({
+        name: "R:R Ratio",
+        value: `${data.riskReward.toFixed(1)}:1 ${rrRating}`,
+        inline: true,
+      });
+    }
+
+    // Greeks
+    if (data.delta !== undefined || data.iv !== undefined) {
+      const greeksValue = [
+        data.delta !== undefined ? `Δ ${(data.delta * 100).toFixed(0)}` : "",
+        data.iv !== undefined ? `IV ${(data.iv * 100).toFixed(0)}%` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      if (greeksValue) {
+        fields.push({ name: "📐 Greeks", value: greeksValue, inline: true });
+      }
+    }
+
+    // Setup type
+    if (data.setupType) {
+      fields.push({ name: "📋 Setup", value: data.setupType, inline: true });
     }
 
     if (data.notes) {
-      fields.push({ name: "Notes", value: data.notes, inline: false });
+      fields.push({ name: "💭 Notes", value: data.notes, inline: false });
     }
 
     return this.sendMessage(webhookUrl, {
       embeds: [
         {
-          title: `📊 LOADING: ${data.ticker}`,
+          title: `📊 LOADING: ${data.ticker}${dteBadge}`,
           color: DISCORD_COLORS.load,
           fields,
           footer: {
@@ -168,31 +224,87 @@ class DiscordWebhookClient {
       stopLoss?: number;
       notes?: string;
       imageUrl?: string;
+      // Enhanced fields
+      dte?: number;
+      riskReward?: number;
+      delta?: number;
+      iv?: number;
+      underlyingPrice?: number;
+      setupType?: string;
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
 
-    const fields = [
+    // DTE badge in title
+    const dteBadge =
+      data.dte !== undefined
+        ? data.dte === 0
+          ? " ⚠️ 0DTE"
+          : data.dte <= 2
+            ? ` 🔥 ${data.dte}DTE`
+            : ` 📅 ${data.dte}DTE`
+        : "";
+
+    const fields: Array<{ name: string; value: string; inline?: boolean }> = [
       { name: "Option", value: `$${data.strike} ${optionType}`, inline: true },
       { name: "Expiry", value: data.expiry, inline: true },
       { name: "Trade Type", value: data.tradeType, inline: true },
-      { name: "Entry Price", value: `$${data.entryPrice.toFixed(2)}`, inline: true },
     ];
 
+    // Underlying price context
+    if (data.underlyingPrice) {
+      fields.push({
+        name: `${data.ticker} Price`,
+        value: `$${data.underlyingPrice.toFixed(2)}`,
+        inline: true,
+      });
+    }
+
+    fields.push({ name: "✅ Entry Price", value: `$${data.entryPrice.toFixed(2)}`, inline: true });
+
     if (data.targetPrice) {
-      fields.push({ name: "Target", value: `$${data.targetPrice.toFixed(2)}`, inline: true });
+      fields.push({ name: "🎯 Target", value: `$${data.targetPrice.toFixed(2)}`, inline: true });
     }
 
     if (data.stopLoss) {
-      fields.push({ name: "Stop Loss", value: `$${data.stopLoss.toFixed(2)}`, inline: true });
+      fields.push({ name: "🛡️ Stop Loss", value: `$${data.stopLoss.toFixed(2)}`, inline: true });
+    }
+
+    // Risk/Reward ratio
+    if (data.riskReward) {
+      const rrRating =
+        data.riskReward >= 3 ? "🔥 Excellent" : data.riskReward >= 2 ? "✅ Good" : "⚠️ Fair";
+      fields.push({
+        name: "R:R Ratio",
+        value: `${data.riskReward.toFixed(1)}:1 ${rrRating}`,
+        inline: true,
+      });
+    }
+
+    // Greeks
+    if (data.delta !== undefined || data.iv !== undefined) {
+      const greeksValue = [
+        data.delta !== undefined ? `Δ ${(data.delta * 100).toFixed(0)}` : "",
+        data.iv !== undefined ? `IV ${(data.iv * 100).toFixed(0)}%` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      if (greeksValue) {
+        fields.push({ name: "📐 Greeks", value: greeksValue, inline: true });
+      }
+    }
+
+    // Setup type
+    if (data.setupType) {
+      fields.push({ name: "📋 Setup", value: data.setupType, inline: true });
     }
 
     if (data.notes) {
-      fields.push({ name: "Notes", value: data.notes, inline: false });
+      fields.push({ name: "💭 Notes", value: data.notes, inline: false });
     }
 
     const embed: DiscordEmbed = {
-      title: `🚀 ENTERED: ${data.ticker}`,
+      title: `🚀 ENTERED: ${data.ticker}${dteBadge}`,
       color: DISCORD_COLORS.enter,
       fields,
       footer: {
