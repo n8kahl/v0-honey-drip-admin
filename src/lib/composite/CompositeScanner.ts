@@ -29,10 +29,7 @@ import { ALL_DETECTORS } from "./detectors/index.js";
 import type { ParameterConfig } from "../../types/optimizedParameters.js";
 
 // Phase 2: Import Context Engines
-// TEMPORARILY DISABLED for production build compatibility
-// Context engines need refactoring to not import frontend Supabase client
-// TODO: Make engines accept Supabase client as parameter instead of importing at module level
-// import { contextEngines } from '../engines/index.js';
+import { contextEngines } from "../engines/index";
 import type {
   IVContext,
   GammaContext,
@@ -359,22 +356,13 @@ export class CompositeScanner {
   ): Promise<DetectedOpportunity[]> {
     try {
       // Fetch all context data in parallel for performance
-      // TEMPORARILY DISABLED - engines have module resolution issues in production
-      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = [
-        null,
-        null,
-        null,
-        null,
-        null,
-      ];
-      // TODO: Re-enable once engines are refactored
-      // const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
-      //   contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
-      //   contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
-      //   contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
-      //   contextEngines.flowAnalysis.getFlowContext(symbol, 'medium').catch(() => null),
-      //   contextEngines.regimeDetection.getRegimeContext().catch(() => null),
-      // ]);
+      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
+        contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
+        contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
+        contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
+        contextEngines.flowAnalysis.getFlowContext(symbol, "medium").catch(() => null),
+        contextEngines.regimeDetection.getRegimeContext().catch(() => null),
+      ]);
 
       // Apply boosts to each opportunity
       return opportunities.map((opp) => {

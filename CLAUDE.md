@@ -2063,8 +2063,10 @@ TypeError: trade.updates.map is not a function
 - `README.md` - Project overview and setup
 - `SETUP_GUIDE.md` - Detailed setup instructions
 - `QUICKSTART.md` - Quick start guide
-- `SESSION_WORKFLOW.md` - Session workflow
-- `CLAUDE_CONTEXT.md` - Additional AI context (legacy)
+- `DEPLOYMENT_GUIDE.md` - Full deployment reference
+- `AUDIT_REPORT.md` - Comprehensive code audit (Nov 2025)
+- `COMPLETE_SYSTEM_SUMMARY.md` - System architecture overview
+- `docs/BACKFILL_GUIDE.md` - Historical data backfill guide
 - `src/lib/data-provider/README.md` - Data provider architecture
 - `src/docs/options-chain.md` - Options chain implementation
 - `docs/GREEKS_STREAMING_ARCHITECTURE.md` - Greeks streaming
