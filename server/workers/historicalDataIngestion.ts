@@ -116,8 +116,9 @@ class HistoricalDataIngestionWorker {
         throw error;
       }
 
-      // Get unique symbols
-      const allSymbols = [...new Set((data || []).map((row: any) => row.symbol as string))];
+      // Get unique symbols (explicit type to avoid TypeScript inference issues)
+      const rows: Array<{ symbol: string }> = data || [];
+      const allSymbols = [...new Set(rows.map((row) => row.symbol))];
 
       // Categorize into indices vs equities
       this.indexSymbols = allSymbols.filter((symbol) => isIndex(symbol));
