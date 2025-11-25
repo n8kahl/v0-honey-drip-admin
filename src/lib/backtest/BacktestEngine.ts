@@ -116,9 +116,10 @@ export class BacktestEngine {
   private config: BacktestConfig;
   private supabase: any;
 
-  constructor(config?: Partial<BacktestConfig>) {
+  constructor(config?: Partial<BacktestConfig>, supabaseClient?: any) {
     this.config = { ...DEFAULT_BACKTEST_CONFIG, ...config };
-    this.supabase = createClient();
+    // Use provided client (for server-side with service role) or create frontend client
+    this.supabase = supabaseClient || createClient();
   }
 
   /**

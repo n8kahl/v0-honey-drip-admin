@@ -22,12 +22,17 @@ config({ path: ".env.local", override: true });
 config();
 
 import { BacktestEngine, type BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
+import { createClient } from "@supabase/supabase-js";
 import { writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
 
 // Re-export for backward compatibility
 export type { ParameterConfig };
+
+// Supabase service role client for server-side operations
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // ============================================================================
 // Parameter Space Definition
@@ -121,7 +126,19 @@ export class ConfluenceOptimizer {
   private generationStats: any[] = [];
 
   constructor(backtestConfig: BacktestConfig, gaConfig: Partial<GAConfig> = {}) {
-    this.backtestEngine = new BacktestEngine(backtestConfig);
+    // Create service role Supabase client for server-side database access
+    const supabase =
+      SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+        ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        : null;
+
+    if (!supabase) {
+      console.warn(
+        "[Optimizer] Warning: No Supabase credentials found. BacktestEngine may not access database."
+      );
+    }
+
+    this.backtestEngine = new BacktestEngine(backtestConfig, supabase);
     this.config = { ...GA_CONFIG, ...gaConfig };
   }
 
