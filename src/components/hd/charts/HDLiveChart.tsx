@@ -1305,8 +1305,8 @@ export function HDLiveChart({
                 className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${isHeaderCollapsed ? "-rotate-90" : ""}`}
               />
             </button>
-            <h3 className="text-[var(--text-high)] text-xs font-medium uppercase tracking-wide">
-              Live Chart ({currentTf})
+            <h3 className="text-[var(--text-high)] text-sm font-semibold uppercase tracking-wide">
+              {currentTf === "1D" ? "Daily" : `${currentTf}m`}
             </h3>
             <div className="flex items-center gap-1.5">
               {isConnected ? (
