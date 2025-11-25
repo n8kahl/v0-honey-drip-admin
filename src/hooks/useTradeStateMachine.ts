@@ -7,6 +7,7 @@ import {
   AlertType,
   TradeUpdate,
   DiscordChannel,
+  SetupType,
 } from "../types";
 import { calculateRisk } from "../lib/riskEngine/calculator";
 import {
@@ -29,6 +30,7 @@ import {
 } from "../lib/api/tradeApi";
 import { recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
+import { getInitialConfluence } from "./useTradeConfluenceMonitor";
 
 interface UseTradeStateMachineProps {
   hotTrades: Trade[];
@@ -284,6 +286,12 @@ export function useTradeStateMachine({
           /* fallback silently */
         }
 
+        // Capture initial confluence data from context engines
+        // This runs in background and may complete after UI update
+        const direction: "LONG" | "SHORT" = contract.type === "C" ? "LONG" : "SHORT";
+        const initialConfluence = await getInitialConfluence(activeTicker.symbol, direction);
+        console.log("[v0] Initial confluence captured:", initialConfluence?.score);
+
         // Create trade locally for UI display only
         // NOTE: State is WATCHING, not LOADED - this is just for previewing the contract
         // The trade is NOT added to activeTrades and NOT persisted yet
@@ -303,6 +311,9 @@ export function useTradeStateMachine({
           discordChannels: [],
           challenges: [],
           updates: [],
+          // Rich confluence data from context engines
+          confluence: initialConfluence || undefined,
+          confluenceUpdatedAt: initialConfluence ? new Date() : undefined,
         };
 
         // Set as currentTrade for UI display (Trade Details, Analysis, etc.)
@@ -541,21 +552,25 @@ export function useTradeStateMachine({
             status: "entered",
             discordChannelIds: channelIds,
             challengeIds: challengeIds,
+            // Include confluence and setup type from the trade
+            setupType: newTrade.setupType,
+            confluence: newTrade.confluence,
+            confluenceUpdatedAt: newTrade.confluenceUpdatedAt?.toISOString(),
           });
 
           // Update the trade with the real database ID
           newTrade = { ...newTrade, id: dbTrade.id };
           setCurrentTrade(newTrade);
-          setActiveTrades((prev) =>
-            prev.map((t) => (t.id === currentTrade.id ? newTrade : t))
-          );
+          setActiveTrades((prev) => prev.map((t) => (t.id === currentTrade.id ? newTrade : t)));
 
           console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
         }
         // Normal case: Update existing trade in database
         else if (newTrade.state !== currentTrade.state) {
           const newStatus = newTrade.state === "ENTERED" ? "entered" : "exited";
-          console.warn(`[v0] Updating trade ${newTrade.id} status: ${currentTrade.state} → ${newTrade.state} (DB status: ${newStatus})`);
+          console.warn(
+            `[v0] Updating trade ${newTrade.id} status: ${currentTrade.state} → ${newTrade.state} (DB status: ${newStatus})`
+          );
 
           persistencePromises.push(
             updateTradeApi(userId, newTrade.id, {
@@ -570,7 +585,9 @@ export function useTradeStateMachine({
             })
           );
         } else {
-          console.warn(`[v0] Trade state unchanged (${newTrade.state}), not updating database status`);
+          console.warn(
+            `[v0] Trade state unchanged (${newTrade.state}), not updating database status`
+          );
         }
 
         // Add trade update record
@@ -689,8 +706,8 @@ export function useTradeStateMachine({
               recordAlertHistory({
                 userId,
                 tradeId: newTrade.id,
-                alertType: alertType === "update-sl" ? "update-sl" : alertType as any,
-                channelIds: channels.map(c => c.id),
+                alertType: alertType === "update-sl" ? "update-sl" : (alertType as any),
+                channelIds: channels.map((c) => c.id),
                 challengeIds: selectedChallenges,
                 successCount: results.success,
                 failedCount: results.failed,
@@ -711,8 +728,8 @@ export function useTradeStateMachine({
               recordAlertHistory({
                 userId,
                 tradeId: newTrade.id,
-                alertType: alertType === "update-sl" ? "update-sl" : alertType as any,
-                channelIds: channels.map(c => c.id),
+                alertType: alertType === "update-sl" ? "update-sl" : (alertType as any),
+                channelIds: channels.map((c) => c.id),
                 challengeIds: selectedChallenges,
                 successCount: 0,
                 failedCount: channels.length,

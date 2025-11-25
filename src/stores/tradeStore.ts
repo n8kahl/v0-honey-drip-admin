@@ -7,6 +7,7 @@ import {
   updateTrade as dbUpdateTrade,
   deleteTrade as dbDeleteTrade,
 } from "../lib/supabase/database";
+import { ensureArray } from "../lib/utils/validation";
 
 interface TradeStore {
   // State
@@ -133,8 +134,8 @@ export const useTradeStore = create<TradeStore>()(
             state: mapStatusToState(newTrade.status),
             tradeType: "Day" as TradeType,
             updates: [],
-            discordChannels,
-            challenges,
+            discordChannels: [],
+            challenges: newTrade.challenge_id ? [newTrade.challenge_id] : [],
           };
 
           set((state) => ({
@@ -225,6 +226,12 @@ export const useTradeStore = create<TradeStore>()(
               tradeType: "Day" as TradeType,
               discordChannels: [],
               challenges: t.challenge_id ? [t.challenge_id] : [],
+              // Restore confluence and setup type from database
+              setupType: (t as any).setup_type || undefined,
+              confluence: (t as any).confluence || undefined,
+              confluenceUpdatedAt: (t as any).confluence_updated_at
+                ? new Date((t as any).confluence_updated_at)
+                : undefined,
             };
           });
 
@@ -420,7 +427,9 @@ export const useTradeStore = create<TradeStore>()(
               t.id === tradeId
                 ? {
                     ...t,
-                    discordChannels: [...new Set([...t.discordChannels, ...channelIds])],
+                    discordChannels: [
+                      ...new Set([...ensureArray(t.discordChannels), ...channelIds]),
+                    ],
                   }
                 : t
             ),
@@ -429,7 +438,10 @@ export const useTradeStore = create<TradeStore>()(
                 ? {
                     ...state.currentTrade,
                     discordChannels: [
-                      ...new Set([...state.currentTrade.discordChannels, ...channelIds]),
+                      ...new Set([
+                        ...ensureArray(state.currentTrade.discordChannels),
+                        ...channelIds,
+                      ]),
                     ],
                   }
                 : state.currentTrade,
@@ -461,7 +473,7 @@ export const useTradeStore = create<TradeStore>()(
               t.id === tradeId
                 ? {
                     ...t,
-                    discordChannels: t.discordChannels.filter((c) => c !== channelId),
+                    discordChannels: ensureArray(t.discordChannels).filter((c) => c !== channelId),
                   }
                 : t
             ),
@@ -469,7 +481,7 @@ export const useTradeStore = create<TradeStore>()(
               state.currentTrade?.id === tradeId
                 ? {
                     ...state.currentTrade,
-                    discordChannels: state.currentTrade.discordChannels.filter(
+                    discordChannels: ensureArray(state.currentTrade.discordChannels).filter(
                       (c) => c !== channelId
                     ),
                   }
@@ -508,7 +520,7 @@ export const useTradeStore = create<TradeStore>()(
               t.id === tradeId
                 ? {
                     ...t,
-                    challenges: [...new Set([...t.challenges, ...challengeIds])],
+                    challenges: [...new Set([...ensureArray(t.challenges), ...challengeIds])],
                   }
                 : t
             ),
@@ -516,7 +528,9 @@ export const useTradeStore = create<TradeStore>()(
               state.currentTrade?.id === tradeId
                 ? {
                     ...state.currentTrade,
-                    challenges: [...new Set([...state.currentTrade.challenges, ...challengeIds])],
+                    challenges: [
+                      ...new Set([...ensureArray(state.currentTrade.challenges), ...challengeIds]),
+                    ],
                   }
                 : state.currentTrade,
           }));
@@ -547,7 +561,7 @@ export const useTradeStore = create<TradeStore>()(
               t.id === tradeId
                 ? {
                     ...t,
-                    challenges: t.challenges.filter((c) => c !== challengeId),
+                    challenges: ensureArray(t.challenges).filter((c) => c !== challengeId),
                   }
                 : t
             ),
@@ -555,7 +569,9 @@ export const useTradeStore = create<TradeStore>()(
               state.currentTrade?.id === tradeId
                 ? {
                     ...state.currentTrade,
-                    challenges: state.currentTrade.challenges.filter((c) => c !== challengeId),
+                    challenges: ensureArray(state.currentTrade.challenges).filter(
+                      (c) => c !== challengeId
+                    ),
                   }
                 : state.currentTrade,
           }));

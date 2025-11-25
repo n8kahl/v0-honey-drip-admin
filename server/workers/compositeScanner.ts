@@ -42,6 +42,9 @@ import {
 import type { Bar } from "../../src/lib/strategy/patternDetection.js";
 import { fileURLToPath } from "url";
 import { OPTIMIZED_SCANNER_CONFIG } from "../../src/lib/composite/OptimizedScannerConfig.js";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -68,6 +71,43 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 console.log("[Composite Scanner] ✅ Supabase client created successfully");
+
+/**
+ * Phase 6: Load optimized parameters from configuration file
+ */
+function loadOptimizedParameters(): ParameterConfig | undefined {
+  try {
+    const configPath =
+      process.env.OPTIMIZED_PARAMS_PATH || join(process.cwd(), "config", "optimized-params.json");
+
+    if (!existsSync(configPath)) {
+      console.log("[Composite Scanner] 📊 No optimized parameters found at", configPath);
+      console.log("[Composite Scanner] ℹ️  Using default parameters");
+      return undefined;
+    }
+
+    const configFile = readFileSync(configPath, "utf-8");
+    const config = JSON.parse(configFile);
+
+    if (config.parameters) {
+      console.log("[Composite Scanner] ✅ Loaded optimized parameters:");
+      console.log(`  Win Rate: ${(config.performance?.winRate * 100 || 0).toFixed(1)}%`);
+      console.log(`  Profit Factor: ${config.performance?.profitFactor?.toFixed(2) || "N/A"}`);
+      console.log(`  Optimization Date: ${config.timestamp || "Unknown"}`);
+      return config.parameters as ParameterConfig;
+    }
+
+    console.warn("[Composite Scanner] ⚠️  Invalid config format, using defaults");
+    return undefined;
+  } catch (error) {
+    console.error("[Composite Scanner] ❌ Error loading optimized parameters:", error);
+    console.log("[Composite Scanner] ℹ️  Falling back to default parameters");
+    return undefined;
+  }
+}
+
+// Load optimized parameters on startup
+const OPTIMIZED_PARAMS = loadOptimizedParameters();
 
 /**
  * Performance statistics
@@ -491,9 +531,11 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     console.log(`[DEBUG] Watchlist raw data:`, watchlist.slice(0, 3)); // Show first 3 for debugging
 
     // Create scanner instance for this user with optimized configuration
+    // Phase 6: Include optimized parameters if available
     const scanner = new CompositeScanner({
       owner: userId,
       config: OPTIMIZED_SCANNER_CONFIG,
+      optimizedParams: OPTIMIZED_PARAMS, // Phase 6: Apply genetic algorithm optimized parameters
     });
 
     let signalsGenerated = 0;

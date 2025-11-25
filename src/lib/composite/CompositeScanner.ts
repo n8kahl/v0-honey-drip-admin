@@ -1,8 +1,10 @@
 /**
  * Composite Scanner
  * Phase 5: Main Scanner Engine
+ * Phase 6: Parameter Application (Optimized Boosts)
  *
  * Orchestrates opportunity detection, scoring, and signal generation
+ * Now supports optimized parameters from genetic algorithm (Phase 5)
  */
 
 import type { SymbolFeatures } from "../strategy/engine.js";
@@ -24,12 +26,10 @@ import {
 } from "./ScannerConfig.js";
 import { SignalDeduplication, checkDeduplication } from "./SignalDeduplication.js";
 import { ALL_DETECTORS } from "./detectors/index.js";
+import type { ParameterConfig } from "../../types/optimizedParameters.js";
 
 // Phase 2: Import Context Engines
-// TEMPORARILY DISABLED for production build compatibility
-// Context engines need refactoring to not import frontend Supabase client
-// TODO: Make engines accept Supabase client as parameter instead of importing at module level
-// import { contextEngines } from '../engines/index.js';
+import { contextEngines } from "../engines/index";
 import type {
   IVContext,
   GammaContext,
@@ -119,6 +119,7 @@ export interface CompositeScannerOptions {
   owner: string; // User ID
   config?: Partial<ScannerConfig>;
   optionsDataProvider?: (symbol: string) => Promise<OptionsChainData | null>;
+  optimizedParams?: ParameterConfig; // Phase 6: Optimized parameters from genetic algorithm
 }
 
 /**
@@ -130,6 +131,7 @@ export class CompositeScanner {
   private owner: string;
   private detectors: OpportunityDetector[];
   private optionsDataProvider?: (symbol: string) => Promise<OptionsChainData | null>;
+  private optimizedParams?: ParameterConfig; // Phase 6: Optimized parameters
 
   constructor(options: CompositeScannerOptions) {
     this.owner = options.owner;
@@ -137,6 +139,7 @@ export class CompositeScanner {
     this.deduplication = new SignalDeduplication();
     this.detectors = ALL_DETECTORS;
     this.optionsDataProvider = options.optionsDataProvider;
+    this.optimizedParams = options.optimizedParams; // Phase 6: Store optimized params
   }
 
   /**
@@ -353,22 +356,13 @@ export class CompositeScanner {
   ): Promise<DetectedOpportunity[]> {
     try {
       // Fetch all context data in parallel for performance
-      // TEMPORARILY DISABLED - engines have module resolution issues in production
-      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = [
-        null,
-        null,
-        null,
-        null,
-        null,
-      ];
-      // TODO: Re-enable once engines are refactored
-      // const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
-      //   contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
-      //   contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
-      //   contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
-      //   contextEngines.flowAnalysis.getFlowContext(symbol, 'medium').catch(() => null),
-      //   contextEngines.regimeDetection.getRegimeContext().catch(() => null),
-      // ]);
+      const [ivContext, gammaContext, mtfContext, flowContext, regimeContext] = await Promise.all([
+        contextEngines.ivPercentile.getIVContext(symbol).catch(() => null),
+        contextEngines.gammaExposure.getGammaContext(symbol).catch(() => null),
+        contextEngines.mtfAlignment.getMTFContext(symbol).catch(() => null),
+        contextEngines.flowAnalysis.getFlowContext(symbol, "medium").catch(() => null),
+        contextEngines.regimeDetection.getRegimeContext().catch(() => null),
+      ]);
 
       // Apply boosts to each opportunity
       return opportunities.map((opp) => {
@@ -379,51 +373,59 @@ export class CompositeScanner {
           | "SWING";
 
         // Start with current scores
-        const scalpScore = opp.styleScores.scalpScore;
-        const dayTradeScore = opp.styleScores.dayTradeScore;
-        const swingScore = opp.styleScores.swingScore;
-        const recommendedStyleScore = opp.styleScores.recommendedStyleScore;
+        let scalpScore = opp.styleScores.scalpScore;
+        let dayTradeScore = opp.styleScores.dayTradeScore;
+        let swingScore = opp.styleScores.swingScore;
 
-        // Apply context engine boosts
-        // TEMPORARILY DISABLED - engines have module resolution issues in production
-        // Scanner still works without these advanced boosts, just with baseline detector scores
-        // TODO: Re-enable once engines are refactored
+        // Phase 6: Apply optimized boosts (if optimizedParams provided)
+        if (this.optimizedParams) {
+          // Simplified boost application since context engines are disabled
+          // When engines are re-enabled, these boosts will be more sophisticated
 
-        // // Apply IV boost (if available)
-        // if (ivContext) {
-        //   scalpScore = contextEngines.ivPercentile.applyIVBoost(scalpScore, ivContext, direction);
-        //   dayTradeScore = contextEngines.ivPercentile.applyIVBoost(dayTradeScore, ivContext, direction);
-        //   swingScore = contextEngines.ivPercentile.applyIVBoost(swingScore, ivContext, direction);
-        // }
+          // For now, apply flat boosts based on simplified conditions
+          // In production: These would be applied based on actual context data
 
-        // // Apply Gamma boost (if available)
-        // if (gammaContext) {
-        //   const currentPrice = features.price?.current;
-        //   scalpScore = contextEngines.gammaExposure.applyGammaBoost(scalpScore, gammaContext, direction, currentPrice);
-        //   dayTradeScore = contextEngines.gammaExposure.applyGammaBoost(dayTradeScore, gammaContext, direction, currentPrice);
-        //   swingScore = contextEngines.gammaExposure.applyGammaBoost(swingScore, gammaContext, direction, currentPrice);
-        // }
+          // Example: Apply IV boost if we detect low/high IV conditions
+          // (Placeholder until engines are re-enabled)
+          const ivPercentile = (features as any).ivPercentile || 50; // Default to median
+          if (ivPercentile < 20) {
+            // Low IV - favorable for entries
+            scalpScore *= 1 + this.optimizedParams.ivBoosts.lowIV;
+            dayTradeScore *= 1 + this.optimizedParams.ivBoosts.lowIV;
+            swingScore *= 1 + this.optimizedParams.ivBoosts.lowIV;
+          } else if (ivPercentile > 80) {
+            // High IV - less favorable
+            scalpScore *= 1 + this.optimizedParams.ivBoosts.highIV; // highIV is negative
+            dayTradeScore *= 1 + this.optimizedParams.ivBoosts.highIV;
+            swingScore *= 1 + this.optimizedParams.ivBoosts.highIV;
+          }
 
-        // // Apply MTF boost (if available)
-        // if (mtfContext) {
-        //   scalpScore = contextEngines.mtfAlignment.applyMTFBoost(scalpScore, mtfContext, direction);
-        //   dayTradeScore = contextEngines.mtfAlignment.applyMTFBoost(dayTradeScore, mtfContext, direction);
-        //   swingScore = contextEngines.mtfAlignment.applyMTFBoost(swingScore, mtfContext, direction);
-        // }
+          // Apply gamma boost placeholder
+          const gammaExposure = (features as any).gammaExposure || 0;
+          if (gammaExposure < -1) {
+            // Short gamma - volatile conditions
+            scalpScore *= 1 + this.optimizedParams.gammaBoosts.shortGamma;
+            dayTradeScore *= 1 + this.optimizedParams.gammaBoosts.shortGamma;
+            swingScore *= 1 + this.optimizedParams.gammaBoosts.shortGamma;
+          } else if (gammaExposure > 1) {
+            // Long gamma - pinning risk
+            scalpScore *= 1 + this.optimizedParams.gammaBoosts.longGamma; // longGamma is negative
+            dayTradeScore *= 1 + this.optimizedParams.gammaBoosts.longGamma;
+            swingScore *= 1 + this.optimizedParams.gammaBoosts.longGamma;
+          }
 
-        // // Apply Flow boost (if available)
-        // if (flowContext) {
-        //   scalpScore = contextEngines.flowAnalysis.applyFlowBoost(scalpScore, flowContext, direction);
-        //   dayTradeScore = contextEngines.flowAnalysis.applyFlowBoost(dayTradeScore, flowContext, direction);
-        //   swingScore = contextEngines.flowAnalysis.applyFlowBoost(swingScore, flowContext, direction);
-        // }
-
-        // // Apply Regime boost (if available)
-        // if (regimeContext) {
-        //   scalpScore = contextEngines.regimeDetection.applyRegimeBoost(scalpScore, regimeContext, direction, 'SCALP');
-        //   dayTradeScore = contextEngines.regimeDetection.applyRegimeBoost(dayTradeScore, regimeContext, direction, 'DAY');
-        //   swingScore = contextEngines.regimeDetection.applyRegimeBoost(swingScore, regimeContext, direction, 'SWING');
-        // }
+          // Apply flow boost placeholder
+          const flowAlignment = (features as any).flowAlignment || "neutral";
+          if (flowAlignment === "aligned") {
+            scalpScore *= 1 + this.optimizedParams.flowBoosts.aligned;
+            dayTradeScore *= 1 + this.optimizedParams.flowBoosts.aligned;
+            swingScore *= 1 + this.optimizedParams.flowBoosts.aligned;
+          } else if (flowAlignment === "opposed") {
+            scalpScore *= 1 + this.optimizedParams.flowBoosts.opposed; // opposed is negative
+            dayTradeScore *= 1 + this.optimizedParams.flowBoosts.opposed;
+            swingScore *= 1 + this.optimizedParams.flowBoosts.opposed;
+          }
+        }
 
         // Recalculate recommended style after boosts
         const scores = {
@@ -640,16 +642,29 @@ export class CompositeScanner {
         ? thresholds.weekendMinBaseScore
         : thresholds.minBaseScore;
 
-    const effectiveMinStyleScore =
+    let effectiveMinStyleScore =
       isWeekend && thresholds.weekendMinStyleScore !== undefined
         ? thresholds.weekendMinStyleScore
         : thresholds.minStyleScore;
+
+    // Phase 6: Apply optimized min scores (if optimizedParams provided)
+    if (this.optimizedParams) {
+      // Override style score thresholds with optimized values
+      const style = signal.recommendedStyle;
+      if (style === "scalp") {
+        effectiveMinStyleScore = this.optimizedParams.minScores.scalp;
+      } else if (style === "day_trade") {
+        effectiveMinStyleScore = this.optimizedParams.minScores.day;
+      } else if (style === "swing") {
+        effectiveMinStyleScore = this.optimizedParams.minScores.swing;
+      }
+    }
 
     // Base score threshold
     if (signal.baseScore < effectiveMinBaseScore) {
       return {
         pass: false,
-        reason: `Base score ${signal.baseScore.toFixed(1)} < ${effectiveMinBaseScore}${isWeekend ? " (weekend)" : ""}`,
+        reason: `Base score ${signal.baseScore.toFixed(1)} < ${effectiveMinBaseScore}${isWeekend ? " (weekend)" : ""}${this.optimizedParams ? " (optimized)" : ""}`,
       };
     }
 
@@ -657,7 +672,7 @@ export class CompositeScanner {
     if (signal.recommendedStyleScore < effectiveMinStyleScore) {
       return {
         pass: false,
-        reason: `Style score ${signal.recommendedStyleScore.toFixed(1)} < ${effectiveMinStyleScore}${isWeekend ? " (weekend)" : ""}`,
+        reason: `Style score ${signal.recommendedStyleScore.toFixed(1)} < ${effectiveMinStyleScore}${isWeekend ? " (weekend)" : ""}${this.optimizedParams ? " (optimized)" : ""}`,
       };
     }
 

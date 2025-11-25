@@ -853,7 +853,7 @@ router.get("/bars", requireProxyToken, async (req, res) => {
       // Normalize response shape
       const results = Array.isArray(data?.results) ? data.results : [];
       normalized = results.map((bar: any) => ({
-        timestamp: bar.t || 0, // epoch ms
+        timestamp: bar.t ? Math.floor(bar.t / 1000000) : 0, // Massive returns nanoseconds, convert to milliseconds
         open: Number(bar.o) || 0,
         high: Number(bar.h) || 0,
         low: Number(bar.l) || 0,
