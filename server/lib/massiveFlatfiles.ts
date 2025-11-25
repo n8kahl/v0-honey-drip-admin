@@ -166,16 +166,20 @@ export async function parseDayFile(csvPath: string, symbol: string): Promise<any
         // Filter by symbol and parse the row
         // Match both "SPX" and "I:SPX" formats
         if (row.ticker === cleanSymbol || row.ticker === `I:${cleanSymbol}`) {
+          // Parse timestamp from window_start (nanoseconds) to milliseconds
+          const timestampNs = row.window_start || row.timestamp;
+          const timestampMs = timestampNs ? Math.floor(parseInt(timestampNs) / 1000000) : 0;
+
           bars.push({
             ticker: row.ticker,
-            t: parseInt(row.timestamp), // Epoch milliseconds
+            t: timestampMs, // Epoch milliseconds
             o: parseFloat(row.open),
             h: parseFloat(row.high),
             l: parseFloat(row.low),
             c: parseFloat(row.close),
-            v: parseInt(row.volume),
-            vw: parseFloat(row.vwap),
-            n: parseInt(row.transactions),
+            v: row.volume ? parseInt(row.volume) : 0,
+            vw: row.vwap ? parseFloat(row.vwap) : parseFloat(row.close), // Use close if vwap missing
+            n: row.transactions ? parseInt(row.transactions) : 0,
           });
         }
       })
