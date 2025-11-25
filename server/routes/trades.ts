@@ -205,6 +205,11 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       entry_time: trade.entryTime || null,
       notes: trade.notes || null,
       contract: trade.contract || null, // Store full contract object as JSONB (includes bid, ask, volume, Greeks, etc.)
+      // Confluence and setup type from signal detection
+      setup_type: trade.setupType || null,
+      confluence: trade.confluence || null, // JSONB with score and factor breakdown
+      confluence_updated_at:
+        trade.confluenceUpdatedAt || (trade.confluence ? new Date().toISOString() : null),
     } as any;
 
     const { data, error } = await getSupabaseClient()

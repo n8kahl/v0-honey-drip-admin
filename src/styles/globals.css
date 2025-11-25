@@ -261,8 +261,165 @@
   .animate-pulse-green {
     animation: pulse-green 2s ease-in-out infinite;
   }
-  
+
   .animate-pulse-red {
     animation: pulse-red 2s ease-in-out infinite;
+  }
+
+  /* Confluence change flash animations */
+  @keyframes flash-warning {
+    0% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+    15% {
+      background-color: rgba(245, 158, 11, 0.2);
+      box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.3);
+    }
+    30% {
+      background-color: rgba(245, 158, 11, 0.1);
+      box-shadow: inset 0 0 8px rgba(245, 158, 11, 0.2);
+    }
+    45% {
+      background-color: rgba(245, 158, 11, 0.15);
+      box-shadow: inset 0 0 10px rgba(245, 158, 11, 0.25);
+    }
+    60% {
+      background-color: rgba(245, 158, 11, 0.08);
+      box-shadow: inset 0 0 6px rgba(245, 158, 11, 0.15);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+  }
+
+  @keyframes flash-urgent {
+    0% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+    10% {
+      background-color: rgba(249, 115, 22, 0.25);
+      box-shadow: inset 0 0 16px rgba(249, 115, 22, 0.4);
+    }
+    20% {
+      background-color: rgba(249, 115, 22, 0.15);
+      box-shadow: inset 0 0 12px rgba(249, 115, 22, 0.3);
+    }
+    30% {
+      background-color: rgba(249, 115, 22, 0.2);
+      box-shadow: inset 0 0 14px rgba(249, 115, 22, 0.35);
+    }
+    40% {
+      background-color: rgba(249, 115, 22, 0.1);
+      box-shadow: inset 0 0 10px rgba(249, 115, 22, 0.2);
+    }
+    60% {
+      background-color: rgba(249, 115, 22, 0.05);
+      box-shadow: inset 0 0 6px rgba(249, 115, 22, 0.1);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+  }
+
+  @keyframes flash-critical {
+    0% {
+      background-color: transparent;
+      box-shadow: none;
+      border-color: var(--border-hairline);
+    }
+    8% {
+      background-color: rgba(239, 68, 68, 0.3);
+      box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.5), 0 0 10px rgba(239, 68, 68, 0.3);
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+    16% {
+      background-color: rgba(239, 68, 68, 0.15);
+      box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.3);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    24% {
+      background-color: rgba(239, 68, 68, 0.25);
+      box-shadow: inset 0 0 16px rgba(239, 68, 68, 0.4), 0 0 8px rgba(239, 68, 68, 0.25);
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    40% {
+      background-color: rgba(239, 68, 68, 0.1);
+      box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+    70% {
+      background-color: rgba(239, 68, 68, 0.05);
+      box-shadow: none;
+      border-color: var(--border-hairline);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: none;
+      border-color: var(--border-hairline);
+    }
+  }
+
+  @keyframes flash-positive {
+    0% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+    15% {
+      background-color: rgba(22, 163, 74, 0.2);
+      box-shadow: inset 0 0 12px rgba(22, 163, 74, 0.3);
+    }
+    30% {
+      background-color: rgba(22, 163, 74, 0.1);
+      box-shadow: inset 0 0 8px rgba(22, 163, 74, 0.2);
+    }
+    50% {
+      background-color: rgba(22, 163, 74, 0.05);
+      box-shadow: inset 0 0 4px rgba(22, 163, 74, 0.1);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+  }
+
+  /* Flash classes - one-time animations */
+  .animate-flash-warning {
+    animation: flash-warning 3s ease-out forwards;
+  }
+
+  .animate-flash-urgent {
+    animation: flash-urgent 3s ease-out forwards;
+  }
+
+  .animate-flash-critical {
+    animation: flash-critical 3s ease-out forwards;
+  }
+
+  .animate-flash-positive {
+    animation: flash-positive 2.5s ease-out forwards;
+  }
+
+  /* Glow ring for confluence disc updates */
+  @keyframes disc-update-pulse {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 currentColor;
+    }
+    50% {
+      transform: scale(1.2);
+      box-shadow: 0 0 0 4px currentColor;
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  .animate-disc-pulse {
+    animation: disc-update-pulse 0.6s ease-out;
   }
 }

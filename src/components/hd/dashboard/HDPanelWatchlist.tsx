@@ -1,15 +1,16 @@
-import { Ticker, Trade, Challenge } from '../../../types';
-import { HDRowWatchlist } from '../cards/HDRowWatchlist';
-import { HDRowTrade } from '../cards/HDRowTrade';
-import { HDRowChallenge } from '../cards/HDRowChallenge';
-import { HDConfirmDialog } from '../forms/HDConfirmDialog';
-import { formatPercent, cn } from '../../../lib/utils';
-import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import type { CompositeSignal } from '../../../lib/composite/CompositeSignal';
-import { WatchlistRecapCard } from '../../WatchlistRecapCard';
-import MobileWatchlist from '../../Watchlist/MobileWatchlist';
-import { useEnrichedMarketSession } from '../../../stores/marketDataStore';
+import { Ticker, Trade, Challenge } from "../../../types";
+import { HDRowWatchlist } from "../cards/HDRowWatchlist";
+import { HDRowTrade } from "../cards/HDRowTrade";
+import { HDRowChallenge } from "../cards/HDRowChallenge";
+import { HDConfirmDialog } from "../forms/HDConfirmDialog";
+import { formatPercent, cn } from "../../../lib/utils";
+import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
+import { WatchlistRecapCard } from "../../WatchlistRecapCard";
+import MobileWatchlist from "../../Watchlist/MobileWatchlist";
+import { useEnrichedMarketSession } from "../../../stores/marketDataStore";
+import { useTradeConfluenceMonitor } from "../../../hooks/useTradeConfluenceMonitor";
 
 interface HDPanelWatchlistProps {
   watchlist: Ticker[];
@@ -52,19 +53,22 @@ export function HDPanelWatchlist({
   onRemoveChallenge,
   onOpenActiveTrade,
   onOpenReviewTrade,
-  className
+  className,
 }: HDPanelWatchlistProps) {
   const enrichedSession = useEnrichedMarketSession();
   const isWeekend = enrichedSession?.isWeekend;
   const session = enrichedSession?.session;
-  
+
+  // Real-time confluence monitoring for active trades
+  const { isTickerFlashing } = useTradeConfluenceMonitor();
+
   // Compute Friday recap if weekend
   const recap = (() => {
     if (!isWeekend) return null;
     // Filter trades exited on last trading day (Friday) - simplistic: trades with EXITED state
-    const exited = allTrades.filter(t => t.state === 'EXITED');
+    const exited = allTrades.filter((t) => t.state === "EXITED");
     if (exited.length === 0) return null;
-    
+
     const totalR = exited.reduce((sum, trade) => {
       if (!trade.entryPrice || !trade.exitPrice || !trade.stopLoss) return sum;
       const risk = trade.entryPrice - trade.stopLoss;
@@ -72,7 +76,7 @@ export function HDPanelWatchlist({
       const gain = trade.exitPrice - trade.entryPrice;
       return sum + gain / risk;
     }, 0);
-    const winners = exited.filter(t => t.entryPrice && t.exitPrice && t.exitPrice > t.entryPrice);
+    const winners = exited.filter((t) => t.entryPrice && t.exitPrice && t.exitPrice > t.entryPrice);
     const winRate = exited.length > 0 ? (winners.length / exited.length) * 100 : 0;
     return {
       totalR,
@@ -82,20 +86,21 @@ export function HDPanelWatchlist({
   })();
   // watchlist prop is already updated by App.tsx useQuotes with real-time data
   // No need to fetch quotes again here
-  
+
   // Calculate P&L for a challenge
   const calculateChallengePnL = (challengeId: string): number => {
     const challengeTrades = allTrades.filter(
-      (trade) => trade.challenges.includes(challengeId) && 
-      (trade.state === 'ENTERED' || trade.state === 'EXITED')
+      (trade) =>
+        trade.challenges.includes(challengeId) &&
+        (trade.state === "ENTERED" || trade.state === "EXITED")
     );
-    
+
     if (challengeTrades.length === 0) return 0;
-    
+
     const totalPnL = challengeTrades.reduce((sum, trade) => {
       return sum + (trade.movePercent || 0);
     }, 0);
-    
+
     return totalPnL / challengeTrades.length;
   };
 
@@ -106,16 +111,16 @@ export function HDPanelWatchlist({
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
-    type: 'ticker' | 'challenge' | 'loadedTrade';
+    type: "ticker" | "challenge" | "loadedTrade";
     item: Ticker | Challenge | Trade | null;
   }>({
     isOpen: false,
-    type: 'ticker',
+    type: "ticker",
     item: null,
   });
 
-  const loadedTrades = hotTrades?.filter(t => t.state === 'LOADED') || [];
-  const activeTrades = hotTrades?.filter(t => t.state === 'ENTERED') || []; // Only ENTERED, not EXITED
+  const loadedTrades = hotTrades?.filter((t) => t.state === "LOADED") || [];
+  const activeTrades = hotTrades?.filter((t) => t.state === "ENTERED") || []; // Only ENTERED, not EXITED
 
   useEffect(() => {
     if (expandLoadedList !== undefined) {
@@ -126,47 +131,53 @@ export function HDPanelWatchlist({
   const handleConfirmDelete = () => {
     if (!confirmDialog.item) return;
 
-    if (confirmDialog.type === 'ticker') {
+    if (confirmDialog.type === "ticker") {
       onRemoveTicker?.(confirmDialog.item as Ticker);
-    } else if (confirmDialog.type === 'challenge') {
+    } else if (confirmDialog.type === "challenge") {
       onRemoveChallenge?.(confirmDialog.item as Challenge);
-    } else if (confirmDialog.type === 'loadedTrade') {
+    } else if (confirmDialog.type === "loadedTrade") {
       onRemoveLoadedTrade?.(confirmDialog.item as Trade);
     }
 
-    setConfirmDialog({ isOpen: false, type: 'ticker', item: null });
+    setConfirmDialog({ isOpen: false, type: "ticker", item: null });
   };
 
   const getConfirmDialogContent = () => {
-    if (!confirmDialog.item) return { title: '', message: '' };
+    if (!confirmDialog.item) return { title: "", message: "" };
 
-    if (confirmDialog.type === 'ticker') {
+    if (confirmDialog.type === "ticker") {
       const ticker = confirmDialog.item as Ticker;
       return {
-        title: 'Remove from Watchlist?',
+        title: "Remove from Watchlist?",
         message: `Are you sure you want to remove ${ticker.symbol} from your watchlist? This action cannot be undone.`,
       };
-    } else if (confirmDialog.type === 'challenge') {
+    } else if (confirmDialog.type === "challenge") {
       const challenge = confirmDialog.item as Challenge;
       return {
-        title: 'Delete Challenge?',
+        title: "Delete Challenge?",
         message: `Are you sure you want to delete "${challenge.name}"? Trades associated with this challenge will not be affected.`,
       };
-    } else if (confirmDialog.type === 'loadedTrade') {
+    } else if (confirmDialog.type === "loadedTrade") {
       const trade = confirmDialog.item as Trade;
       return {
-        title: 'Remove Loaded Trade?',
+        title: "Remove Loaded Trade?",
         message: `Are you sure you want to remove ${trade.ticker} from loaded trades? No alert will be sent.`,
       };
     }
 
-    return { title: '', message: '' };
+    return { title: "", message: "" };
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--surface-1)] overflow-y-auto" data-testid="watchlist-panel">
+    <div
+      className="flex flex-col h-full bg-[var(--surface-1)] overflow-y-auto"
+      data-testid="watchlist-panel"
+    >
       {/* Active Trades Section (DESKTOP only) */}
-      <div className="hidden lg:block border-b border-[var(--border-hairline)] flex-shrink-0" data-testid="active-trades-section">
+      <div
+        className="hidden lg:block border-b border-[var(--border-hairline)] flex-shrink-0"
+        data-testid="active-trades-section"
+      >
         <div className="flex items-center justify-between px-4 py-3 bg-[var(--brand-primary)]">
           <button
             onClick={() => setActiveExpanded(!activeExpanded)}
@@ -192,6 +203,7 @@ export function HDPanelWatchlist({
                 key={trade.id}
                 trade={trade}
                 active={false}
+                isFlashing={isTickerFlashing(trade.ticker)}
                 onClick={() => {
                   // Prefer explicit desktop navigation if provided
                   if (onOpenActiveTrade) onOpenActiveTrade(trade.id);
@@ -233,14 +245,17 @@ export function HDPanelWatchlist({
                 key={trade.id}
                 trade={trade}
                 active={false}
+                isFlashing={isTickerFlashing(trade.ticker)}
                 onClick={() => onHotTradeClick?.(trade)}
-                onRemove={() => setConfirmDialog({ isOpen: true, type: 'loadedTrade', item: trade })}
+                onRemove={() =>
+                  setConfirmDialog({ isOpen: true, type: "loadedTrade", item: trade })
+                }
               />
             ))}
           </div>
         )}
       </div>
-      
+
       {/* Watchlist Section */}
       <div className="border-b border-[var(--border-hairline)] flex-shrink-0">
         <div className="flex items-center justify-between px-4 py-3 bg-[var(--brand-primary)]">
@@ -274,12 +289,12 @@ export function HDPanelWatchlist({
                 {isWeekend && recap && (
                   <div className="mb-3 px-3">
                     <WatchlistRecapCard
-                      date={new Date().toLocaleDateString('en-US')}
+                      date={new Date().toLocaleDateString("en-US")}
                       dayName="Friday"
                       totalR={recap.totalR}
                       winRate={recap.winRate}
                       tradeCount={recap.tradeCount}
-                      onClick={() => console.log('[v0] Review setups clicked')}
+                      onClick={() => console.log("[v0] Review setups clicked")}
                     />
                   </div>
                 )}
@@ -288,10 +303,10 @@ export function HDPanelWatchlist({
                     key={`quick-${t.id}`}
                     onClick={() => onTickerClick?.(t)}
                     className={cn(
-                      'px-2 py-1 rounded-[var(--radius)] text-xs whitespace-nowrap border',
+                      "px-2 py-1 rounded-[var(--radius)] text-xs whitespace-nowrap border",
                       t.symbol === activeTicker
-                        ? 'bg-[var(--brand-primary)] text-[var(--bg-base)] border-transparent'
-                        : 'bg-[var(--surface-1)] text-[var(--text-muted)] hover:text-[var(--text-high)] border-[var(--border-hairline)]'
+                        ? "bg-[var(--brand-primary)] text-[var(--bg-base)] border-transparent"
+                        : "bg-[var(--surface-1)] text-[var(--text-muted)] hover:text-[var(--text-high)] border-[var(--border-hairline)]"
                     )}
                     aria-label={`Switch to ${t.symbol}`}
                     data-testid={`watchlist-item-${t.symbol}`}
@@ -314,14 +329,14 @@ export function HDPanelWatchlist({
                   ticker={ticker}
                   active={ticker.symbol === activeTicker}
                   onClick={() => onTickerClick?.(ticker)}
-                  onRemove={() => setConfirmDialog({ isOpen: true, type: 'ticker', item: ticker })}
+                  onRemove={() => setConfirmDialog({ isOpen: true, type: "ticker", item: ticker })}
                 />
               ))}
             </div>
           </div>
         )}
       </div>
-      
+
       {/* Challenges Section */}
       <div className="border-b border-[var(--border-hairline)] flex-shrink-0">
         <div className="flex items-center justify-between px-4 py-3 bg-[var(--brand-primary)]">
@@ -361,7 +376,9 @@ export function HDPanelWatchlist({
                   challenge={challenge}
                   active={challenge.id === activeChallenge}
                   onClick={() => onChallengeClick?.(challenge)}
-                  onRemove={() => setConfirmDialog({ isOpen: true, type: 'challenge', item: challenge })}
+                  onRemove={() =>
+                    setConfirmDialog({ isOpen: true, type: "challenge", item: challenge })
+                  }
                   pnl={calculateChallengePnL(challenge.id)}
                 />
               ))
@@ -373,7 +390,7 @@ export function HDPanelWatchlist({
       {/* Confirmation Dialog */}
       <HDConfirmDialog
         isOpen={confirmDialog.isOpen}
-        onClose={() => setConfirmDialog({ isOpen: false, type: 'ticker', item: null })}
+        onClose={() => setConfirmDialog({ isOpen: false, type: "ticker", item: null })}
         onConfirm={handleConfirmDelete}
         title={getConfirmDialogContent().title}
         message={getConfirmDialogContent().message}

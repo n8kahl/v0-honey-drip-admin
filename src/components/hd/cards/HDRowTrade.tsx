@@ -1,20 +1,23 @@
-import { Trade } from '../../../types';
-import { HDTagTradeType } from '../common/HDTagTradeType';
-import { formatPercent, cn } from '../../../lib/utils';
-import { X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Trade } from "../../../types";
+import { HDTagTradeType } from "../common/HDTagTradeType";
+import { formatPercent, cn } from "../../../lib/utils";
+import { X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { HDConfluenceDiscsCompact } from "../signals/HDConfluenceDiscs";
+import { HDSetupTypeBadgeCompact } from "../signals/HDSetupTypeBadge";
 
 interface HDRowTradeProps {
   trade: Trade;
   active?: boolean;
+  isFlashing?: boolean; // When confluence changes significantly
   onClick?: () => void;
   onRemove?: () => void;
 }
 
-export function HDRowTrade({ trade, active, onClick, onRemove }: HDRowTradeProps) {
+export function HDRowTrade({ trade, active, isFlashing, onClick, onRemove }: HDRowTradeProps) {
   const navigate = useNavigate();
   const isPositive = (trade.movePercent || 0) >= 0;
-  const isLoaded = trade.state === 'LOADED';
+  const isLoaded = trade.state === "LOADED";
 
   const handleClick = () => {
     if (onClick) {
@@ -23,34 +26,48 @@ export function HDRowTrade({ trade, active, onClick, onRemove }: HDRowTradeProps
       navigate(`/trades/${trade.id}`);
     }
   };
-  
+
+  // Determine flash animation class based on confluence change
+  const flashClass = isFlashing
+    ? trade.confluence && trade.confluence.score < 40
+      ? "animate-flash-urgent"
+      : "animate-flash-warning"
+    : "";
+
   return (
     <div
       className={cn(
-        'w-full flex items-start justify-between p-3 transition-colors border-b border-[var(--border-hairline)] last:border-b-0 group',
-        active 
-          ? 'bg-[var(--brand-primary)]/10 border-l-2 border-l-[var(--brand-primary)]' 
-          : 'hover:bg-[var(--surface-1)]'
+        "w-full flex items-start justify-between p-3 transition-colors border-b border-[var(--border-hairline)] last:border-b-0 group",
+        active
+          ? "bg-[var(--brand-primary)]/10 border-l-2 border-l-[var(--brand-primary)]"
+          : "hover:bg-[var(--surface-1)]",
+        flashClass
       )}
     >
-      <button
-        onClick={handleClick}
-        className="flex-1 min-w-0 text-left"
-      >
+      <button onClick={handleClick} className="flex-1 min-w-0 text-left">
         <div className="flex items-center gap-2 mb-1">
-          <span className={cn(
-            'font-medium',
-            active ? 'text-[var(--text-high)]' : 'text-[var(--text-high)]'
-          )}>
+          <span
+            className={cn(
+              "font-medium",
+              active ? "text-[var(--text-high)]" : "text-[var(--text-high)]"
+            )}
+          >
             {trade.ticker}
           </span>
           <HDTagTradeType type={trade.tradeType} />
+          {/* Setup type badge */}
+          {trade.setupType && <HDSetupTypeBadgeCompact setupType={trade.setupType} />}
         </div>
-        <div className="text-xs text-[var(--text-muted)]">
-          {trade.contract.strike}{trade.contract.type} • {trade.contract.expiry}
+        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <span>
+            {trade.contract.strike}
+            {trade.contract.type} • {trade.contract.expiry}
+          </span>
+          {/* Confluence discs */}
+          {trade.confluence && <HDConfluenceDiscsCompact confluence={trade.confluence} />}
         </div>
       </button>
-      
+
       <div className="flex items-start gap-2">
         <div className="flex flex-col items-end gap-1">
           {isLoaded ? (
@@ -61,18 +78,20 @@ export function HDRowTrade({ trade, active, onClick, onRemove }: HDRowTradeProps
             <>
               <span
                 className={cn(
-                  'text-sm tabular-nums font-medium',
-                  isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
+                  "text-sm tabular-nums font-medium",
+                  isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
                 )}
               >
                 {formatPercent(trade.movePercent)}
               </span>
-              <span className={cn(
-                'px-2 py-0.5 rounded text-[9px] uppercase tracking-wide',
-                isPositive 
-                  ? 'bg-[var(--accent-positive)]/20 text-[var(--accent-positive)] border border-[var(--accent-positive)]/30'
-                  : 'bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border border-[var(--accent-negative)]/30'
-              )}>
+              <span
+                className={cn(
+                  "px-2 py-0.5 rounded text-[9px] uppercase tracking-wide",
+                  isPositive
+                    ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)] border border-[var(--accent-positive)]/30"
+                    : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border border-[var(--accent-negative)]/30"
+                )}
+              >
                 ✓ Active
               </span>
             </>
