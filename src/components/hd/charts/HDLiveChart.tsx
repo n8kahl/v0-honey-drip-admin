@@ -112,7 +112,7 @@ export function HDLiveChart({
   ticker,
   timeframe = "1",
   initialTimeframe,
-  indicators = { ema: { periods: [8, 21, 50, 200] }, vwap: { enabled: true, bands: false } },
+  indicators = { ema: { periods: [9, 21] }, vwap: { enabled: true, bands: false } },
   events = [],
   levels = [], // Added default empty array for levels
   marketHours = { open: "09:30", close: "16:00", preMarket: "04:00", afterHours: "20:00" },
@@ -596,12 +596,17 @@ export function HDLiveChart({
 
       // Create EMA series
       if (indicators?.ema?.periods) {
-        const colors = ["#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
-        indicators.ema.periods.forEach((period, i) => {
+        const emaColors: Record<number, string> = {
+          9: "#3B82F6", // Blue for EMA9 (fast)
+          21: "#F59E0B", // Orange for EMA21 (medium)
+          50: "#8B5CF6", // Purple for EMA50
+          200: "#EC4899", // Pink for EMA200
+        };
+        indicators.ema.periods.forEach((period) => {
           const emaSeries = createLineSeries(
             {
-              color: colors[i % colors.length],
-              lineWidth: 1,
+              color: emaColors[period] || "#3B82F6",
+              lineWidth: period === 9 || period === 21 ? 2 : 1, // Thicker lines for primary EMAs
               title: `EMA${period}`,
             },
             `EMA${period}`
@@ -616,9 +621,9 @@ export function HDLiveChart({
       if (indicators?.vwap?.enabled) {
         const vwapSeries = createLineSeries(
           {
-            color: "#10B981",
+            color: "#10B981", // Green
             lineWidth: 2,
-            lineStyle: 2,
+            lineStyle: 0, // Solid line (was dashed with lineStyle: 2)
             title: "VWAP",
           },
           "VWAP"
