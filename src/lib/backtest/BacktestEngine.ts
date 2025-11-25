@@ -146,9 +146,9 @@ export class BacktestEngine {
           autoRefreshToken: false,
         },
         global: {
-          fetch: (...args) => {
-            console.log("[BacktestEngine] Supabase fetch to:", args[0]);
-            return fetch(...args).catch((err) => {
+          fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+            console.log("[BacktestEngine] Supabase fetch to:", input);
+            return fetch(input, init).catch((err) => {
               console.error("[BacktestEngine] Fetch error:", err.message);
               throw err;
             });
