@@ -30,6 +30,8 @@
     "src/lib/strategy/alertProcessor.ts",
     "src/lib/discord/webhook.ts",
     "src/lib/discord/strategyAlerts.ts",
+    "src/lib/engines/**/*",
+    "src/lib/composite/**/*",
     "src/types/strategy.ts",
     "src/lib/indicators.ts",
     "src/vite-env.d.ts"
