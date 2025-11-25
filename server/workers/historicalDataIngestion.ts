@@ -14,26 +14,12 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { getOptionChain, getIndicesSnapshot } from "../massive/client.js";
-import {
-  ingestHistoricalGreeks,
-  GreeksIngestionResult,
-} from "./ingestion/greeksIngestion.js";
-import {
-  ingestOptionsFlow,
-  FlowIngestionResult,
-} from "./ingestion/flowIngestion.js";
-import {
-  calculateIVPercentile,
-  IVPercentileResult,
-} from "./ingestion/ivPercentileCalculation.js";
-import {
-  snapshotGammaExposure,
-  GammaSnapshotResult,
-} from "./ingestion/gammaExposureSnapshot.js";
-import {
-  calculateMarketRegime,
-  MarketRegimeResult,
-} from "./ingestion/marketRegimeCalculation.js";
+import { isIndex } from "../lib/symbolUtils.js";
+import { ingestHistoricalGreeks, GreeksIngestionResult } from "./ingestion/greeksIngestion.js";
+import { ingestOptionsFlow, FlowIngestionResult } from "./ingestion/flowIngestion.js";
+import { calculateIVPercentile, IVPercentileResult } from "./ingestion/ivPercentileCalculation.js";
+import { snapshotGammaExposure, GammaSnapshotResult } from "./ingestion/gammaExposureSnapshot.js";
+import { calculateMarketRegime, MarketRegimeResult } from "./ingestion/marketRegimeCalculation.js";
 
 // ============================================================================
 // Configuration
@@ -48,15 +34,12 @@ const INGESTION_INTERVALS = {
   ivPercentile: 24 * 60 * 60 * 1000, // Daily at market close
   gamma: 15 * 60 * 1000, // 15 minutes
   regime: 24 * 60 * 60 * 1000, // Daily at market close
+  watchlistRefresh: 15 * 60 * 1000, // 15 minutes - refresh watchlist to catch new symbols
 };
 
 // Market close time (4:00pm ET = 9:00pm UTC)
 const MARKET_CLOSE_HOUR = 21; // UTC
 const MARKET_CLOSE_MINUTE = 0;
-
-// Symbols to track (SPX, NDX for now - expand later)
-const INDEX_SYMBOLS = ["SPX", "NDX"];
-const EQUITY_SYMBOLS: string[] = []; // Can add high-volume tickers later
 
 // ============================================================================
 // Main Worker
@@ -70,11 +53,13 @@ interface WorkerStats {
   ivCalculations: number;
   gammaSnapshots: number;
   regimeCalculations: number;
+  watchlistRefreshes: number;
   lastGreeksTime: Date | null;
   lastFlowTime: Date | null;
   lastIVTime: Date | null;
   lastGammaTime: Date | null;
   lastRegimeTime: Date | null;
+  lastWatchlistRefresh: Date | null;
   errors: number;
   lastError: string | null;
 }
@@ -84,6 +69,10 @@ class HistoricalDataIngestionWorker {
   private isRunning: boolean = false;
   private stats: WorkerStats;
   private intervals: Record<string, NodeJS.Timeout> = {};
+
+  // Dynamic symbol lists (populated from database)
+  private indexSymbols: string[] = [];
+  private equitySymbols: string[] = [];
 
   constructor() {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -102,14 +91,57 @@ class HistoricalDataIngestionWorker {
       ivCalculations: 0,
       gammaSnapshots: 0,
       regimeCalculations: 0,
+      watchlistRefreshes: 0,
       lastGreeksTime: null,
       lastFlowTime: null,
       lastIVTime: null,
       lastGammaTime: null,
       lastRegimeTime: null,
+      lastWatchlistRefresh: null,
       errors: 0,
       lastError: null,
     };
+  }
+
+  /**
+   * Fetch all watchlist symbols from database and categorize them
+   */
+  private async refreshWatchlistSymbols(): Promise<void> {
+    try {
+      console.log("[HistoricalIngestion] 🔄 Refreshing watchlist symbols from database...");
+
+      const { data, error } = await this.supabase.from("watchlist").select("symbol");
+
+      if (error) {
+        throw error;
+      }
+
+      // Get unique symbols
+      const allSymbols = [...new Set((data || []).map((row) => row.symbol))];
+
+      // Categorize into indices vs equities
+      this.indexSymbols = allSymbols.filter((symbol) => isIndex(symbol));
+      this.equitySymbols = allSymbols.filter((symbol) => !isIndex(symbol));
+
+      this.stats.watchlistRefreshes++;
+      this.stats.lastWatchlistRefresh = new Date();
+
+      console.log(
+        `[HistoricalIngestion] ✅ Watchlist refreshed: ${allSymbols.length} symbols (${this.indexSymbols.length} indices, ${this.equitySymbols.length} equities)`
+      );
+      console.log(`[HistoricalIngestion]   Indices: ${this.indexSymbols.join(", ")}`);
+      console.log(`[HistoricalIngestion]   Equities: ${this.equitySymbols.join(", ")}`);
+    } catch (error) {
+      console.error("[HistoricalIngestion] ❌ Error refreshing watchlist:", error);
+      this.stats.errors++;
+      this.stats.lastError = error instanceof Error ? error.message : String(error);
+
+      // Fallback to SPX/NDX if database fetch fails
+      if (this.indexSymbols.length === 0) {
+        console.warn("[HistoricalIngestion] ⚠️ Falling back to default indices: SPX, NDX");
+        this.indexSymbols = ["SPX", "NDX"];
+      }
+    }
   }
 
   /**
@@ -123,7 +155,9 @@ class HistoricalDataIngestionWorker {
 
     this.isRunning = true;
     console.log("[HistoricalIngestion] 🚀 Starting worker...");
-    console.log("[HistoricalIngestion] Tracking symbols:", [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS]);
+
+    // Fetch watchlist symbols from database
+    await this.refreshWatchlistSymbols();
 
     // Run initial ingestion immediately
     await this.runFullIngestionCycle();
@@ -157,6 +191,12 @@ class HistoricalDataIngestionWorker {
    * Schedule periodic ingestion tasks
    */
   private scheduleIngestionTasks() {
+    // Watchlist refresh - every 15 minutes (catch new symbols)
+    this.intervals.watchlist = setInterval(
+      () => this.refreshWatchlistSymbols(),
+      INGESTION_INTERVALS.watchlistRefresh
+    );
+
     // Greeks ingestion - every 15 minutes
     this.intervals.greeks = setInterval(
       () => this.ingestGreeksForAllSymbols(),
@@ -210,7 +250,7 @@ class HistoricalDataIngestionWorker {
    * Ingest historical Greeks for all symbols
    */
   private async ingestGreeksForAllSymbols() {
-    const allSymbols = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
+    const allSymbols = [...this.indexSymbols, ...this.equitySymbols];
 
     for (const symbol of allSymbols) {
       try {
@@ -223,7 +263,10 @@ class HistoricalDataIngestionWorker {
             `[HistoricalIngestion] ✅ Greeks ingested for ${symbol}: ${result.contractsProcessed} contracts`
           );
         } else {
-          console.warn(`[HistoricalIngestion] ⚠️ Greeks ingestion failed for ${symbol}:`, result.error);
+          console.warn(
+            `[HistoricalIngestion] ⚠️ Greeks ingestion failed for ${symbol}:`,
+            result.error
+          );
           this.stats.errors++;
         }
       } catch (error) {
@@ -240,7 +283,7 @@ class HistoricalDataIngestionWorker {
    * Ingest options flow for all symbols
    */
   private async ingestFlowForAllSymbols() {
-    const allSymbols = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
+    const allSymbols = [...this.indexSymbols, ...this.equitySymbols];
 
     for (const symbol of allSymbols) {
       try {
@@ -256,7 +299,10 @@ class HistoricalDataIngestionWorker {
             );
           }
         } else {
-          console.warn(`[HistoricalIngestion] ⚠️ Flow ingestion failed for ${symbol}:`, result.error);
+          console.warn(
+            `[HistoricalIngestion] ⚠️ Flow ingestion failed for ${symbol}:`,
+            result.error
+          );
           this.stats.errors++;
         }
       } catch (error) {
@@ -272,7 +318,7 @@ class HistoricalDataIngestionWorker {
    * Snapshot gamma exposure for all symbols
    */
   private async snapshotGammaForAllSymbols() {
-    const allSymbols = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
+    const allSymbols = [...this.indexSymbols, ...this.equitySymbols];
 
     for (const symbol of allSymbols) {
       try {
@@ -285,7 +331,10 @@ class HistoricalDataIngestionWorker {
             `[HistoricalIngestion] ✅ Gamma snapshot for ${symbol}: ${result.dealerPositioning} (${result.contractsAnalyzed} contracts)`
           );
         } else {
-          console.warn(`[HistoricalIngestion] ⚠️ Gamma snapshot failed for ${symbol}:`, result.error);
+          console.warn(
+            `[HistoricalIngestion] ⚠️ Gamma snapshot failed for ${symbol}:`,
+            result.error
+          );
           this.stats.errors++;
         }
       } catch (error) {
@@ -332,7 +381,7 @@ class HistoricalDataIngestionWorker {
    * Calculate IV percentiles for all symbols
    */
   private async calculateIVPercentilesForAllSymbols() {
-    const allSymbols = [...INDEX_SYMBOLS, ...EQUITY_SYMBOLS];
+    const allSymbols = [...this.indexSymbols, ...this.equitySymbols];
 
     for (const symbol of allSymbols) {
       try {
@@ -345,7 +394,10 @@ class HistoricalDataIngestionWorker {
             `[HistoricalIngestion] ✅ IV percentile calculated for ${symbol}: ${result.ivPercentile}% (${result.ivRegime})`
           );
         } else {
-          console.warn(`[HistoricalIngestion] ⚠️ IV calculation failed for ${symbol}:`, result.error);
+          console.warn(
+            `[HistoricalIngestion] ⚠️ IV calculation failed for ${symbol}:`,
+            result.error
+          );
           this.stats.errors++;
         }
       } catch (error) {
@@ -386,11 +438,16 @@ class HistoricalDataIngestionWorker {
   private printStats() {
     const uptime = Date.now() - this.stats.startTime.getTime();
     const uptimeMinutes = Math.floor(uptime / 60000);
+    const totalSymbols = this.indexSymbols.length + this.equitySymbols.length;
 
     console.log("\n" + "=".repeat(60));
     console.log("📊 Historical Data Ingestion Worker Stats");
     console.log("=".repeat(60));
     console.log(`Uptime: ${uptimeMinutes} minutes`);
+    console.log(
+      `Watchlist Symbols: ${totalSymbols} (${this.indexSymbols.length} indices, ${this.equitySymbols.length} equities)`
+    );
+    console.log(`Watchlist Refreshes: ${this.stats.watchlistRefreshes}`);
     console.log(`Cycles Completed: ${this.stats.cyclesCompleted}`);
     console.log(`Greeks Ingestions: ${this.stats.greeksIngestions}`);
     console.log(`Flow Ingestions: ${this.stats.flowIngestions}`);
@@ -399,6 +456,9 @@ class HistoricalDataIngestionWorker {
     console.log(`Regime Calculations: ${this.stats.regimeCalculations}`);
     console.log(`Errors: ${this.stats.errors}`);
 
+    if (this.stats.lastWatchlistRefresh) {
+      console.log(`Last Watchlist Refresh: ${this.stats.lastWatchlistRefresh.toLocaleString()}`);
+    }
     if (this.stats.lastGreeksTime) {
       console.log(`Last Greeks: ${this.stats.lastGreeksTime.toLocaleString()}`);
     }
