@@ -143,44 +143,50 @@ async function fetchYahooStockBars(symbol: string, startDate: Date, endDate: Dat
     if (startDate < sevenDaysAgo) {
       const fiveMinEnd = endDate < sevenDaysAgo ? endDate : sevenDaysAgo;
 
-      console.log(
-        `[YahooFinance]   Fetching 5m bars from ${startDate.toISOString().split("T")[0]} to ${fiveMinEnd.toISOString().split("T")[0]}...`
-      );
+      // Skip if start and end are the same day (Yahoo API requirement)
+      const daysDiff = (fiveMinEnd.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000);
+      if (daysDiff < 1) {
+        console.log(`[YahooFinance]   ⏭️  Skipping 5m bars (date range < 1 day)`);
+      } else {
+        console.log(
+          `[YahooFinance]   Fetching 5m bars from ${startDate.toISOString().split("T")[0]} to ${fiveMinEnd.toISOString().split("T")[0]}...`
+        );
 
-      const result = await yahooFinance.chart(symbol, {
-        period1: startDate,
-        period2: fiveMinEnd,
-        interval: "5m",
-      });
+        const result = await yahooFinance.chart(symbol, {
+          period1: startDate,
+          period2: fiveMinEnd,
+          interval: "5m",
+        });
 
-      const quotes = result.quotes || [];
+        const quotes = result.quotes || [];
 
-      // Normalize 5m bars - we'll downsample to 1m by duplicating
-      // This is a compromise since Yahoo doesn't provide 1m data beyond 7 days
-      const normalized5m = quotes.flatMap((bar: any) => {
-        const baseBar = {
-          ticker: symbol,
-          t: bar.date.getTime(),
-          o: bar.open,
-          h: bar.high,
-          l: bar.low,
-          c: bar.close,
-          v: Math.floor(bar.volume / 5), // Split volume across 5 bars
-          vw: bar.close,
-          n: 0,
-        };
+        // Normalize 5m bars - we'll downsample to 1m by duplicating
+        // This is a compromise since Yahoo doesn't provide 1m data beyond 7 days
+        const normalized5m = quotes.flatMap((bar: any) => {
+          const baseBar = {
+            ticker: symbol,
+            t: bar.date.getTime(),
+            o: bar.open,
+            h: bar.high,
+            l: bar.low,
+            c: bar.close,
+            v: Math.floor(bar.volume / 5), // Split volume across 5 bars
+            vw: bar.close,
+            n: 0,
+          };
 
-        // Create 5 synthetic 1-minute bars from each 5-minute bar
-        return Array.from({ length: 5 }, (_, i) => ({
-          ...baseBar,
-          t: baseBar.t + i * 60 * 1000, // Add i minutes
-        }));
-      });
+          // Create 5 synthetic 1-minute bars from each 5-minute bar
+          return Array.from({ length: 5 }, (_, i) => ({
+            ...baseBar,
+            t: baseBar.t + i * 60 * 1000, // Add i minutes
+          }));
+        });
 
-      allBars.push(...normalized5m);
-      console.log(
-        `[YahooFinance]   ✅ Fetched ${quotes.length} 5m bars (expanded to ${normalized5m.length} 1m bars)`
-      );
+        allBars.push(...normalized5m);
+        console.log(
+          `[YahooFinance]   ✅ Fetched ${quotes.length} 5m bars (expanded to ${normalized5m.length} 1m bars)`
+        );
+      }
     }
 
     // Sort by timestamp
