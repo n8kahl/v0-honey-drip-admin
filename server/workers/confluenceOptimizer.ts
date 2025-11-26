@@ -246,8 +246,8 @@ export class ConfluenceOptimizer {
       const individual = individuals[i];
       individual.generation = generation;
 
-      // Skip if already evaluated
-      if (individual.fitness > 0) continue;
+      // Always evaluate - parameters may have changed via crossover/mutation
+      // Note: Elites will be re-evaluated, but their params are unchanged so results should be identical
 
       // Run backtest with these parameters
       const results = await this.runBacktest(individual.params);
