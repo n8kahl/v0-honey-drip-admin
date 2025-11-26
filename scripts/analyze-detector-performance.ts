@@ -5,22 +5,37 @@
  * Usage: tsx scripts/analyze-detector-performance.ts
  */
 
-import { BacktestEngine } from "../src/lib/backtest/BacktestEngine.js";
-import { BacktestResult } from "../src/lib/backtest/types.js";
-import {
-  BreakoutBullish,
-  BreakoutBearish,
-  ORBBreakout,
-  MomentumContinuation,
-  MeanReversionBullish,
-  MeanReversionBearish,
-  TrendContinuationLong,
-  TrendContinuationShort,
-  SwingReversal,
-  LiquidityGrab,
-  VolatilityContraction,
-  GapFill,
-} from "../src/lib/composite/detectors/index.js";
+// Load environment variables from .env.local
+import { config } from "dotenv";
+import { resolve } from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const projectRoot = resolve(__dirname, "..");
+
+config({ path: resolve(projectRoot, ".env.local"), override: true });
+config({ path: resolve(projectRoot, ".env"), override: false });
+
+// Verify environment variables are loaded
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("❌ Environment variables not loaded!");
+  console.error("SUPABASE_URL:", process.env.SUPABASE_URL ? "Present" : "MISSING");
+  console.error(
+    "SUPABASE_SERVICE_ROLE_KEY:",
+    process.env.SUPABASE_SERVICE_ROLE_KEY ? "Present" : "MISSING"
+  );
+  console.error("CWD:", process.cwd());
+  console.error("Script dir:", __dirname);
+  console.error("Project root:", projectRoot);
+  console.error("Looking for .env.local at:", resolve(projectRoot, ".env.local"));
+  process.exit(1);
+}
+
+// Fix Node 22 fetch issues - use cross-fetch polyfill for Supabase
+import fetch from "cross-fetch";
+globalThis.fetch = fetch as any;
 
 const SYMBOLS = ["SPY", "QQQ", "IWM", "DIA"];
 const START_DATE = "2024-01-01";
@@ -40,6 +55,9 @@ interface DetectorStats {
 async function analyzeDetector(name: string, detector: any): Promise<DetectorStats> {
   console.log(`\n📊 Testing ${name}...`);
 
+  // Dynamic import after env vars are loaded
+  const { BacktestEngine } = await import("../src/lib/backtest/BacktestEngine.js");
+
   const engine = new BacktestEngine({
     startDate: START_DATE,
     endDate: END_DATE,
@@ -57,7 +75,7 @@ async function analyzeDetector(name: string, detector: any): Promise<DetectorSta
 
   for (const symbol of SYMBOLS) {
     try {
-      const result: BacktestResult = await engine.backtestDetector(symbol, detector);
+      const result = await engine.backtestDetector(symbol, detector);
 
       totalTrades += result.totalTrades;
       totalWins += result.winningTrades;
@@ -73,7 +91,7 @@ async function analyzeDetector(name: string, detector: any): Promise<DetectorSta
       }
 
       console.log(`  ${symbol}: ${result.totalTrades} trades, ${result.winRate.toFixed(1)}% WR`);
-    } catch (error) {
+    } catch (error: any) {
       console.log(`  ${symbol}: Error - ${error.message}`);
     }
   }
@@ -102,19 +120,22 @@ async function main() {
   console.log(`Period: ${START_DATE} to ${END_DATE}`);
   console.log(`Config: 2:1 R:R, 30 bar max hold\n`);
 
+  // Dynamic import detectors AFTER env vars are loaded
+  const detectorModule = await import("../src/lib/composite/detectors/index.js");
+
   const detectors = [
-    { name: "Breakout Bullish", detector: BreakoutBullish },
-    { name: "Breakout Bearish", detector: BreakoutBearish },
-    { name: "ORB Breakout", detector: ORBBreakout },
-    { name: "Momentum Continuation", detector: MomentumContinuation },
-    { name: "Mean Reversion Bullish", detector: MeanReversionBullish },
-    { name: "Mean Reversion Bearish", detector: MeanReversionBearish },
-    { name: "Trend Continuation Long", detector: TrendContinuationLong },
-    { name: "Trend Continuation Short", detector: TrendContinuationShort },
-    { name: "Swing Reversal", detector: SwingReversal },
-    { name: "Liquidity Grab", detector: LiquidityGrab },
-    { name: "Volatility Contraction", detector: VolatilityContraction },
-    { name: "Gap Fill", detector: GapFill },
+    { name: "Breakout Bullish", detector: detectorModule.BreakoutBullish },
+    { name: "Breakout Bearish", detector: detectorModule.BreakoutBearish },
+    { name: "ORB Breakout", detector: detectorModule.ORBBreakout },
+    { name: "Momentum Continuation", detector: detectorModule.MomentumContinuation },
+    { name: "Mean Reversion Bullish", detector: detectorModule.MeanReversionBullish },
+    { name: "Mean Reversion Bearish", detector: detectorModule.MeanReversionBearish },
+    { name: "Trend Continuation Long", detector: detectorModule.TrendContinuationLong },
+    { name: "Trend Continuation Short", detector: detectorModule.TrendContinuationShort },
+    { name: "Swing Reversal", detector: detectorModule.SwingReversal },
+    { name: "Liquidity Grab", detector: detectorModule.LiquidityGrab },
+    { name: "Volatility Contraction", detector: detectorModule.VolatilityContraction },
+    { name: "Gap Fill", detector: detectorModule.GapFill },
   ];
 
   const results: DetectorStats[] = [];
@@ -123,7 +144,7 @@ async function main() {
     try {
       const stats = await analyzeDetector(name, detector);
       results.push(stats);
-    } catch (error) {
+    } catch (error: any) {
       console.error(`❌ ${name} failed: ${error.message}`);
     }
   }
