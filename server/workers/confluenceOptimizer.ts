@@ -271,26 +271,34 @@ export class ConfluenceOptimizer {
    * Run backtest with specific parameters
    */
   private async runBacktest(params: ParameterConfig): Promise<any> {
-    // TODO: Apply params to BacktestEngine configuration
-    // For now, run with default config
-    // In production, you'd modify the detector scoring based on params
+    // Apply optimized parameters to composite scanner config
+    // This will affect detector scoring and signal filtering
+    const { setOptimizedParams, clearOptimizedParams } = await import(
+      "../../src/lib/composite/OptimizedScannerConfig.js"
+    );
 
-    const results = await this.backtestEngine.backtestAll();
+    try {
+      setOptimizedParams(params);
+      const results = await this.backtestEngine.backtestAll();
 
-    // Aggregate results across all detectors
-    const totalTrades = results.reduce((sum, r) => sum + r.totalTrades, 0);
-    const totalWinners = results.reduce((sum, r) => sum + r.winners, 0);
+      // Aggregate results across all detectors
+      const totalTrades = results.reduce((sum, r) => sum + r.totalTrades, 0);
+      const totalWinners = results.reduce((sum, r) => sum + r.winners, 0);
 
-    // Calculate total profits and losses from averages
-    const totalProfits = results.reduce((sum, r) => sum + r.avgWin * r.winners, 0);
-    const totalLosses = results.reduce((sum, r) => sum + Math.abs(r.avgLoss) * r.losers, 0);
+      // Calculate total profits and losses from averages
+      const totalProfits = results.reduce((sum, r) => sum + r.avgWin * r.winners, 0);
+      const totalLosses = results.reduce((sum, r) => sum + Math.abs(r.avgLoss) * r.losers, 0);
 
-    return {
-      winRate: totalWinners / totalTrades,
-      profitFactor: totalProfits / (totalLosses || 1),
-      totalTrades,
-      expectancy: (totalProfits - totalLosses) / totalTrades,
-    };
+      return {
+        winRate: totalWinners / totalTrades,
+        profitFactor: totalProfits / (totalLosses || 1),
+        totalTrades,
+        expectancy: (totalProfits - totalLosses) / totalTrades,
+      };
+    } finally {
+      // Always clear params after backtest to avoid contamination
+      clearOptimizedParams();
+    }
   }
 
   /**
