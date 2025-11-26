@@ -11,13 +11,6 @@ interface HDLoadedTradeCardProps {
   onDiscard: () => void;
   underlyingPrice?: number;
   underlyingChange?: number;
-  confluence?: {
-    loading: boolean;
-    error?: string;
-    trend?: any;
-    volatility?: any;
-    liquidity?: any;
-  };
   showActions?: boolean; // Whether to show Enter/Discard action buttons (default: true)
 }
 
@@ -27,21 +20,8 @@ export function HDLoadedTradeCard({
   onDiscard,
   underlyingPrice,
   underlyingChange,
-  confluence,
   showActions = true,
 }: HDLoadedTradeCardProps) {
-  // Log confluence data for debugging
-  console.log("[v0] HDLoadedTradeCard confluence:", {
-    loading: confluence?.loading,
-    hasError: !!confluence?.error,
-    hasTrend: !!confluence?.trend,
-    hasVolatility: !!confluence?.volatility,
-    hasLiquidity: !!confluence?.liquidity,
-    trend: confluence?.trend,
-    volatility: confluence?.volatility,
-    liquidity: confluence?.liquidity,
-  });
-
   return (
     <div className="space-y-3">
       {/* Header - Contract Details */}
@@ -141,17 +121,11 @@ export function HDLoadedTradeCard({
           <span>Market Analysis</span>
         </div>
 
-        {confluence && (
-          <HDConfluenceDetailPanel
-            ticker={trade.ticker}
-            direction={trade.contract.type === "C" ? "call" : "put"}
-            loading={confluence.loading}
-            error={confluence.error}
-            trend={confluence.trend}
-            volatility={confluence.volatility}
-            liquidity={confluence.liquidity}
-          />
-        )}
+        <HDConfluenceDetailPanel
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          contract={trade.contract}
+        />
       </HDCard>
 
       {/* Action Buttons - Only show when showActions is true */}
