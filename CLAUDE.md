@@ -2,18 +2,22 @@
 
 > **Purpose**: Comprehensive guide for AI assistants (Claude, GPT, etc.) working on the Honey Drip Admin Trading Dashboard codebase. This is THE definitive reference - always consult this file before making changes.
 
-**Last Updated**: November 23, 2025
+**Last Updated**: November 26, 2025
 **Project**: Honey Drip Admin Trading Dashboard
 **Tech Stack**: React 18 + TypeScript + Express + PostgreSQL (Supabase) + Massive.com API
 
 **Recent Updates**:
+
+- ✅ **Phase 1 Confluence Enhancements**: Adaptive thresholds, IV gating, confidence scoring
+- ✅ **Adaptive Thresholds**: Time-of-day, VIX-level, and market regime aware signal filtering
+- ✅ **IV Percentile Gating**: Prevents buying when IV elevated, selling when IV cheap
+- ✅ **Data Confidence Scoring**: Adjusts signal scores based on data availability
+- ✅ **Signal Performance Tracking**: Database infrastructure for win rate analytics
 - ✅ **Chart Initialization Fix**: Callback ref pattern ensures charts initialize on first symbol selection
 - ✅ **Chart Zoom Levels**: Timeframe-specific zoom (1m: 30 bars, 5m: 20 bars, others: 100 bars)
 - ✅ **Phase 1 Data Optimizations**: 25x faster weekend analysis, 90% API cost reduction
 - ✅ **Smart Cache TTL**: Historical data cached 7 days vs 5 seconds
 - ✅ **Database Persistence**: New `historical_bars` table for 10-50x faster backtests
-- ✅ **Weekend Pre-Warm Worker**: Auto-fetches data Fridays at 4:05pm ET
-- ✅ **Parallel Fetching**: 25x speedup for multi-symbol queries
 
 ---
 
@@ -1338,6 +1342,233 @@ railway rollback <deployment-id>
 
 ---
 
+## 📈 Phase 1 Confluence Enhancements
+
+The Phase 1 Confluence Enhancement introduces four key features to improve signal quality and reduce false positives in the Composite Scanner. All features are enabled by default and can be toggled via `phase1Options` in the scanner configuration.
+
+### Feature Overview
+
+| Feature             | Purpose                          | Location                                  |
+| ------------------- | -------------------------------- | ----------------------------------------- |
+| Adaptive Thresholds | Time/VIX/Regime-aware thresholds | `src/lib/composite/AdaptiveThresholds.ts` |
+| IV Gating           | IV percentile-based trade gating | `src/lib/greeks/IVGating.ts`              |
+| Confidence Scoring  | Data availability confidence     | `src/lib/composite/ConfidenceScoring.ts`  |
+| Signal Performance  | Win rate tracking infrastructure | `src/lib/analytics/SignalPerformance.ts`  |
+
+### 1. Adaptive Thresholds
+
+**Problem**: Static thresholds don't account for market conditions
+**Solution**: Dynamic thresholds based on time of day, VIX level, and market regime
+
+```typescript
+import { getAdaptiveThresholds } from "./composite/AdaptiveThresholds.js";
+
+// Get context-aware thresholds
+const thresholds = getAdaptiveThresholds(
+  "2025-01-15T10:30:00-05:00", // Time
+  "high", // VIX level: low/medium/high/extreme
+  "trending", // Regime: trending/ranging/choppy/volatile
+  "breakout_bullish" // Strategy type
+);
+
+// Result includes:
+// - minBase: Minimum base score (70-95 depending on conditions)
+// - minStyle: Minimum style score
+// - minRR: Minimum risk/reward ratio
+// - sizeMultiplier: Position size multiplier (0.25-1.5)
+// - strategyEnabled: Whether strategy type is allowed
+// - warnings: Array of warnings for UI display
+```
+
+**Time Windows**:
+
+- `opening_drive` (9:30-10:00): Lower thresholds, momentum favored
+- `morning_momentum` (10:00-11:30): Standard thresholds
+- `lunch_chop` (11:30-14:00): Higher thresholds, mean reversion favored
+- `afternoon_session` (14:00-15:00): Standard thresholds
+- `power_hour` (15:00-16:00): Lower thresholds for reversals
+- `after_hours` (16:00+): Most conservative
+
+### 2. IV Percentile Gating
+
+**Problem**: Buying options when IV is elevated leads to losses from IV crush
+**Solution**: Gate signals based on IV percentile relative to recent history
+
+```typescript
+import { analyzeIVForGating, shouldGateOnIV } from "./greeks/IVGating.js";
+
+// Analyze IV for a symbol
+const analysis = analyzeIVForGating("SPY", 5); // 5 days to earnings
+
+// Gating decisions:
+// - BUY_OK: IV optimal for buying (percentile 20-50)
+// - BUY_OPTIMAL: IV cheap, excellent for buying (percentile <20)
+// - SELL_PREMIUM: IV elevated, favor selling strategies (percentile >70)
+// - WARN_SPIKE: IV spiked recently, wait for normalization
+// - WARN_CRUSH: IV crushed recently, good entry for buying
+// - WARN_EARNINGS: Near earnings, elevated IV expected
+// - AVOID: Extreme conditions, avoid trading
+
+// Check if trade should be gated
+const isDebitStrategy = true; // Buying calls/puts
+const gateResult = shouldGateOnIV(analysis, isDebitStrategy);
+if (gateResult.gate) {
+  console.log(`Gated: ${gateResult.reason}`);
+}
+```
+
+**IV History Management**:
+
+```typescript
+import { recordIV, getIVStats, clearIVHistory } from "./greeks/ivHistory.js";
+
+// Record IV reading
+recordIV("SPY", 0.18); // 18% IV
+
+// Get statistics
+const stats = getIVStats("SPY");
+// { current: 0.18, percentile: 35, rank: 40, recentCrush: false, recentSpike: false }
+```
+
+### 3. Confidence Scoring
+
+**Problem**: Missing data leads to unreliable signals
+**Solution**: Score data completeness and adjust signal confidence accordingly
+
+```typescript
+import {
+  extractDataAvailability,
+  calculateDataConfidence,
+  applyConfidenceToScore,
+  shouldFilterLowConfidence,
+} from "./composite/ConfidenceScoring.js";
+
+// Extract what data is available
+const availability = extractDataAvailability(symbolFeatures);
+
+// Calculate confidence based on availability
+const confidence = calculateDataConfidence(availability);
+// Returns:
+// - dataCompletenessScore: 0-100 percentage
+// - adjustedConfidence: Final confidence score
+// - missingCritical: Array of critical missing data
+// - categoryScores: Breakdown by category
+// - warnings: Array of warnings
+
+// Apply confidence to score
+const result = applyConfidenceToScore(80, confidence);
+// - adjustedScore: Score modified by confidence
+// - wasReduced: Whether score was lowered
+// - reasoning: Explanation
+
+// Filter low confidence signals
+const filterResult = shouldFilterLowConfidence(confidence, 40); // 40% threshold
+if (filterResult.filter) {
+  console.log(`Filtered: ${filterResult.reason}`);
+}
+```
+
+**Data Categories**:
+
+- **Price** (weight: 20%): current, change - CRITICAL
+- **Volume** (weight: 15%): current, avg, relative - CRITICAL
+- **Technical** (weight: 20%): RSI, EMA, ATR - CRITICAL (ATR)
+- **MTF** (weight: 15%): 1m, 5m, 15m, 60m alignment
+- **Flow** (weight: 10%): score, bias
+- **Context** (weight: 10%): ORB, prior day levels, swings
+- **Environment** (weight: 10%): VIX level, regime, session
+
+### 4. Signal Performance Tracking
+
+**Problem**: No data on which signals actually work
+**Solution**: Track signal outcomes for win rate analysis
+
+```typescript
+import { SignalPerformanceTracker } from "./analytics/SignalPerformance.js";
+
+const tracker = SignalPerformanceTracker.getInstance();
+
+// Record a new signal
+const signalId = await tracker.recordSignal({
+  symbol: "SPY",
+  opportunityType: "breakout_bullish",
+  direction: "LONG",
+  timeWindow: "opening_drive",
+  vixLevel: "medium",
+  marketRegime: "trending",
+  baseScore: 82,
+  styleScore: 85,
+  style: "scalp",
+  entryPrice: 595.5,
+  targetPrice: 598.0,
+  stopPrice: 594.0,
+  ivPercentile: 35,
+  dataConfidence: 90,
+});
+
+// Later, record the outcome
+await tracker.recordOutcome(signalId, {
+  exitPrice: 597.5,
+  result: "win",
+  holdingPeriodMinutes: 15,
+  maxDrawdownPercent: 0.5,
+  rMultiple: 1.6,
+  actualPnlPercent: 3.2,
+});
+
+// Query win rates
+const winRates = await tracker.getWinRates({
+  symbol: "SPY",
+  opportunityType: "breakout_bullish",
+  timeWindow: "opening_drive",
+});
+// Returns: { totalSignals, wins, losses, winRate, avgRMultiple, avgHoldingPeriod }
+```
+
+**Database Schema** (migration: `scripts/012_add_signal_performance_table.sql`):
+
+```sql
+-- signal_performance table stores all signal outcomes
+-- Materialized view signal_win_rates provides fast analytics
+```
+
+### Integration in CompositeScanner
+
+All Phase 1 features are integrated into `CompositeScanner.scanSymbol()`:
+
+```typescript
+const scanner = new CompositeScanner({
+  owner: userId,
+  phase1Options: {
+    enableAdaptiveThresholds: true, // Default: true
+    enableIVGating: true, // Default: true
+    enableConfidenceScoring: true, // Default: true
+    minConfidenceThreshold: 40, // Default: 40
+    earningsWindowDays: 7, // Default: 7
+  },
+});
+
+// Scan result now includes phase1Data
+const result = await scanner.scanSymbol(symbol, features);
+if (result.phase1Data) {
+  console.log("Adaptive thresholds:", result.phase1Data.adaptiveThresholds);
+  console.log("IV analysis:", result.phase1Data.ivAnalysis);
+  console.log("Confidence:", result.phase1Data.confidence);
+}
+```
+
+### Unit Tests
+
+All Phase 1 features have comprehensive unit tests:
+
+- `src/lib/composite/__tests__/AdaptiveThresholds.test.ts` (23 tests)
+- `src/lib/composite/__tests__/ConfidenceScoring.test.ts` (12 tests)
+- `src/lib/greeks/__tests__/IVGating.test.ts` (15 tests)
+
+Run with: `pnpm test -- src/lib/composite/__tests__/AdaptiveThresholds.test.ts src/lib/composite/__tests__/ConfidenceScoring.test.ts src/lib/greeks/__tests__/IVGating.test.ts`
+
+---
+
 ## 🎯 Critical Patterns
 
 ### 1. Ephemeral Token System for WebSocket
@@ -1467,6 +1698,7 @@ function transitionToEntered(entryPrice: number) {
 ```
 
 **Key Points**:
+
 - Contract selection creates a **temporary preview trade** (state=WATCHING)
 - Preview is shown in Trade Details panel but NOT in sidebar
 - "Load and Alert" button triggers **database persistence**
@@ -1535,7 +1767,7 @@ router.get("/api/bars", async (req, res) => {
 
   if (dbBars && dbBars.length > 0) {
     // Database hit! Return instantly
-    return res.json({ bars: dbBars, _source: 'database' });
+    return res.json({ bars: dbBars, _source: "database" });
   }
 
   // STEP 2: Database miss - fetch from Massive API (500ms)
@@ -1544,7 +1776,7 @@ router.get("/api/bars", async (req, res) => {
   // STEP 3: Store in database for future use (async, non-blocking)
   storeHistoricalBars(symbol, timeframe, apiResults).catch(console.warn);
 
-  return res.json({ bars: apiResults, _source: 'api' });
+  return res.json({ bars: apiResults, _source: "api" });
 });
 ```
 
@@ -1565,9 +1797,7 @@ async function preWarmWeekendCache() {
   // 2. Fetch Friday's bars for all timeframes (1m, 5m, 15m, 1h, 4h)
   const CONCURRENCY_LIMIT = 5; // Respect rate limits
   for (const batch of chunk(symbols, CONCURRENCY_LIMIT)) {
-    await Promise.allSettled(
-      batch.map(symbol => preWarmSymbol(symbol, fridayDate))
-    );
+    await Promise.allSettled(batch.map((symbol) => preWarmSymbol(symbol, fridayDate)));
     await delay(1000); // Small delay between batches
   }
 
@@ -1615,17 +1845,18 @@ const supabaseAdmin = createClient(URL, SERVICE_ROLE_KEY); // SECURITY RISK!
 **Solution**: Use validation utilities from `src/lib/utils/validation.ts`
 
 **Critical for**:
+
 - Discord channel arrays (`trade.discordChannels`)
 - Challenge arrays (`trade.challenges`)
 - Trade updates (`trade.updates`)
 - Any data from external sources (Supabase, APIs)
 
 ```typescript
-import { ensureArray, ensureStringArray, safeIncludes } from '@/lib/utils/validation';
+import { ensureArray, ensureStringArray, safeIncludes } from "@/lib/utils/validation";
 
 // ✅ CORRECT: Always validate arrays before operations
 const channels = ensureArray(trade.discordChannels);
-channels.forEach(id => console.log(id)); // Safe
+channels.forEach((id) => console.log(id)); // Safe
 
 // ✅ CORRECT: Safe includes check
 if (safeIncludes(trade.discordChannels, channelId)) {
@@ -1640,11 +1871,12 @@ const currentUpdates = ensureArray(trade.updates);
 const newUpdates = [...currentUpdates, newUpdate];
 
 // ❌ WRONG: Assumes always array
-const channels = trade.discordChannels || [];  // May still crash if not array
-channels.includes(id);  // TypeError if channels is not array
+const channels = trade.discordChannels || []; // May still crash if not array
+channels.includes(id); // TypeError if channels is not array
 ```
 
 **Implementation** (`src/lib/utils/validation.ts`):
+
 ```typescript
 export function ensureArray<T>(value: T[] | T | null | undefined): T[] {
   if (Array.isArray(value)) return value;
@@ -1654,7 +1886,7 @@ export function ensureArray<T>(value: T[] | T | null | undefined): T[] {
 
 export function ensureStringArray(value: any): string[] {
   const arr = ensureArray(value);
-  return arr.filter((item): item is string => typeof item === 'string');
+  return arr.filter((item): item is string => typeof item === "string");
 }
 
 export function safeIncludes<T>(arr: T[] | any, value: T): boolean {
@@ -1664,6 +1896,7 @@ export function safeIncludes<T>(arr: T[] | any, value: T): boolean {
 ```
 
 **When to Use**:
+
 1. **Component props from stores**: `ensureArray(useTradeStore(s => s.trade.channels))`
 2. **Database query results**: `ensureArray(dbTrade.discord_channels)`
 3. **Before array operations**: Spreading, mapping, filtering, includes
@@ -1948,6 +2181,7 @@ pnpm lint
 **Common Issue**: TypeScript overload resolution errors during `pnpm build`
 
 **Symptoms**:
+
 ```
 error TS2769: No overload matches this call.
 Argument of type '{ symbol: string; timeframe: string; ... }'
@@ -1956,6 +2190,7 @@ Argument of type '{ symbol: string; timeframe: string; ... }'
 **Solutions**:
 
 1. **Supabase `.upsert()` type errors**:
+
    ```typescript
    // ❌ WRONG - TypeScript can't infer types
    .upsert(rows, { onConflict: 'symbol,timeframe,timestamp' })
@@ -1965,6 +2200,7 @@ Argument of type '{ symbol: string; timeframe: string; ... }'
    ```
 
 2. **Multi-line `.select()` query errors**:
+
    ```typescript
    // ❌ WRONG - Multi-line template literals cause inference issues
    .select(`
@@ -1999,11 +2235,13 @@ Argument of type '{ symbol: string; timeframe: string; ... }'
 **Cause**: Using a variable that was removed during refactoring or never defined
 
 **Solution**:
+
 1. Search for the undefined variable in the component
 2. Check if it should reference an existing variable (e.g., `volPercentile` instead of `volatility.ivPercentile`)
 3. Add proper fallbacks/defaults for computed values
 
 **Prevention**:
+
 - Run `pnpm typecheck` before committing
 - Test in development mode with React strict mode enabled
 - Use ESLint to catch undefined variables
@@ -2013,6 +2251,7 @@ Argument of type '{ symbol: string; timeframe: string; ... }'
 **Common Issue**: Array methods failing with "is not a function" errors
 
 **Symptoms**:
+
 ```
 TypeError: selectedChannels.includes is not a function
 TypeError: trade.updates.map is not a function
@@ -2023,6 +2262,7 @@ TypeError: trade.updates.map is not a function
 **Solutions**:
 
 1. **Always validate array types**:
+
    ```typescript
    // ❌ WRONG - Assumes always array
    const channels = trade.discordChannels || [];
@@ -2032,24 +2272,27 @@ TypeError: trade.updates.map is not a function
    ```
 
 2. **Use helper utility** (`src/lib/utils/validation.ts`):
+
    ```typescript
-   import { ensureArray } from '@/lib/utils/validation';
+   import { ensureArray } from "@/lib/utils/validation";
 
    const channels = ensureArray(trade.discordChannels);
    const updates = ensureArray(trade.updates);
    ```
 
 3. **Add defensive checks before spreading**:
+
    ```typescript
    // ❌ WRONG - May crash if not array
-   updates: [...trade.updates, newUpdate]
+   updates: [...trade.updates, newUpdate];
 
    // ✅ CORRECT - Safe spreading
    const currentUpdates = Array.isArray(trade.updates) ? trade.updates : [];
-   updates: [...currentUpdates, newUpdate]
+   updates: [...currentUpdates, newUpdate];
    ```
 
 **Prevention**:
+
 - Always use `Array.isArray()` checks for data from external sources
 - Add runtime type validation at API boundaries
 - Use the `ensureArray` utility consistently
