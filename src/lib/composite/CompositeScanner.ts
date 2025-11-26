@@ -2,9 +2,11 @@
  * Composite Scanner
  * Phase 5: Main Scanner Engine
  * Phase 6: Parameter Application (Optimized Boosts)
+ * Phase 1 Enhancement: Adaptive Thresholds, IV Gating, Confidence Scoring
  *
  * Orchestrates opportunity detection, scoring, and signal generation
  * Now supports optimized parameters from genetic algorithm (Phase 5)
+ * Now supports adaptive thresholds, IV gating, and confidence scoring (Phase 1 Enhancement)
  */
 
 import type { SymbolFeatures } from "../strategy/engine.js";
@@ -27,6 +29,30 @@ import {
 import { SignalDeduplication, checkDeduplication } from "./SignalDeduplication.js";
 import { ALL_DETECTORS } from "./detectors/index.js";
 import type { ParameterConfig } from "../../types/optimizedParameters.js";
+
+// Phase 1 Enhancement: Import adaptive thresholds, IV gating, and confidence scoring
+import {
+  getAdaptiveThresholds,
+  getWeekendThresholds,
+  passesAdaptiveThresholds,
+  type AdaptiveThresholdResult,
+  type VIXLevel,
+  type MarketRegime,
+} from "./AdaptiveThresholds.js";
+import {
+  extractDataAvailability,
+  calculateDataConfidence,
+  applyConfidenceToScore,
+  shouldFilterLowConfidence,
+  calculateWeekendConfidence,
+  type ConfidenceResult,
+} from "./ConfidenceScoring.js";
+import {
+  analyzeIVForGating,
+  shouldGateOnIV,
+  getIVScoreModifier,
+  type IVAnalysis,
+} from "../greeks/IVGating.js";
 
 // Phase 2: Import Context Engines
 import { contextEngines } from "../engines/index";
@@ -110,6 +136,14 @@ export interface ScanResult {
   filterReason?: string;
   detectionCount: number;
   scanTimeMs: number;
+  // Phase 1 Enhancement: Additional diagnostic data
+  phase1Data?: {
+    adaptiveThresholds?: AdaptiveThresholdResult;
+    ivAnalysis?: IVAnalysis;
+    confidence?: ConfidenceResult;
+    ivGateResult?: { gate: boolean; reason?: string };
+    confidenceFilterResult?: { filter: boolean; reason?: string };
+  };
 }
 
 /**
@@ -120,6 +154,14 @@ export interface CompositeScannerOptions {
   config?: Partial<ScannerConfig>;
   optionsDataProvider?: (symbol: string) => Promise<OptionsChainData | null>;
   optimizedParams?: ParameterConfig; // Phase 6: Optimized parameters from genetic algorithm
+  // Phase 1 Enhancement: Enable/disable features
+  phase1Options?: {
+    enableAdaptiveThresholds?: boolean; // Default: true
+    enableIVGating?: boolean; // Default: true
+    enableConfidenceScoring?: boolean; // Default: true
+    minConfidenceThreshold?: number; // Default: 40
+    earningsWindowDays?: number; // Default: 7 (days before earnings to check)
+  };
 }
 
 /**
@@ -132,6 +174,8 @@ export class CompositeScanner {
   private detectors: OpportunityDetector[];
   private optionsDataProvider?: (symbol: string) => Promise<OptionsChainData | null>;
   private optimizedParams?: ParameterConfig; // Phase 6: Optimized parameters
+  // Phase 1 Enhancement: Configuration
+  private phase1Options: Required<NonNullable<CompositeScannerOptions["phase1Options"]>>;
 
   constructor(options: CompositeScannerOptions) {
     this.owner = options.owner;
@@ -140,6 +184,14 @@ export class CompositeScanner {
     this.detectors = ALL_DETECTORS;
     this.optionsDataProvider = options.optionsDataProvider;
     this.optimizedParams = options.optimizedParams; // Phase 6: Store optimized params
+    // Phase 1 Enhancement: Initialize with defaults
+    this.phase1Options = {
+      enableAdaptiveThresholds: options.phase1Options?.enableAdaptiveThresholds ?? true,
+      enableIVGating: options.phase1Options?.enableIVGating ?? true,
+      enableConfidenceScoring: options.phase1Options?.enableConfidenceScoring ?? true,
+      minConfidenceThreshold: options.phase1Options?.minConfidenceThreshold ?? 40,
+      earningsWindowDays: options.phase1Options?.earningsWindowDays ?? 7,
+    };
   }
 
   /**
@@ -152,6 +204,9 @@ export class CompositeScanner {
   async scanSymbol(symbol: string, features: SymbolFeatures): Promise<ScanResult> {
     const startTime = Date.now();
 
+    // Phase 1 Enhancement: Initialize tracking data
+    const phase1Data: ScanResult["phase1Data"] = {};
+
     // Step 1: Universal pre-filtering
     if (!passesUniversalFilters(symbol, features, this.config.filters)) {
       return {
@@ -160,6 +215,36 @@ export class CompositeScanner {
         detectionCount: 0,
         scanTimeMs: Date.now() - startTime,
       };
+    }
+
+    // Phase 1 Enhancement - Step 1.5: Calculate data confidence
+    let confidence: ConfidenceResult | undefined;
+    if (this.phase1Options.enableConfidenceScoring) {
+      const isWeekend = features.session?.isRegularHours !== true;
+      if (isWeekend) {
+        confidence = calculateWeekendConfidence(features);
+      } else {
+        const availability = extractDataAvailability(features);
+        confidence = calculateDataConfidence(availability);
+      }
+      phase1Data.confidence = confidence;
+
+      // Filter on low confidence
+      const confidenceFilter = shouldFilterLowConfidence(
+        confidence,
+        this.phase1Options.minConfidenceThreshold
+      );
+      phase1Data.confidenceFilterResult = confidenceFilter;
+
+      if (confidenceFilter.filter) {
+        return {
+          filtered: true,
+          filterReason: `Low data confidence: ${confidenceFilter.reason}`,
+          detectionCount: 0,
+          scanTimeMs: Date.now() - startTime,
+          phase1Data,
+        };
+      }
     }
 
     // Step 2: Fetch options data if needed
@@ -183,6 +268,7 @@ export class CompositeScanner {
         filterReason: "No opportunities detected",
         detectionCount: 0,
         scanTimeMs: Date.now() - startTime,
+        phase1Data,
       };
     }
 
@@ -200,10 +286,118 @@ export class CompositeScanner {
       features
     );
 
-    // Pick best opportunity (after context boosts)
+    // Phase 1 Enhancement - Step 4.6: Apply confidence adjustments to scores
+    if (this.phase1Options.enableConfidenceScoring && confidence) {
+      for (const opp of contextEnhancedOpportunities) {
+        // Apply confidence modifier to all style scores
+        const baseResult = applyConfidenceToScore(opp.baseScore, confidence);
+        const scalpResult = applyConfidenceToScore(opp.styleScores.scalpScore, confidence);
+        const dayResult = applyConfidenceToScore(opp.styleScores.dayTradeScore, confidence);
+        const swingResult = applyConfidenceToScore(opp.styleScores.swingScore, confidence);
+
+        opp.baseScore = baseResult.adjustedScore;
+        opp.styleScores.scalpScore = scalpResult.adjustedScore;
+        opp.styleScores.dayTradeScore = dayResult.adjustedScore;
+        opp.styleScores.swingScore = swingResult.adjustedScore;
+
+        // Recalculate recommended style
+        const scores = {
+          scalp: opp.styleScores.scalpScore,
+          day_trade: opp.styleScores.dayTradeScore,
+          swing: opp.styleScores.swingScore,
+        };
+        const entries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+        opp.styleScores.recommendedStyle = entries[0][0] as "scalp" | "day_trade" | "swing";
+        opp.styleScores.recommendedStyleScore = entries[0][1];
+      }
+    }
+
+    // Pick best opportunity (after context boosts and confidence adjustments)
     const bestOpportunity = contextEnhancedOpportunities.sort(
       (a, b) => b.styleScores.recommendedStyleScore - a.styleScores.recommendedStyleScore
     )[0];
+
+    // Phase 1 Enhancement - Step 4.7: Calculate adaptive thresholds
+    let adaptiveThresholds: AdaptiveThresholdResult | undefined;
+    if (this.phase1Options.enableAdaptiveThresholds) {
+      const isWeekend = features.session?.isRegularHours !== true;
+      if (isWeekend) {
+        // For weekends, create a full AdaptiveThresholdResult with relaxed settings
+        const weekendBasic = getWeekendThresholds();
+        adaptiveThresholds = {
+          minBase: weekendBasic.minBase,
+          minStyle: weekendBasic.minStyle,
+          minRR: weekendBasic.minRR,
+          sizeMultiplier: weekendBasic.sizeMultiplier,
+          timeWindow: "weekend",
+          timeWindowLabel: "Weekend Planning",
+          vixLevel: "medium",
+          regime: "ranging",
+          strategyCategory: "all",
+          strategyEnabled: true,
+          warnings: ["Weekend signals are for planning only"],
+          breakdown: {
+            baseFromTime: weekendBasic.minBase,
+            baseFromVIX: 0,
+            baseFromRegime: 0,
+          },
+        };
+      } else {
+        // Extract VIX level and market regime from features
+        const pattern = features.pattern as any;
+        const vixLevel = (pattern?.vix_level || "medium") as VIXLevel;
+        const regime = (pattern?.market_regime || "trending") as MarketRegime;
+        const timeISO = features.time || new Date().toISOString();
+
+        adaptiveThresholds = getAdaptiveThresholds(
+          timeISO,
+          vixLevel,
+          regime,
+          bestOpportunity.detector.type
+        );
+      }
+      phase1Data.adaptiveThresholds = adaptiveThresholds;
+    }
+
+    // Phase 1 Enhancement - Step 4.8: IV Gating check
+    let ivAnalysis: IVAnalysis | undefined;
+    let ivGateResult: { gate: boolean; reason: string } | undefined;
+    if (this.phase1Options.enableIVGating) {
+      // Analyze IV for this symbol
+      // Note: daysToEarnings would come from an earnings calendar API in production
+      // For now, we'll pass undefined (no earnings warning)
+      ivAnalysis = analyzeIVForGating(symbol);
+      phase1Data.ivAnalysis = ivAnalysis;
+
+      // Determine if this is a debit (buying) or credit (selling) strategy
+      // Breakout, momentum, and most directional plays are debit strategies
+      const isDebitStrategy = [
+        "breakout",
+        "momentum",
+        "trend",
+        "continuation",
+        "reversal",
+        "gamma",
+      ].some((type) => bestOpportunity.detector.type.toLowerCase().includes(type));
+
+      ivGateResult = shouldGateOnIV(ivAnalysis, isDebitStrategy);
+      phase1Data.ivGateResult = ivGateResult;
+
+      // Apply IV score modifier to base score
+      const ivModifier = getIVScoreModifier(ivAnalysis);
+      bestOpportunity.baseScore *= ivModifier;
+
+      // Gate signal if IV conditions are unfavorable
+      if (ivGateResult.gate && ivAnalysis.gatingDecision !== "INSUFFICIENT_DATA") {
+        return {
+          filtered: true,
+          filterReason: `IV Gating: ${ivGateResult.reason}`,
+          detectionCount: detectedOpportunities.length,
+          scanTimeMs: Date.now() - startTime,
+          phase1Data,
+        };
+      }
+    }
 
     // Step 5: Calculate risk/reward
     const profile = this.getProfileForStyle(bestOpportunity.styleScores.recommendedStyle);
@@ -226,8 +420,13 @@ export class CompositeScanner {
       thresholds
     );
 
-    // Step 7: Validate signal
-    const validation = this.validateSignal(proposedSignal, thresholds, features);
+    // Step 7: Validate signal (now uses adaptive thresholds if enabled)
+    const validation = this.validateSignalWithPhase1(
+      proposedSignal,
+      thresholds,
+      features,
+      adaptiveThresholds
+    );
 
     if (!validation.pass) {
       return {
@@ -235,6 +434,7 @@ export class CompositeScanner {
         filterReason: validation.reason,
         detectionCount: detectedOpportunities.length,
         scanTimeMs: Date.now() - startTime,
+        phase1Data,
       };
     }
 
@@ -247,17 +447,25 @@ export class CompositeScanner {
         filterReason: dedupCheck.reason,
         detectionCount: detectedOpportunities.length,
         scanTimeMs: Date.now() - startTime,
+        phase1Data,
       };
     }
 
     // Signal passed all checks!
     this.deduplication.addSignal(proposedSignal);
 
+    // Phase 1 Enhancement: Add adaptive warnings to signal
+    if (adaptiveThresholds && adaptiveThresholds.warnings.length > 0) {
+      // Store warnings in confluence for UI display
+      (proposedSignal as any).adaptiveWarnings = adaptiveThresholds.warnings;
+    }
+
     return {
       signal: proposedSignal,
       filtered: false,
       detectionCount: detectedOpportunities.length,
       scanTimeMs: Date.now() - startTime,
+      phase1Data,
     };
   }
 
@@ -685,6 +893,62 @@ export class CompositeScanner {
     }
 
     return { pass: true };
+  }
+
+  /**
+   * Phase 1 Enhancement: Validate signal with adaptive thresholds
+   *
+   * @param signal - Signal to validate
+   * @param thresholds - Base thresholds to check
+   * @param features - Symbol features
+   * @param adaptiveThresholds - Adaptive thresholds (optional)
+   * @returns Validation result
+   */
+  private validateSignalWithPhase1(
+    signal: CompositeSignal,
+    thresholds: SignalThresholds,
+    features: SymbolFeatures,
+    adaptiveThresholds?: AdaptiveThresholdResult
+  ): { pass: boolean; reason?: string } {
+    // If adaptive thresholds are available and strategy is disabled, reject immediately
+    if (adaptiveThresholds && !adaptiveThresholds.strategyEnabled) {
+      return {
+        pass: false,
+        reason: `Strategy ${signal.opportunityType} not recommended for current conditions (${adaptiveThresholds.warnings.join(", ")})`,
+      };
+    }
+
+    // Use adaptive thresholds if available
+    if (adaptiveThresholds) {
+      // Build signal object for passesAdaptiveThresholds
+      const signalForAdaptive = {
+        baseScore: signal.baseScore,
+        recommendedStyleScore: signal.recommendedStyleScore,
+        riskReward: signal.riskReward,
+      };
+
+      const adaptiveResult = passesAdaptiveThresholds(signalForAdaptive, adaptiveThresholds);
+      if (!adaptiveResult.pass) {
+        return {
+          pass: false,
+          reason: adaptiveResult.reason,
+        };
+      }
+
+      // Also check risk/reward against adaptive threshold
+      const minRR = adaptiveThresholds.minRR ?? thresholds.minRiskReward;
+      if (signal.riskReward < minRR) {
+        return {
+          pass: false,
+          reason: `Risk/reward ${signal.riskReward.toFixed(1)} < ${minRR} (adaptive)`,
+        };
+      }
+
+      return { pass: true };
+    }
+
+    // Fall back to standard validation if no adaptive thresholds
+    return this.validateSignal(signal, thresholds, features);
   }
 
   /**
