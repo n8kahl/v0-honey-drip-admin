@@ -2,9 +2,11 @@ import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
+import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
+import type { ContractQualityConfig } from "../../../lib/scoring/ContractQualityScore";
 
 interface HDLoadedTradeCardProps {
   trade: Trade;
@@ -23,6 +25,15 @@ export function HDLoadedTradeCard({
   underlyingChange,
   showActions = true,
 }: HDLoadedTradeCardProps) {
+  // Build quality config based on trade type
+  const qualityConfig: ContractQualityConfig = {
+    tradeStyle:
+      trade.tradeType === "Scalp" ? "scalp" : trade.tradeType === "Swing" ? "swing" : "day_trade",
+    direction: trade.contract.type === "C" ? "call" : "put",
+    isDebit: true, // Assume buying options
+    underlyingPrice: underlyingPrice ?? 0,
+  };
+
   return (
     <div className="space-y-3">
       {/* Header - Contract Details */}
@@ -32,6 +43,7 @@ export function HDLoadedTradeCard({
             <div className="flex items-center gap-2 mb-1.5">
               <h2 className="text-[var(--text-high)] font-semibold text-lg">{trade.ticker}</h2>
               <HDTagTradeType type={trade.tradeType} />
+              <HDContractQualityBadge contract={trade.contract} config={qualityConfig} compact />
             </div>
             <div className="text-[var(--text-muted)] text-xs">
               ${trade.contract.strike}
@@ -113,6 +125,15 @@ export function HDLoadedTradeCard({
             </div>
           </div>
         </div>
+      </HDCard>
+
+      {/* Contract Quality Analysis */}
+      <HDCard>
+        <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <span>⭐</span>
+          <span>Contract Quality</span>
+        </div>
+        <HDContractQualityBadge contract={trade.contract} config={qualityConfig} showDetails />
       </HDCard>
 
       {/* Entry Checklist - Critical pre-entry confirmation */}
