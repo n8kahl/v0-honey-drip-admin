@@ -13,6 +13,7 @@ import { HDConfluenceChips } from "../signals/HDConfluenceChips";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
+import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
 import { useEffect } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { addTradeUpdate } from "../../../lib/supabase/database";
@@ -218,6 +219,15 @@ export function HDEnteredTradeCard({
         entryPrice={trade.entryPrice || trade.contract.mid}
         stopLoss={trade.stopLoss}
         currentPrice={currentPrice}
+        tradeType={trade.tradeType}
+        compact
+      />
+
+      {/* Session Guidance - Quick contextual tip */}
+      <HDSessionGuidance
+        ticker={trade.ticker}
+        direction={trade.contract.type === "C" ? "call" : "put"}
+        contract={trade.contract}
         tradeType={trade.tradeType}
         compact
       />

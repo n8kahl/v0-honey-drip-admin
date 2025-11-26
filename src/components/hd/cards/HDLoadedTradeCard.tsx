@@ -6,6 +6,7 @@ import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
 import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
+import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
@@ -126,6 +127,16 @@ export function HDLoadedTradeCard({
       {/* Time Decay Warning - DTE urgency and session timing */}
       <HDCard>
         <HDTimeDecayWarning contract={trade.contract} />
+      </HDCard>
+
+      {/* Session Guidance - Smart contextual trading advice */}
+      <HDCard>
+        <HDSessionGuidance
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          contract={trade.contract}
+          tradeType={trade.tradeType}
+        />
       </HDCard>
 
       {/* Market Analysis */}
