@@ -4,11 +4,9 @@
  * Right: Contract details + market analysis
  */
 
-import React from "react";
 import type { Trade, Contract, Ticker } from "../../types";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
-import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
 
 interface HDLoadedLayoutProps {
   trade: Trade;
@@ -16,11 +14,9 @@ interface HDLoadedLayoutProps {
   currentPrice: number;
   ticker: string;
   activeTicker: Ticker | null;
-  confluence: any;
-  onContractSelect: (contract: Contract, confluenceData?: any) => void;
+  onContractSelect: (contract: Contract) => void;
   onEnter: () => void;
   onDiscard: () => void;
-  compositeSignals?: CompositeSignal[];
 }
 
 export function HDLoadedLayout({
@@ -29,11 +25,9 @@ export function HDLoadedLayout({
   currentPrice,
   ticker,
   activeTicker,
-  confluence,
   onContractSelect,
   onEnter,
   onDiscard,
-  compositeSignals,
 }: HDLoadedLayoutProps) {
   return (
     <div className="flex flex-col lg:flex-row gap-0 lg:gap-6 px-4 lg:px-6 py-4 lg:py-6 pointer-events-auto relative z-10 h-full">
@@ -48,7 +42,7 @@ export function HDLoadedLayout({
               contracts={contracts}
               currentPrice={currentPrice}
               ticker={ticker}
-              onContractSelect={(c) => onContractSelect(c, confluence)}
+              onContractSelect={onContractSelect}
               className="text-sm"
             />
           ) : (
@@ -69,8 +63,6 @@ export function HDLoadedLayout({
             onDiscard={onDiscard}
             underlyingPrice={activeTicker?.last}
             underlyingChange={activeTicker?.changePercent}
-            confluence={confluence}
-            signals={compositeSignals?.filter((s) => s.symbol === trade.ticker)}
             showActions={false}
           />
         ) : (

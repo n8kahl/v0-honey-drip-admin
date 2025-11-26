@@ -1,6 +1,5 @@
 import React from "react";
 import { Ticker, Contract, Trade, TradeState, AlertType } from "../../types";
-import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
 import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedLayout } from "./HDLoadedLayout";
@@ -13,7 +12,6 @@ import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
 import type { KeyLevels } from "../../lib/riskEngine/types";
 
-// Use permissive typing for confluence metrics; downstream components will handle specifics.
 interface TradingWorkspaceProps {
   watchlist: Ticker[];
   activeTicker: Ticker | null;
@@ -21,13 +19,11 @@ interface TradingWorkspaceProps {
   currentTrade: Trade | null;
   tradeState: TradeState;
   showAlert: boolean;
-  confluence: any;
   alertType: AlertType;
-  onContractSelect: (c: Contract, confluenceData?: any) => void;
+  onContractSelect: (c: Contract) => void;
   onEnterTrade: () => void;
   onDiscard: () => void;
   onAutoTrim?: () => void;
-  compositeSignals?: CompositeSignal[];
 }
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
@@ -37,13 +33,11 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   currentTrade,
   tradeState,
   showAlert,
-  confluence,
   alertType,
   onContractSelect,
   onEnterTrade,
   onDiscard,
   onAutoTrim,
-  compositeSignals,
 }) => {
   const currentPrice = activeTicker
     ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
@@ -180,7 +174,6 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           <HDEnteredTradeCard
             trade={currentTrade}
             direction={currentTrade.contract.type === "C" ? "call" : "put"}
-            confluence={confluence}
             onAutoTrim={onAutoTrim}
           />
         </div>
@@ -223,11 +216,9 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           currentPrice={currentPrice}
           ticker={activeTicker.symbol}
           activeTicker={activeTicker}
-          confluence={confluence}
           onContractSelect={onContractSelect}
           onEnter={onEnterTrade}
           onDiscard={onDiscard}
-          compositeSignals={compositeSignals}
         />
       )}
       {!currentTrade && !activeTicker && (

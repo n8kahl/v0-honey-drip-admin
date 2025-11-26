@@ -253,15 +253,11 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 currentTrade={currentTrade}
                 tradeState={tradeState}
                 showAlert={showAlert}
-                confluence={DEFAULT_CONFLUENCE}
                 alertType={alertType}
-                onContractSelect={(contract, confluenceData) =>
-                  actions.handleContractSelect(contract, confluenceData)
-                }
+                onContractSelect={(contract) => actions.handleContractSelect(contract)}
                 onEnterTrade={actions.handleEnterTrade}
                 onDiscard={actions.handleDiscard}
                 onAutoTrim={() => actions.handleTrim()}
-                compositeSignals={compositeSignals}
               />
             )}
         </div>

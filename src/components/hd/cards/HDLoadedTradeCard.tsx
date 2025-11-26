@@ -1,9 +1,17 @@
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
+import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
+import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
+import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
+import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
+import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
+import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
+import { HDMacroDashboardStrip } from "../dashboard/HDMacroDashboardStrip";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
+import type { ContractQualityConfig } from "../../../lib/scoring/ContractQualityScore";
 
 interface HDLoadedTradeCardProps {
   trade: Trade;
@@ -11,13 +19,6 @@ interface HDLoadedTradeCardProps {
   onDiscard: () => void;
   underlyingPrice?: number;
   underlyingChange?: number;
-  confluence?: {
-    loading: boolean;
-    error?: string;
-    trend?: any;
-    volatility?: any;
-    liquidity?: any;
-  };
   showActions?: boolean; // Whether to show Enter/Discard action buttons (default: true)
 }
 
@@ -27,20 +28,16 @@ export function HDLoadedTradeCard({
   onDiscard,
   underlyingPrice,
   underlyingChange,
-  confluence,
   showActions = true,
 }: HDLoadedTradeCardProps) {
-  // Log confluence data for debugging
-  console.log("[v0] HDLoadedTradeCard confluence:", {
-    loading: confluence?.loading,
-    hasError: !!confluence?.error,
-    hasTrend: !!confluence?.trend,
-    hasVolatility: !!confluence?.volatility,
-    hasLiquidity: !!confluence?.liquidity,
-    trend: confluence?.trend,
-    volatility: confluence?.volatility,
-    liquidity: confluence?.liquidity,
-  });
+  // Build quality config based on trade type
+  const qualityConfig: ContractQualityConfig = {
+    tradeStyle:
+      trade.tradeType === "Scalp" ? "scalp" : trade.tradeType === "Swing" ? "swing" : "day_trade",
+    direction: trade.contract.type === "C" ? "call" : "put",
+    isDebit: true, // Assume buying options
+    underlyingPrice: underlyingPrice ?? 0,
+  };
 
   return (
     <div className="space-y-3">
@@ -51,6 +48,7 @@ export function HDLoadedTradeCard({
             <div className="flex items-center gap-2 mb-1.5">
               <h2 className="text-[var(--text-high)] font-semibold text-lg">{trade.ticker}</h2>
               <HDTagTradeType type={trade.tradeType} />
+              <HDContractQualityBadge contract={trade.contract} config={qualityConfig} compact />
             </div>
             <div className="text-[var(--text-muted)] text-xs">
               ${trade.contract.strike}
@@ -99,39 +97,52 @@ export function HDLoadedTradeCard({
         </div>
       </HDCard>
 
-      {/* Trade Plan */}
+      {/* Trade Plan with Dynamic Profit Targets */}
+      <HDCard>
+        <HDDynamicProfitTargets
+          contract={trade.contract}
+          entryPrice={trade.contract.mid}
+          stopLoss={trade.stopLoss}
+          tradeType={trade.tradeType}
+        />
+      </HDCard>
+
+      {/* Contract Quality Analysis */}
       <HDCard>
         <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <span>📊</span>
-          <span>Trade Plan</span>
+          <span>⭐</span>
+          <span>Contract Quality</span>
         </div>
+        <HDContractQualityBadge contract={trade.contract} config={qualityConfig} showDetails />
+      </HDCard>
 
-        <div className="grid grid-cols-3 gap-2.5">
-          <div className="bg-[var(--surface-1)] rounded-[var(--radius)] p-2.5 border border-[var(--border-hairline)]">
-            <div className="text-[var(--text-faint)] text-[10px] uppercase tracking-wide mb-1">
-              Entry
-            </div>
-            <div className="text-[var(--text-high)] tabular-nums font-medium text-sm">
-              ${formatPrice(trade.contract.mid)}
-            </div>
-          </div>
-          <div className="bg-[var(--surface-1)] rounded-[var(--radius)] p-2.5 border border-[var(--accent-positive)]/20">
-            <div className="text-[var(--text-faint)] text-[10px] uppercase tracking-wide mb-1">
-              Target
-            </div>
-            <div className="text-[var(--accent-positive)] tabular-nums font-medium text-sm">
-              {trade.targetPrice ? `$${formatPrice(trade.targetPrice)}` : "—"}
-            </div>
-          </div>
-          <div className="bg-[var(--surface-1)] rounded-[var(--radius)] p-2.5 border border-[var(--accent-negative)]/20">
-            <div className="text-[var(--text-faint)] text-[10px] uppercase tracking-wide mb-1">
-              Stop
-            </div>
-            <div className="text-[var(--accent-negative)] tabular-nums font-medium text-sm">
-              {trade.stopLoss ? `$${formatPrice(trade.stopLoss)}` : "—"}
-            </div>
-          </div>
-        </div>
+      {/* Entry Checklist - Critical pre-entry confirmation */}
+      <HDCard>
+        <HDEntryChecklist
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          contract={trade.contract}
+        />
+      </HDCard>
+
+      {/* Time Decay Warning - DTE urgency and session timing */}
+      <HDCard>
+        <HDTimeDecayWarning contract={trade.contract} />
+      </HDCard>
+
+      {/* Session Guidance - Smart contextual trading advice */}
+      <HDCard>
+        <HDSessionGuidance
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          contract={trade.contract}
+          tradeType={trade.tradeType}
+        />
+      </HDCard>
+
+      {/* Macro Dashboard - Market context at a glance */}
+      <HDCard>
+        <HDMacroDashboardStrip />
       </HDCard>
 
       {/* Market Analysis */}
@@ -141,18 +152,15 @@ export function HDLoadedTradeCard({
           <span>Market Analysis</span>
         </div>
 
-        {confluence && (
-          <HDConfluenceDetailPanel
-            ticker={trade.ticker}
-            direction={trade.contract.type === "C" ? "call" : "put"}
-            loading={confluence.loading}
-            error={confluence.error}
-            trend={confluence.trend}
-            volatility={confluence.volatility}
-            liquidity={confluence.liquidity}
-          />
-        )}
+        <HDConfluenceDetailPanel
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          contract={trade.contract}
+        />
       </HDCard>
+
+      {/* Economic Event Warning */}
+      <HDEconomicEventWarning ticker={trade.ticker} />
 
       {/* Action Buttons - Only show when showActions is true */}
       {showActions && (
