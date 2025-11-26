@@ -5,6 +5,15 @@
  * Usage: tsx scripts/analyze-detector-performance.ts
  */
 
+// Load environment variables from .env.local
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+config();
+
+// Fix Node 22 fetch issues - use cross-fetch polyfill for Supabase
+import fetch from "cross-fetch";
+globalThis.fetch = fetch as any;
+
 import { BacktestEngine } from "../src/lib/backtest/BacktestEngine.js";
 import { BacktestResult } from "../src/lib/backtest/types.js";
 import {
