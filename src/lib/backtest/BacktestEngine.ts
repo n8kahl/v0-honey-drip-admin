@@ -186,10 +186,23 @@ export class BacktestEngine {
         // Reconstruct features for this timestamp
         const features = await this.reconstructFeatures(symbol, bars, i);
 
-        // Run detector
-        const detected = detector.detect(features, undefined);
+        // Run detector with scoring (not just boolean detection)
+        const result = detector.detectWithScore(features, undefined);
 
-        if (detected) {
+        if (result.detected) {
+          // Apply runtime parameter filtering (for genetic algorithm optimization)
+          const { getOptimizedParams } = await import("../composite/OptimizedScannerConfig.js");
+          const params = getOptimizedParams();
+
+          // Check if score meets minimum threshold
+          // Default to 40 if no params set (baseline)
+          const minScoreThreshold = params?.minScores?.day || 40;
+
+          if (result.baseScore < minScoreThreshold) {
+            // Signal detected but score too low - skip trade
+            continue;
+          }
+
           // Simulate trade
           const trade = await this.simulateTrade(
             symbol,
