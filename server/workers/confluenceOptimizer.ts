@@ -614,9 +614,32 @@ export class ConfluenceOptimizer {
 // ============================================================================
 
 async function main() {
+  console.log("[Optimizer] 📋 Fetching symbols from watchlist...");
+
+  // Fetch all unique symbols from watchlist (across all users)
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  const { data: watchlistData, error: watchlistError } = await supabase
+    .from("watchlist")
+    .select("symbol");
+
+  if (watchlistError) {
+    console.error("[Optimizer] ❌ Failed to fetch watchlist:", watchlistError);
+    process.exit(1);
+  }
+
+  // Get unique symbols
+  const uniqueSymbols = [...new Set(watchlistData?.map((w) => w.symbol) || [])];
+
+  if (uniqueSymbols.length === 0) {
+    console.warn("[Optimizer] ⚠️  No symbols in watchlist, using defaults");
+    uniqueSymbols.push("SPX", "NDX", "SPY", "QQQ");
+  }
+
+  console.log(`[Optimizer] ✅ Found ${uniqueSymbols.length} symbols: ${uniqueSymbols.join(", ")}`);
+
   // Backtest configuration
   const backtestConfig: BacktestConfig = {
-    symbols: ["SPX", "NDX"],
+    symbols: uniqueSymbols, // Dynamically use all watchlist symbols
     startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     endDate: new Date().toISOString().split("T")[0],
     timeframe: "15m",
