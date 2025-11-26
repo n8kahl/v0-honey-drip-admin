@@ -13,6 +13,7 @@ import morgan from "morgan";
 import path from "path";
 import apiRouter from "./routes/api.js";
 import tradesRouter from "./routes/trades.js";
+import calendarRouter from "./routes/calendar.js";
 import { attachWsServers } from "./ws/index.js";
 
 const app = express();
@@ -76,6 +77,7 @@ app.use("/api", (req, res, next) => {
 // ===== API routes =====
 app.use("/api", apiRouter);
 app.use(tradesRouter); // Trades router handles its own /api/trades* paths
+app.use("/api/calendar", calendarRouter); // Phase 2.4: Economic calendar routes
 
 // Diagnostic: expose limited MASSIVE_API_KEY presence (no full key)
 app.get("/api/massive-key-status", (_req: Request, res: Response) => {
