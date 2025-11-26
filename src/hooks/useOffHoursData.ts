@@ -13,6 +13,7 @@ import { useMarketSession } from "./useMarketSession";
 import { useMarketStore } from "../stores/marketStore";
 import { massive } from "../lib/massive";
 import { getNextMarketTimes } from "../lib/marketSession";
+import { MassiveTokenManager } from "../lib/massive/token-manager";
 
 export interface FuturesSnapshot {
   es: {
@@ -266,6 +267,9 @@ function generateSetupScenarios(
   return scenarios;
 }
 
+// Create a singleton token manager for this hook
+const tokenManager = new MassiveTokenManager();
+
 export function useOffHoursData(): OffHoursData {
   const { session, sessionState } = useMarketSession();
   const watchlist = useMarketStore((s) => s.watchlist);
@@ -380,25 +384,45 @@ export function useOffHoursData(): OffHoursData {
 
     const levelsMap = new Map<string, SymbolKeyLevels>();
 
+    // Get auth token for API calls
+    const token = await tokenManager.getToken();
+
     for (const item of watchlist.slice(0, 10)) {
       // Limit to first 10
       const symbol = item.symbol;
 
       try {
         // Fetch recent bars for key level detection
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const fromDate = sevenDaysAgo.toISOString().split('T')[0]; // YYYY-MM-DD
+        const toDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+
         const response = await fetch(
-          `/api/bars?symbol=${symbol}&timespan=day&from=${Date.now() - 7 * 24 * 60 * 60 * 1000}&to=${Date.now()}&limit=7`
+          `/api/bars?symbol=${symbol}&timespan=day&multiplier=1&from=${fromDate}&to=${toDate}&limit=7`,
+          {
+            headers: {
+              'x-massive-proxy-token': token,
+            },
+          }
         );
+
+        if (!response.ok) {
+          console.warn(`[useOffHoursData] Failed to fetch bars for ${symbol}: ${response.status}`);
+          continue;
+        }
+
         const data = await response.json();
-        const bars = data.results || data.bars || [];
+        const bars = data.bars || [];
 
         if (bars.length === 0) continue;
 
         const latestBar = bars[bars.length - 1];
         const priorBar = bars.length > 1 ? bars[bars.length - 2] : latestBar;
 
-        const currentPrice = latestBar.c || latestBar.close || 0;
-        const priorClose = priorBar.c || priorBar.close || currentPrice;
+        const currentPrice = latestBar.close || 0;
+        const priorClose = priorBar.close || currentPrice;
         const changePercent = priorClose > 0 ? ((currentPrice - priorClose) / priorClose) * 100 : 0;
 
         // Calculate key levels
@@ -407,25 +431,25 @@ export function useOffHoursData(): OffHoursData {
         // Prior day high/low
         levels.push({
           type: "resistance",
-          price: latestBar.h || latestBar.high || currentPrice * 1.01,
-          label: `PDH ${(latestBar.h || latestBar.high || 0).toFixed(2)}`,
+          price: latestBar.high || currentPrice * 1.01,
+          label: `PDH ${(latestBar.high || 0).toFixed(2)}`,
           strength: "strong",
           source: "Prior Day High",
         });
 
         levels.push({
           type: "support",
-          price: latestBar.l || latestBar.low || currentPrice * 0.99,
-          label: `PDL ${(latestBar.l || latestBar.low || 0).toFixed(2)}`,
+          price: latestBar.low || currentPrice * 0.99,
+          label: `PDL ${(latestBar.low || 0).toFixed(2)}`,
           strength: "strong",
           source: "Prior Day Low",
         });
 
         // Week high/low
-        const weekHigh = Math.max(...bars.map((b: any) => b.h || b.high || 0));
-        const weekLow = Math.min(...bars.map((b: any) => b.l || b.low || Infinity));
+        const weekHigh = Math.max(...bars.map((b) => b.high || 0));
+        const weekLow = Math.min(...bars.map((b) => b.low || Infinity));
 
-        if (weekHigh > (latestBar.h || latestBar.high || 0)) {
+        if (weekHigh > (latestBar.high || 0)) {
           levels.push({
             type: "resistance",
             price: weekHigh,
@@ -435,7 +459,7 @@ export function useOffHoursData(): OffHoursData {
           });
         }
 
-        if (weekLow < (latestBar.l || latestBar.low || 0) && weekLow > 0) {
+        if (weekLow < (latestBar.low || 0) && weekLow > 0) {
           levels.push({
             type: "support",
             price: weekLow,
@@ -457,7 +481,7 @@ export function useOffHoursData(): OffHoursData {
         }
 
         // Pivot point (simplified)
-        const pivot = (latestBar.h + latestBar.l + latestBar.c) / 3;
+        const pivot = (latestBar.high + latestBar.low + latestBar.close) / 3;
         levels.push({
           type: "pivot",
           price: pivot,
