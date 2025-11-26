@@ -24,3 +24,6 @@ export * from "./SignalDeduplication.js";
 // Enhancement Suite (Phase 6 - Phase 1 of Master Enhancement Plan)
 export * from "./AdaptiveThresholds.js";
 export * from "./ConfidenceScoring.js";
+
+// Phase 2 Enhancements
+export * from "./StyleScoreModifiers.js";
