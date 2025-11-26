@@ -71,7 +71,7 @@ const TESTING_DEFAULT_THRESHOLDS: SignalThresholds = {
  * Significantly more selective than defaults
  */
 export const OPTIMIZED_DEFAULT_THRESHOLDS: SignalThresholds =
-  process.env.NODE_ENV === 'development' || process.env.TESTING_MODE === 'true'
+  process.env.NODE_ENV === "development" || process.env.TESTING_MODE === "true"
     ? TESTING_DEFAULT_THRESHOLDS
     : {
         minBaseScore: 70, // Realistic threshold - solid setups
@@ -97,7 +97,7 @@ const TESTING_INDEX_THRESHOLDS: SignalThresholds = {
  * Indices require even stronger setups
  */
 export const OPTIMIZED_INDEX_THRESHOLDS: SignalThresholds =
-  process.env.NODE_ENV === 'development' || process.env.TESTING_MODE === 'true'
+  process.env.NODE_ENV === "development" || process.env.TESTING_MODE === "true"
     ? TESTING_INDEX_THRESHOLDS
     : {
         minBaseScore: 75, // Strong setups for indices
@@ -126,7 +126,7 @@ export const OPTIMIZED_EQUITY_THRESHOLDS: SignalThresholds = {
 export const OPTIMIZED_FILTERS: UniversalFilters = {
   // TESTING: Disabled for weekend/after-hours development
   // Re-enable for production or override with MARKET_HOURS_ONLY env var
-  marketHoursOnly: process.env.MARKET_HOURS_ONLY === 'true' ? true : false,
+  marketHoursOnly: process.env.MARKET_HOURS_ONLY === "true" ? true : false,
   minRVOL: 0.0, // Temporarily disabled - intraday bars don't have daily avg volume data
   maxSpread: 0.003, // Tightened from 0.005 - better execution
   blacklist: [
@@ -443,6 +443,37 @@ export function isStrategyAllowedInRegime(
   }
 
   return { allowed: true };
+}
+
+/**
+ * Runtime parameter override (for genetic algorithm optimization)
+ * Allows the optimizer to dynamically adjust parameters during backtesting
+ */
+let runtimeParamsOverride: any = null;
+
+export function setOptimizedParams(params: any) {
+  runtimeParamsOverride = params;
+}
+
+export function getOptimizedParams() {
+  return runtimeParamsOverride;
+}
+
+export function clearOptimizedParams() {
+  runtimeParamsOverride = null;
+}
+
+/**
+ * Get threshold with runtime override applied
+ */
+export function getThresholdWithOverride(
+  baseThreshold: number,
+  tradeType: "scalp" | "day" | "swing"
+): number {
+  if (!runtimeParamsOverride) return baseThreshold;
+
+  const minScore = runtimeParamsOverride.minScores?.[tradeType] || baseThreshold;
+  return minScore;
 }
 
 /**
