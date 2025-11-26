@@ -43,6 +43,37 @@ export function HDContractGrid({
 
   const [optionType, setOptionType] = useState<"C" | "P">("P");
   const [selectedId, setSelectedId] = useState<string>();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const recommendedRowRef = useRef<HTMLDivElement>(null);
+
+  // Auto-switch to calls/puts based on recommendation direction
+  useEffect(() => {
+    if (recommendation?.direction) {
+      const newType = recommendation.direction === "call" ? "C" : "P";
+      if (optionType !== newType) {
+        setOptionType(newType);
+      }
+    }
+  }, [recommendation?.direction]);
+
+  // Auto-scroll to recommended contract after render
+  useEffect(() => {
+    if (
+      recommendation?.hasRecommendation &&
+      recommendedRowRef.current &&
+      scrollContainerRef.current
+    ) {
+      // Small delay to ensure DOM is updated
+      const timer = setTimeout(() => {
+        recommendedRowRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [recommendation?.hasRecommendation, recommendation?.bestContract?.id, optionType]);
+
   // Filter by option type (memoized)
   const filtered = useMemo(
     () => contracts.filter((c) => c.type === optionType),
@@ -106,6 +137,16 @@ export function HDContractGrid({
       setExpandedDate(sortedDates[0]);
     }
   }, [ticker]);
+
+  // Auto-expand the expiry that contains the recommended contract
+  useEffect(() => {
+    if (
+      recommendation?.bestContract?.expiry &&
+      sortedDates.includes(recommendation.bestContract.expiry)
+    ) {
+      setExpandedDate(recommendation.bestContract.expiry);
+    }
+  }, [recommendation?.bestContract?.expiry, sortedDates]);
 
   const handleSelect = (contract: Contract) => {
     setSelectedId(contract.id);
@@ -295,6 +336,7 @@ export function HDContractGrid({
 
       {/* Scrollable Contract List - Single unified scroll container */}
       <div
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin relative"
         data-testid="strike-grid"
       >
@@ -374,16 +416,18 @@ export function HDContractGrid({
                       {/* OTM Contracts (limited to 10) */}
                       {limitedOtm.map((contract) => {
                         const currentRow = rowIndex++;
+                        const isRec = recommendedIds.has(contract.id);
                         return (
-                          <ContractRow
-                            key={contract.id}
-                            contract={contract}
-                            status="otm"
-                            selected={contract.id === selectedId}
-                            onClick={() => handleSelect(contract)}
-                            zebra={currentRow % 2 === 1}
-                            isRecommended={recommendedIds.has(contract.id)}
-                          />
+                          <div key={contract.id} ref={isRec ? recommendedRowRef : undefined}>
+                            <ContractRow
+                              contract={contract}
+                              status="otm"
+                              selected={contract.id === selectedId}
+                              onClick={() => handleSelect(contract)}
+                              zebra={currentRow % 2 === 1}
+                              isRecommended={isRec}
+                            />
+                          </div>
                         );
                       })}
 
@@ -412,16 +456,18 @@ export function HDContractGrid({
                           </div>
                           {limitedAtm.map((contract) => {
                             const currentRow = rowIndex++;
+                            const isRec = recommendedIds.has(contract.id);
                             return (
-                              <ContractRow
-                                key={contract.id}
-                                contract={contract}
-                                status="atm"
-                                selected={contract.id === selectedId}
-                                onClick={() => handleSelect(contract)}
-                                zebra={currentRow % 2 === 1}
-                                isRecommended={recommendedIds.has(contract.id)}
-                              />
+                              <div key={contract.id} ref={isRec ? recommendedRowRef : undefined}>
+                                <ContractRow
+                                  contract={contract}
+                                  status="atm"
+                                  selected={contract.id === selectedId}
+                                  onClick={() => handleSelect(contract)}
+                                  zebra={currentRow % 2 === 1}
+                                  isRecommended={isRec}
+                                />
+                              </div>
                             );
                           })}
                         </>
@@ -437,16 +483,18 @@ export function HDContractGrid({
                       {/* ITM Contracts (limited to 10) */}
                       {limitedItm.map((contract) => {
                         const currentRow = rowIndex++;
+                        const isRec = recommendedIds.has(contract.id);
                         return (
-                          <ContractRow
-                            key={contract.id}
-                            contract={contract}
-                            status="itm"
-                            selected={contract.id === selectedId}
-                            onClick={() => handleSelect(contract)}
-                            zebra={currentRow % 2 === 1}
-                            isRecommended={recommendedIds.has(contract.id)}
-                          />
+                          <div key={contract.id} ref={isRec ? recommendedRowRef : undefined}>
+                            <ContractRow
+                              contract={contract}
+                              status="itm"
+                              selected={contract.id === selectedId}
+                              onClick={() => handleSelect(contract)}
+                              zebra={currentRow % 2 === 1}
+                              isRecommended={isRec}
+                            />
+                          </div>
                         );
                       })}
                     </>
