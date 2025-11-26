@@ -335,11 +335,19 @@ export class CompositeScanner {
           regime: "ranging",
           strategyCategory: "all",
           strategyEnabled: true,
+          strategyNotes: "Weekend analysis - for planning only, no live trading",
           warnings: ["Weekend signals are for planning only"],
           breakdown: {
             baseFromTime: weekendBasic.minBase,
             baseFromVIX: 0,
             baseFromRegime: 0,
+            styleFromTime: weekendBasic.minStyle,
+            styleFromVIX: 0,
+            rrFromTime: weekendBasic.minRR,
+            rrFromVIX: 0,
+            rrFromRegime: 0,
+            sizeFromTime: weekendBasic.sizeMultiplier,
+            sizeFromVIX: 0,
           },
         };
       } else {
@@ -361,7 +369,7 @@ export class CompositeScanner {
 
     // Phase 1 Enhancement - Step 4.8: IV Gating check
     let ivAnalysis: IVAnalysis | undefined;
-    let ivGateResult: { gate: boolean; reason: string } | undefined;
+    let ivGateResult: { gate: boolean; reason?: string } | undefined;
     if (this.phase1Options.enableIVGating) {
       // Analyze IV for this symbol
       // Note: daysToEarnings would come from an earnings calendar API in production
