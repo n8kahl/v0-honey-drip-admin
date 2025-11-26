@@ -47,6 +47,13 @@ import {
   calculateWeekendConfidence,
   type ConfidenceResult,
 } from "./ConfidenceScoring.js";
+// Phase 2.1: Import Style Score Modifiers
+import {
+  extractStyleFactors,
+  calculateStyleModifiers,
+  applyStyleModifiersToScore,
+  type StyleModifierResult,
+} from "./StyleScoreModifiers.js";
 import {
   analyzeIVForGating,
   shouldGateOnIV,
@@ -684,6 +691,7 @@ export class CompositeScanner {
 
   /**
    * Apply trading style modifiers to base score
+   * Phase 2.1 Enhancement: Uses context-aware style modifiers
    *
    * @param baseScore - Base composite score
    * @param opportunityType - Opportunity type
@@ -695,44 +703,20 @@ export class CompositeScanner {
     opportunityType: string,
     features: SymbolFeatures
   ): StyleScoringResult {
-    const profiles = [SCALP_PROFILE, DAY_TRADE_PROFILE, SWING_PROFILE];
-    const scores: Record<string, number> = {};
+    // Phase 2.1: Use new context-aware style modifiers
+    const factors = extractStyleFactors(features);
+    const modifierResult = calculateStyleModifiers(factors);
+    const scores = applyStyleModifiersToScore(baseScore, modifierResult.modifiers);
 
-    for (const profile of profiles) {
-      // Start with base score
-      let styleScore = baseScore;
-
-      // Apply opportunity type modifier
-      const typeModifier = profile.scoreModifiers.opportunityType[opportunityType] || 1.0;
-      styleScore *= typeModifier;
-
-      // Apply time of day modifier
-      const timeModifier = profile.scoreModifiers.timeOfDay(
-        features.session?.minutesSinceOpen || 0
-      );
-      styleScore *= timeModifier;
-
-      // Apply volatility modifier
-      const mtf5m = features.mtf?.["5m"] as any;
-      const atr = mtf5m?.atr || 0;
-      const vixLevel = (features as any).pattern?.vix_level || "medium";
-      const volModifier = profile.scoreModifiers.volatility(atr, vixLevel);
-      styleScore *= volModifier;
-
-      // Cap at 100
-      scores[profile.name] = Math.min(100, Math.max(0, styleScore));
-    }
-
-    // Find recommended style (highest score)
-    const entries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-    const recommended = entries[0];
+    // Store the modifier result for diagnostics (can be accessed via contextData)
+    (features as any).__styleModifierResult = modifierResult;
 
     return {
-      scalpScore: scores.scalp || 0,
-      dayTradeScore: scores.day_trade || 0,
-      swingScore: scores.swing || 0,
-      recommendedStyle: recommended[0] as "scalp" | "day_trade" | "swing",
-      recommendedStyleScore: recommended[1],
+      scalpScore: scores.scalpScore,
+      dayTradeScore: scores.dayTradeScore,
+      swingScore: scores.swingScore,
+      recommendedStyle: scores.recommendedStyle,
+      recommendedStyleScore: scores.recommendedStyleScore,
     };
   }
 
