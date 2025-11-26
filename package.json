@@ -27,6 +27,7 @@
     "optimize": "tsx server/workers/confluenceOptimizer.ts",
     "optimize:quick": "tsx server/workers/confluenceOptimizer.ts --quick",
     "optimize:scheduler": "tsx watch server/workers/scheduledOptimizer.ts",
+    "analyze:detectors": "tsx scripts/analyze-detector-performance.ts",
     "preview": "vite preview",
     "start": "node server/dist/server/index.js",
     "start:worker": "node server/dist/server/workers/scanner.js",
