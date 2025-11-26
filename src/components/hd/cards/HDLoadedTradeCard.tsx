@@ -1,6 +1,7 @@
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
+import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
@@ -112,6 +113,15 @@ export function HDLoadedTradeCard({
             </div>
           </div>
         </div>
+      </HDCard>
+
+      {/* Entry Checklist - Critical pre-entry confirmation */}
+      <HDCard>
+        <HDEntryChecklist
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          contract={trade.contract}
+        />
       </HDCard>
 
       {/* Market Analysis */}
