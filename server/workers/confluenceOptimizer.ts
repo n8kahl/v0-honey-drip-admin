@@ -383,8 +383,8 @@ export class ConfluenceOptimizer {
       const parent2 = parents[Math.min(i + 1, parents.length - 1)];
 
       if (Math.random() < this.config.crossoverRate) {
-        // Crossover: Mix parameters from both parents
-        const child: Individual = {
+        // Crossover: Create TWO children from parent pair
+        const child1: Individual = {
           params: this.crossoverParams(parent1.params, parent2.params),
           fitness: 0,
           winRate: 0,
@@ -392,10 +392,20 @@ export class ConfluenceOptimizer {
           totalTrades: 0,
           generation: 0,
         };
-        offspring.push(child);
+        const child2: Individual = {
+          params: this.crossoverParams(parent2.params, parent1.params),
+          fitness: 0,
+          winRate: 0,
+          profitFactor: 0,
+          totalTrades: 0,
+          generation: 0,
+        };
+        offspring.push(child1);
+        offspring.push(child2);
       } else {
-        // No crossover: Clone parent
+        // No crossover: Clone both parents
         offspring.push({ ...parent1, fitness: 0 });
+        offspring.push({ ...parent2, fitness: 0 });
       }
     }
 
