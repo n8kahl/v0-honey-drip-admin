@@ -5,6 +5,7 @@ import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
 import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
 import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
+import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
@@ -94,39 +95,14 @@ export function HDLoadedTradeCard({
         </div>
       </HDCard>
 
-      {/* Trade Plan */}
+      {/* Trade Plan with Dynamic Profit Targets */}
       <HDCard>
-        <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <span>📊</span>
-          <span>Trade Plan</span>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2.5">
-          <div className="bg-[var(--surface-1)] rounded-[var(--radius)] p-2.5 border border-[var(--border-hairline)]">
-            <div className="text-[var(--text-faint)] text-[10px] uppercase tracking-wide mb-1">
-              Entry
-            </div>
-            <div className="text-[var(--text-high)] tabular-nums font-medium text-sm">
-              ${formatPrice(trade.contract.mid)}
-            </div>
-          </div>
-          <div className="bg-[var(--surface-1)] rounded-[var(--radius)] p-2.5 border border-[var(--accent-positive)]/20">
-            <div className="text-[var(--text-faint)] text-[10px] uppercase tracking-wide mb-1">
-              Target
-            </div>
-            <div className="text-[var(--accent-positive)] tabular-nums font-medium text-sm">
-              {trade.targetPrice ? `$${formatPrice(trade.targetPrice)}` : "—"}
-            </div>
-          </div>
-          <div className="bg-[var(--surface-1)] rounded-[var(--radius)] p-2.5 border border-[var(--accent-negative)]/20">
-            <div className="text-[var(--text-faint)] text-[10px] uppercase tracking-wide mb-1">
-              Stop
-            </div>
-            <div className="text-[var(--accent-negative)] tabular-nums font-medium text-sm">
-              {trade.stopLoss ? `$${formatPrice(trade.stopLoss)}` : "—"}
-            </div>
-          </div>
-        </div>
+        <HDDynamicProfitTargets
+          contract={trade.contract}
+          entryPrice={trade.contract.mid}
+          stopLoss={trade.stopLoss}
+          tradeType={trade.tradeType}
+        />
       </HDCard>
 
       {/* Contract Quality Analysis */}

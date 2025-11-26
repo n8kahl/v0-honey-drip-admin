@@ -12,6 +12,7 @@ import { useOptionTrades, useOptionQuote } from "../../../hooks/useOptionsAdvanc
 import { HDConfluenceChips } from "../signals/HDConfluenceChips";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
+import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
 import { useEffect } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { addTradeUpdate } from "../../../lib/supabase/database";
@@ -210,6 +211,16 @@ export function HDEnteredTradeCard({
 
       {/* Time Decay Warning - Critical for active 0DTE/1DTE trades */}
       <HDTimeDecayWarning contract={trade.contract} compact />
+
+      {/* Dynamic Profit Targets - Track progress toward exits */}
+      <HDDynamicProfitTargets
+        contract={trade.contract}
+        entryPrice={trade.entryPrice || trade.contract.mid}
+        stopLoss={trade.stopLoss}
+        currentPrice={currentPrice}
+        tradeType={trade.tradeType}
+        compact
+      />
 
       {/* Tight 2×2 Levels Grid */}
       <div className="grid grid-cols-2 gap-2">
