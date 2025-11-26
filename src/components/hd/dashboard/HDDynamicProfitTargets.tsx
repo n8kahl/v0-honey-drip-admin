@@ -18,7 +18,7 @@ interface HDDynamicProfitTargetsProps {
   entryPrice: number;
   stopLoss?: number;
   currentPrice?: number;
-  tradeType?: "Scalp" | "Day" | "Swing";
+  tradeType?: "Scalp" | "Day" | "Swing" | "LEAP";
   className?: string;
   compact?: boolean;
 }
@@ -46,18 +46,19 @@ function calculateTargetStrategy(
   entryPrice: number,
   stopLoss: number | undefined,
   currentPrice: number | undefined,
-  tradeType: "Scalp" | "Day" | "Swing" = "Day"
+  tradeType: "Scalp" | "Day" | "Swing" | "LEAP" = "Day"
 ): TargetStrategy {
   const dte = contract.daysToExpiry ?? 0;
   const atr = contract.mid * 0.15; // Estimate ATR as 15% of mid price
   const effectiveStop = stopLoss || entryPrice - atr * 0.5;
-  const risk = entryPrice - effectiveStop;
+  const risk = Math.max(0.01, entryPrice - effectiveStop); // Prevent division by zero
 
   // Base target percentages adjusted by trade style
-  const baseTargets = {
+  const baseTargets: Record<string, { t1: number; t2: number; t3: number }> = {
     Scalp: { t1: 0.15, t2: 0.25, t3: 0.4 }, // 15%, 25%, 40%
     Day: { t1: 0.25, t2: 0.5, t3: 0.75 }, // 25%, 50%, 75%
     Swing: { t1: 0.5, t2: 1.0, t3: 1.5 }, // 50%, 100%, 150%
+    LEAP: { t1: 0.75, t2: 1.5, t3: 2.5 }, // 75%, 150%, 250% for long-term
   };
 
   // DTE adjustments - shorter DTE = smaller targets
@@ -70,7 +71,8 @@ function calculateTargetStrategy(
           ? 0.9 // 2-3DTE: Slight reduction
           : 1.0; // 4+ DTE: Full targets
 
-  const styleTargets = baseTargets[tradeType];
+  // Use Day targets as fallback for unknown trade types
+  const styleTargets = baseTargets[tradeType] || baseTargets.Day;
 
   const targets: ProfitTarget[] = [
     {
@@ -138,6 +140,10 @@ function calculateTargetStrategy(
   } else if (tradeType === "Swing") {
     recommendedExit = "T3";
     reasoning = "Swing style: Let winners run with trailing stops";
+    urgency = "low";
+  } else if (tradeType === "LEAP") {
+    recommendedExit = "T3";
+    reasoning = "LEAP style: Long-term hold, let time value work for you";
     urgency = "low";
   } else {
     recommendedExit = "T2";
