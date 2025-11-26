@@ -203,12 +203,15 @@ export class BacktestEngine {
             continue;
           }
 
+          // Get max hold bars from optimized params (for trade simulation)
+          const maxHoldBars = params?.riskReward?.maxHoldBars ?? this.config.maxHoldBars;
+
           // Simulate trade
           const trade = await this.simulateTrade(
             symbol,
             detector,
             currentBar,
-            bars.slice(i + 1, i + this.config.maxHoldBars + 1),
+            bars.slice(i + 1, i + maxHoldBars + 1),
             features
           );
 
@@ -494,16 +497,25 @@ export class BacktestEngine {
     const entryPrice = entryBar.close;
     const atr = features.pattern?.atr || features.indicators?.atr || 2.0;
 
+    // Get optimized parameters (for genetic algorithm)
+    const { getOptimizedParams } = await import("../composite/OptimizedScannerConfig.js");
+    const params = getOptimizedParams();
+
+    // Use optimized riskReward parameters if available, otherwise fall back to config
+    const targetMultiple = params?.riskReward?.targetMultiple ?? this.config.targetMultiple;
+    const stopMultiple = params?.riskReward?.stopMultiple ?? this.config.stopMultiple;
+    const maxHoldBars = params?.riskReward?.maxHoldBars ?? this.config.maxHoldBars;
+
     // Calculate target and stop based on ATR
     let targetPrice: number;
     let stopPrice: number;
 
     if (direction === "LONG") {
-      targetPrice = entryPrice + atr * this.config.targetMultiple;
-      stopPrice = entryPrice - atr * this.config.stopMultiple;
+      targetPrice = entryPrice + atr * targetMultiple;
+      stopPrice = entryPrice - atr * stopMultiple;
     } else {
-      targetPrice = entryPrice - atr * this.config.targetMultiple;
-      stopPrice = entryPrice + atr * this.config.stopMultiple;
+      targetPrice = entryPrice - atr * targetMultiple;
+      stopPrice = entryPrice + atr * stopMultiple;
     }
 
     // Apply slippage
