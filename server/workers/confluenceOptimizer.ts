@@ -64,8 +64,8 @@ const PARAMETER_BOUNDS: { [key: string]: { min: number; max: number } } = {
   "mtfWeights.hourly": { min: 0.5, max: 2.0 },
   "mtfWeights.fifteenMin": { min: 0.1, max: 1.0 },
 
-  "riskReward.targetMultiple": { min: 1.0, max: 3.0 },
-  "riskReward.stopMultiple": { min: 0.5, max: 2.0 },
+  "riskReward.targetMultiple": { min: 1.5, max: 3.0 },
+  "riskReward.stopMultiple": { min: 0.5, max: 1.2 }, // Must be < targetMultiple.min to ensure positive R:R
   "riskReward.maxHoldBars": { min: 10, max: 40 },
 };
 
@@ -406,7 +406,7 @@ export class ConfluenceOptimizer {
    * Crossover two parameter sets (uniform crossover)
    */
   private crossoverParams(p1: ParameterConfig, p2: ParameterConfig): ParameterConfig {
-    return {
+    const params = {
       minScores: {
         scalp: Math.random() < 0.5 ? p1.minScores.scalp : p2.minScores.scalp,
         day: Math.random() < 0.5 ? p1.minScores.day : p2.minScores.day,
@@ -437,6 +437,7 @@ export class ConfluenceOptimizer {
         maxHoldBars: Math.random() < 0.5 ? p1.riskReward.maxHoldBars : p2.riskReward.maxHoldBars,
       },
     };
+    return this.validateRiskReward(params);
   }
 
   /**
@@ -482,7 +483,7 @@ export class ConfluenceOptimizer {
       obj[lastKey] = newValue;
     }
 
-    return mutated;
+    return this.validateRiskReward(mutated);
   }
 
   /**
@@ -568,7 +569,7 @@ export class ConfluenceOptimizer {
   // =========================================================================
 
   private randomParams(): ParameterConfig {
-    return {
+    const params = {
       minScores: {
         scalp: this.randomInRange(30, 60),
         day: this.randomInRange(30, 60),
@@ -593,11 +594,26 @@ export class ConfluenceOptimizer {
         fifteenMin: this.randomInRange(0.1, 1),
       },
       riskReward: {
-        targetMultiple: this.randomInRange(1, 3),
-        stopMultiple: this.randomInRange(0.5, 2),
+        targetMultiple: this.randomInRange(1.5, 3),
+        stopMultiple: this.randomInRange(0.5, 1.2),
         maxHoldBars: Math.floor(this.randomInRange(10, 40)),
       },
     };
+    return this.validateRiskReward(params);
+  }
+
+  /**
+   * Validate and fix risk/reward parameters to ensure positive R:R ratio
+   */
+  private validateRiskReward(params: ParameterConfig): ParameterConfig {
+    // Ensure stopMultiple < targetMultiple for positive risk/reward
+    if (params.riskReward.stopMultiple >= params.riskReward.targetMultiple) {
+      // Fix: Set stop to 80% of target
+      params.riskReward.stopMultiple = params.riskReward.targetMultiple * 0.8;
+      // Clamp to valid range
+      params.riskReward.stopMultiple = Math.max(0.5, Math.min(1.2, params.riskReward.stopMultiple));
+    }
+    return params;
   }
 
   private randomInRange(min: number, max: number): number {
