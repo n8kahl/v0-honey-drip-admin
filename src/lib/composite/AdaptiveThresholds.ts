@@ -23,7 +23,8 @@ export type TimeOfDayWindow =
   | "early_afternoon"
   | "afternoon"
   | "power_hour"
-  | "after_hours";
+  | "after_hours"
+  | "weekend";
 
 export type VIXLevel = "low" | "medium" | "high" | "extreme";
 
@@ -34,7 +35,8 @@ export type StrategyCategory =
   | "meanReversion"
   | "trendContinuation"
   | "gamma"
-  | "reversal";
+  | "reversal"
+  | "all";
 
 /**
  * Window configuration for time-of-day thresholds
@@ -252,6 +254,12 @@ export const DEFAULT_REGIME_THRESHOLDS: AdaptiveThresholdConfig["byRegime"] = {
       enabled: false,
       notes: "Reversals in trends are counter-trend - very risky",
     },
+    all: {
+      minBase: 70,
+      minRR: 1.5,
+      enabled: true,
+      notes: "Generic catch-all for trending markets",
+    },
   },
   ranging: {
     breakout: {
@@ -283,6 +291,12 @@ export const DEFAULT_REGIME_THRESHOLDS: AdaptiveThresholdConfig["byRegime"] = {
       minRR: 1.4,
       enabled: true,
       notes: "Range reversals at extremes work well",
+    },
+    all: {
+      minBase: 72,
+      minRR: 1.5,
+      enabled: true,
+      notes: "Generic catch-all for ranging markets",
     },
   },
   choppy: {
@@ -316,6 +330,12 @@ export const DEFAULT_REGIME_THRESHOLDS: AdaptiveThresholdConfig["byRegime"] = {
       enabled: true,
       notes: "Reversals at extreme chop levels can work",
     },
+    all: {
+      minBase: 82,
+      minRR: 1.8,
+      enabled: true,
+      notes: "Generic catch-all for choppy markets - require higher confidence",
+    },
   },
   volatile: {
     breakout: {
@@ -347,6 +367,12 @@ export const DEFAULT_REGIME_THRESHOLDS: AdaptiveThresholdConfig["byRegime"] = {
       minRR: 1.4,
       enabled: true,
       notes: "Volatility creates reversal opportunities",
+    },
+    all: {
+      minBase: 78,
+      minRR: 1.6,
+      enabled: true,
+      notes: "Generic catch-all for volatile markets - size down",
     },
   },
 };
