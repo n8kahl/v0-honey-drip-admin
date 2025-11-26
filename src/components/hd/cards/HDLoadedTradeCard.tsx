@@ -3,6 +3,7 @@ import { HDTagTradeType } from "../common/HDTagTradeType";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
 import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
+import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
@@ -158,6 +159,9 @@ export function HDLoadedTradeCard({
           contract={trade.contract}
         />
       </HDCard>
+
+      {/* Economic Event Warning */}
+      <HDEconomicEventWarning ticker={trade.ticker} />
 
       {/* Action Buttons - Only show when showActions is true */}
       {showActions && (
