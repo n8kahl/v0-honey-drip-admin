@@ -1431,7 +1431,7 @@ router.get("/backfill/status", async (req: Request, res: Response) => {
       if (error) {
         status[cleanSymbol] = { hasData: false, error: error.message };
       } else if (data && data.length > 0) {
-        const lastTimestamp = data[0].timestamp;
+        const lastTimestamp = (data[0] as { timestamp: number; timeframe: string }).timestamp;
         const lastDate = new Date(lastTimestamp);
         const ageHours = (Date.now() - lastTimestamp) / (1000 * 60 * 60);
 
