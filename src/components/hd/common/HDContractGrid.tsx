@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, memo, useRef, useCallback } from "react";
 import { Contract } from "../../../types";
 import { cn } from "../../../lib/utils";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Star, Sparkles } from "lucide-react";
 import { useOptionTrades, useOptionQuote } from "../../../hooks/useOptionsAdvanced";
 import { HDConfluenceChips } from "../signals/HDConfluenceChips";
 import { ContractGridSkeleton } from "./HDLoadingSkeletons";
+import type { ContractRecommendation } from "../../../hooks/useContractRecommendation";
 
 type VirtualRow =
   | { type: "dateHeader"; dateKey: string; daysToExpiry: number; contractCount: number }
@@ -19,6 +20,8 @@ interface HDContractGridProps {
   isLoading?: boolean;
   onContractSelect?: (contract: Contract) => void;
   className?: string;
+  /** Optional contract recommendation from strategy-aware scoring */
+  recommendation?: ContractRecommendation | null;
 }
 
 export function HDContractGrid({
@@ -28,6 +31,7 @@ export function HDContractGrid({
   isLoading,
   onContractSelect,
   className,
+  recommendation,
 }: HDContractGridProps) {
   // Show loading skeleton while fetching contracts
   if (isLoading) {
@@ -123,6 +127,19 @@ export function HDContractGrid({
     },
     [currentPrice, atmStrikes]
   );
+
+  // Build set of recommended contract IDs for highlighting
+  const recommendedIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (recommendation?.rankedContracts) {
+      for (const result of recommendation.rankedContracts) {
+        if (result.isRecommended && result.contract.id) {
+          ids.add(result.contract.id);
+        }
+      }
+    }
+    return ids;
+  }, [recommendation]);
 
   // Build flattened virtualized rows from hierarchical data
   const virtualRows = useMemo(() => {
@@ -255,6 +272,27 @@ export function HDContractGrid({
         </div>
       )}
 
+      {/* Strategy Recommendation Banner - Shows when there's a signal-based recommendation */}
+      {recommendation?.hasRecommendation && recommendation.strategyDescription && (
+        <div className="px-3 py-2 bg-amber-500/5 border-b border-amber-500/20 flex items-start gap-2">
+          <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-semibold text-amber-400">
+                Best Pick: {recommendation.strategyDescription.description}
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                {recommendation.strategyDescription.idealDelta} delta •{" "}
+                {recommendation.strategyDescription.idealDTE}
+              </span>
+            </div>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5 line-clamp-1">
+              {recommendation.strategyDescription.rationale}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Scrollable Contract List - Single unified scroll container */}
       <div
         className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin relative"
@@ -344,6 +382,7 @@ export function HDContractGrid({
                             selected={contract.id === selectedId}
                             onClick={() => handleSelect(contract)}
                             zebra={currentRow % 2 === 1}
+                            isRecommended={recommendedIds.has(contract.id)}
                           />
                         );
                       })}
@@ -381,6 +420,7 @@ export function HDContractGrid({
                                 selected={contract.id === selectedId}
                                 onClick={() => handleSelect(contract)}
                                 zebra={currentRow % 2 === 1}
+                                isRecommended={recommendedIds.has(contract.id)}
                               />
                             );
                           })}
@@ -405,6 +445,7 @@ export function HDContractGrid({
                             selected={contract.id === selectedId}
                             onClick={() => handleSelect(contract)}
                             zebra={currentRow % 2 === 1}
+                            isRecommended={recommendedIds.has(contract.id)}
                           />
                         );
                       })}
@@ -426,34 +467,53 @@ const ContractRow = memo(function ContractRow({
   selected,
   onClick,
   zebra,
+  isRecommended = false,
 }: {
   contract: Contract;
   status: "otm" | "atm" | "itm";
   selected: boolean;
   onClick: () => void;
   zebra: boolean;
+  isRecommended?: boolean;
 }) {
   const { tradeTape } = useOptionTrades(selected ? contract.id : null);
 
   return (
     <div className="relative">
+      {/* Best Pick indicator - positioned absolute to the left */}
+      {isRecommended && !selected && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400 z-20" />
+      )}
       <button
         className={cn(
           "w-full flex border-b border-[var(--border-hairline)] transition-colors hover:bg-[var(--surface-3)]",
           !selected && zebra && "bg-[var(--zebra-stripe)]",
-          status === "itm" && !selected && "bg-[var(--itm-background)]",
-          status === "atm" && !selected && "bg-[var(--surface-2)]",
-          selected && "bg-[var(--surface-3)] ring-1 ring-[var(--brand-primary)]"
+          status === "itm" && !selected && !isRecommended && "bg-[var(--itm-background)]",
+          status === "atm" && !selected && !isRecommended && "bg-[var(--surface-2)]",
+          selected && "bg-[var(--surface-3)] ring-1 ring-[var(--brand-primary)]",
+          // Recommended contract highlighting (gold/amber glow)
+          isRecommended &&
+            !selected &&
+            "bg-amber-500/10 border-l-2 border-l-amber-400 ring-1 ring-amber-400/30"
         )}
         onClick={onClick}
         data-testid="contract-row"
         data-strike={contract.strike}
         data-exp={contract.expiry}
         data-moneyness={status}
+        data-recommended={isRecommended}
       >
         {/* Sticky Strike Column */}
-        <div className="sticky left-0 z-10 w-[70px] lg:w-[80px] flex-shrink-0 px-3 py-2 text-xs text-[var(--text-high)] bg-inherit border-r border-[var(--border-hairline)] text-left">
-          ${contract.strike}
+        <div
+          className={cn(
+            "sticky left-0 z-10 w-[70px] lg:w-[80px] flex-shrink-0 px-3 py-2 text-xs bg-inherit border-r border-[var(--border-hairline)] text-left",
+            isRecommended ? "text-amber-400 font-semibold" : "text-[var(--text-high)]"
+          )}
+        >
+          <div className="flex items-center gap-1">
+            {isRecommended && <Star className="w-3 h-3 fill-amber-400 text-amber-400" />}
+            <span>${contract.strike}</span>
+          </div>
         </div>
         {/* Scrollable Data Columns */}
         <div className="grid grid-cols-[60px_60px_60px_80px_80px] lg:grid-cols-[70px_70px_70px_90px_90px] gap-2 px-3 py-2 text-xs">
@@ -463,6 +523,13 @@ const ContractRow = memo(function ContractRow({
           <div className="text-[var(--text-muted)]">{contract.openInterest.toLocaleString()}</div>
           <div className="text-[var(--text-muted)]">{contract.iv?.toFixed(2)}%</div>
         </div>
+        {/* Best Pick badge on the right */}
+        {isRecommended && (
+          <div className="flex items-center gap-1 px-2 py-1 mr-2 bg-amber-500/20 text-amber-400 rounded text-[10px] font-semibold whitespace-nowrap">
+            <Sparkles className="w-3 h-3" />
+            Best Pick
+          </div>
+        )}
       </button>
 
       {selected && tradeTape && (
