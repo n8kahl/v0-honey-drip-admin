@@ -4,6 +4,7 @@ import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
 import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
 import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
+import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
@@ -144,6 +145,11 @@ export function HDLoadedTradeCard({
           direction={trade.contract.type === "C" ? "call" : "put"}
           contract={trade.contract}
         />
+      </HDCard>
+
+      {/* Time Decay Warning - DTE urgency and session timing */}
+      <HDCard>
+        <HDTimeDecayWarning contract={trade.contract} />
       </HDCard>
 
       {/* Market Analysis */}

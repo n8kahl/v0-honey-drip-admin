@@ -11,6 +11,7 @@ import { useAppToast } from "../../../hooks/useAppToast";
 import { useOptionTrades, useOptionQuote } from "../../../hooks/useOptionsAdvanced";
 import { HDConfluenceChips } from "../signals/HDConfluenceChips";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
+import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { useEffect } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { addTradeUpdate } from "../../../lib/supabase/database";
@@ -206,6 +207,9 @@ export function HDEnteredTradeCard({
         tpProgress={tp.progress}
         isPositive={pnlPercent !== null && pnlPercent > 0}
       />
+
+      {/* Time Decay Warning - Critical for active 0DTE/1DTE trades */}
+      <HDTimeDecayWarning contract={trade.contract} compact />
 
       {/* Tight 2×2 Levels Grid */}
       <div className="grid grid-cols-2 gap-2">
