@@ -126,6 +126,16 @@ CREATE POLICY "Service role full access"
   ON signal_performance FOR ALL
   USING (auth.role() = 'service_role');
 
+-- Create the update_updated_at() function if it doesn't exist
+-- This function auto-updates the updated_at timestamp on row changes
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Auto-update timestamp trigger
 CREATE TRIGGER signal_performance_updated_at
   BEFORE UPDATE ON signal_performance
