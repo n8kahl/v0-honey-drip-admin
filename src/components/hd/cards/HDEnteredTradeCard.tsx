@@ -14,6 +14,7 @@ import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
 import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
+import { HDMacroDashboardStrip } from "../dashboard/HDMacroDashboardStrip";
 import { useEffect } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { addTradeUpdate } from "../../../lib/supabase/database";
@@ -231,6 +232,9 @@ export function HDEnteredTradeCard({
         tradeType={trade.tradeType}
         compact
       />
+
+      {/* Macro Dashboard - Market context strip */}
+      <HDMacroDashboardStrip compact />
 
       {/* Tight 2×2 Levels Grid */}
       <div className="grid grid-cols-2 gap-2">

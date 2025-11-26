@@ -7,6 +7,7 @@ import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
 import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
+import { HDMacroDashboardStrip } from "../dashboard/HDMacroDashboardStrip";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
 import { formatPrice } from "../../../lib/utils";
@@ -137,6 +138,11 @@ export function HDLoadedTradeCard({
           contract={trade.contract}
           tradeType={trade.tradeType}
         />
+      </HDCard>
+
+      {/* Macro Dashboard - Market context at a glance */}
+      <HDCard>
+        <HDMacroDashboardStrip />
       </HDCard>
 
       {/* Market Analysis */}
