@@ -395,7 +395,8 @@ export class BacktestEngine {
     // Calculate VWAP over the previous bars (includes current bar)
     const barsForVWAP = bars.slice(Math.max(0, currentIndex - 50), currentIndex + 1);
     const vwapValue = this.calculateVWAP(barsForVWAP);
-    const vwapDistancePct = vwapValue > 0 ? ((current.close - vwapValue) / vwapValue) * 100 : 0;
+    const vwapDistancePct =
+      vwapValue !== null ? ((current.close - vwapValue) / vwapValue) * 100 : null;
 
     // Market regime determination
     const marketRegime = this.determineMarketRegime(
@@ -423,10 +424,13 @@ export class BacktestEngine {
           current.volume /
           (volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length),
       },
-      vwap: {
-        value: vwapValue,
-        distancePct: vwapDistancePct,
-      },
+      vwap:
+        vwapValue !== null
+          ? {
+              value: vwapValue,
+              distancePct: vwapDistancePct!,
+            }
+          : undefined,
       ema: {
         "9": ema9[ema9.length - 1],
         "21": ema21[ema21.length - 1],
@@ -448,7 +452,10 @@ export class BacktestEngine {
       },
       session: {
         minutesSinceOpen: 0, // TODO: Calculate
-        isRegularHours: true,
+        // Set isRegularHours based on VWAP availability
+        // Historical backtest data often lacks volume, so VWAP may be unavailable
+        // Treat as "weekend mode" (isRegularHours=false) when VWAP is missing
+        isRegularHours: vwapValue !== null,
       },
       pattern: {
         atr,
@@ -706,8 +713,8 @@ export class BacktestEngine {
    * VWAP = sum(typical_price * volume) / sum(volume)
    * where typical_price = (high + low + close) / 3
    */
-  private calculateVWAP(bars: any[]): number {
-    if (bars.length === 0) return 0;
+  private calculateVWAP(bars: any[]): number | null {
+    if (bars.length === 0) return null;
 
     let cumulativePV = 0;
     let cumulativeVolume = 0;
@@ -719,7 +726,9 @@ export class BacktestEngine {
       cumulativeVolume += volume;
     }
 
-    return cumulativeVolume > 0 ? cumulativePV / cumulativeVolume : bars[bars.length - 1].close;
+    // Return null if no volume data (instead of fallback to close price)
+    // This allows detectors to skip VWAP checks when data is unavailable
+    return cumulativeVolume > 0 ? cumulativePV / cumulativeVolume : null;
   }
 
   /**
