@@ -59,6 +59,13 @@ export interface SymbolKeyLevels {
   levels: KeyLevel[];
   trend: "bullish" | "bearish" | "neutral";
   setupBias: "long" | "short" | "neutral";
+  bars?: Array<{
+    time: string; // YYYY-MM-DD
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  }>;
 }
 
 export interface SetupScenario {
@@ -504,6 +511,15 @@ export function useOffHoursData(): OffHoursData {
           changePercent > 0.5 ? "bullish" : changePercent < -0.5 ? "bearish" : "neutral";
         const setupBias = trend === "bullish" ? "long" : trend === "bearish" ? "short" : "neutral";
 
+        // Format bars for chart (convert from OHLC format to chart format)
+        const chartBars = bars.map((bar) => ({
+          time: new Date(bar.timestamp).toISOString().split('T')[0], // Convert to YYYY-MM-DD
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+        }));
+
         levelsMap.set(symbol, {
           symbol,
           currentPrice,
@@ -512,6 +528,7 @@ export function useOffHoursData(): OffHoursData {
           levels,
           trend,
           setupBias,
+          bars: chartBars,
         });
       } catch (err) {
         console.warn(`[useOffHoursData] Failed to fetch levels for ${symbol}:`, err);

@@ -22,7 +22,9 @@ import {
   Shield,
   Activity,
   Layers,
+  BarChart3,
 } from "lucide-react";
+import { HDKeyLevelChart } from "./HDKeyLevelChart";
 
 interface HDKeyLevelsPanelProps {
   className?: string;
@@ -192,8 +194,13 @@ function SymbolLevelsRow({
       {/* Expanded Detail */}
       {isExpanded && (
         <div className="px-6 pb-4 space-y-4">
-          {/* Visual Level Ladder */}
-          <LevelLadder levels={levels} currentPrice={currentPrice} />
+          {/* Visual Chart with Levels */}
+          <HDKeyLevelChart
+            levels={levels}
+            currentPrice={currentPrice}
+            bars={data.bars}
+            height={200}
+          />
 
           {/* Level List */}
           <div className="grid grid-cols-2 gap-2">
