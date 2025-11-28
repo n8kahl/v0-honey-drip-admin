@@ -235,21 +235,29 @@ export class BacktestEngine {
   /**
    * Run backtest for all detectors
    * Used by ConfluenceOptimizer to evaluate parameter sets
+   *
+   * NOTE: Uses BACKTESTABLE_DETECTORS which excludes options-dependent detectors
+   * (gamma_squeeze, gamma_flip, eod_pin) that require real-time options data.
    */
   async backtestAll(): Promise<BacktestStats[]> {
-    // Import all detectors for comprehensive testing
-    const { ALL_DETECTORS } = await import("../composite/detectors/index.js");
+    // Import only detectors that can be backtested with historical price/volume data
+    // Options-dependent detectors are excluded (gamma_*, eod_pin)
+    const { BACKTESTABLE_DETECTORS } = await import("../composite/detectors/index.js");
 
-    console.log(`[BacktestEngine] Running backtests for ${ALL_DETECTORS.length} detectors...`);
+    console.log(
+      `[BacktestEngine] Running backtests for ${BACKTESTABLE_DETECTORS.length} backtestable detectors...`
+    );
 
     const results: BacktestStats[] = [];
 
-    for (const detector of ALL_DETECTORS) {
+    for (const detector of BACKTESTABLE_DETECTORS) {
       const stats = await this.backtestDetector(detector);
       results.push(stats);
     }
 
-    console.log(`[BacktestEngine] Completed backtests for all detectors`);
+    console.log(
+      `[BacktestEngine] Completed backtests for ${BACKTESTABLE_DETECTORS.length} detectors`
+    );
 
     return results;
   }
@@ -407,6 +415,18 @@ export class BacktestEngine {
     // RSI calculation
     const rsi14 = this.calculateRSI(closes, 14);
 
+    // Breakout detection (20-bar lookback)
+    const breakoutLookback = Math.min(20, previous.length);
+    const recentHighs = highs.slice(-breakoutLookback);
+    const recentLows = lows.slice(-breakoutLookback);
+    const highestHigh = Math.max(...recentHighs);
+    const lowestLow = Math.min(...recentLows);
+
+    // Bullish breakout: current high breaks above prior 20-bar high
+    const breakoutBullish = current.high > highestHigh;
+    // Bearish breakout: current low breaks below prior 20-bar low
+    const breakoutBearish = current.low < lowestLow;
+
     // VWAP calculation - recalculate from bars instead of using database value
     // Calculate VWAP over the previous bars (includes current bar)
     const barsForVWAP = bars.slice(Math.max(0, currentIndex - 50), currentIndex + 1);
@@ -476,6 +496,9 @@ export class BacktestEngine {
         atr,
         trend: this.determineTrend(current.close, ema9[ema9.length - 1], ema21[ema21.length - 1]),
         market_regime: marketRegime,
+        // Breakout flags for breakout detectors
+        breakout_bullish: breakoutBullish,
+        breakout_bearish: breakoutBearish,
       },
     };
 
