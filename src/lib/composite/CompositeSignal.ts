@@ -5,8 +5,8 @@
  * Represents a complete trade setup signal with all metadata
  */
 
-import type { OpportunityType, OpportunityDirection, AssetClass } from './OpportunityDetector.js';
-import type { SymbolFeatures } from '../strategy/engine.js';
+import type { OpportunityType, OpportunityDirection, AssetClass } from "./OpportunityDetector.js";
+import type { SymbolFeatures } from "../strategy/engine.js";
 
 /**
  * Complete trade setup signal
@@ -31,7 +31,7 @@ export interface CompositeSignal {
   scalpScore: number; // Style-specific scores
   dayTradeScore: number;
   swingScore: number;
-  recommendedStyle: 'scalp' | 'day_trade' | 'swing';
+  recommendedStyle: "scalp" | "day_trade" | "swing";
   recommendedStyleScore: number; // Score for recommended style
 
   // Confluence Breakdown (for transparency)
@@ -51,7 +51,7 @@ export interface CompositeSignal {
   features: SymbolFeatures;
 
   // Signal Lifecycle
-  status: 'ACTIVE' | 'FILLED' | 'EXPIRED' | 'DISMISSED' | 'STOPPED' | 'TARGET_HIT';
+  status: "ACTIVE" | "FILLED" | "EXPIRED" | "DISMISSED" | "STOPPED" | "TARGET_HIT";
   expiresAt: Date;
   alertedAt?: Date;
   dismissedAt?: Date;
@@ -61,7 +61,7 @@ export interface CompositeSignal {
   // Trade Execution (if filled)
   fillPrice?: number;
   exitPrice?: number;
-  exitReason?: 'STOP' | 'T1' | 'T2' | 'T3' | 'MANUAL' | 'EXPIRED';
+  exitReason?: "STOP" | "T1" | "T2" | "T3" | "MANUAL" | "EXPIRED";
   contractsTraded?: number;
   realizedPnl?: number;
   realizedPnlPct?: number;
@@ -100,7 +100,7 @@ export interface StyleScoringResult {
   scalpScore: number;
   dayTradeScore: number;
   swingScore: number;
-  recommendedStyle: 'scalp' | 'day_trade' | 'swing';
+  recommendedStyle: "scalp" | "day_trade" | "swing";
   recommendedStyleScore: number;
 }
 
@@ -141,25 +141,34 @@ export function generateBarTimeKey(
 export function formatOpportunityType(type: OpportunityType): string {
   const typeMap: Record<OpportunityType, string> = {
     // Universal Equity
-    breakout_bullish: 'Bullish Breakout',
-    breakout_bearish: 'Bearish Breakout',
-    mean_reversion_long: 'Mean Reversion Long',
-    mean_reversion_short: 'Mean Reversion Short',
-    trend_continuation_long: 'Trend Continuation Long',
-    trend_continuation_short: 'Trend Continuation Short',
+    breakout_bullish: "Bullish Breakout",
+    breakout_bearish: "Bearish Breakout",
+    mean_reversion_long: "Mean Reversion Long",
+    mean_reversion_short: "Mean Reversion Short",
+    trend_continuation_long: "Trend Continuation Long",
+    trend_continuation_short: "Trend Continuation Short",
 
     // SPX/NDX Specific
-    gamma_squeeze_bullish: 'Bullish Gamma Squeeze',
-    gamma_squeeze_bearish: 'Bearish Gamma Squeeze',
-    power_hour_reversal_bullish: 'Bullish Power Hour Reversal',
-    power_hour_reversal_bearish: 'Bearish Power Hour Reversal',
-    index_mean_reversion_long: 'Index Mean Reversion Long',
-    index_mean_reversion_short: 'Index Mean Reversion Short',
-    opening_drive_bullish: 'Bullish Opening Drive',
-    opening_drive_bearish: 'Bearish Opening Drive',
-    gamma_flip_bullish: 'Bullish Gamma Flip',
-    gamma_flip_bearish: 'Bearish Gamma Flip',
-    eod_pin_setup: 'EOD Pin Setup',
+    gamma_squeeze_bullish: "Bullish Gamma Squeeze",
+    gamma_squeeze_bearish: "Bearish Gamma Squeeze",
+    power_hour_reversal_bullish: "Bullish Power Hour Reversal",
+    power_hour_reversal_bearish: "Bearish Power Hour Reversal",
+    index_mean_reversion_long: "Index Mean Reversion Long",
+    index_mean_reversion_short: "Index Mean Reversion Short",
+    opening_drive_bullish: "Bullish Opening Drive",
+    opening_drive_bearish: "Bearish Opening Drive",
+    gamma_flip_bullish: "Bullish Gamma Flip",
+    gamma_flip_bearish: "Bearish Gamma Flip",
+    eod_pin_setup: "EOD Pin Setup",
+
+    // Non-Trend Day Strategies (Phase 3)
+    range_fade_long: "Range Fade Long",
+    range_fade_short: "Range Fade Short",
+    vwap_reversion_long: "VWAP Reversion Long",
+    vwap_reversion_short: "VWAP Reversion Short",
+    gamma_pinning: "Gamma Pinning",
+    volatility_squeeze_long: "Volatility Squeeze Long",
+    volatility_squeeze_short: "Volatility Squeeze Short",
   };
 
   return typeMap[type] || type;
@@ -174,5 +183,5 @@ export function formatOpportunityType(type: OpportunityType): string {
 export function formatConfluence(confluence: Record<string, number>): string {
   return Object.entries(confluence)
     .map(([factor, score]) => `${factor}: ${score.toFixed(0)}/100`)
-    .join('\n');
+    .join("\n");
 }
