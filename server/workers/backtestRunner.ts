@@ -3,9 +3,13 @@
  * Phase 3: Run all detectors on historical data and generate performance reports
  *
  * Usage:
- *   pnpm backtest              # Run all detectors
- *   pnpm backtest --detector MOMENTUM_BREAKOUT  # Run single detector
+ *   pnpm backtest              # Run backtestable detectors (excludes options-dependent)
+ *   pnpm backtest --all        # Run ALL detectors including options-dependent
+ *   pnpm backtest --detector breakout_bullish  # Run single detector
  *   pnpm backtest --symbol SPY  # Run on single symbol
+ *
+ * Note: Options-dependent detectors (gamma_*, eod_pin) are excluded by default
+ * because BacktestEngine doesn't have access to historical options data.
  */
 
 // Load environment variables from .env.local
@@ -17,7 +21,7 @@ import {
   type BacktestStats,
   DEFAULT_BACKTEST_CONFIG,
 } from "../../src/lib/backtest/BacktestEngine.js";
-import { ALL_DETECTORS } from "../../src/lib/composite/detectors/index.js";
+import { ALL_DETECTORS, BACKTESTABLE_DETECTORS } from "../../src/lib/composite/detectors/index.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -68,10 +72,14 @@ async function runBacktests() {
   console.log(`  Max Hold: ${config.maxHoldBars} bars`);
   console.log();
 
-  // Filter detectors
+  // Filter detectors - use BACKTESTABLE_DETECTORS by default
+  // (excludes gamma_*, eod_pin which require real-time options data)
+  // Allow --all flag to include all detectors for reference
+  const useAllDetectors = args.includes("--all");
+  const baseDetectors = useAllDetectors ? ALL_DETECTORS : BACKTESTABLE_DETECTORS;
   const detectorsToTest = detectorFilter
-    ? ALL_DETECTORS.filter((d) => d.type === detectorFilter)
-    : ALL_DETECTORS;
+    ? baseDetectors.filter((d) => d.type === detectorFilter)
+    : baseDetectors;
 
   if (detectorsToTest.length === 0) {
     console.error(`❌ No detectors found matching: ${detectorFilter}`);

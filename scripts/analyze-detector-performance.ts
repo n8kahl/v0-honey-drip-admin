@@ -155,13 +155,16 @@ async function main() {
   console.log(`Period: ${START_DATE} to ${END_DATE}`);
   console.log(`Config: 2:1 R:R, 30 bar max hold\n`);
 
-  // Dynamic import ALL_DETECTORS AFTER env vars are loaded (same as optimizer)
-  const { ALL_DETECTORS } = await import("../src/lib/composite/detectors/index.js");
+  // Dynamic import BACKTESTABLE_DETECTORS AFTER env vars are loaded (same as optimizer)
+  // Options-dependent detectors (gamma_*, eod_pin) are excluded since BacktestEngine
+  // doesn't have access to historical options data
+  const { BACKTESTABLE_DETECTORS } = await import("../src/lib/composite/detectors/index.js");
 
-  console.log(`Testing ${ALL_DETECTORS.length} detectors...\n`);
+  console.log(`Testing ${BACKTESTABLE_DETECTORS.length} backtestable detectors...\n`);
+  console.log(`(excludes 5 options-dependent: gamma_*, eod_pin)\n`);
 
   // Use detector objects with their type as name
-  const detectors = ALL_DETECTORS.map((detector) => ({
+  const detectors = BACKTESTABLE_DETECTORS.map((detector) => ({
     name: detector.type,
     detector,
   }));

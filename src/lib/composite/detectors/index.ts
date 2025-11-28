@@ -127,3 +127,51 @@ export const PROFITABLE_DETECTORS: OpportunityDetector[] = [
   meanReversionShortDetector,
   indexMeanReversionShortDetector,
 ];
+
+/**
+ * BACKTESTABLE DETECTORS
+ * Detectors that can be evaluated by BacktestEngine using historical price/volume data.
+ *
+ * EXCLUDED (require real-time options data - cannot backtest):
+ * - gamma_squeeze_bullish/bearish: Needs dealerNetGamma, maxGammaStrike
+ * - gamma_flip_bullish/bearish: Needs gammaFlipLevel, is0DTE
+ * - eod_pin_setup: Needs maxPainStrike, openInterestAtStrike, is0DTE
+ *
+ * INCLUDED (12 detectors):
+ * - All breakout detectors (pattern flags computed by BacktestEngine)
+ * - All mean reversion detectors
+ * - All trend continuation detectors
+ * - All opening drive detectors
+ * - All power hour reversal detectors
+ * - All index mean reversion detectors
+ */
+export const BACKTESTABLE_DETECTORS: OpportunityDetector[] = [
+  // Universal Equity (6)
+  breakoutBullishDetector,
+  breakoutBearishDetector,
+  meanReversionLongDetector,
+  meanReversionShortDetector,
+  trendContinuationLongDetector,
+  trendContinuationShortDetector,
+
+  // SPX/NDX-Specific that DON'T require options data (6)
+  powerHourReversalBullishDetector,
+  powerHourReversalBearishDetector,
+  indexMeanReversionLongDetector,
+  indexMeanReversionShortDetector,
+  openingDriveBullishDetector,
+  openingDriveBearishDetector,
+];
+
+/**
+ * OPTIONS-DEPENDENT DETECTORS
+ * These require real-time options chain data and cannot be backtested.
+ * Use only for live trading with CompositeScanner.
+ */
+export const OPTIONS_DEPENDENT_DETECTORS: OpportunityDetector[] = [
+  gammaSqueezeBullishDetector,
+  gammaSqueezeBearishDetector,
+  gammaFlipBullishDetector,
+  gammaFlipBearishDetector,
+  eodPinSetupDetector,
+];
