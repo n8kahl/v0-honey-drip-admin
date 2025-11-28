@@ -256,23 +256,28 @@ async function fetchSymbolFeatures(
     const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]; // 7 days ago
 
     let rawBars: any[] = [];
+    let usedDatabase = false;
 
-    if (isIndex) {
-      // Fetch index aggregates
-      const ticker = `I:${normalized}`;
-      rawBars = await getIndexAggregates(ticker, 5, "minute", from, to);
-    } else {
-      // For equities, try index aggregates
-      try {
+    // Try Massive.com API first
+    try {
+      if (isIndex) {
+        // Fetch index aggregates
+        const ticker = `I:${normalized}`;
+        rawBars = await getIndexAggregates(ticker, 5, "minute", from, to);
+      } else {
+        // For equities, use same endpoint (works for both)
         rawBars = await getIndexAggregates(normalized, 5, "minute", from, to);
-      } catch (err) {
-        console.warn(`[Composite Scanner] Could not fetch bars for ${symbol}, skipping`);
-        return null;
       }
+    } catch (err: any) {
+      // On 429 rate limit or any API error, try database fallback immediately
+      const is429 = err?.message?.includes("429") || err?.status === 429;
+      console.warn(
+        `[Composite Scanner] ${is429 ? "Rate limit hit" : "API error"} for ${symbol}, trying database fallback...`
+      );
+      rawBars = []; // Trigger database fallback below
     }
 
-    // Database fallback: If Massive API returns insufficient data (e.g., weekends/after-hours),
-    // query historical_bars table for 24/7 operation
+    // Database fallback: If Massive API failed or returned insufficient data
     if (rawBars.length < 20) {
       console.log(
         `[Composite Scanner] Massive API returned ${rawBars.length} bars for ${symbol}, falling back to database...`
@@ -303,6 +308,7 @@ async function fetchSymbolFeatures(
           c: bar.close,
           v: bar.volume || 0,
         }));
+        usedDatabase = true;
         console.log(
           `[Composite Scanner] ✅ Fetched ${rawBars.length} bars from database for ${symbol}`
         );
@@ -576,13 +582,30 @@ async function scanUserWatchlist(userId: string): Promise<number> {
 
     let signalsGenerated = 0;
 
-    // **OPTIMIZATION**: Fetch features for all symbols in parallel (25x speedup)
+    /**
+     * Fetch features with rate limit protection
+     * Use database cache when available, only hit API when needed
+     */
     console.log(
-      `[Composite Scanner] Fetching features for ${symbols.length} symbols in parallel...`
+      `[Composite Scanner] Fetching features for ${symbols.length} symbols (with rate limit protection)...`
     );
-    const featureResults = await Promise.allSettled(
-      symbols.map((symbol) => fetchSymbolFeatures(symbol))
-    );
+
+    // Fetch sequentially with small delays to avoid rate limits
+    const featureResults: Array<PromiseSettledResult<ReturnType<typeof fetchSymbolFeatures>>> = [];
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i];
+      try {
+        const features = await fetchSymbolFeatures(symbol);
+        featureResults.push({ status: "fulfilled", value: features });
+
+        // Add small delay between symbols to avoid bursting API (except for last symbol)
+        if (i < symbols.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay = max 5 requests/second
+        }
+      } catch (error) {
+        featureResults.push({ status: "rejected", reason: error });
+      }
+    }
 
     // Process each symbol's features
     for (let i = 0; i < symbols.length; i++) {
