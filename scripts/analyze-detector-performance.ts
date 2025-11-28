@@ -55,62 +55,67 @@ interface DetectorStats {
 async function analyzeDetector(name: string, detector: any): Promise<DetectorStats> {
   console.log(`\n📊 Testing ${name}...`);
 
-  // Dynamic import after env vars are loaded
+  // Dynamic imports after env vars are loaded
   const { BacktestEngine } = await import("../src/lib/backtest/BacktestEngine.js");
+  const { createClient } = await import("@supabase/supabase-js");
 
-  const engine = new BacktestEngine({
-    startDate: START_DATE,
-    endDate: END_DATE,
-    targetMultiple: 2.0,
-    stopMultiple: 1.0,
-    maxHoldBars: 30,
-    slippage: 0.001,
-  });
+  // Create Supabase client for database access (same as optimizer)
+  const supabase =
+    process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+      : null;
 
-  let totalTrades = 0;
-  let totalWins = 0;
-  let totalLosses = 0;
-  let totalProfitPct = 0;
-  let totalLossPct = 0;
+  // Create engine with our symbols (backtestDetector loops through config.symbols internally)
+  const engine = new BacktestEngine(
+    {
+      symbols: SYMBOLS,
+      startDate: START_DATE,
+      endDate: END_DATE,
+      timeframe: "15m",
+      targetMultiple: 2.0,
+      stopMultiple: 1.0,
+      maxHoldBars: 30,
+      slippage: 0.001,
+    },
+    supabase
+  );
 
-  for (const symbol of SYMBOLS) {
-    try {
-      const result = await engine.backtestDetector(symbol, detector);
+  try {
+    // Run backtest for this detector (handles all symbols)
+    const result = await engine.backtestDetector(detector);
 
-      totalTrades += result.totalTrades;
-      totalWins += result.winningTrades;
-      totalLosses += result.losingTrades;
+    const winRate = result.totalTrades > 0 ? (result.winners / result.totalTrades) * 100 : 0;
+    const avgWin = result.avgWin || 0;
+    const avgLoss = Math.abs(result.avgLoss) || 0;
+    const profitFactor = result.profitFactor || 0;
 
-      // Accumulate profit/loss
-      for (const trade of result.trades) {
-        if (trade.profitPercent > 0) {
-          totalProfitPct += trade.profitPercent;
-        } else {
-          totalLossPct += Math.abs(trade.profitPercent);
-        }
-      }
+    console.log(
+      `  ${result.totalTrades} trades, ${winRate.toFixed(1)}% WR, ${profitFactor.toFixed(2)} PF`
+    );
 
-      console.log(`  ${symbol}: ${result.totalTrades} trades, ${result.winRate.toFixed(1)}% WR`);
-    } catch (error: any) {
-      console.log(`  ${symbol}: Error - ${error.message}`);
-    }
+    return {
+      name,
+      trades: result.totalTrades,
+      wins: result.winners,
+      losses: result.losers,
+      winRate,
+      profitFactor,
+      avgWin,
+      avgLoss,
+    };
+  } catch (error: any) {
+    console.log(`  Error: ${error.message}`);
+    return {
+      name,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+      profitFactor: 0,
+      avgWin: 0,
+      avgLoss: 0,
+    };
   }
-
-  const winRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0;
-  const avgWin = totalWins > 0 ? totalProfitPct / totalWins : 0;
-  const avgLoss = totalLosses > 0 ? totalLossPct / totalLosses : 0;
-  const profitFactor = avgLoss > 0 ? (avgWin * totalWins) / (avgLoss * totalLosses) : 0;
-
-  return {
-    name,
-    trades: totalTrades,
-    wins: totalWins,
-    losses: totalLosses,
-    winRate,
-    profitFactor,
-    avgWin,
-    avgLoss,
-  };
 }
 
 async function main() {
@@ -120,23 +125,16 @@ async function main() {
   console.log(`Period: ${START_DATE} to ${END_DATE}`);
   console.log(`Config: 2:1 R:R, 30 bar max hold\n`);
 
-  // Dynamic import detectors AFTER env vars are loaded
-  const detectorModule = await import("../src/lib/composite/detectors/index.js");
+  // Dynamic import ALL_DETECTORS AFTER env vars are loaded (same as optimizer)
+  const { ALL_DETECTORS } = await import("../src/lib/composite/detectors/index.js");
 
-  const detectors = [
-    { name: "Breakout Bullish", detector: detectorModule.BreakoutBullish },
-    { name: "Breakout Bearish", detector: detectorModule.BreakoutBearish },
-    { name: "ORB Breakout", detector: detectorModule.ORBBreakout },
-    { name: "Momentum Continuation", detector: detectorModule.MomentumContinuation },
-    { name: "Mean Reversion Bullish", detector: detectorModule.MeanReversionBullish },
-    { name: "Mean Reversion Bearish", detector: detectorModule.MeanReversionBearish },
-    { name: "Trend Continuation Long", detector: detectorModule.TrendContinuationLong },
-    { name: "Trend Continuation Short", detector: detectorModule.TrendContinuationShort },
-    { name: "Swing Reversal", detector: detectorModule.SwingReversal },
-    { name: "Liquidity Grab", detector: detectorModule.LiquidityGrab },
-    { name: "Volatility Contraction", detector: detectorModule.VolatilityContraction },
-    { name: "Gap Fill", detector: detectorModule.GapFill },
-  ];
+  console.log(`Testing ${ALL_DETECTORS.length} detectors...\n`);
+
+  // Use detector objects with their type as name
+  const detectors = ALL_DETECTORS.map((detector) => ({
+    name: detector.type,
+    detector,
+  }));
 
   const results: DetectorStats[] = [];
 
