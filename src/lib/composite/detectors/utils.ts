@@ -22,8 +22,9 @@ export function shouldAllowNonRegularHours(features: SymbolFeatures): boolean {
   }
 
   // Check if we're analyzing historical data
-  // Historical analysis has a timestamp but isRegularHours is false
-  const hasTimestamp = !!(features as any).timestamp;
+  // Historical analysis has a timestamp/time but isRegularHours may be false
+  // BacktestEngine sets features.time (ISO string), live sets features.timestamp
+  const hasTimestamp = !!(features.time || (features as any).timestamp);
   // CRITICAL FIX: Explicitly check for false (undefined means unknown, not "not regular hours")
   const isNotRegularHours = features.session?.isRegularHours === false;
 
