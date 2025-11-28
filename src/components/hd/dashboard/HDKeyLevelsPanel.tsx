@@ -313,12 +313,31 @@ function LevelLadder({ levels, currentPrice }: { levels: KeyLevel[]; currentPric
         const position = getPosition(level.price);
         const isAbovePrice = level.price > currentPrice;
 
+        // Stagger labels left/right to prevent overlap
+        const alignRight = idx % 2 === 0;
+
         return (
           <div
             key={`${level.type}-${level.price}-${idx}`}
             className="absolute left-0 right-0 flex items-center group"
             style={{ top: `${position}%` }}
           >
+            {/* Label on left side (for odd indices) */}
+            {!alignRight && (
+              <div
+                className={cn(
+                  "px-2 py-0.5 text-[9px] font-mono rounded-sm whitespace-nowrap mr-1",
+                  level.type === "resistance" && "bg-red-500/20 text-red-400",
+                  level.type === "support" && "bg-green-500/20 text-green-400",
+                  level.type === "pivot" && "bg-yellow-500/20 text-yellow-400",
+                  level.type === "vwap" && "bg-yellow-500/20 text-yellow-400",
+                  level.type === "gap" && "bg-purple-500/20 text-purple-400"
+                )}
+              >
+                {level.label}
+              </div>
+            )}
+
             <div
               className={cn(
                 "flex-1 h-px",
@@ -329,18 +348,22 @@ function LevelLadder({ levels, currentPrice }: { levels: KeyLevel[]; currentPric
                 level.type === "gap" && "bg-purple-400/60"
               )}
             />
-            <div
-              className={cn(
-                "px-2 py-0.5 text-[10px] font-mono rounded-sm whitespace-nowrap",
-                level.type === "resistance" && "bg-red-500/20 text-red-400",
-                level.type === "support" && "bg-green-500/20 text-green-400",
-                level.type === "pivot" && "bg-yellow-500/20 text-yellow-400",
-                level.type === "vwap" && "bg-yellow-500/20 text-yellow-400",
-                level.type === "gap" && "bg-purple-500/20 text-purple-400"
-              )}
-            >
-              {level.label}
-            </div>
+
+            {/* Label on right side (for even indices) */}
+            {alignRight && (
+              <div
+                className={cn(
+                  "px-2 py-0.5 text-[9px] font-mono rounded-sm whitespace-nowrap ml-1",
+                  level.type === "resistance" && "bg-red-500/20 text-red-400",
+                  level.type === "support" && "bg-green-500/20 text-green-400",
+                  level.type === "pivot" && "bg-yellow-500/20 text-yellow-400",
+                  level.type === "vwap" && "bg-yellow-500/20 text-yellow-400",
+                  level.type === "gap" && "bg-purple-500/20 text-purple-400"
+                )}
+              >
+                {level.label}
+              </div>
+            )}
           </div>
         );
       })}
