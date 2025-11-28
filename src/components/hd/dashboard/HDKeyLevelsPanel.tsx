@@ -267,19 +267,39 @@ function MiniLevelBar({ levels, currentPrice }: { levels: KeyLevel[]; currentPri
 
 // Visual level ladder
 function LevelLadder({ levels, currentPrice }: { levels: KeyLevel[]; currentPrice: number }) {
-  // Sort levels by price (high to low)
-  const sortedLevels = [...levels].sort((a, b) => b.price - a.price);
+  // Filter to near-term levels only (within ±3% of current price for visual clarity)
+  const nearTermLevels = levels.filter((level) => {
+    const percentAway = Math.abs((level.price - currentPrice) / currentPrice) * 100;
+    return percentAway <= 3; // Only show levels within 3% of current price
+  });
 
-  // Find price range
-  const prices = levels.map((l) => l.price);
-  const minPrice = Math.min(...prices, currentPrice) * 0.995;
-  const maxPrice = Math.max(...prices, currentPrice) * 1.005;
+  // If no near-term levels, fall back to all levels
+  const displayLevels = nearTermLevels.length > 0 ? nearTermLevels : levels;
+
+  // Sort levels by price (high to low)
+  const sortedLevels = [...displayLevels].sort((a, b) => b.price - a.price);
+
+  // Find price range - focus on actionable range
+  const prices = sortedLevels.map((l) => l.price);
+  const minPrice = Math.min(...prices, currentPrice) * 0.998;
+  const maxPrice = Math.max(...prices, currentPrice) * 1.002;
   const range = maxPrice - minPrice;
 
   const getPosition = (price: number) => ((maxPrice - price) / range) * 100;
 
+  // Check if we filtered out any levels
+  const hasFilteredLevels = nearTermLevels.length < levels.length;
+  const filteredCount = levels.length - nearTermLevels.length;
+
   return (
     <div className="relative h-48 bg-gradient-to-b from-red-500/5 via-[var(--surface-2)] to-green-500/5 rounded-lg overflow-hidden">
+      {/* Filtered levels indicator */}
+      {hasFilteredLevels && (
+        <div className="absolute left-2 top-2 text-[10px] text-[var(--text-muted)] bg-[var(--surface-2)]/80 px-2 py-1 rounded-md">
+          Showing {nearTermLevels.length} near-term levels ({filteredCount} distant)
+        </div>
+      )}
+
       {/* Price axis labels */}
       <div className="absolute right-2 top-2 text-[10px] text-red-400 font-mono">
         ${maxPrice.toFixed(2)}
