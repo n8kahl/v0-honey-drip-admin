@@ -529,6 +529,8 @@ export function useOffHoursData(): OffHoursData {
             };
           });
 
+        console.log(`[useOffHoursData] ${symbol}: Formatted ${chartBars.length} bars for chart:`, chartBars.slice(0, 2));
+
         levelsMap.set(symbol, {
           symbol,
           currentPrice,

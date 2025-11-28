@@ -37,7 +37,24 @@ export function HDKeyLevelChart({
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
 
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    console.log('[HDKeyLevelChart] Rendering with:', {
+      barsCount: bars?.length,
+      levelsCount: levels.length,
+      currentPrice,
+      containerWidth: chartContainerRef.current?.clientWidth,
+      containerHeight: chartContainerRef.current?.clientHeight,
+      barsPreview: bars?.slice(0, 2),
+    });
+
+    if (!chartContainerRef.current) {
+      console.warn('[HDKeyLevelChart] No container ref, aborting');
+      return;
+    }
+
+    if (!chartContainerRef.current.clientWidth) {
+      console.warn('[HDKeyLevelChart] Container has zero width, aborting');
+      return;
+    }
 
     // Create chart
     const chart = createChart(chartContainerRef.current, {
@@ -179,6 +196,23 @@ export function HDKeyLevelChart({
       chart.remove();
     };
   }, [levels, currentPrice, bars, height]);
+
+  // Show fallback if no bars data
+  if (!bars || bars.length === 0) {
+    return (
+      <div className="relative">
+        <div
+          className="rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-2)] flex items-center justify-center text-[var(--text-muted)] text-sm"
+          style={{ height: `${height}px` }}
+        >
+          <div className="text-center">
+            <p>No historical data available</p>
+            <p className="text-xs mt-1">Chart requires at least 1 day of bars</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative">
