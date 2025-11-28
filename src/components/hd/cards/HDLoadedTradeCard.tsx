@@ -1,6 +1,5 @@
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
-import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
 import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
 import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
 import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
@@ -143,20 +142,6 @@ export function HDLoadedTradeCard({
       {/* Macro Dashboard - Market context at a glance */}
       <HDCard>
         <HDMacroDashboardStrip />
-      </HDCard>
-
-      {/* Market Analysis */}
-      <HDCard>
-        <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <span>📈</span>
-          <span>Market Analysis</span>
-        </div>
-
-        <HDConfluenceDetailPanel
-          ticker={trade.ticker}
-          direction={trade.contract.type === "C" ? "call" : "put"}
-          contract={trade.contract}
-        />
       </HDCard>
 
       {/* Economic Event Warning */}
