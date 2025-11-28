@@ -17,7 +17,7 @@ import {
   type BacktestStats,
   DEFAULT_BACKTEST_CONFIG,
 } from "../../src/lib/backtest/BacktestEngine.js";
-import { ALL_DETECTORS } from "../../src/lib/composite/detectors/index.js";
+import { ALL_DETECTORS, PROFITABLE_DETECTORS } from "../../src/lib/composite/detectors/index.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -68,10 +68,16 @@ async function runBacktests() {
   console.log(`  Max Hold: ${config.maxHoldBars} bars`);
   console.log();
 
-  // Filter detectors
+  // Filter detectors - use PROFITABLE_DETECTORS by default, ALL if specified
+  const useAllDetectors = args.includes("--all");
+  const baseDetectors = useAllDetectors ? ALL_DETECTORS : PROFITABLE_DETECTORS;
   const detectorsToTest = detectorFilter
     ? ALL_DETECTORS.filter((d) => d.type === detectorFilter)
-    : ALL_DETECTORS;
+    : baseDetectors;
+
+  if (!useAllDetectors && !detectorFilter) {
+    console.log("ℹ️  Using PROFITABLE_DETECTORS only. Use --all to test all detectors.\n");
+  }
 
   if (detectorsToTest.length === 0) {
     console.error(`❌ No detectors found matching: ${detectorFilter}`);

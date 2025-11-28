@@ -233,23 +233,30 @@ export class BacktestEngine {
   }
 
   /**
-   * Run backtest for all detectors
+   * Run backtest for profitable detectors only
    * Used by ConfluenceOptimizer to evaluate parameter sets
+   *
+   * Only includes detectors with proven profitability (PF > 1.5):
+   * - opening_drive_bearish (3.30 PF)
+   * - mean_reversion_short (2.09 PF)
+   * - index_mean_reversion_short (2.09 PF)
    */
   async backtestAll(): Promise<BacktestStats[]> {
-    // Import all detectors dynamically to avoid circular dependencies
-    const { ALL_DETECTORS } = await import("../composite/detectors/index.js");
+    // Import PROFITABLE_DETECTORS - excludes losing strategies and untestable ones
+    const { PROFITABLE_DETECTORS } = await import("../composite/detectors/index.js");
 
-    console.log(`[BacktestEngine] Running backtests for ${ALL_DETECTORS.length} detectors...`);
+    console.log(
+      `[BacktestEngine] Running backtests for ${PROFITABLE_DETECTORS.length} profitable detectors...`
+    );
 
     const results: BacktestStats[] = [];
 
-    for (const detector of ALL_DETECTORS) {
+    for (const detector of PROFITABLE_DETECTORS) {
       const stats = await this.backtestDetector(detector);
       results.push(stats);
     }
 
-    console.log(`[BacktestEngine] Completed backtests for all detectors`);
+    console.log(`[BacktestEngine] Completed backtests for profitable detectors`);
 
     return results;
   }
