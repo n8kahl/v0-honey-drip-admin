@@ -27,7 +27,8 @@ import { createClient } from "@supabase/supabase-js";
 import { CompositeScanner } from "../../src/lib/composite/CompositeScanner.js";
 import type { CompositeSignal } from "../../src/lib/composite/CompositeSignal.js";
 import { buildSymbolFeatures, type TimeframeKey } from "../../src/lib/strategy/featuresBuilder.js";
-import { getIndexAggregates } from "../massive/client.js";
+import { getIndexAggregates, getOptionChain } from "../massive/client.js";
+import type { OptionsChainData } from "../../src/lib/composite/OpportunityDetector.js";
 import {
   insertCompositeSignal,
   expireOldSignals,
@@ -101,6 +102,124 @@ function loadOptimizedParameters(): ParameterConfig | undefined {
 
 // Load optimized parameters on startup
 const OPTIMIZED_PARAMS = loadOptimizedParameters();
+
+/**
+ * Options Data Provider
+ * Transforms Massive.com options chain data to OptionsChainData format for detectors
+ */
+async function fetchOptionsData(symbol: string): Promise<OptionsChainData | null> {
+  try {
+    // Only fetch options data for symbols that have options (indices + ETFs)
+    const optionableSymbols = ["SPX", "SPY", "NDX", "QQQ", "IWM", "DIA"];
+    if (!optionableSymbols.includes(symbol.toUpperCase())) {
+      return null;
+    }
+
+    const chain = await getOptionChain(symbol);
+    if (!chain?.contracts || chain.contracts.length === 0) {
+      return null;
+    }
+
+    const contracts = chain.contracts;
+    const underlyingPrice = chain.underlying_price || 0;
+
+    // Calculate totals
+    let totalOpenInterest = 0;
+    let totalVolume = 0;
+    let totalCallOI = 0;
+    let totalPutOI = 0;
+    let totalCallVolume = 0;
+    let totalPutVolume = 0;
+    let maxGammaStrike = 0;
+    let maxGamma = 0;
+    let dealerNetGamma = 0;
+
+    // Track expirations for 0DTE detection
+    const today = new Date().toISOString().split("T")[0];
+    let has0DTE = false;
+    let earliestExpiry: Date | null = null;
+
+    for (const contract of contracts) {
+      const oi = contract.open_interest || 0;
+      const volume = contract.volume || 0;
+      const gamma = contract.greeks?.gamma || 0;
+      const strike = contract.strike || 0;
+      const optionType = (contract.option_type || "").toLowerCase();
+      const expiration = contract.expiration;
+
+      // Check for 0DTE
+      if (expiration === today) {
+        has0DTE = true;
+      }
+
+      // Track earliest expiry
+      if (expiration) {
+        const expDate = new Date(expiration);
+        if (!earliestExpiry || expDate < earliestExpiry) {
+          earliestExpiry = expDate;
+        }
+      }
+
+      // Accumulate totals
+      totalOpenInterest += oi;
+      totalVolume += volume;
+
+      if (optionType === "call") {
+        totalCallOI += oi;
+        totalCallVolume += volume;
+      } else {
+        totalPutOI += oi;
+        totalPutVolume += volume;
+      }
+
+      // Dealer gamma = negative of market gamma (dealers are counterparty)
+      const marketGamma = gamma * oi;
+      dealerNetGamma -= marketGamma;
+
+      // Track max gamma strike
+      const absGamma = Math.abs(gamma * oi);
+      if (absGamma > maxGamma) {
+        maxGamma = absGamma;
+        maxGammaStrike = strike;
+      }
+    }
+
+    // Calculate minutes to expiry
+    let minutesToExpiry = 9999;
+    if (earliestExpiry) {
+      minutesToExpiry = Math.max(0, (earliestExpiry.getTime() - Date.now()) / (1000 * 60));
+    }
+
+    return {
+      maxGammaStrike: maxGammaStrike > 0 ? maxGammaStrike : undefined,
+      dealerNetGamma,
+      dealerGamma: dealerNetGamma,
+      totalOpenInterest,
+      totalVolume,
+      avgVolume: totalVolume, // Could be enhanced with historical avg
+      callOI: totalCallOI,
+      putOI: totalPutOI,
+      callVolume: totalCallVolume,
+      putVolume: totalPutVolume,
+      callPutRatio: totalPutVolume > 0 ? totalCallVolume / totalPutVolume : 0,
+      is0DTE: has0DTE,
+      minutesToExpiry,
+      // Functions for strike-level lookups (simplified - could be enhanced)
+      gammaAtStrike: (strike: number) => {
+        const contract = contracts.find((c: any) => c.strike === strike);
+        return contract?.greeks?.gamma || 0;
+      },
+      openInterestAtStrike: (strike: number) => {
+        return contracts
+          .filter((c: any) => c.strike === strike)
+          .reduce((sum: number, c: any) => sum + (c.open_interest || 0), 0);
+      },
+    };
+  } catch (error) {
+    console.warn(`[Options Data] Failed to fetch for ${symbol}:`, error);
+    return null;
+  }
+}
 
 /**
  * Performance statistics
@@ -568,10 +687,12 @@ async function scanUserWatchlist(userId: string): Promise<number> {
 
     // Create scanner instance for this user with optimized configuration
     // Phase 6: Include optimized parameters if available
+    // Phase 3: Include options data provider for gamma-aware detectors
     const scanner = new CompositeScanner({
       owner: userId,
       config: OPTIMIZED_SCANNER_CONFIG,
       optimizedParams: OPTIMIZED_PARAMS, // Phase 6: Apply genetic algorithm optimized parameters
+      optionsDataProvider: fetchOptionsData, // Phase 3: Wire up options data for gamma detectors
     });
 
     let signalsGenerated = 0;
