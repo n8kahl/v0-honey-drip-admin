@@ -68,12 +68,42 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     }
     // Weekend without valid VWAP data: skip check entirely (rely on RSI + patterns)
 
-    // 4. Not in extreme downtrend
+    // 4. Market regime check - REVISED LOGIC
+    // Previously blocked ALL downtrends, but that's when oversold bounces happen!
+    // Now: Only block extreme downtrends (price far below EMAs) or require bounce confirmation
     const regime = features.pattern?.market_regime;
+    const ema9 = features.ema?.["9"];
+    const ema21 = features.ema?.["21"];
+    const price = features.price?.current;
+
     console.log(`[index-mean-reversion-long] ${symbol}: market_regime=${regime}`);
-    if (regime === "trending_down") {
-      console.log(`[index-mean-reversion-long] ${symbol}: ❌ Trending down, skipping`);
-      return false;
+
+    if (regime === "trending_down" && ema9 && ema21 && price) {
+      // Calculate how far below the EMAs we are
+      const distBelowEMA9 = ((ema9 - price) / ema9) * 100;
+      const distBelowEMA21 = ((ema21 - price) / ema21) * 100;
+
+      // Only skip if we're in a STRONG downtrend (>2% below both EMAs)
+      // This catches falling knives while still allowing oversold bounces
+      if (distBelowEMA9 > 2.0 && distBelowEMA21 > 2.0) {
+        console.log(
+          `[index-mean-reversion-long] ${symbol}: ❌ Strong downtrend (${distBelowEMA9.toFixed(1)}% below EMA9), skipping`
+        );
+        return false;
+      }
+
+      // In moderate downtrend: require more extreme oversold (RSI < 25)
+      // This adds confirmation that the move is exhausted
+      if (rsi > 25) {
+        console.log(
+          `[index-mean-reversion-long] ${symbol}: ❌ Moderate downtrend but RSI not extreme enough (${rsi.toFixed(1)} > 25)`
+        );
+        return false;
+      }
+
+      console.log(
+        `[index-mean-reversion-long] ${symbol}: ⚠️ Downtrend but RSI extreme (${rsi.toFixed(1)}), allowing signal`
+      );
     }
 
     console.log(`[index-mean-reversion-long] ${symbol}: ✅ ALL CHECKS PASSED - SIGNAL DETECTED!`);
