@@ -6,14 +6,26 @@
  * - Time of day (approaching close)
  * - Theta acceleration
  * - Session timing guidance
+ * - Upcoming economic events (via Alpha Vantage)
  */
 
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "../../../lib/utils";
-import { Clock, AlertTriangle, Timer, Sun, Sunset, Moon } from "lucide-react";
+import { Clock, AlertTriangle, Timer, Sun, Sunset, Moon, Calendar, Loader2 } from "lucide-react";
 import type { Contract } from "../../../types";
+
+interface EconomicEvent {
+  id: string;
+  name: string;
+  datetime: string;
+  impact: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  category: string;
+  affectsSymbols: string[];
+}
 
 interface HDTimeDecayWarningProps {
   contract: Contract;
+  ticker?: string;
   className?: string;
   compact?: boolean;
 }
@@ -177,13 +189,68 @@ function getDTEContext(contract: Contract): DTEContext {
 
 export function HDTimeDecayWarning({
   contract,
+  ticker,
   className,
   compact = false,
 }: HDTimeDecayWarningProps) {
   const timeContext = getTimeContext();
   const dteContext = getDTEContext(contract);
+  const [upcomingEvents, setUpcomingEvents] = useState<EconomicEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   const isUrgent = dteContext.urgency === "critical" || dteContext.urgency === "high";
+
+  // Fetch economic events relevant to this contract's timeframe
+  const fetchRelevantEvents = useCallback(async () => {
+    try {
+      setEventsLoading(true);
+      const response = await fetch("/api/calendar/events?impact=CRITICAL,HIGH");
+      if (!response.ok) return;
+
+      const data = await response.json();
+      if (!data.success || !data.events) return;
+
+      const now = new Date();
+      const expiryDate = contract.expirationDate
+        ? new Date(contract.expirationDate)
+        : new Date(now.getTime() + (contract.daysToExpiry || 0) * 24 * 60 * 60 * 1000);
+
+      // Filter events that fall within the contract's DTE window
+      const relevantEvents = (data.events as EconomicEvent[])
+        .filter((event) => {
+          const eventDate = new Date(event.datetime);
+          // Event must be before expiry and after now
+          if (eventDate < now || eventDate > expiryDate) return false;
+
+          // If ticker specified, check if it affects this symbol
+          if (ticker) {
+            // Major indices affect everything
+            if (
+              event.category === "Federal Reserve" ||
+              event.category === "Employment" ||
+              event.category === "Inflation"
+            ) {
+              return true;
+            }
+            // Otherwise check affectsSymbols
+            return event.affectsSymbols?.some((s) => s.toUpperCase() === ticker.toUpperCase());
+          }
+          return true;
+        })
+        .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime())
+        .slice(0, 3); // Show up to 3 events
+
+      setUpcomingEvents(relevantEvents);
+    } catch (err) {
+      console.error("[HDTimeDecayWarning] Error fetching events:", err);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [contract.expirationDate, contract.daysToExpiry, ticker]);
+
+  useEffect(() => {
+    fetchRelevantEvents();
+  }, [fetchRelevantEvents]);
 
   if (compact) {
     // Compact mode - single line with icon
@@ -318,6 +385,99 @@ export function HDTimeDecayWarning({
               per contract per hour (estimated)
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Economic Events During Contract Life */}
+      {(upcomingEvents.length > 0 || eventsLoading) && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] uppercase">
+            <Calendar className="w-3 h-3" />
+            <span>Events Before Expiry</span>
+          </div>
+
+          {eventsLoading ? (
+            <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Loading events...</span>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {upcomingEvents.map((event) => {
+                const eventDate = new Date(event.datetime);
+                const now = new Date();
+                const hoursUntil = Math.floor(
+                  (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60)
+                );
+                const isImminent = hoursUntil < 24;
+
+                return (
+                  <div
+                    key={event.id}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius)] border",
+                      event.impact === "CRITICAL"
+                        ? "bg-red-500/10 border-red-500/30"
+                        : "bg-amber-500/10 border-amber-500/30"
+                    )}
+                  >
+                    <AlertTriangle
+                      className={cn(
+                        "w-3 h-3 flex-shrink-0",
+                        event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400",
+                        isImminent && "animate-pulse"
+                      )}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span
+                        className={cn(
+                          "text-[10px] font-medium",
+                          event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400"
+                        )}
+                      >
+                        {event.name}
+                      </span>
+                      <div className="text-[9px] text-[var(--text-muted)]">
+                        {eventDate.toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                        {isImminent && (
+                          <span
+                            className={cn(
+                              "ml-1 font-medium",
+                              event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400"
+                            )}
+                          >
+                            ({hoursUntil}h away)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        "text-[8px] px-1 py-0.5 rounded uppercase font-bold",
+                        event.impact === "CRITICAL"
+                          ? "bg-red-500/20 text-red-400"
+                          : "bg-amber-500/20 text-amber-400"
+                      )}
+                    >
+                      {event.impact}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {upcomingEvents.length > 0 && (
+            <p className="text-[9px] text-[var(--text-muted)] italic">
+              High-impact events may cause volatility spikes and affect premium.
+            </p>
+          )}
         </div>
       )}
     </div>

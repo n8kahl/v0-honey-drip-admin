@@ -1,12 +1,24 @@
 /**
  * calendar.ts - Economic Calendar API Routes
  *
- * Phase 2.4: Server-side calendar data endpoints
+ * Phase 3: Real API integration using Alpha Vantage
  * Provides economic events and earnings data for trading analysis
  */
 
 import { Router } from "express";
 import type { Request, Response } from "express";
+import {
+  buildUnifiedCalendar,
+  getFOMCSchedule,
+  getCPISchedule,
+  getNFPDate,
+  getJoblessClaimsDates,
+  fetchAlphaVantageEarningsCalendar,
+  getEarningsForSymbols,
+  checkEarningsProximity,
+  CATEGORY_SYMBOLS,
+  type UnifiedCalendarEvent,
+} from "../vendors/alphaVantage.js";
 
 const router = Router();
 
@@ -31,6 +43,7 @@ interface EarningsEvent {
   timing: "BMO" | "AMC";
   expectedMove?: number;
   ivRank?: number;
+  estimate?: number;
 }
 
 // ============= Constants =============
@@ -39,7 +52,7 @@ const MAJOR_EVENTS_DATA: Record<string, { impact: string; category: string; symb
   "FOMC Meeting": {
     impact: "CRITICAL",
     category: "FED",
-    symbols: ["SPY", "SPX", "QQQ", "NDX", "TLT", "VIX"],
+    symbols: CATEGORY_SYMBOLS.FED,
   },
   "Fed Chair Speech": {
     impact: "HIGH",
@@ -50,7 +63,7 @@ const MAJOR_EVENTS_DATA: Record<string, { impact: string; category: string; symb
   "Non-Farm Payrolls": {
     impact: "CRITICAL",
     category: "EMPLOYMENT",
-    symbols: ["SPY", "SPX", "QQQ", "NDX", "VIX"],
+    symbols: CATEGORY_SYMBOLS.EMPLOYMENT,
   },
   "Initial Jobless Claims": { impact: "MEDIUM", category: "EMPLOYMENT", symbols: ["SPY", "SPX"] },
   "Unemployment Rate": { impact: "HIGH", category: "EMPLOYMENT", symbols: ["SPY", "SPX", "QQQ"] },
@@ -58,7 +71,7 @@ const MAJOR_EVENTS_DATA: Record<string, { impact: string; category: string; symb
   CPI: {
     impact: "CRITICAL",
     category: "INFLATION",
-    symbols: ["SPY", "SPX", "QQQ", "NDX", "TLT", "VIX"],
+    symbols: CATEGORY_SYMBOLS.INFLATION,
   },
   "Core CPI": {
     impact: "CRITICAL",
@@ -67,145 +80,156 @@ const MAJOR_EVENTS_DATA: Record<string, { impact: string; category: string; symb
   },
   PPI: { impact: "HIGH", category: "INFLATION", symbols: ["SPY", "SPX", "QQQ"] },
   PCE: { impact: "HIGH", category: "INFLATION", symbols: ["SPY", "SPX", "QQQ", "TLT"] },
-  GDP: { impact: "HIGH", category: "GDP", symbols: ["SPY", "SPX", "QQQ", "NDX"] },
+  GDP: { impact: "HIGH", category: "GDP", symbols: CATEGORY_SYMBOLS.GDP },
   "ISM Manufacturing": { impact: "MEDIUM", category: "GDP", symbols: ["SPY", "SPX", "XLI"] },
   "ISM Services": { impact: "MEDIUM", category: "GDP", symbols: ["SPY", "SPX"] },
-  "Retail Sales": { impact: "MEDIUM", category: "CONSUMER", symbols: ["SPY", "XLY", "XRT"] },
+  "Retail Sales": { impact: "MEDIUM", category: "CONSUMER", symbols: CATEGORY_SYMBOLS.CONSUMER },
 };
 
 // ============= Helper Functions =============
 
-function isFirstFriday(date: Date): boolean {
-  return date.getDay() === 5 && date.getDate() <= 7;
-}
-
-function isFirstWednesday(date: Date): boolean {
-  return date.getDay() === 3 && date.getDate() <= 7;
-}
-
-function generateWeeklyEvents(startDate: Date, endDate: Date): EconomicEvent[] {
+/**
+ * Generate economic events using real schedule data
+ * Uses known FOMC dates, calculates NFP/CPI dates, etc.
+ */
+function generateRealEconomicEvents(startDate: Date, endDate: Date): EconomicEvent[] {
   const events: EconomicEvent[] = [];
-  const current = new Date(startDate);
   let eventId = 0;
 
-  while (current <= endDate) {
-    const dayOfWeek = current.getDay();
+  // Add FOMC dates (real schedule from Federal Reserve)
+  const year = startDate.getFullYear();
+  const fomcDates = [
+    ...getFOMCSchedule(year),
+    ...(year !== endDate.getFullYear() ? getFOMCSchedule(endDate.getFullYear()) : []),
+  ];
 
-    // Thursday - Jobless Claims
-    if (dayOfWeek === 4) {
-      const datetime = new Date(current);
-      datetime.setHours(8, 30, 0, 0);
+  for (const date of fomcDates) {
+    if (date >= startDate && date <= endDate) {
       events.push({
-        id: `event-${eventId++}`,
-        name: "Initial Jobless Claims",
-        datetime: datetime.toISOString(),
-        impact: "MEDIUM",
-        category: "EMPLOYMENT",
-        affectsSymbols: MAJOR_EVENTS_DATA["Initial Jobless Claims"].symbols,
-      });
-    }
-
-    // First Friday - NFP
-    if (isFirstFriday(current)) {
-      const datetime = new Date(current);
-      datetime.setHours(8, 30, 0, 0);
-      events.push({
-        id: `event-${eventId++}`,
-        name: "Non-Farm Payrolls",
-        datetime: datetime.toISOString(),
+        id: `fomc-${eventId++}`,
+        name: "FOMC Rate Decision",
+        datetime: date.toISOString(),
         impact: "CRITICAL",
-        category: "EMPLOYMENT",
-        affectsSymbols: MAJOR_EVENTS_DATA["Non-Farm Payrolls"].symbols,
-      });
-      events.push({
-        id: `event-${eventId++}`,
-        name: "Unemployment Rate",
-        datetime: datetime.toISOString(),
-        impact: "HIGH",
-        category: "EMPLOYMENT",
-        affectsSymbols: MAJOR_EVENTS_DATA["Unemployment Rate"].symbols,
+        category: "FED",
+        affectsSymbols: MAJOR_EVENTS_DATA["FOMC Meeting"].symbols,
       });
     }
+  }
 
-    // First Wednesday (sometimes FOMC)
-    if (isFirstWednesday(current)) {
-      // FOMC meets every 6 weeks approximately
-      const weekOfYear = Math.floor(
-        (current.getTime() - new Date(current.getFullYear(), 0, 1).getTime()) /
-          (7 * 24 * 60 * 60 * 1000)
+  // Add NFP dates (first Friday of each month)
+  let current = new Date(startDate);
+  while (current <= endDate) {
+    const nfpDate = getNFPDate(current.getFullYear(), current.getMonth());
+    if (nfpDate >= startDate && nfpDate <= endDate) {
+      // Check if we haven't already added this date
+      const exists = events.some(
+        (e) =>
+          e.name === "Non-Farm Payrolls" &&
+          new Date(e.datetime).toDateString() === nfpDate.toDateString()
       );
-      if (weekOfYear % 6 === 0) {
-        const datetime = new Date(current);
-        datetime.setHours(14, 0, 0, 0);
+      if (!exists) {
         events.push({
-          id: `event-${eventId++}`,
-          name: "FOMC Meeting",
-          datetime: datetime.toISOString(),
+          id: `nfp-${eventId++}`,
+          name: "Non-Farm Payrolls",
+          datetime: nfpDate.toISOString(),
           impact: "CRITICAL",
-          category: "FED",
-          affectsSymbols: MAJOR_EVENTS_DATA["FOMC Meeting"].symbols,
+          category: "EMPLOYMENT",
+          affectsSymbols: MAJOR_EVENTS_DATA["Non-Farm Payrolls"].symbols,
+        });
+        events.push({
+          id: `unemp-${eventId++}`,
+          name: "Unemployment Rate",
+          datetime: nfpDate.toISOString(),
+          impact: "HIGH",
+          category: "EMPLOYMENT",
+          affectsSymbols: MAJOR_EVENTS_DATA["Unemployment Rate"].symbols,
         });
       }
     }
+    current.setMonth(current.getMonth() + 1);
+  }
 
-    // Mid-month CPI (10th-15th, Tue-Thu)
-    if (current.getDate() >= 10 && current.getDate() <= 15 && dayOfWeek >= 2 && dayOfWeek <= 4) {
-      // CPI usually comes out once a month
-      if (current.getDate() === 12 || current.getDate() === 13) {
-        const datetime = new Date(current);
-        datetime.setHours(8, 30, 0, 0);
+  // Add CPI dates (mid-month)
+  current = new Date(startDate);
+  while (current <= endDate) {
+    const cpiDate = getCPISchedule(current.getFullYear(), current.getMonth());
+    if (cpiDate && cpiDate >= startDate && cpiDate <= endDate) {
+      const exists = events.some(
+        (e) => e.name === "CPI" && new Date(e.datetime).toDateString() === cpiDate.toDateString()
+      );
+      if (!exists) {
         events.push({
-          id: `event-${eventId++}`,
+          id: `cpi-${eventId++}`,
           name: "CPI",
-          datetime: datetime.toISOString(),
+          datetime: cpiDate.toISOString(),
           impact: "CRITICAL",
           category: "INFLATION",
           affectsSymbols: MAJOR_EVENTS_DATA["CPI"].symbols,
         });
       }
     }
-
-    current.setDate(current.getDate() + 1);
+    current.setMonth(current.getMonth() + 1);
   }
 
-  return events;
+  // Add weekly jobless claims (Thursdays)
+  const joblessDates = getJoblessClaimsDates(startDate, endDate);
+  for (const date of joblessDates) {
+    events.push({
+      id: `jobless-${eventId++}`,
+      name: "Initial Jobless Claims",
+      datetime: date.toISOString(),
+      impact: "MEDIUM",
+      category: "EMPLOYMENT",
+      affectsSymbols: MAJOR_EVENTS_DATA["Initial Jobless Claims"].symbols,
+    });
+  }
+
+  // Sort by datetime
+  return events.sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
 }
 
-function generateEarningsEvents(
+/**
+ * Convert Alpha Vantage earnings to our format
+ */
+async function getRealEarningsEvents(
   startDate: Date,
   endDate: Date,
   symbols?: string[]
-): EarningsEvent[] {
-  const events: EarningsEvent[] = [];
-  const majorStocks = symbols?.length
-    ? symbols
-    : ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"];
+): Promise<EarningsEvent[]> {
+  try {
+    const watchlistSymbols = symbols || ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"];
+    const daysAhead = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
-  // For mock data, randomly assign some stocks to report
-  const reporting = majorStocks.filter(() => Math.random() > 0.75).slice(0, 3);
+    const alphaEarnings = await getEarningsForSymbols(watchlistSymbols, daysAhead);
 
-  reporting.forEach((symbol, index) => {
-    const date = new Date(startDate);
-    date.setDate(date.getDate() + index + 2);
+    return alphaEarnings
+      .map((e) => {
+        const reportDate = new Date(e.reportDate);
+        // Guess timing based on common patterns
+        const timing: "BMO" | "AMC" = ["AAPL", "MSFT", "GOOGL", "META", "AMZN"].includes(
+          e.symbol.toUpperCase()
+        )
+          ? "AMC"
+          : "BMO";
 
-    // Skip weekends
-    while (date.getDay() === 0 || date.getDay() === 6) {
-      date.setDate(date.getDate() + 1);
-    }
-
-    if (date <= endDate) {
-      events.push({
-        symbol,
-        name: `${symbol} Inc.`,
-        datetime: date.toISOString(),
-        timing: Math.random() > 0.5 ? "AMC" : "BMO",
-        expectedMove: Math.round((3 + Math.random() * 5) * 10) / 10,
-        ivRank: Math.round(50 + Math.random() * 40),
+        return {
+          symbol: e.symbol,
+          name: e.name || `${e.symbol} Inc.`,
+          datetime: reportDate.toISOString(),
+          timing,
+          estimate: e.estimate,
+          // IV rank would need options chain data - leave as undefined
+          // Expected move would need IV data - leave as undefined
+        };
+      })
+      .filter((e) => {
+        const dt = new Date(e.datetime);
+        return dt >= startDate && dt <= endDate;
       });
-    }
-  });
-
-  return events;
+  } catch (error) {
+    console.warn("[Calendar] Error fetching real earnings, returning empty:", error);
+    return [];
+  }
 }
 
 // ============= Routes =============
@@ -223,7 +247,7 @@ router.get("/events", async (req: Request, res: Response) => {
       ? new Date(end as string)
       : new Date(startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
 
-    let events = generateWeeklyEvents(startDate, endDate);
+    let events = generateRealEconomicEvents(startDate, endDate);
 
     // Filter by impact if specified
     if (impact) {
@@ -234,6 +258,7 @@ router.get("/events", async (req: Request, res: Response) => {
     res.json({
       success: true,
       events,
+      source: "alpha_vantage_schedule",
       meta: {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
@@ -251,7 +276,7 @@ router.get("/events", async (req: Request, res: Response) => {
 
 /**
  * GET /api/calendar/earnings
- * Fetch earnings events for a date range
+ * Fetch earnings events for a date range (uses Alpha Vantage)
  */
 router.get("/earnings", async (req: Request, res: Response) => {
   try {
@@ -263,11 +288,12 @@ router.get("/earnings", async (req: Request, res: Response) => {
       : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
     const symbolList = symbols ? (symbols as string).split(",") : undefined;
 
-    const events = generateEarningsEvents(startDate, endDate, symbolList);
+    const events = await getRealEarningsEvents(startDate, endDate, symbolList);
 
     res.json({
       success: true,
       earnings: events,
+      source: "alpha_vantage",
       meta: {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
@@ -279,6 +305,42 @@ router.get("/earnings", async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch earnings",
+    });
+  }
+});
+
+/**
+ * GET /api/calendar/unified
+ * Get unified calendar with both economic events and earnings
+ */
+router.get("/unified", async (req: Request, res: Response) => {
+  try {
+    const { symbols, days } = req.query;
+    const watchlistSymbols = symbols
+      ? (symbols as string).split(",")
+      : ["SPY", "SPX", "QQQ", "NDX", "AAPL", "MSFT", "NVDA"];
+    const daysAhead = days ? parseInt(days as string, 10) : 7;
+
+    const events = await buildUnifiedCalendar(watchlistSymbols, daysAhead);
+
+    res.json({
+      success: true,
+      events: events.map((e) => ({
+        ...e,
+        datetime: e.datetime.toISOString(),
+      })),
+      source: "alpha_vantage",
+      meta: {
+        daysAhead,
+        symbolCount: watchlistSymbols.length,
+        eventCount: events.length,
+      },
+    });
+  } catch (error) {
+    console.error("[Calendar] Error building unified calendar:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to build unified calendar",
     });
   }
 });
@@ -298,8 +360,8 @@ router.get("/analysis", async (req: Request, res: Response) => {
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const allEvents = generateWeeklyEvents(now, nextWeek);
-    const earnings = generateEarningsEvents(now, nextWeek, watchlistSymbols);
+    const allEvents = generateRealEconomicEvents(now, nextWeek);
+    const earnings = await getRealEarningsEvents(now, nextWeek, watchlistSymbols);
 
     const eventsNext24h = allEvents.filter(
       (e) => new Date(e.datetime) >= now && new Date(e.datetime) <= tomorrow
@@ -320,6 +382,16 @@ router.get("/analysis", async (req: Request, res: Response) => {
       recommendations.push(`FOMC meeting this week - expect elevated VIX leading into event`);
     }
 
+    const cpiEvent = eventsNext7d.find((e) => e.name === "CPI");
+    if (cpiEvent) {
+      recommendations.push(`CPI release this week - inflation data drives Fed expectations`);
+    }
+
+    const nfpEvent = eventsNext7d.find((e) => e.name === "Non-Farm Payrolls");
+    if (nfpEvent) {
+      recommendations.push(`Jobs report this week - expect volatility around release`);
+    }
+
     const highImpactCount = eventsNext7d.filter(
       (e) => e.impact === "CRITICAL" || e.impact === "HIGH"
     ).length;
@@ -327,6 +399,12 @@ router.get("/analysis", async (req: Request, res: Response) => {
       recommendations.push("Busy week ahead - consider shorter DTE to avoid multiple event risks");
     } else if (highImpactCount === 0) {
       recommendations.push("Light calendar week - favorable for swing trades with longer DTE");
+    }
+
+    // Check for earnings proximity warnings
+    if (earnings.length > 0) {
+      const earningsSymbols = earnings.map((e) => e.symbol).join(", ");
+      recommendations.push(`Earnings this week: ${earningsSymbols} - elevated IV expected`);
     }
 
     // Determine sentiment
@@ -347,6 +425,7 @@ router.get("/analysis", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
+      source: "alpha_vantage",
       analysis: {
         eventsNext24h,
         eventsNext7d,
@@ -380,7 +459,7 @@ router.get("/next-event", async (req: Request, res: Response) => {
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const events = generateWeeklyEvents(now, nextWeek);
+    const events = generateRealEconomicEvents(now, nextWeek);
     const highImpact = events
       .filter((e) => e.impact === "CRITICAL" || e.impact === "HIGH")
       .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
@@ -392,6 +471,7 @@ router.get("/next-event", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
+      source: "alpha_vantage_schedule",
       event: nextEvent,
       minutesUntil,
       isToday: nextEvent
@@ -403,6 +483,50 @@ router.get("/next-event", async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch next event",
+    });
+  }
+});
+
+/**
+ * GET /api/calendar/earnings-check
+ * Check if a specific symbol has earnings coming up
+ */
+router.get("/earnings-check", async (req: Request, res: Response) => {
+  try {
+    const { symbol, days } = req.query;
+
+    if (!symbol) {
+      return res.status(400).json({
+        success: false,
+        error: "Symbol parameter required",
+      });
+    }
+
+    const daysThreshold = days ? parseInt(days as string, 10) : 7;
+
+    // Get earnings calendar
+    const response = await fetchAlphaVantageEarningsCalendar("3month");
+    const result = checkEarningsProximity(response.earnings, symbol as string, daysThreshold);
+
+    res.json({
+      success: true,
+      source: response.source,
+      symbol: symbol as string,
+      hasEarnings: result.hasEarnings,
+      daysUntil: result.daysUntil,
+      event: result.event
+        ? {
+            reportDate: result.event.reportDate,
+            estimate: result.event.estimate,
+            name: result.event.name,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error("[Calendar] Error checking earnings:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to check earnings",
     });
   }
 });

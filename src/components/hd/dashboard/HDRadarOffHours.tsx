@@ -12,6 +12,7 @@ import { useOffHoursData } from "../../../hooks/useOffHoursData";
 import { HDMarketCountdown } from "./HDMarketCountdown";
 import { HDKeyLevelsPanel } from "./HDKeyLevelsPanel";
 import { HDSetupsToWatch } from "./HDSetupsToWatch";
+import { HDWeeklyCalendar } from "./HDWeeklyCalendar";
 import { cn } from "../../../lib/utils";
 import {
   Calendar,
@@ -130,6 +131,9 @@ export function HDRadarOffHours({ className }: HDRadarOffHoursProps) {
         {/* Left Column - Countdown & Tips */}
         <div className="lg:col-span-4 space-y-6">
           <HDMarketCountdown />
+
+          {/* Weekly Economic Calendar */}
+          <HDWeeklyCalendar maxEvents={6} />
 
           {/* Session Tips */}
           <SessionTips session={session} futures={futures} />
