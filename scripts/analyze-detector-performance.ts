@@ -37,9 +37,11 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 import fetch from "cross-fetch";
 globalThis.fetch = fetch as any;
 
-const SYMBOLS = ["SPY", "QQQ", "IWM", "DIA"];
-const START_DATE = "2024-01-01";
-const END_DATE = "2024-11-26";
+// Use dynamic date range (last 90 days) like optimizer
+const END_DATE = new Date().toISOString().split("T")[0];
+const START_DATE = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+// Symbols will be fetched from watchlist (like optimizer)
 
 interface DetectorStats {
   name: string;
@@ -52,7 +54,11 @@ interface DetectorStats {
   avgLoss: number;
 }
 
-async function analyzeDetector(name: string, detector: any): Promise<DetectorStats> {
+async function analyzeDetector(
+  name: string,
+  detector: any,
+  symbols: string[]
+): Promise<DetectorStats> {
   console.log(`\n📊 Testing ${name}...`);
 
   // Dynamic imports after env vars are loaded
@@ -65,10 +71,10 @@ async function analyzeDetector(name: string, detector: any): Promise<DetectorSta
       ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
       : null;
 
-  // Create engine with our symbols (backtestDetector loops through config.symbols internally)
+  // Create engine with watchlist symbols (backtestDetector loops through config.symbols internally)
   const engine = new BacktestEngine(
     {
-      symbols: SYMBOLS,
+      symbols: symbols,
       startDate: START_DATE,
       endDate: END_DATE,
       timeframe: "15m",
@@ -121,6 +127,30 @@ async function analyzeDetector(name: string, detector: any): Promise<DetectorSta
 async function main() {
   console.log("🔬 Detector Performance Analysis");
   console.log("=".repeat(80));
+
+  // Fetch symbols from watchlist (same as optimizer)
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabase = createClient(
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: watchlistData, error: watchlistError } = await supabase
+    .from("watchlist")
+    .select("symbol");
+
+  if (watchlistError) {
+    console.error("❌ Failed to fetch watchlist:", watchlistError);
+    process.exit(1);
+  }
+
+  const SYMBOLS = [...new Set(watchlistData?.map((w) => w.symbol) || [])];
+
+  if (SYMBOLS.length === 0) {
+    console.warn("⚠️  No symbols in watchlist, using defaults");
+    SYMBOLS.push("SPX", "NDX", "SPY", "QQQ");
+  }
+
   console.log(`Symbols: ${SYMBOLS.join(", ")}`);
   console.log(`Period: ${START_DATE} to ${END_DATE}`);
   console.log(`Config: 2:1 R:R, 30 bar max hold\n`);
@@ -140,7 +170,7 @@ async function main() {
 
   for (const { name, detector } of detectors) {
     try {
-      const stats = await analyzeDetector(name, detector);
+      const stats = await analyzeDetector(name, detector, SYMBOLS);
       results.push(stats);
     } catch (error: any) {
       console.error(`❌ ${name} failed: ${error.message}`);
