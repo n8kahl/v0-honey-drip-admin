@@ -237,7 +237,7 @@ export class BacktestEngine {
    * Used by ConfluenceOptimizer to evaluate parameter sets
    */
   async backtestAll(): Promise<BacktestStats[]> {
-    // Import all detectors dynamically to avoid circular dependencies
+    // Import all detectors for comprehensive testing
     const { ALL_DETECTORS } = await import("../composite/detectors/index.js");
 
     console.log(`[BacktestEngine] Running backtests for ${ALL_DETECTORS.length} detectors...`);
@@ -467,11 +467,10 @@ export class BacktestEngine {
         },
       },
       session: {
-        minutesSinceOpen: 0, // TODO: Calculate
-        // Set isRegularHours based on VWAP availability
-        // Historical backtest data often lacks volume, so VWAP may be unavailable
-        // Treat as "weekend mode" (isRegularHours=false) when VWAP is missing
-        isRegularHours: vwapValue !== null,
+        minutesSinceOpen: this.calculateMinutesSinceOpen(current.timestamp),
+        // Regular hours: 9:30 AM - 4:00 PM ET (with VWAP available)
+        // Note: isRegularHours also requires VWAP data to be available
+        isRegularHours: vwapValue !== null && this.isWithinMarketHours(current.timestamp),
       },
       pattern: {
         atr,
@@ -772,5 +771,61 @@ export class BacktestEngine {
     if (price > ema9 && ema9 > ema21) return "UPTREND";
     if (price < ema9 && ema9 < ema21) return "DOWNTREND";
     return "SIDEWAYS";
+  }
+
+  /**
+   * Helper: Calculate minutes since market open (9:30 AM ET)
+   * Market opens at 9:30 AM ET = 14:30 UTC (EST) or 13:30 UTC (EDT)
+   */
+  private calculateMinutesSinceOpen(timestamp: number): number {
+    const date = new Date(timestamp);
+
+    // Get hours and minutes in ET (America/New_York)
+    // Note: This is a simplified calculation - in production, use proper timezone library
+    const utcHours = date.getUTCHours();
+    const utcMinutes = date.getUTCMinutes();
+
+    // Convert to ET (approximate: -5 for EST, -4 for EDT)
+    // Use -5 as default (EST), adjust for DST if needed
+    const isDST = this.isDaylightSavingTime(date);
+    const etOffset = isDST ? -4 : -5;
+
+    let etHours = utcHours + etOffset;
+    if (etHours < 0) etHours += 24;
+
+    // Market opens at 9:30 AM ET
+    const marketOpenMinutes = 9 * 60 + 30; // 570 minutes from midnight
+    const currentMinutes = etHours * 60 + utcMinutes;
+
+    return currentMinutes - marketOpenMinutes;
+  }
+
+  /**
+   * Helper: Check if timestamp is within regular market hours (9:30 AM - 4:00 PM ET)
+   */
+  private isWithinMarketHours(timestamp: number): boolean {
+    const minutesSinceOpen = this.calculateMinutesSinceOpen(timestamp);
+    // Market is open from 0 to 390 minutes after open (9:30 AM to 4:00 PM = 6.5 hours = 390 minutes)
+    return minutesSinceOpen >= 0 && minutesSinceOpen <= 390;
+  }
+
+  /**
+   * Helper: Check if date is in Daylight Saving Time (US)
+   * DST runs from second Sunday in March to first Sunday in November
+   */
+  private isDaylightSavingTime(date: Date): boolean {
+    const year = date.getUTCFullYear();
+
+    // Second Sunday in March
+    const marchFirst = new Date(Date.UTC(year, 2, 1)); // March 1
+    const dstStart = new Date(Date.UTC(year, 2, 14 - marchFirst.getUTCDay())); // Second Sunday
+    dstStart.setUTCHours(7); // 2 AM ET = 7 AM UTC
+
+    // First Sunday in November
+    const novFirst = new Date(Date.UTC(year, 10, 1)); // November 1
+    const dstEnd = new Date(Date.UTC(year, 10, 7 - novFirst.getUTCDay() || 7)); // First Sunday
+    dstEnd.setUTCHours(6); // 2 AM ET = 6 AM UTC (still in EDT before switch)
+
+    return date >= dstStart && date < dstEnd;
   }
 }
