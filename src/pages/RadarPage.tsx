@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { AppLayout } from "../components/layouts/AppLayout";
 import { HDRadarScanner } from "../components/hd/dashboard/HDRadarScanner";
 import { HDRadarOffHours } from "../components/hd/dashboard/HDRadarOffHours";
+import { HDWeeklyCalendar } from "../components/hd/dashboard/HDWeeklyCalendar";
+import { HDEconomicEventWarning } from "../components/hd/dashboard/HDEconomicEventWarning";
 import { useAuth } from "../contexts/AuthContext";
 import { useMarketSession } from "../hooks/useMarketSession";
 import { cn } from "../lib/utils";
@@ -51,11 +53,23 @@ export default function RadarPage() {
             <ModeToggle mode={mode} setMode={setMode} isOffHours={isOffHours} session={session} />
           </div>
 
+          {/* Upcoming Events Banner (shows imminent events) */}
+          <HDEconomicEventWarning compact />
+
           {/* Content */}
           {sessionLoading ? (
             <RadarLoading />
           ) : effectiveMode === "live" ? (
-            <HDRadarScanner userId={userId} />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* Main signal scanner */}
+              <div className="lg:col-span-8">
+                <HDRadarScanner userId={userId} />
+              </div>
+              {/* Weekly calendar sidebar */}
+              <div className="lg:col-span-4">
+                <HDWeeklyCalendar maxEvents={8} />
+              </div>
+            </div>
           ) : (
             <HDRadarOffHours />
           )}
