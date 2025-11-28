@@ -1,12 +1,12 @@
 /**
  * EconomicCalendar.ts - Economic Calendar Integration
  *
- * Phase 2.4: Track economic events that impact trading decisions
+ * Phase 3: Real API integration using Alpha Vantage
  * - Federal Reserve events (FOMC, speeches)
  * - Employment data (NFP, unemployment)
  * - Inflation data (CPI, PPI)
  * - GDP and economic indicators
- * - Major earnings events
+ * - Major earnings events (from Alpha Vantage)
  */
 
 // ============= Types =============
@@ -44,6 +44,7 @@ export interface EarningsEvent {
   expectedMove?: number; // Implied move from options pricing
   ivRank?: number;
   historicalBeatRate?: number;
+  estimate?: number;
 }
 
 export interface HighRiskPeriod {
@@ -82,6 +83,11 @@ export const MAJOR_ECONOMIC_EVENTS: Record<
 > = {
   // Federal Reserve
   "FOMC Meeting": {
+    impact: "CRITICAL",
+    category: "FED",
+    affectsSymbols: ["SPY", "SPX", "QQQ", "NDX", "TLT", "VIX"],
+  },
+  "FOMC Rate Decision": {
     impact: "CRITICAL",
     category: "FED",
     affectsSymbols: ["SPY", "SPX", "QQQ", "NDX", "TLT", "VIX"],
@@ -149,36 +155,163 @@ const EVENT_BUFFER = {
   LOW: 5,
 };
 
-// ============= Service Functions =============
+// ============= API Functions =============
 
 /**
- * Fetch economic calendar from API
- * In production, this would call a real API (investing.com, marketwatch, etc.)
+ * Fetch economic calendar from our server API (powered by Alpha Vantage)
  */
 export async function fetchEconomicCalendar(
   startDate: Date,
   endDate: Date,
   config: CalendarConfig = {}
 ): Promise<EconomicEvent[]> {
-  // For now, return mock data based on typical weekly schedule
-  // In production, replace with actual API call
-  return generateMockCalendarEvents(startDate, endDate, config);
+  try {
+    const params = new URLSearchParams({
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+    });
+
+    if (config.impactFilter?.length) {
+      params.set("impact", config.impactFilter.join(","));
+    }
+
+    const response = await fetch(`/api/calendar/events?${params}`);
+
+    if (!response.ok) {
+      console.error("[EconomicCalendar] API error:", response.status);
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.events) {
+      return [];
+    }
+
+    // Convert API response to our format
+    return data.events.map((e: any) => ({
+      id: e.id,
+      name: e.name,
+      datetime: new Date(e.datetime),
+      impact: e.impact as EventImpact,
+      category: (e.category || "OTHER") as EventCategory,
+      affectsSymbols: e.affectsSymbols || ["SPY", "SPX"],
+      previous: e.previous,
+      forecast: e.forecast,
+      actual: e.actual,
+    }));
+  } catch (error) {
+    console.error("[EconomicCalendar] Failed to fetch:", error);
+    return [];
+  }
 }
 
 /**
- * Fetch earnings calendar
+ * Fetch earnings calendar from our server API (powered by Alpha Vantage)
  */
 export async function fetchEarningsCalendar(
   startDate: Date,
   endDate: Date,
   symbols?: string[]
 ): Promise<EarningsEvent[]> {
-  // Mock earnings data - in production, call earnings API
-  return generateMockEarningsEvents(startDate, endDate, symbols);
+  try {
+    const params = new URLSearchParams({
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+    });
+
+    if (symbols?.length) {
+      params.set("symbols", symbols.join(","));
+    }
+
+    const response = await fetch(`/api/calendar/earnings?${params}`);
+
+    if (!response.ok) {
+      console.error("[EconomicCalendar] Earnings API error:", response.status);
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.earnings) {
+      return [];
+    }
+
+    // Convert API response to our format
+    return data.earnings.map((e: any) => ({
+      symbol: e.symbol,
+      name: e.name || `${e.symbol} Inc.`,
+      datetime: new Date(e.datetime),
+      timing: (e.timing || "AMC") as EarningsTiming,
+      expectedMove: e.expectedMove,
+      ivRank: e.ivRank,
+      estimate: e.estimate,
+    }));
+  } catch (error) {
+    console.error("[EconomicCalendar] Failed to fetch earnings:", error);
+    return [];
+  }
 }
 
 /**
- * Analyze calendar for trading implications
+ * Fetch full calendar analysis from server
+ */
+export async function fetchCalendarAnalysis(
+  watchlistSymbols: string[]
+): Promise<CalendarAnalysis | null> {
+  try {
+    const params = new URLSearchParams({
+      symbols: watchlistSymbols.join(","),
+    });
+
+    const response = await fetch(`/api/calendar/analysis?${params}`);
+
+    if (!response.ok) {
+      console.error("[EconomicCalendar] Analysis API error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.analysis) {
+      return null;
+    }
+
+    const analysis = data.analysis;
+
+    // Convert dates in response
+    return {
+      eventsNext24h: analysis.eventsNext24h.map((e: any) => ({
+        ...e,
+        datetime: new Date(e.datetime),
+      })),
+      eventsNext7d: analysis.eventsNext7d.map((e: any) => ({
+        ...e,
+        datetime: new Date(e.datetime),
+      })),
+      earningsThisWeek: analysis.earningsThisWeek.map((e: any) => ({
+        ...e,
+        datetime: new Date(e.datetime),
+      })),
+      tradingRecommendations: analysis.tradingRecommendations,
+      highRiskPeriods: analysis.highRiskPeriods.map((p: any) => ({
+        ...p,
+        start: new Date(p.start),
+        end: new Date(p.end),
+      })),
+      marketSentiment: analysis.marketSentiment,
+      volatilityOutlook: analysis.volatilityOutlook,
+    };
+  } catch (error) {
+    console.error("[EconomicCalendar] Failed to fetch analysis:", error);
+    return null;
+  }
+}
+
+// ============= Analysis Functions =============
+
+/**
+ * Analyze calendar for trading implications (client-side)
  */
 export function analyzeCalendarForTrading(
   events: EconomicEvent[],
@@ -340,13 +473,19 @@ function generateTradingRecommendations(
     );
   }
 
-  // Check for NFP/CPI
-  const majorDataEvent = eventsNext7d.find(
-    (e) => e.name.includes("Non-Farm") || e.name.includes("CPI")
-  );
-  if (majorDataEvent) {
+  // Check for CPI
+  const cpiEvent = eventsNext7d.find((e) => e.name === "CPI");
+  if (cpiEvent) {
     recommendations.push(
-      `${majorDataEvent.name} on ${majorDataEvent.datetime.toLocaleDateString()} - avoid holding 0DTE through release`
+      `CPI release on ${cpiEvent.datetime.toLocaleDateString()} - inflation data drives Fed expectations`
+    );
+  }
+
+  // Check for NFP
+  const nfpEvent = eventsNext7d.find((e) => e.name.includes("Non-Farm") || e.name.includes("NFP"));
+  if (nfpEvent) {
+    recommendations.push(
+      `Jobs report on ${nfpEvent.datetime.toLocaleDateString()} - avoid holding 0DTE through release`
     );
   }
 
@@ -402,126 +541,10 @@ function determineVolatilityOutlook(
   return "normal";
 }
 
-// ============= Mock Data Generators =============
-
-function generateMockCalendarEvents(
-  startDate: Date,
-  endDate: Date,
-  config: CalendarConfig
-): EconomicEvent[] {
-  const events: EconomicEvent[] = [];
-  const current = new Date(startDate);
-
-  while (current <= endDate) {
-    const dayOfWeek = current.getDay();
-
-    // Typical weekly schedule
-    if (dayOfWeek === 1) {
-      // Monday - sometimes ISM
-      if (Math.random() > 0.7) {
-        events.push(createEvent("ISM Manufacturing", current, 10, 0));
-      }
-    } else if (dayOfWeek === 2) {
-      // Tuesday - sometimes Fed speech
-      if (Math.random() > 0.8) {
-        events.push(createEvent("Fed Chair Speech", current, 14, 0));
-      }
-    } else if (dayOfWeek === 3) {
-      // Wednesday - FOMC (every 6 weeks) or ADP
-      if (isFirstWednesday(current) && Math.random() > 0.5) {
-        events.push(createEvent("FOMC Meeting", current, 14, 0));
-      } else {
-        events.push(createEvent("ADP Employment", current, 8, 15));
-      }
-    } else if (dayOfWeek === 4) {
-      // Thursday - Jobless Claims
-      events.push(createEvent("Initial Jobless Claims", current, 8, 30));
-    } else if (dayOfWeek === 5) {
-      // Friday - First Friday = NFP
-      if (isFirstFriday(current)) {
-        events.push(createEvent("Non-Farm Payrolls", current, 8, 30));
-        events.push(createEvent("Unemployment Rate", current, 8, 30));
-      }
-    }
-
-    // Monthly events (CPI, PPI typically mid-month)
-    if (current.getDate() >= 10 && current.getDate() <= 15 && dayOfWeek >= 2 && dayOfWeek <= 4) {
-      if (Math.random() > 0.7) {
-        events.push(createEvent("CPI", current, 8, 30));
-      }
-    }
-
-    current.setDate(current.getDate() + 1);
-  }
-
-  // Apply impact filter if specified
-  if (config.impactFilter && config.impactFilter.length > 0) {
-    return events.filter((e) => config.impactFilter!.includes(e.impact));
-  }
-
-  return events;
-}
-
-function generateMockEarningsEvents(
-  startDate: Date,
-  endDate: Date,
-  symbols?: string[]
-): EarningsEvent[] {
-  const events: EarningsEvent[] = [];
-  const majorStocks = symbols || ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"];
-
-  // Randomly assign some stocks to report this week
-  const reporting = majorStocks.filter(() => Math.random() > 0.7).slice(0, 3);
-
-  reporting.forEach((symbol, index) => {
-    const date = new Date(startDate);
-    date.setDate(date.getDate() + index + 2); // Spread across week
-
-    events.push({
-      symbol,
-      name: `${symbol} Inc.`,
-      datetime: date,
-      timing: Math.random() > 0.5 ? "AMC" : "BMO",
-      expectedMove: 3 + Math.random() * 5,
-      ivRank: 50 + Math.random() * 40,
-      historicalBeatRate: 0.6 + Math.random() * 0.3,
-    });
-  });
-
-  return events;
-}
-
-function createEvent(name: string, date: Date, hour: number, minute: number): EconomicEvent {
-  const eventData = MAJOR_ECONOMIC_EVENTS[name] || {
-    impact: "LOW" as EventImpact,
-    category: "OTHER" as EventCategory,
-    affectsSymbols: ["SPY"],
-  };
-
-  const datetime = new Date(date);
-  datetime.setHours(hour, minute, 0, 0);
-
-  return {
-    id: `${name}-${datetime.toISOString()}`,
-    name,
-    datetime,
-    impact: eventData.impact,
-    category: eventData.category,
-    affectsSymbols: eventData.affectsSymbols,
-  };
-}
-
-function isFirstFriday(date: Date): boolean {
-  return date.getDay() === 5 && date.getDate() <= 7;
-}
-
-function isFirstWednesday(date: Date): boolean {
-  return date.getDay() === 3 && date.getDate() <= 7;
-}
-
 export default {
   fetchEconomicCalendar,
   fetchEarningsCalendar,
+  fetchCalendarAnalysis,
   analyzeCalendarForTrading,
   isNearHighImpactEvent,
   getEventsForSymbol,

@@ -238,8 +238,10 @@ export function useGreeksAnalysis(options: UseGreeksAnalysisOptions = {}) {
       const currentPrice = symbolData.price?.current ?? 0;
       if (currentPrice === 0) return null;
 
-      // Generate mock strikes around current price
-      // In production, this would come from options chain data
+      // Generate gamma exposure estimates using simplified model
+      // NOTE: This uses an approximation based on typical gamma distribution around ATM strikes
+      // For precise gamma exposure, we would need full options chain open interest data from Massive API
+      // TODO (Phase 3+): Integrate real open interest data from /api/options/chain for accurate GEX
       const strikeRange = Math.round(currentPrice * 0.1);
       const strikes: GammaExposureLevel[] = [];
 

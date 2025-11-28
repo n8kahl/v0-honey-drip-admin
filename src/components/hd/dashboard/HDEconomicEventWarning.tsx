@@ -2,17 +2,20 @@
  * HDEconomicEventWarning - Shows warnings for upcoming economic events
  *
  * Displays alerts for high-impact events that could affect options trades
+ * Now fetches real data from Alpha Vantage calendar API
  */
 
 import { cn } from "../../../lib/utils";
-import { AlertTriangle, Calendar, Clock, TrendingUp, TrendingDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Calendar, Clock, Loader2 } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
 
 interface EconomicEvent {
   id: string;
   name: string;
-  time: string;
+  datetime: string;
   impact: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  category: string;
+  affectsSymbols: string[];
   actual?: string;
   forecast?: string;
   previous?: string;
@@ -24,93 +27,12 @@ interface HDEconomicEventWarningProps {
   compact?: boolean;
 }
 
-// Map of tickers to relevant economic events
-const TICKER_EVENT_RELEVANCE: Record<string, string[]> = {
-  SPY: ["FOMC", "CPI", "NFP", "GDP", "Retail Sales", "ISM"],
-  SPX: ["FOMC", "CPI", "NFP", "GDP", "Retail Sales", "ISM"],
-  QQQ: ["FOMC", "CPI", "NFP", "GDP", "Tech Earnings"],
-  NDX: ["FOMC", "CPI", "NFP", "GDP", "Tech Earnings"],
-  IWM: ["FOMC", "CPI", "NFP", "GDP", "ISM Manufacturing"],
-  DIA: ["FOMC", "CPI", "NFP", "GDP", "ISM"],
-  AAPL: ["Tech Earnings", "FOMC", "CPI"],
-  MSFT: ["Tech Earnings", "FOMC", "CPI"],
-  NVDA: ["Tech Earnings", "FOMC", "CPI"],
-  TSLA: ["EV Sales", "FOMC", "CPI"],
-  AMZN: ["Retail Sales", "Tech Earnings", "FOMC"],
-  META: ["Tech Earnings", "FOMC", "CPI"],
-  GOOGL: ["Tech Earnings", "FOMC", "CPI"],
-};
-
-// Known high-impact events (simplified - in production this would come from API)
-const KNOWN_EVENTS: EconomicEvent[] = [
-  {
-    id: "fomc",
-    name: "FOMC Rate Decision",
-    time: getNextFOMCTime(),
-    impact: "CRITICAL",
-  },
-  {
-    id: "cpi",
-    name: "CPI Report",
-    time: getNextCPITime(),
-    impact: "CRITICAL",
-  },
-  {
-    id: "nfp",
-    name: "Non-Farm Payrolls",
-    time: getNextNFPTime(),
-    impact: "CRITICAL",
-  },
-];
-
-function getNextFOMCTime(): string {
-  // FOMC typically meets 8 times per year
-  // This is a simplified placeholder - in production, use actual calendar
-  const now = new Date();
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 15, 14, 0);
-  return nextMonth.toISOString();
-}
-
-function getNextCPITime(): string {
-  // CPI typically released around 13th of each month at 8:30 AM ET
-  const now = new Date();
-  const thisMonth13th = new Date(now.getFullYear(), now.getMonth(), 13, 8, 30);
-  if (thisMonth13th > now) {
-    return thisMonth13th.toISOString();
-  }
-  const nextMonth13th = new Date(now.getFullYear(), now.getMonth() + 1, 13, 8, 30);
-  return nextMonth13th.toISOString();
-}
-
-function getNextNFPTime(): string {
-  // NFP typically released first Friday of each month at 8:30 AM ET
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-
-  // Find first Friday
-  let firstFriday = new Date(year, month, 1, 8, 30);
-  while (firstFriday.getDay() !== 5) {
-    firstFriday.setDate(firstFriday.getDate() + 1);
-  }
-
-  if (firstFriday > now) {
-    return firstFriday.toISOString();
-  }
-
-  // Get next month's first Friday
-  firstFriday = new Date(year, month + 1, 1, 8, 30);
-  while (firstFriday.getDay() !== 5) {
-    firstFriday.setDate(firstFriday.getDate() + 1);
-  }
-  return firstFriday.toISOString();
-}
-
 function getTimeUntil(eventTime: string): {
   hours: number;
   minutes: number;
   isImminent: boolean;
   isSoon: boolean;
+  isPast: boolean;
 } {
   const now = new Date();
   const event = new Date(eventTime);
@@ -123,6 +45,7 @@ function getTimeUntil(eventTime: string): {
     minutes,
     isImminent: hours < 1 && minutes > 0, // Less than 1 hour away
     isSoon: hours < 24 && hours >= 1, // Less than 24 hours away
+    isPast: diffMs < 0,
   };
 }
 
@@ -134,39 +57,102 @@ export function HDEconomicEventWarning({
   const [events, setEvents] = useState<
     Array<EconomicEvent & { timeUntil: ReturnType<typeof getTimeUntil> }>
   >([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Filter events relevant to this ticker
-    const relevantEventNames = ticker ? TICKER_EVENT_RELEVANCE[ticker] || [] : [];
+  const fetchCalendarEvents = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    const now = new Date();
-    const upcoming = KNOWN_EVENTS.filter((event) => {
-      const eventDate = new Date(event.time);
-      const hoursUntil = (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+      // Fetch from our calendar API
+      const response = await fetch("/api/calendar/events?impact=CRITICAL,HIGH");
 
-      // Show events within next 48 hours
-      if (hoursUntil < 0 || hoursUntil > 48) return false;
-
-      // If ticker specified, filter by relevance
-      if (ticker && relevantEventNames.length > 0) {
-        return relevantEventNames.some(
-          (name) =>
-            event.name.toLowerCase().includes(name.toLowerCase()) ||
-            name.toLowerCase().includes(event.name.split(" ")[0].toLowerCase())
-        );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch calendar: ${response.status}`);
       }
 
-      // Show all critical/high impact events
-      return event.impact === "CRITICAL" || event.impact === "HIGH";
-    })
-      .map((event) => ({
-        ...event,
-        timeUntil: getTimeUntil(event.time),
-      }))
-      .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      const data = await response.json();
 
-    setEvents(upcoming);
+      if (!data.success || !data.events) {
+        throw new Error("Invalid calendar response");
+      }
+
+      const now = new Date();
+      const upcoming = (data.events as EconomicEvent[])
+        .filter((event) => {
+          const eventDate = new Date(event.datetime);
+          const hoursUntil = (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+          // Show events within next 48 hours and not past
+          if (hoursUntil < 0 || hoursUntil > 48) return false;
+
+          // If ticker specified, filter by relevance
+          if (ticker) {
+            return event.affectsSymbols?.some(
+              (symbol) => symbol.toUpperCase() === ticker.toUpperCase()
+            );
+          }
+
+          // Show all critical/high impact events
+          return event.impact === "CRITICAL" || event.impact === "HIGH";
+        })
+        .map((event) => ({
+          ...event,
+          timeUntil: getTimeUntil(event.datetime),
+        }))
+        .filter((event) => !event.timeUntil.isPast)
+        .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+
+      setEvents(upcoming);
+    } catch (err) {
+      console.error("[HDEconomicEventWarning] Error fetching calendar:", err);
+      setError(err instanceof Error ? err.message : "Failed to load calendar");
+    } finally {
+      setIsLoading(false);
+    }
   }, [ticker]);
+
+  useEffect(() => {
+    fetchCalendarEvents();
+
+    // Refresh every 5 minutes
+    const interval = setInterval(fetchCalendarEvents, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchCalendarEvents]);
+
+  // Update time countdown every minute
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setEvents((prev) =>
+        prev
+          .map((event) => ({
+            ...event,
+            timeUntil: getTimeUntil(event.datetime),
+          }))
+          .filter((event) => !event.timeUntil.isPast)
+      );
+    }, 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Loading state
+  if (isLoading && events.length === 0) {
+    if (compact) return null;
+    return (
+      <div className={cn("flex items-center gap-2 text-xs text-[var(--text-muted)]", className)}>
+        <Loader2 className="w-3 h-3 animate-spin" />
+        <span>Loading calendar...</span>
+      </div>
+    );
+  }
+
+  // Error state (silent in compact mode)
+  if (error && events.length === 0) {
+    if (compact) return null;
+    return null; // Don't show error, just hide component
+  }
 
   if (events.length === 0) {
     return null;
@@ -206,6 +192,9 @@ export function HDEconomicEventWarning({
       <div className="flex items-center gap-1.5 text-xs text-[var(--text-high)] font-semibold uppercase tracking-wide">
         <Calendar className="w-3.5 h-3.5" />
         <span>Economic Calendar</span>
+        <span className="text-[var(--text-muted)] font-normal normal-case ml-auto text-[10px]">
+          via Alpha Vantage
+        </span>
       </div>
 
       {/* Event List */}
@@ -267,7 +256,7 @@ export function HDEconomicEventWarning({
                     </span>
                   ) : (
                     <span>
-                      {new Date(event.time).toLocaleDateString("en-US", {
+                      {new Date(event.datetime).toLocaleDateString("en-US", {
                         weekday: "short",
                         month: "short",
                         day: "numeric",
