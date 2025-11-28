@@ -21,7 +21,7 @@ import {
   shouldShortCircuit,
   buildEmptyAggsResponse,
 } from "../lib/fallbackAggs.js";
-import { normalizeSymbolForMassive } from "../lib/symbolUtils.js";
+import { normalizeSymbolForMassive, isIndex } from "../lib/symbolUtils.js";
 import {
   cachedFetch,
   getCachedBars,
@@ -833,7 +833,8 @@ router.get("/bars", requireProxyToken, async (req, res) => {
       }));
       source = "database";
     } else {
-      // **STEP 2**: Database miss - fetch from Massive API
+      // **STEP 2**: Database miss - fetch from Massive API or Tradier fallback
+      const isIndexSymbol = isIndex(symbol);
       const massiveSymbol = normalizeSymbolForMassive(symbol);
 
       const path =
@@ -841,33 +842,93 @@ router.get("/bars", requireProxyToken, async (req, res) => {
         `/range/${multiplier}/${timespan}/${from}/${to}` +
         `?adjusted=${adjusted}&sort=${sort}&limit=${limit}`;
 
-      // Use cache with smart TTL (historical data cached longer)
-      const cacheKey = `bars:${symbol}:${timespan}:${multiplier}:${from}:${to}:${limit}`;
-      const data = (await cachedFetch(
-        cacheKey,
-        () => massiveFetch(path),
-        getCachedBars,
-        setCachedBars
-      )) as any;
+      try {
+        // Use cache with smart TTL (historical data cached longer)
+        const cacheKey = `bars:${symbol}:${timespan}:${multiplier}:${from}:${to}:${limit}`;
+        const data = (await cachedFetch(
+          cacheKey,
+          () => massiveFetch(path),
+          getCachedBars,
+          setCachedBars
+        )) as any;
 
-      // Normalize response shape
-      const results = Array.isArray(data?.results) ? data.results : [];
-      normalized = results.map((bar: any) => ({
-        timestamp: bar.t ? Math.floor(bar.t / 1000000) : 0, // Massive returns nanoseconds, convert to milliseconds
-        open: Number(bar.o) || 0,
-        high: Number(bar.h) || 0,
-        low: Number(bar.l) || 0,
-        close: Number(bar.c) || 0,
-        volume: Number(bar.v) || 0,
-        vwap: bar.vw ? Number(bar.vw) : undefined,
-        trades: bar.n ? Number(bar.n) : undefined,
-      }));
+        // Normalize response shape
+        const results = Array.isArray(data?.results) ? data.results : [];
+        normalized = results.map((bar: any) => ({
+          timestamp: bar.t || 0, // Massive returns milliseconds (Unix epoch)
+          open: Number(bar.o) || 0,
+          high: Number(bar.h) || 0,
+          low: Number(bar.l) || 0,
+          close: Number(bar.c) || 0,
+          volume: Number(bar.v) || 0,
+          vwap: bar.vw ? Number(bar.vw) : undefined,
+          trades: bar.n ? Number(bar.n) : undefined,
+        }));
 
-      // **STEP 3**: Store in database for future use (async, don't await)
-      if (results.length > 0) {
-        storeHistoricalBars(symbol, timeframe, results).catch((err) =>
-          console.warn("[API] Failed to store bars in database:", err)
-        );
+        // **STEP 3**: Store in database for future use (async, don't await)
+        if (results.length > 0) {
+          storeHistoricalBars(symbol, timeframe, results).catch((err) =>
+            console.warn("[API] Failed to store bars in database:", err)
+          );
+        }
+      } catch (massiveError: any) {
+        // **FALLBACK**: For stocks (non-indices), try Tradier if Massive fails
+        const errorMsg = String(massiveError?.message || massiveError || "").toLowerCase();
+        const isForbidden = errorMsg.includes("403") || errorMsg.includes("forbidden");
+
+        if (!isIndexSymbol && process.env.TRADIER_ACCESS_TOKEN) {
+          console.log(`[API] Massive failed for ${symbol} (${isForbidden ? "403 Forbidden" : "error"}), trying Tradier fallback...`);
+
+          try {
+            // Map timespan to Tradier intervals
+            const intervalMap: Record<string, string> = {
+              "minute": "1min",
+              "5minute": "5min",
+              "15minute": "15min",
+              "hour": "daily",
+              "day": "daily",
+            };
+            const tradierInterval = intervalMap[`${multiplier}${timespan}`] || intervalMap[timespan] || "5min";
+
+            const tradierBars = await tradierGetHistory(symbol, tradierInterval as any, from, to);
+            console.log(`[API] ✅ Tradier fallback succeeded: ${tradierBars.length} bars for ${symbol}`);
+
+            // Normalize Tradier response to match our format
+            normalized = tradierBars.map((bar: any) => ({
+              timestamp: bar.time * 1000, // Tradier returns seconds, convert to milliseconds
+              open: Number(bar.open) || 0,
+              high: Number(bar.high) || 0,
+              low: Number(bar.low) || 0,
+              close: Number(bar.close) || 0,
+              volume: Number(bar.volume) || 0,
+              vwap: undefined,
+              trades: undefined,
+            }));
+
+            source = "tradier-fallback";
+
+            // Store Tradier data in database too
+            if (tradierBars.length > 0) {
+              const tradierResults = tradierBars.map((bar: any) => ({
+                t: bar.time * 1000,
+                o: bar.open,
+                h: bar.high,
+                l: bar.low,
+                c: bar.close,
+                v: bar.volume,
+              }));
+              storeHistoricalBars(symbol, timeframe, tradierResults).catch((err) =>
+                console.warn("[API] Failed to store Tradier bars in database:", err)
+              );
+            }
+          } catch (tradierError) {
+            console.error(`[API] ❌ Tradier fallback also failed for ${symbol}:`, tradierError);
+            throw massiveError; // Re-throw original Massive error
+          }
+        } else {
+          // No fallback available or symbol is an index
+          throw massiveError;
+        }
       }
     }
 
