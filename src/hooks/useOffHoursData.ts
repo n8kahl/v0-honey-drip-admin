@@ -423,6 +423,8 @@ export function useOffHoursData(): OffHoursData {
         const data = await response.json();
         const bars = data.bars || [];
 
+        console.log(`[useOffHoursData] ${symbol}: Received ${bars.length} bars from API:`, bars.slice(0, 2));
+
         if (bars.length === 0) continue;
 
         const latestBar = bars[bars.length - 1];
@@ -514,10 +516,28 @@ export function useOffHoursData(): OffHoursData {
         // Format bars for chart (convert from OHLC format to chart format)
         // Sort by timestamp ascending and convert to YYYY-MM-DD format
         const chartBars = bars
-          .filter((bar) => bar.timestamp && bar.timestamp > 0) // Remove invalid timestamps
+          .filter((bar) => {
+            if (!bar || !bar.timestamp) {
+              console.warn(`[useOffHoursData] ${symbol}: Bar missing timestamp:`, bar);
+              return false;
+            }
+            if (bar.timestamp <= 0) {
+              console.warn(`[useOffHoursData] ${symbol}: Invalid timestamp (<=0):`, bar.timestamp);
+              return false;
+            }
+            return true;
+          })
           .sort((a, b) => a.timestamp - b.timestamp) // Sort ascending by timestamp
           .map((bar) => {
-            const date = new Date(bar.timestamp);
+            // Check if timestamp is in seconds (10 digits) vs milliseconds (13 digits)
+            // Timestamps in seconds are < 10000000000 (Sep 2001 in milliseconds)
+            let timestamp = bar.timestamp;
+            if (timestamp < 10000000000) {
+              // Timestamp is in seconds, convert to milliseconds
+              timestamp = timestamp * 1000;
+            }
+
+            const date = new Date(timestamp);
             const timeStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
 
             return {
@@ -529,7 +549,7 @@ export function useOffHoursData(): OffHoursData {
             };
           });
 
-        console.log(`[useOffHoursData] ${symbol}: Formatted ${chartBars.length} bars for chart:`, chartBars.slice(0, 2));
+        console.log(`[useOffHoursData] ${symbol}: Formatted ${chartBars.length} bars for chart (first bar: ${chartBars[0]?.time}):`, chartBars.slice(0, 2));
 
         levelsMap.set(symbol, {
           symbol,
