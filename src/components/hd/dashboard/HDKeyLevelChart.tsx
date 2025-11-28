@@ -86,16 +86,30 @@ export function HDKeyLevelChart({
     candlestickSeriesRef.current = candlestickSeries;
 
     // Set candlestick data if available
-    if (bars.length > 0) {
-      candlestickSeries.setData(
-        bars.map((bar) => ({
-          time: bar.time,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-        }))
-      );
+    if (bars && bars.length > 0) {
+      try {
+        // Ensure data is sorted by time ascending and has valid values
+        const validBars = bars
+          .filter((bar) => bar && bar.time && bar.open > 0 && bar.close > 0)
+          .sort((a, b) => {
+            // Sort by time string (YYYY-MM-DD format sorts correctly as strings)
+            return a.time.localeCompare(b.time);
+          })
+          .map((bar) => ({
+            time: bar.time,
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+          }));
+
+        if (validBars.length > 0) {
+          console.log('[HDKeyLevelChart] Setting', validBars.length, 'bars:', validBars);
+          candlestickSeries.setData(validBars);
+        }
+      } catch (error) {
+        console.error('[HDKeyLevelChart] Failed to set candlestick data:', error);
+      }
     }
 
     // Add horizontal price lines for each level

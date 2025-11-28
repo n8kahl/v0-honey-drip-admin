@@ -512,13 +512,22 @@ export function useOffHoursData(): OffHoursData {
         const setupBias = trend === "bullish" ? "long" : trend === "bearish" ? "short" : "neutral";
 
         // Format bars for chart (convert from OHLC format to chart format)
-        const chartBars = bars.map((bar) => ({
-          time: new Date(bar.timestamp).toISOString().split('T')[0], // Convert to YYYY-MM-DD
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-        }));
+        // Sort by timestamp ascending and convert to YYYY-MM-DD format
+        const chartBars = bars
+          .filter((bar) => bar.timestamp && bar.timestamp > 0) // Remove invalid timestamps
+          .sort((a, b) => a.timestamp - b.timestamp) // Sort ascending by timestamp
+          .map((bar) => {
+            const date = new Date(bar.timestamp);
+            const timeStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+
+            return {
+              time: timeStr,
+              open: bar.open,
+              high: bar.high,
+              low: bar.low,
+              close: bar.close,
+            };
+          });
 
         levelsMap.set(symbol, {
           symbol,
