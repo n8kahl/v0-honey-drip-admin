@@ -7,7 +7,7 @@
  * Color: Direction (green=long, red=short)
  */
 
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "../../../../lib/utils";
 import {
   ScatterChart,
@@ -31,6 +31,25 @@ export interface OpportunityMatrixProps {
 }
 
 export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityMatrixProps) {
+  // Mobile responsive state
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    // Check if we're in browser
+    if (typeof window === "undefined") return;
+
+    const checkMobile = () => window.innerWidth < 768;
+
+    // Set initial state
+    setIsMobile(checkMobile());
+
+    // Add resize listener
+    const handler = () => setIsMobile(checkMobile());
+    window.addEventListener("resize", handler);
+
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
   // Prepare data for scatter chart
   const chartData = useMemo(() => {
     return data.map((dot) => ({
@@ -40,22 +59,6 @@ export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityM
       z: dot.volatility * 10, // Scale for bubble size
     }));
   }, [data]);
-
-  // Mobile responsive: show table instead of chart
-  const [isMobile, setIsMobile] = useMemo(() => {
-    if (typeof window === "undefined") return [false, () => {}];
-
-    const checkMobile = () => window.innerWidth < 768;
-    const [mobile, setMobile] = useState(checkMobile());
-
-    useEffect(() => {
-      const handler = () => setMobile(checkMobile());
-      window.addEventListener("resize", handler);
-      return () => window.removeEventListener("resize", handler);
-    }, []);
-
-    return [mobile, setMobile];
-  }, []);
 
   if (data.length === 0) {
     return (
@@ -325,8 +328,5 @@ function CustomTooltip({ active, payload, onAddTicker }: any) {
     </div>
   );
 }
-
-// Add missing imports
-import { useState, useEffect } from "react";
 
 export default OpportunityMatrix;
