@@ -64,6 +64,7 @@ interface TradeStateMachineActions {
     contract: Contract,
     confluenceData?: { trend?: any; volatility?: any; liquidity?: any }
   ) => void;
+  handleActiveTradeClick: (trade: Trade, watchlist: Ticker[]) => void;
   handleSendAlert: (channelIds: string[], challengeIds: string[], comment?: string) => void;
   handleEnterAndAlert: (
     channelIds: string[],
@@ -204,6 +205,37 @@ export function useTradeStateMachine({
     setActiveTicker(ticker);
     setCurrentTrade(null);
     setTradeState("WATCHING");
+  }, []);
+
+  /**
+   * Handle clicking on an active (ENTERED) trade in the left rail.
+   * This properly sets up the middle column to display the trade cockpit.
+   */
+  const handleActiveTradeClick = useCallback((trade: Trade, watchlist: Ticker[]) => {
+    // Set the trade as current
+    setCurrentTrade(trade);
+    setTradeState(trade.state);
+
+    // Find and set the activeTicker so the chart renders
+    const ticker = watchlist.find((w) => w.symbol === trade.ticker);
+    if (ticker) {
+      setActiveTicker(ticker);
+    } else {
+      // If ticker not in watchlist, create a minimal ticker object
+      // This ensures charts can still render for the trade
+      setActiveTicker({
+        id: trade.ticker,
+        symbol: trade.ticker,
+        last: trade.currentPrice || trade.entryPrice || 0,
+        change: 0,
+        changePercent: 0,
+      });
+    }
+
+    // Close alert composer if open (we're viewing, not alerting)
+    setShowAlert(false);
+
+    console.log(`[TradeStateMachine] Active trade clicked: ${trade.ticker} (${trade.id})`);
   }, []);
 
   const handleContractSelect = useCallback(
@@ -1164,6 +1196,7 @@ export function useTradeStateMachine({
     actions: {
       handleTickerClick,
       handleContractSelect,
+      handleActiveTradeClick,
       handleSendAlert,
       handleEnterAndAlert,
       handleEnterTrade,

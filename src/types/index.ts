@@ -131,9 +131,19 @@ export interface Trade {
   updates: TradeUpdate[];
   discordChannels: string[];
   challenges: string[];
+  quantity?: number; // Number of contracts
   // Rich confluence data with factor breakdown
   confluence?: TradeConfluence;
   confluenceUpdatedAt?: Date;
+  // Entry snapshot data for trade analysis
+  ivAtEntry?: number; // IV at time of entry (detect IV crush)
+  deltaAtEntry?: number; // Delta at entry
+  underlyingAtEntry?: number; // Underlying price at entry
+  // Setup conditions snapshot for thesis validation
+  setupConditions?: SetupConditions;
+  originalSignalScore?: number; // Composite signal score at entry
+  // Trade notes for journal
+  notes?: string;
   // Legacy confluence fields (deprecated, use confluence.factors)
   legacyConfluence?: {
     trend?: string;
@@ -141,6 +151,29 @@ export interface Trade {
     liquidity?: string;
     strength?: string;
   };
+}
+
+// Setup conditions captured at trade entry for thesis validation
+export interface SetupConditions {
+  // Technical setup
+  mtfAlignment?: {
+    m1: "up" | "down" | "neutral";
+    m5: "up" | "down" | "neutral";
+    m15: "up" | "down" | "neutral";
+    m60: "up" | "down" | "neutral";
+  };
+  vwapPosition?: "above" | "below" | "at";
+  orbPosition?: "above_high" | "below_low" | "inside";
+  // Flow/sentiment
+  flowBias?: "bullish" | "bearish" | "neutral";
+  flowScore?: number;
+  // Market context
+  vixLevel?: number;
+  marketRegime?: "trending" | "ranging" | "volatile" | "choppy";
+  // Volume
+  relativeVolume?: number; // vs 20-day avg
+  // Captured at
+  capturedAt?: Date;
 }
 
 export interface TradeUpdate {

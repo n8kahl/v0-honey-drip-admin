@@ -174,6 +174,11 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 actions.setActiveTicker(ticker);
               }
             }}
+            onActiveTradeClick={(trade) => {
+              // Use the proper state machine handler for active trades
+              // This ensures chart renders by setting activeTicker
+              actions.handleActiveTradeClick(trade, watchlist);
+            }}
             onRemoveLoadedTrade={(trade) => {
               actions.setActiveTrades((prev) => prev.filter((t) => t.id !== trade.id));
               // If this was the current trade, clear it
@@ -258,6 +263,11 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 onEnterTrade={actions.handleEnterTrade}
                 onDiscard={actions.handleDiscard}
                 onAutoTrim={() => actions.handleTrim()}
+                onTrim={() => actions.handleTrim()}
+                onTrailStop={() => actions.handleTrailStop()}
+                onMoveSL={() => actions.handleUpdateSL()}
+                onAdd={() => actions.handleAdd()}
+                onExit={() => actions.handleExit()}
               />
             )}
         </div>

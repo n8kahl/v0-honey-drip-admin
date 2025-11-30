@@ -4,6 +4,7 @@ import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedLayout } from "./HDLoadedLayout";
 import { HDEnteredTradeCard } from "../hd/cards/HDEnteredTradeCard";
+import { HDActiveTradePanel } from "../hd/dashboard/HDActiveTradePanel";
 import { HDPanelFocusedTrade } from "../hd/dashboard/HDPanelFocusedTrade";
 import { HDPriceSparkline } from "../hd/charts/HDPriceSparkline";
 import { MobileWatermark } from "../MobileWatermark";
@@ -24,6 +25,12 @@ interface TradingWorkspaceProps {
   onEnterTrade: () => void;
   onDiscard: () => void;
   onAutoTrim?: () => void;
+  // Active trade action callbacks
+  onTrim?: () => void;
+  onTrailStop?: () => void;
+  onMoveSL?: () => void;
+  onAdd?: () => void;
+  onExit?: () => void;
 }
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
@@ -38,6 +45,11 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onEnterTrade,
   onDiscard,
   onAutoTrim,
+  onTrim,
+  onTrailStop,
+  onMoveSL,
+  onAdd,
+  onExit,
 }) => {
   const currentPrice = activeTicker
     ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
@@ -168,13 +180,17 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           />
         </div>
       )}
-      {/* Entered Trade Card with details */}
+      {/* Active Trade Panel - Full trade cockpit for ENTERED trades */}
       {tradeState === "ENTERED" && currentTrade && (
         <div className="p-4 lg:p-6 pt-0 pointer-events-auto relative z-10">
-          <HDEnteredTradeCard
+          <HDActiveTradePanel
             trade={currentTrade}
-            direction={currentTrade.contract.type === "C" ? "call" : "put"}
             onAutoTrim={onAutoTrim}
+            onTrim={onTrim}
+            onTrailStop={onTrailStop}
+            onMoveSL={onMoveSL}
+            onAdd={onAdd}
+            onExit={onExit}
           />
         </div>
       )}
