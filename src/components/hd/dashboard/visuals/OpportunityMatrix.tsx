@@ -7,7 +7,7 @@
  * Color: Direction (green=long, red=short)
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../../../lib/utils";
 import {
   ScatterChart,
@@ -21,6 +21,7 @@ import {
   ReferenceArea,
   Cell,
 } from "recharts";
+import type { TooltipProps } from "recharts";
 import { Target, TrendingUp, TrendingDown } from "lucide-react";
 import type { OpportunityDot } from "../../../../types/radar-visuals";
 
@@ -41,20 +42,20 @@ export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityM
     }));
   }, [data]);
 
-  // Mobile responsive: show table instead of chart
-  const [isMobile, setIsMobile] = useMemo(() => {
-    if (typeof window === "undefined") return [false, () => {}];
+  // Track viewport size to swap chart/table views responsively
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < 768;
+  });
 
-    const checkMobile = () => window.innerWidth < 768;
-    const [mobile, setMobile] = useState(checkMobile());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-    useEffect(() => {
-      const handler = () => setMobile(checkMobile());
-      window.addEventListener("resize", handler);
-      return () => window.removeEventListener("resize", handler);
-    }, []);
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile(); // Sync on mount in case of SSR
 
-    return [mobile, setMobile];
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   if (data.length === 0) {
@@ -260,7 +261,11 @@ export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityM
 }
 
 // Custom tooltip
-function CustomTooltip({ active, payload, onAddTicker }: any) {
+type OpportunityTooltipProps = TooltipProps<number, string> & {
+  onAddTicker?: (symbol: string) => void;
+};
+
+function CustomTooltip({ active, payload, onAddTicker }: OpportunityTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload as OpportunityDot;
@@ -325,8 +330,5 @@ function CustomTooltip({ active, payload, onAddTicker }: any) {
     </div>
   );
 }
-
-// Add missing imports
-import { useState, useEffect } from "react";
 
 export default OpportunityMatrix;
