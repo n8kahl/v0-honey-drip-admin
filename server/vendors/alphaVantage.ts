@@ -45,6 +45,46 @@ interface CacheEntry {
 const economicCalendarCache: CacheEntry | null = null;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache (events don't change frequently)
 
+/**
+ * Convert a calendar date to an instant representing the given wall-clock time
+ * in a specific timezone (default: America/New_York). This avoids server-local
+ * timezone skew when serializing to ISO strings.
+ */
+function setTimeInTimeZone(
+  date: Date,
+  hour: number,
+  minute: number,
+  timeZone = "America/New_York"
+): Date {
+  const utcCandidate = new Date(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), hour, minute, 0, 0)
+  );
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(utcCandidate);
+
+  const lookup = (type: string) => Number(parts.find((p) => p.type === type)?.value || 0);
+
+  return new Date(
+    Date.UTC(
+      lookup("year"),
+      lookup("month") - 1,
+      lookup("day"),
+      lookup("hour"),
+      lookup("minute"),
+      lookup("second")
+    )
+  );
+}
+
 // ============= Event Name Mapping =============
 
 // Map Alpha Vantage event names to our standardized names
@@ -315,10 +355,9 @@ function parseEventDateTime(date: string, time?: string): Date {
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = eventTime.split(":").map(Number);
 
-  // Create date in ET timezone (approximate - proper handling would use a timezone library)
-  const datetime = new Date(year, month - 1, day, hour, minute, 0);
-
-  return datetime;
+  // Create date in ET timezone (avoid server-local skew)
+  const baseDate = new Date(Date.UTC(year, month - 1, day));
+  return setTimeInTimeZone(baseDate, hour, minute);
 }
 
 /**
@@ -363,8 +402,7 @@ export function getFOMCSchedule(year: number): Date[] {
   const dates = FOMC_DATES[year] || [];
   return dates.map((d) => {
     const date = new Date(d);
-    date.setHours(14, 0, 0, 0); // FOMC announces at 2:00 PM ET
-    return date;
+    return setTimeInTimeZone(date, 14, 0); // FOMC announces at 2:00 PM ET
   });
 }
 
@@ -382,8 +420,7 @@ export function getCPISchedule(year: number, month: number): Date | null {
     if (date.getDate() >= 10 && date.getDate() <= 15) {
       if (date.getDay() >= 2 && date.getDay() <= 4) {
         // Tue-Thu
-        date.setHours(8, 30, 0, 0);
-        return date;
+        return setTimeInTimeZone(date, 8, 30);
       }
     }
     date.setDate(date.getDate() + 1);
@@ -405,8 +442,7 @@ export function getNFPDate(year: number, month: number): Date {
     date.setDate(date.getDate() + 1);
   }
 
-  date.setHours(8, 30, 0, 0);
-  return date;
+  return setTimeInTimeZone(date, 8, 30);
 }
 
 /**
@@ -421,8 +457,7 @@ export function getJoblessClaimsDates(startDate: Date, endDate: Date): Date[] {
     if (current.getDay() === 4) {
       // Thursday
       const date = new Date(current);
-      date.setHours(8, 30, 0, 0);
-      dates.push(date);
+      dates.push(setTimeInTimeZone(date, 8, 30));
     }
     current.setDate(current.getDate() + 1);
   }
@@ -716,13 +751,13 @@ export async function buildUnifiedCalendar(
     const earnings = await getEarningsForSymbols(watchlistSymbols, daysAhead);
     for (const e of earnings) {
       const date = new Date(e.reportDate);
-      date.setHours(16, 0, 0, 0); // Default to after-hours
+      const earningsDatetime = setTimeInTimeZone(date, 16, 0); // Default to after-hours ET
 
       events.push({
         id: `earnings_${e.symbol}_${e.reportDate}`,
         type: "earnings",
         name: `${e.symbol} Earnings`,
-        datetime: date,
+        datetime: earningsDatetime,
         impact: "HIGH",
         category: "EARNINGS",
         affectsSymbols: [e.symbol],
