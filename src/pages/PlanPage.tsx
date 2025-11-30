@@ -3,17 +3,15 @@
 /**
  * PlanPage - Mission Playbook for Day Traders
  *
- * Replaces the Radar tab with an action-oriented planning interface.
- *
  * Two modes:
  * - Session Mode (market hours): Real-time strategy status per symbol
- * - Playbook Mode (off-hours): Pre-planned setups with decision trees
+ * - Playbook Mode (off-hours): Analyze current market, generate Monday setups
  *
  * Key features:
- * - Letter grades (A+/A/B/C) instead of 0-100 scores
- * - Per-symbol strategy breakdown (ACTIVE/FORMING/WAITING)
- * - Pre-calculated trigger levels for market open
- * - Bull/Bear/Neutral cases for each setup
+ * - Uses useOffHoursData to analyze watchlist symbols
+ * - Shows key levels (PDH/PDL, Week H/L, VWAP, pivots)
+ * - Generates setup scenarios (breakout, breakdown, bounce)
+ * - Countdown to next market session
  */
 
 import { Suspense, useState, useMemo } from "react";
@@ -24,6 +22,11 @@ import { HDWeeklyCalendar } from "../components/hd/dashboard/HDWeeklyCalendar";
 import { HDEconomicEventWarning } from "../components/hd/dashboard/HDEconomicEventWarning";
 import { useAuth } from "../contexts/AuthContext";
 import { useMarketSession } from "../hooks/useMarketSession";
+import {
+  useOffHoursData,
+  type SetupScenario,
+  type SymbolKeyLevels,
+} from "../hooks/useOffHoursData";
 import { useCompositeSignals } from "../hooks/useCompositeSignals";
 import { useSetupGradingBatch } from "../hooks/useSetupGrading";
 import { useMarketStore } from "../stores";
@@ -36,40 +39,16 @@ import {
   Minus,
   Calendar,
   Clock,
+  TrendingUp,
+  TrendingDown,
+  Target,
   AlertTriangle,
+  RefreshCw,
+  ChevronRight,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
-
-/**
- * Get the last trading session date (Friday if weekend, yesterday if weekday)
- */
-function getLastSessionDate(): Date {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-
-  // Sunday = 0, Saturday = 6
-  if (dayOfWeek === 0) {
-    // Sunday: go back 2 days to Friday
-    return new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-  } else if (dayOfWeek === 6) {
-    // Saturday: go back 1 day to Friday
-    return new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
-  } else {
-    // Weekday: go back 1 day
-    return new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
-  }
-}
-
-/**
- * Format date for display (e.g., "Friday, Nov 29")
- */
-function formatSessionDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 type PlanMode = "auto" | "session" | "playbook";
 
@@ -84,43 +63,22 @@ export default function PlanPage() {
   const watchlist = useMarketStore((s) => s.watchlist);
   const watchlistSymbols = useMemo(() => watchlist.map((t) => t.symbol), [watchlist]);
 
-  // Determine effective mode early so we can use it for data fetching
+  // Determine effective mode
   const isOffHours = session === "CLOSED" || session === "PRE" || session === "POST";
   const effectiveMode = mode === "auto" ? (isOffHours ? "playbook" : "session") : mode;
 
-  // Get last session date for weekend display
-  const lastSessionDate = useMemo(() => getLastSessionDate(), []);
-  const lastSessionDateFormatted = useMemo(
-    () => formatSessionDate(lastSessionDate),
-    [lastSessionDate]
-  );
+  // Off-hours data for playbook mode (key levels, setup scenarios)
+  const {
+    futures,
+    keyLevelsBySymbol,
+    setupScenarios,
+    countdown,
+    loading: offHoursLoading,
+    error: offHoursError,
+    refresh: refreshOffHours,
+  } = useOffHoursData();
 
-  // Calculate stable date range for fetching signals
-  // Using timestamp to avoid Date object reference changes
-  const fromDateTimestamp = useMemo(() => {
-    if (effectiveMode === "playbook") {
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      threeDaysAgo.setHours(0, 0, 0, 0);
-      return threeDaysAgo.getTime();
-    }
-    return null;
-  }, [effectiveMode]);
-
-  // Memoize filters to prevent infinite re-renders
-  const signalFilters = useMemo(() => {
-    if (effectiveMode === "playbook" && fromDateTimestamp) {
-      return {
-        status: ["ACTIVE", "EXPIRED"] as string[],
-        fromDate: new Date(fromDateTimestamp),
-      };
-    }
-    return undefined;
-  }, [effectiveMode, fromDateTimestamp]);
-
-  // Load composite signals
-  // In playbook mode: fetch all signals (including expired) from last 3 days
-  // In session mode: only fetch ACTIVE signals
+  // Composite signals for session mode
   const {
     signals: allSignals,
     activeSignals,
@@ -128,36 +86,26 @@ export default function PlanPage() {
   } = useCompositeSignals({
     userId,
     autoSubscribe: true,
-    filters: signalFilters,
   });
 
-  // In playbook mode, use all signals (including expired); in session mode, only active
-  const signalsToDisplay = effectiveMode === "playbook" ? allSignals : activeSignals;
-
-  // Grade all signals
+  const signalsToDisplay = effectiveMode === "session" ? activeSignals : [];
   const gradedSignals = useSetupGradingBatch(signalsToDisplay);
 
-  // Group signals by symbol
+  // Group signals by symbol for session mode
   const signalsBySymbol = useMemo(() => {
     const grouped: Record<string, CompositeSignal[]> = {};
-
-    // Initialize with all watchlist symbols
     for (const symbol of watchlistSymbols) {
       grouped[symbol] = [];
     }
-
-    // Add signals to their symbols
     for (const signal of signalsToDisplay) {
       if (!grouped[signal.symbol]) {
         grouped[signal.symbol] = [];
       }
       grouped[signal.symbol].push(signal);
     }
-
     return grouped;
   }, [signalsToDisplay, watchlistSymbols]);
 
-  // Get symbols with signals (sorted by number of active signals)
   const symbolsWithSignals = useMemo(() => {
     return Object.entries(signalsBySymbol)
       .map(([symbol, signals]) => ({
@@ -168,7 +116,6 @@ export default function PlanPage() {
       .sort((a, b) => b.activeCount - a.activeCount);
   }, [signalsBySymbol]);
 
-  // Count by tier
   const tierCounts = useMemo(() => {
     const counts = { aTier: 0, bTier: 0, cTier: 0 };
     for (const { grading } of gradedSignals) {
@@ -179,13 +126,16 @@ export default function PlanPage() {
     return counts;
   }, [gradedSignals]);
 
-  // Handle strategy click - navigate to trading workspace
   const handleStrategyClick = (signal: CompositeSignal) => {
-    // Navigate to live tab with this symbol/signal context
     navigate(`/?symbol=${signal.symbol}&signal=${signal.id}`);
   };
 
-  const isLoading = sessionLoading || signalsLoading;
+  const handleSymbolClick = (symbol: string) => {
+    navigate(`/?symbol=${symbol}`);
+  };
+
+  const isLoading =
+    sessionLoading || (effectiveMode === "playbook" ? offHoursLoading : signalsLoading);
 
   return (
     <AppLayout>
@@ -200,7 +150,7 @@ export default function PlanPage() {
                 <p className="text-sm text-[var(--text-muted)]">
                   {effectiveMode === "session"
                     ? "Live strategy status per symbol"
-                    : "Pre-planned setups for next session"}
+                    : "Analyze market & prep for next session"}
                 </p>
               </div>
             </div>
@@ -209,64 +159,6 @@ export default function PlanPage() {
             <ModeToggle mode={mode} setMode={setMode} isOffHours={isOffHours} session={session} />
           </div>
 
-          {/* Signal Summary Bar */}
-          {!isLoading && signalsToDisplay.length > 0 && (
-            <div className="flex items-center gap-4 p-3 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-[var(--text-muted)]">
-                  {effectiveMode === "playbook" ? "Setups from Last Session:" : "Active Signals:"}
-                </span>
-                <span className="font-bold text-[var(--text-high)]">{signalsToDisplay.length}</span>
-              </div>
-
-              {/* Last session date (playbook mode) */}
-              {effectiveMode === "playbook" && (
-                <>
-                  <div className="h-4 w-px bg-[var(--border-hairline)]" />
-                  <div className="flex items-center gap-1.5 text-purple-400">
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span className="text-xs font-medium">{lastSessionDateFormatted}</span>
-                  </div>
-                </>
-              )}
-
-              <div className="h-4 w-px bg-[var(--border-hairline)]" />
-
-              {/* Grade breakdown */}
-              <div className="flex items-center gap-3">
-                {tierCounts.aTier > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-green-500/20 text-green-400">
-                      A
-                    </span>
-                    <span className="text-sm text-[var(--text-high)]">{tierCounts.aTier}</span>
-                  </div>
-                )}
-                {tierCounts.bTier > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-yellow-500/20 text-yellow-400">
-                      B
-                    </span>
-                    <span className="text-sm text-[var(--text-high)]">{tierCounts.bTier}</span>
-                  </div>
-                )}
-                {tierCounts.cTier > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-zinc-500/20 text-zinc-400">
-                      C
-                    </span>
-                    <span className="text-sm text-[var(--text-muted)]">{tierCounts.cTier}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1" />
-
-              {/* Session bias indicator */}
-              <SessionBiasIndicator session={session} />
-            </div>
-          )}
-
           {/* Upcoming Events Banner */}
           <HDEconomicEventWarning compact />
 
@@ -274,96 +166,23 @@ export default function PlanPage() {
           {isLoading ? (
             <PlanLoading />
           ) : effectiveMode === "session" ? (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              {/* Main content - symbol strategy rows */}
-              <div className="lg:col-span-8">
-                <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
-                  {/* Section header */}
-                  <div className="px-4 py-3 bg-[var(--brand-primary)]">
-                    <h2 className="text-sm font-bold text-black uppercase tracking-wide">
-                      Session Strategy Status
-                    </h2>
-                  </div>
-
-                  {/* Symbol rows */}
-                  {symbolsWithSignals.length > 0 ? (
-                    symbolsWithSignals.map(({ symbol, signals }) => (
-                      <SymbolStrategyRow
-                        key={symbol}
-                        symbol={symbol}
-                        signals={signals}
-                        onStrategyClick={handleStrategyClick}
-                      />
-                    ))
-                  ) : (
-                    <div className="p-8 text-center">
-                      <p className="text-[var(--text-muted)]">
-                        No signals detected. Add symbols to your watchlist or wait for setups to
-                        form.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Sidebar */}
-              <div className="lg:col-span-4 space-y-4">
-                {/* Top A+ Setups */}
-                {tierCounts.aTier > 0 && (
-                  <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
-                    <div className="px-4 py-3 bg-green-500/20 border-b border-[var(--border-hairline)]">
-                      <h3 className="text-sm font-bold text-green-400 uppercase tracking-wide">
-                        A-Tier Setups ({tierCounts.aTier})
-                      </h3>
-                    </div>
-                    <div className="p-3 space-y-2">
-                      {gradedSignals
-                        .filter((g) => g.grading.tier <= 3)
-                        .slice(0, 5)
-                        .map(({ signal, grading }) => (
-                          <button
-                            key={signal.id}
-                            onClick={() => handleStrategyClick(signal)}
-                            className="w-full flex items-center justify-between p-2 rounded bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors text-left"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={cn(
-                                  "px-1.5 py-0.5 text-[10px] font-bold rounded",
-                                  grading.bgColor,
-                                  grading.color
-                                )}
-                              >
-                                {grading.grade}
-                              </span>
-                              <span className="text-sm font-medium text-[var(--text-high)]">
-                                {signal.symbol}
-                              </span>
-                              <span className="text-xs text-[var(--text-muted)]">
-                                {signal.direction === "LONG" ? "↑" : "↓"}
-                              </span>
-                            </div>
-                            <span className="text-xs font-mono text-[var(--text-muted)]">
-                              R:R {signal.riskReward?.toFixed(1) ?? "-"}
-                            </span>
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Weekly Calendar */}
-                <HDWeeklyCalendar maxEvents={6} />
-              </div>
-            </div>
-          ) : (
-            /* Playbook Mode - Show setup tiers */
-            <PlaybookView
+            /* Session Mode - Live signals */
+            <SessionView
+              symbolsWithSignals={symbolsWithSignals}
               gradedSignals={gradedSignals}
-              onStrategyClick={handleStrategyClick}
               tierCounts={tierCounts}
-              lastSessionDate={lastSessionDateFormatted}
-              hasNoSignals={signalsToDisplay.length === 0}
+              onStrategyClick={handleStrategyClick}
+            />
+          ) : (
+            /* Playbook Mode - Weekend Analysis */
+            <PlaybookView
+              futures={futures}
+              keyLevelsBySymbol={keyLevelsBySymbol}
+              setupScenarios={setupScenarios}
+              countdown={countdown}
+              error={offHoursError}
+              onRefresh={refreshOffHours}
+              onSymbolClick={handleSymbolClick}
             />
           )}
         </div>
@@ -372,229 +191,481 @@ export default function PlanPage() {
   );
 }
 
-// Playbook view for off-hours
-function PlaybookView({
+// Session view for market hours
+function SessionView({
+  symbolsWithSignals,
   gradedSignals,
-  onStrategyClick,
   tierCounts,
-  lastSessionDate,
-  hasNoSignals,
+  onStrategyClick,
 }: {
+  symbolsWithSignals: Array<{ symbol: string; signals: CompositeSignal[]; activeCount: number }>;
   gradedSignals: Array<{ signal: CompositeSignal; grading: any }>;
-  onStrategyClick: (signal: CompositeSignal) => void;
   tierCounts: { aTier: number; bTier: number; cTier: number };
-  lastSessionDate: string;
-  hasNoSignals: boolean;
+  onStrategyClick: (signal: CompositeSignal) => void;
 }) {
-  // Show empty state when no signals found
-  if (hasNoSignals) {
-    return (
-      <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)] p-8">
-        <div className="text-center max-w-md mx-auto">
-          <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
-            <Moon className="w-8 h-8 text-purple-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-[var(--text-high)] mb-2">
-            No Signals from Last Session
-          </h3>
-          <p className="text-sm text-[var(--text-muted)] mb-4">
-            The composite scanner didn't detect any setups during the {lastSessionDate} session, or
-            signals have expired.
-          </p>
-
-          {/* What to do next */}
-          <div className="bg-[var(--surface-2)] rounded-lg p-4 text-left space-y-3">
-            <h4 className="text-sm font-medium text-[var(--text-high)] flex items-center gap-2">
-              <Clock className="w-4 h-4 text-purple-400" />
-              Prep for Next Session
-            </h4>
-            <ul className="text-xs text-[var(--text-muted)] space-y-2">
-              <li className="flex items-start gap-2">
-                <span className="text-green-400">•</span>
-                <span>Review your watchlist for Monday's potential setups</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-yellow-400">•</span>
-                <span>Check the Weekly Calendar for economic events</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-blue-400">•</span>
-                <span>Mark key support/resistance levels on your charts</span>
-              </li>
-            </ul>
-          </div>
-
-          <p className="text-xs text-[var(--text-muted)] mt-4">
-            <AlertTriangle className="w-3 h-3 inline mr-1" />
-            Signals are generated during market hours (9:30am - 4:00pm ET)
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* A-Tier Column */}
-      <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
-        <div className="px-4 py-3 bg-green-500/20 border-b border-[var(--border-hairline)]">
-          <h3 className="text-sm font-bold text-green-400 uppercase tracking-wide">
-            A-Tier ({tierCounts.aTier})
-          </h3>
-          <p className="text-xs text-green-400/70 mt-0.5">Size Up / Full Size</p>
-        </div>
-        <div className="p-3 space-y-2">
-          {gradedSignals
-            .filter((g) => g.grading.tier <= 3)
-            .map(({ signal, grading }) => (
-              <SetupCardCompact
-                key={signal.id}
-                signal={signal}
-                grading={grading}
-                onClick={() => onStrategyClick(signal)}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="lg:col-span-8">
+        <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
+          <div className="px-4 py-3 bg-[var(--brand-primary)]">
+            <h2 className="text-sm font-bold text-black uppercase tracking-wide">
+              Session Strategy Status
+            </h2>
+          </div>
+          {symbolsWithSignals.length > 0 ? (
+            symbolsWithSignals.map(({ symbol, signals }) => (
+              <SymbolStrategyRow
+                key={symbol}
+                symbol={symbol}
+                signals={signals}
+                onStrategyClick={onStrategyClick}
               />
-            ))}
-          {tierCounts.aTier === 0 && (
-            <p className="text-sm text-[var(--text-muted)] italic text-center py-4">
-              No A-tier setups
-            </p>
+            ))
+          ) : (
+            <div className="p-8 text-center">
+              <p className="text-[var(--text-muted)]">
+                No signals detected. Add symbols to your watchlist or wait for setups to form.
+              </p>
+            </div>
           )}
         </div>
       </div>
 
-      {/* B-Tier Column */}
-      <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
-        <div className="px-4 py-3 bg-yellow-500/20 border-b border-[var(--border-hairline)]">
-          <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-wide">
-            B-Tier ({tierCounts.bTier})
-          </h3>
-          <p className="text-xs text-yellow-400/70 mt-0.5">Reduced / Small</p>
-        </div>
-        <div className="p-3 space-y-2">
-          {gradedSignals
-            .filter((g) => g.grading.tier === 4 || g.grading.tier === 5)
-            .map(({ signal, grading }) => (
-              <SetupCardCompact
-                key={signal.id}
-                signal={signal}
-                grading={grading}
-                onClick={() => onStrategyClick(signal)}
-              />
-            ))}
-          {tierCounts.bTier === 0 && (
-            <p className="text-sm text-[var(--text-muted)] italic text-center py-4">
-              No B-tier setups
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* C-Tier / Skip Column */}
-      <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
-        <div className="px-4 py-3 bg-zinc-500/20 border-b border-[var(--border-hairline)]">
-          <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wide">
-            Skip ({tierCounts.cTier})
-          </h3>
-          <p className="text-xs text-zinc-400/70 mt-0.5">Insufficient confluence</p>
-        </div>
-        <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
-          {gradedSignals
-            .filter((g) => g.grading.tier === 6)
-            .map(({ signal, grading }) => (
-              <SetupCardCompact
-                key={signal.id}
-                signal={signal}
-                grading={grading}
-                onClick={() => onStrategyClick(signal)}
-                muted
-              />
-            ))}
-          {tierCounts.cTier === 0 && (
-            <p className="text-sm text-[var(--text-muted)] italic text-center py-4">
-              No C-tier setups
-            </p>
-          )}
-        </div>
+      <div className="lg:col-span-4 space-y-4">
+        {tierCounts.aTier > 0 && (
+          <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
+            <div className="px-4 py-3 bg-green-500/20 border-b border-[var(--border-hairline)]">
+              <h3 className="text-sm font-bold text-green-400 uppercase tracking-wide">
+                A-Tier Setups ({tierCounts.aTier})
+              </h3>
+            </div>
+            <div className="p-3 space-y-2">
+              {gradedSignals
+                .filter((g) => g.grading.tier <= 3)
+                .slice(0, 5)
+                .map(({ signal, grading }) => (
+                  <button
+                    key={signal.id}
+                    onClick={() => onStrategyClick(signal)}
+                    className="w-full flex items-center justify-between p-2 rounded bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "px-1.5 py-0.5 text-[10px] font-bold rounded",
+                          grading.bgColor,
+                          grading.color
+                        )}
+                      >
+                        {grading.grade}
+                      </span>
+                      <span className="text-sm font-medium text-[var(--text-high)]">
+                        {signal.symbol}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {signal.direction === "LONG" ? "↑" : "↓"}
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono text-[var(--text-muted)]">
+                      R:R {signal.riskReward?.toFixed(1) ?? "-"}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+        <HDWeeklyCalendar maxEvents={6} />
       </div>
     </div>
   );
 }
 
-// Compact setup card for tier lists
-function SetupCardCompact({
-  signal,
-  grading,
-  onClick,
-  muted = false,
+// Playbook view for off-hours - THIS IS THE KEY CHANGE
+function PlaybookView({
+  futures,
+  keyLevelsBySymbol,
+  setupScenarios,
+  countdown,
+  error,
+  onRefresh,
+  onSymbolClick,
 }: {
-  signal: CompositeSignal;
-  grading: any;
-  onClick: () => void;
-  muted?: boolean;
+  futures: any;
+  keyLevelsBySymbol: Map<string, SymbolKeyLevels>;
+  setupScenarios: SetupScenario[];
+  countdown: { nextSessionLabel: string; timeRemaining: string };
+  error: string | null;
+  onRefresh: () => void;
+  onSymbolClick: (symbol: string) => void;
 }) {
+  // Group scenarios by confidence
+  const highConfidence = setupScenarios.filter((s) => s.confidence === "high");
+  const mediumConfidence = setupScenarios.filter((s) => s.confidence === "medium");
+  const lowConfidence = setupScenarios.filter((s) => s.confidence === "low");
+
+  const hasData = keyLevelsBySymbol.size > 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Market Status Bar */}
+      <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+        <div className="flex items-center gap-2">
+          <Moon className="w-5 h-5 text-purple-400" />
+          <div>
+            <div className="text-sm font-medium text-[var(--text-high)]">
+              {countdown.nextSessionLabel}
+            </div>
+            <div className="text-lg font-bold text-purple-400 font-mono">
+              {countdown.timeRemaining}
+            </div>
+          </div>
+        </div>
+
+        <div className="h-10 w-px bg-[var(--border-hairline)]" />
+
+        {/* Futures snapshot */}
+        {futures && (
+          <>
+            <div className="flex items-center gap-4">
+              <div>
+                <div className="text-xs text-[var(--text-muted)]">ES</div>
+                <div
+                  className={cn(
+                    "text-sm font-bold",
+                    futures.es.change >= 0 ? "text-green-400" : "text-red-400"
+                  )}
+                >
+                  {futures.es.change >= 0 ? "+" : ""}
+                  {futures.es.changePercent.toFixed(2)}%
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--text-muted)]">NQ</div>
+                <div
+                  className={cn(
+                    "text-sm font-bold",
+                    futures.nq.change >= 0 ? "text-green-400" : "text-red-400"
+                  )}
+                >
+                  {futures.nq.change >= 0 ? "+" : ""}
+                  {futures.nq.changePercent.toFixed(2)}%
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--text-muted)]">VIX</div>
+                <div
+                  className={cn(
+                    "text-sm font-bold",
+                    futures.vix.level === "low"
+                      ? "text-green-400"
+                      : futures.vix.level === "normal"
+                        ? "text-yellow-400"
+                        : futures.vix.level === "elevated"
+                          ? "text-orange-400"
+                          : "text-red-400"
+                  )}
+                >
+                  {futures.vix.value.toFixed(1)}
+                </div>
+              </div>
+            </div>
+            <div className="h-10 w-px bg-[var(--border-hairline)]" />
+          </>
+        )}
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-[var(--text-muted)]">
+            {keyLevelsBySymbol.size} symbols analyzed
+          </span>
+          <span className="text-[var(--brand-primary)]">•</span>
+          <span className="text-sm text-[var(--text-muted)]">
+            {setupScenarios.length} setups found
+          </span>
+        </div>
+
+        <div className="flex-1" />
+
+        <button
+          onClick={onRefresh}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors text-sm text-[var(--text-high)]"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
+      </div>
+
+      {/* Error display */}
+      {error && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
+
+      {/* No data state */}
+      {!hasData && !error && (
+        <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)] p-8">
+          <div className="text-center max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
+              <Target className="w-8 h-8 text-purple-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-[var(--text-high)] mb-2">
+              Add Symbols to Your Watchlist
+            </h3>
+            <p className="text-sm text-[var(--text-muted)] mb-4">
+              Add SPY, QQQ, or your favorite tickers to see key levels and potential setups for
+              Monday.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Main content grid */}
+      {hasData && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column - Setup Scenarios */}
+          <div className="lg:col-span-8 space-y-4">
+            {/* High Confidence Setups */}
+            <SetupTierCard
+              title="High Confidence Setups"
+              subtitle="Strong technical confluence"
+              scenarios={highConfidence}
+              color="green"
+              onSymbolClick={onSymbolClick}
+            />
+
+            {/* Medium Confidence */}
+            <SetupTierCard
+              title="Medium Confidence"
+              subtitle="Watch for confirmation"
+              scenarios={mediumConfidence}
+              color="yellow"
+              onSymbolClick={onSymbolClick}
+            />
+
+            {/* Low Confidence - collapsed */}
+            {lowConfidence.length > 0 && (
+              <SetupTierCard
+                title="Low Confidence"
+                subtitle="Needs more confluence"
+                scenarios={lowConfidence}
+                color="zinc"
+                onSymbolClick={onSymbolClick}
+                collapsed
+              />
+            )}
+          </div>
+
+          {/* Right Column - Symbol Key Levels */}
+          <div className="lg:col-span-4 space-y-4">
+            <div className="rounded-lg border border-[var(--border-hairline)] overflow-hidden bg-[var(--surface-1)]">
+              <div className="px-4 py-3 bg-blue-500/20 border-b border-[var(--border-hairline)]">
+                <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wide">
+                  Key Levels by Symbol
+                </h3>
+              </div>
+              <div className="divide-y divide-[var(--border-hairline)] max-h-[500px] overflow-y-auto">
+                {Array.from(keyLevelsBySymbol.entries()).map(([symbol, data]) => (
+                  <SymbolKeyLevelsCard
+                    key={symbol}
+                    symbol={symbol}
+                    data={data}
+                    onClick={() => onSymbolClick(symbol)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <HDWeeklyCalendar maxEvents={6} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Setup tier card component
+function SetupTierCard({
+  title,
+  subtitle,
+  scenarios,
+  color,
+  onSymbolClick,
+  collapsed = false,
+}: {
+  title: string;
+  subtitle: string;
+  scenarios: SetupScenario[];
+  color: "green" | "yellow" | "zinc";
+  onSymbolClick: (symbol: string) => void;
+  collapsed?: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(!collapsed);
+
+  const colorClasses = {
+    green: { bg: "bg-green-500/20", text: "text-green-400", border: "border-green-500/20" },
+    yellow: { bg: "bg-yellow-500/20", text: "text-yellow-400", border: "border-yellow-500/20" },
+    zinc: { bg: "bg-zinc-500/20", text: "text-zinc-400", border: "border-zinc-500/20" },
+  };
+
+  const colors = colorClasses[color];
+
+  if (scenarios.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cn("rounded-lg border overflow-hidden bg-[var(--surface-1)]", colors.border)}>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={cn("w-full px-4 py-3 flex items-center justify-between", colors.bg)}
+      >
+        <div>
+          <h3 className={cn("text-sm font-bold uppercase tracking-wide", colors.text)}>
+            {title} ({scenarios.length})
+          </h3>
+          <p className={cn("text-xs mt-0.5 opacity-70", colors.text)}>{subtitle}</p>
+        </div>
+        <ChevronRight
+          className={cn("w-5 h-5 transition-transform", colors.text, isExpanded && "rotate-90")}
+        />
+      </button>
+
+      {isExpanded && (
+        <div className="p-3 space-y-2">
+          {scenarios.map((scenario) => (
+            <ScenarioCard
+              key={scenario.id}
+              scenario={scenario}
+              onClick={() => onSymbolClick(scenario.symbol)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Individual scenario card
+function ScenarioCard({ scenario, onClick }: { scenario: SetupScenario; onClick: () => void }) {
+  const isLong = scenario.direction === "long";
+
   return (
     <button
       onClick={onClick}
-      className={cn(
-        "w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left",
-        muted
-          ? "bg-[var(--surface-2)] opacity-50 hover:opacity-70"
-          : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]"
-      )}
+      className="w-full p-3 rounded-lg bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors text-left"
     >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "px-1.5 py-0.5 text-[10px] font-bold rounded",
-            grading.bgColor,
-            grading.color
-          )}
-        >
-          {grading.grade}
-        </span>
-        <div>
-          <div className="flex items-center gap-1">
-            <span className="text-sm font-medium text-[var(--text-high)]">{signal.symbol}</span>
-            <span className="text-xs text-[var(--text-muted)]">
-              {signal.direction === "LONG" ? "↑" : "↓"}
-            </span>
-          </div>
-          <div className="text-[10px] text-[var(--text-muted)] font-mono">
-            Entry: ${signal.entryPrice?.toFixed(2) ?? "-"}
-          </div>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-[var(--text-high)]">{scenario.symbol}</span>
+          <span
+            className={cn(
+              "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-bold",
+              isLong ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+            )}
+          >
+            {isLong ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+            {scenario.type.replace("_", " ").toUpperCase()}
+          </span>
+        </div>
+        <div className="text-xs font-mono text-[var(--text-muted)]">
+          R:R {scenario.riskReward.toFixed(1)}
         </div>
       </div>
-      <div className="text-right">
-        <div className="text-xs font-mono text-[var(--text-muted)]">
-          R:R {signal.riskReward?.toFixed(1) ?? "-"}
+
+      <div className="text-xs text-[var(--text-muted)] mb-2">
+        <span className="font-medium text-[var(--text-high)]">Trigger:</span> {scenario.trigger}
+      </div>
+
+      <div className="flex items-center gap-4 text-xs font-mono">
+        <div>
+          <span className="text-[var(--text-muted)]">Entry:</span>{" "}
+          <span className="text-[var(--text-high)]">${scenario.entry.toFixed(2)}</span>
         </div>
-        <div className="text-[10px] text-[var(--text-muted)]">{grading.sizeLabel}</div>
+        <div>
+          <span className="text-[var(--text-muted)]">Stop:</span>{" "}
+          <span className="text-red-400">${scenario.stop.toFixed(2)}</span>
+        </div>
+        <div>
+          <span className="text-[var(--text-muted)]">Target:</span>{" "}
+          <span className="text-green-400">${scenario.targets[0]?.toFixed(2) ?? "-"}</span>
+        </div>
       </div>
     </button>
   );
 }
 
-// Session bias indicator
-function SessionBiasIndicator({ session }: { session: string }) {
-  // Simple bias based on session
-  // In production, this would use ES futures, VIX, etc.
-  const bias = session === "OPEN" ? "neutral" : "prep";
-
+// Symbol key levels card
+function SymbolKeyLevelsCard({
+  symbol,
+  data,
+  onClick,
+}: {
+  symbol: string;
+  data: SymbolKeyLevels;
+  onClick: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-[var(--text-muted)]">Bias:</span>
-      {bias === "neutral" ? (
-        <div className="flex items-center gap-1 text-zinc-400">
-          <Minus className="w-3 h-3" />
-          <span className="text-xs font-medium">Neutral</span>
+    <button
+      onClick={onClick}
+      className="w-full p-3 hover:bg-[var(--surface-2)] transition-colors text-left"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-[var(--text-high)]">{symbol}</span>
+          <span
+            className={cn(
+              "text-xs font-medium",
+              data.trend === "bullish"
+                ? "text-green-400"
+                : data.trend === "bearish"
+                  ? "text-red-400"
+                  : "text-zinc-400"
+            )}
+          >
+            {data.trend === "bullish" ? (
+              <TrendingUp className="w-3 h-3 inline" />
+            ) : data.trend === "bearish" ? (
+              <TrendingDown className="w-3 h-3 inline" />
+            ) : null}{" "}
+            {data.trend}
+          </span>
         </div>
-      ) : (
-        <div className="flex items-center gap-1 text-purple-400">
-          <Moon className="w-3 h-3" />
-          <span className="text-xs font-medium">Prep Mode</span>
+        <div className="text-right">
+          <div className="text-sm font-mono text-[var(--text-high)]">
+            ${data.currentPrice.toFixed(2)}
+          </div>
+          <div
+            className={cn(
+              "text-xs font-mono",
+              data.changePercent >= 0 ? "text-green-400" : "text-red-400"
+            )}
+          >
+            {data.changePercent >= 0 ? "+" : ""}
+            {data.changePercent.toFixed(2)}%
+          </div>
         </div>
-      )}
-    </div>
+      </div>
+
+      {/* Key levels */}
+      <div className="flex flex-wrap gap-1">
+        {data.levels.slice(0, 4).map((level, i) => (
+          <span
+            key={i}
+            className={cn(
+              "text-[10px] px-1.5 py-0.5 rounded font-mono",
+              level.type === "resistance"
+                ? "bg-red-500/10 text-red-400"
+                : level.type === "support"
+                  ? "bg-green-500/10 text-green-400"
+                  : "bg-blue-500/10 text-blue-400"
+            )}
+          >
+            {level.source.split(" ")[0]}: {level.price.toFixed(2)}
+          </span>
+        ))}
+      </div>
+    </button>
   );
 }
 
@@ -652,7 +723,6 @@ function ModeToggle({
         Playbook
       </button>
 
-      {/* Session indicator */}
       <div
         className={cn(
           "ml-2 px-2 py-1 rounded text-xs font-bold",
@@ -674,7 +744,7 @@ function PlanLoading() {
     <div className="flex items-center justify-center min-h-[400px]">
       <div className="text-center">
         <div className="w-12 h-12 border-4 border-[var(--brand-primary)] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-[var(--text-muted)]">Loading plan...</p>
+        <p className="text-[var(--text-muted)]">Analyzing market data...</p>
       </div>
     </div>
   );
