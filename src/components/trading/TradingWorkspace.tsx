@@ -14,6 +14,7 @@ import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
 import type { KeyLevels } from "../../lib/riskEngine/types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
 import { useContractRecommendation } from "../../hooks/useContractRecommendation";
+import honeyDripLogo from "../../assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png";
 
 interface TradingWorkspaceProps {
   watchlist: Ticker[];
@@ -256,7 +257,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
         <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
           <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
             <img
-              src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png"
+              src={honeyDripLogo}
               alt="Honey Drip"
               className="w-auto h-[50vh] max-w-[60vw] object-contain"
             />

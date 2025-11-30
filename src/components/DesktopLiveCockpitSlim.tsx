@@ -18,6 +18,7 @@ import { ActiveTradesPanel } from "./trading/ActiveTradesPanel";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import { Contract, OptionType } from "../types";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
+import honeyDripLogo from "../assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png";
 
 // Default confluence object to prevent undefined errors in child components
 const DEFAULT_CONFLUENCE = {
@@ -229,7 +230,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             <div className="flex-1 relative flex items-center justify-center bg-[#0a0a0a]">
               <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
                 <img
-                  src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png"
+                  src={honeyDripLogo}
                   alt="Honey Drip"
                   className="w-auto h-[50vh] max-w-[60vw] object-contain"
                 />
