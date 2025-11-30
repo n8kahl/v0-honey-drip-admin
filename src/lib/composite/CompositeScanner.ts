@@ -62,7 +62,7 @@ import {
 } from "../greeks/IVGating.js";
 
 // Phase 2: Import Context Engines
-import { contextEngines } from "../engines/index";
+import { contextEngines } from "../engines/index.js";
 import type {
   IVContext,
   GammaContext,
