@@ -1,119 +1,180 @@
 /**
- * HDRadarOffHours - Off-hours radar experience
+ * HDRadarOffHours - "War Room" Command Center for off-hours trading prep
  *
- * Comprehensive view for trading prep during off-hours:
- * - Market countdown with futures
- * - Key levels analysis
- * - Setup scenarios to watch
- * - Session tips and reminders
+ * Forward-looking intelligence dashboard:
+ * - Market regime and session bias
+ * - If/then scenarios for next session
+ * - Opportunity matrix (scatter chart)
+ * - Battle plan board (Kanban)
+ * - Economic calendar
  */
 
+import { useState, useMemo, useEffect } from "react";
 import { useOffHoursData } from "../../../hooks/useOffHoursData";
-import { HDMarketCountdown } from "./HDMarketCountdown";
-import { HDKeyLevelsPanel } from "./HDKeyLevelsPanel";
-import { HDSetupsToWatch } from "./HDSetupsToWatch";
-import { HDWeeklyCalendar } from "./HDWeeklyCalendar";
 import { cn } from "../../../lib/utils";
+import { AlertTriangle } from "lucide-react";
+
+// Existing components
+import { HDWeeklyCalendar } from "./HDWeeklyCalendar";
+
+// New War Room components
+import { HDMarketHorizon } from "./visuals/HDMarketHorizon";
+import { HDSessionScenarios } from "./visuals/HDSessionScenarios";
+import { OpportunityMatrix } from "./visuals/OpportunityMatrix";
+import { BattlePlanBoard } from "./visuals/BattlePlanBoard";
+
+// Types and utilities
 import {
-  Calendar,
-  AlertTriangle,
-  Bookmark,
-  Clock,
-  TrendingUp,
-  Activity,
-  Target,
-  Moon,
-  Sun,
-  Coffee,
-} from "lucide-react";
+  generateMarketHorizonData,
+  generateOpportunityMatrix,
+  generateSessionScenarios,
+  type BattlePlanItem,
+  type SessionScenario,
+} from "../../../types/radar-visuals";
+import { toast } from "sonner";
 
 interface HDRadarOffHoursProps {
   className?: string;
 }
 
-export function HDRadarOffHours({ className }: HDRadarOffHoursProps) {
-  const { session, isOffHours, futures, setupScenarios, error, refresh } = useOffHoursData();
+const BATTLE_PLAN_STORAGE_KEY = "honeydrip_battle_plan";
 
-  // Session-specific header content
-  const sessionConfig = {
-    CLOSED: {
-      icon: Moon,
-      title: "Weekend Research Mode",
-      subtitle: "Plan your setups for the week ahead",
-      gradient: "from-purple-500/20 to-blue-500/20",
-      accentColor: "text-purple-400",
-    },
-    PRE: {
-      icon: Coffee,
-      title: "Pre-Market Prep",
-      subtitle: "Review overnight moves and finalize plans",
-      gradient: "from-yellow-500/20 to-orange-500/20",
-      accentColor: "text-yellow-400",
-    },
-    POST: {
-      icon: Moon,
-      title: "After-Hours Review",
-      subtitle: "Analyze today's action, prep for tomorrow",
-      gradient: "from-blue-500/20 to-indigo-500/20",
-      accentColor: "text-blue-400",
-    },
-    OPEN: {
-      icon: Sun,
-      title: "Market Live",
-      subtitle: "Switch to live radar for real-time signals",
-      gradient: "from-green-500/20 to-emerald-500/20",
-      accentColor: "text-green-400",
-    },
+export function HDRadarOffHours({ className }: HDRadarOffHoursProps) {
+  const { futures, keyLevelsBySymbol, setupScenarios, error, refresh, loading } = useOffHoursData();
+
+  // Battle plan state (persisted to localStorage)
+  const [battlePlanItems, setBattlePlanItems] = useState<BattlePlanItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(BATTLE_PLAN_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Convert createdAt strings back to Date objects
+        return parsed.map((item: any) => ({
+          ...item,
+          createdAt: new Date(item.createdAt),
+        }));
+      }
+    } catch (err) {
+      console.error("[HDRadarOffHours] Failed to load battle plan from localStorage:", err);
+    }
+    return [];
+  });
+
+  // Persist battle plan to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(BATTLE_PLAN_STORAGE_KEY, JSON.stringify(battlePlanItems));
+    } catch (err) {
+      console.error("[HDRadarOffHours] Failed to save battle plan to localStorage:", err);
+    }
+  }, [battlePlanItems]);
+
+  // Derive market horizon data
+  const vix = futures?.vix.value || 15;
+  const horizonData = useMemo(() => generateMarketHorizonData(vix, futures), [vix, futures]);
+
+  // Generate opportunity matrix data from setup scenarios
+  const opportunityData = useMemo(
+    () => generateOpportunityMatrix(setupScenarios),
+    [setupScenarios]
+  );
+
+  // Generate session scenarios from key levels (for first symbol with most levels)
+  const sessionScenariosData = useMemo(() => {
+    if (keyLevelsBySymbol.size === 0) return [];
+
+    // Find symbol with most key levels
+    let bestSymbol: string | null = null;
+    let maxLevels = 0;
+
+    keyLevelsBySymbol.forEach((data, symbol) => {
+      if (data.levels.length > maxLevels) {
+        maxLevels = data.levels.length;
+        bestSymbol = symbol;
+      }
+    });
+
+    if (!bestSymbol) return [];
+
+    const symbolData = keyLevelsBySymbol.get(bestSymbol)!;
+    return generateSessionScenarios(
+      bestSymbol,
+      symbolData.currentPrice,
+      symbolData.levels,
+      futures
+    );
+  }, [keyLevelsBySymbol, futures]);
+
+  // Add ticker to battle plan from OpportunityMatrix
+  const handleAddTicker = (symbol: string) => {
+    // Check if already exists
+    if (battlePlanItems.some((item) => item.symbol === symbol)) {
+      toast.info(`${symbol} is already in your battle plan`);
+      return;
+    }
+
+    // Find setup data for this symbol
+    const setup = setupScenarios.find((s) => s.symbol === symbol);
+
+    const newItem: BattlePlanItem = {
+      id: crypto.randomUUID(),
+      symbol,
+      status: "radar",
+      notes: "",
+      createdAt: new Date(),
+      setupId: setup?.id,
+      direction: setup?.direction,
+      entryLevel: setup?.entry,
+      targetLevel: setup?.targets[0],
+    };
+
+    setBattlePlanItems((prev) => [...prev, newItem]);
+    toast.success(`Added ${symbol} to battle plan`);
   };
 
-  const config = sessionConfig[session];
-  const SessionIcon = config.icon;
+  // Add from session scenario
+  const handleAddFromScenario = (symbol: string, scenario: SessionScenario) => {
+    if (battlePlanItems.some((item) => item.symbol === symbol)) {
+      toast.info(`${symbol} is already in your battle plan`);
+      return;
+    }
+
+    const newItem: BattlePlanItem = {
+      id: crypto.randomUUID(),
+      symbol,
+      status: "radar",
+      notes: `${scenario.caseType.toUpperCase()} CASE: ${scenario.trigger}\n${scenario.action}`,
+      createdAt: new Date(),
+      direction:
+        scenario.caseType === "bull" ? "long" : scenario.caseType === "bear" ? "short" : undefined,
+      entryLevel: scenario.entry,
+      targetLevel: scenario.targets[0],
+    };
+
+    setBattlePlanItems((prev) => [...prev, newItem]);
+    toast.success(`Added ${symbol} (${scenario.caseType} case) to battle plan`);
+  };
+
+  // Update battle plan item
+  const handleUpdateItem = (updatedItem: BattlePlanItem) => {
+    setBattlePlanItems((prev) =>
+      prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
+    );
+  };
+
+  // Remove from battle plan
+  const handleRemoveItem = (id: string) => {
+    const item = battlePlanItems.find((i) => i.id === id);
+    setBattlePlanItems((prev) => prev.filter((item) => item.id !== id));
+    if (item) {
+      toast.success(`Removed ${item.symbol} from battle plan`);
+    }
+  };
 
   return (
     <div className={cn("space-y-6", className)}>
-      {/* Session Header */}
-      <div
-        className={cn("relative rounded-2xl overflow-hidden", "bg-gradient-to-r", config.gradient)}
-      >
-        <div className="absolute inset-0 bg-[var(--surface-1)] opacity-80" />
-        <div className="relative px-6 py-6">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
-              <div
-                className={cn(
-                  "w-14 h-14 rounded-xl flex items-center justify-center",
-                  "bg-[var(--surface-2)] border border-[var(--border-hairline)]"
-                )}
-              >
-                <SessionIcon className={cn("w-7 h-7", config.accentColor)} />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-[var(--text-high)]">{config.title}</h1>
-                <p className="text-[var(--text-muted)] mt-0.5">{config.subtitle}</p>
-              </div>
-            </div>
-
-            {/* Quick Stats */}
-            {isOffHours && setupScenarios.length > 0 && (
-              <div className="flex items-center gap-4">
-                <QuickStat icon={Target} value={setupScenarios.length} label="Setups" />
-                <QuickStat
-                  icon={TrendingUp}
-                  value={setupScenarios.filter((s) => s.direction === "long").length}
-                  label="Long"
-                  color="text-green-400"
-                />
-                <QuickStat
-                  icon={Activity}
-                  value={setupScenarios.filter((s) => s.confidence === "high").length}
-                  label="High Conf"
-                  color="text-yellow-400"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Market Horizon Hero */}
+      <HDMarketHorizon vix={vix} regime={horizonData.regime} horizonData={horizonData} />
 
       {/* Error Display */}
       {error && (
@@ -126,35 +187,44 @@ export function HDRadarOffHours({ className }: HDRadarOffHoursProps) {
         </div>
       )}
 
-      {/* Main Content Grid */}
+      {/* Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column - Countdown & Tips */}
+        {/* Left Column - Forward Intelligence */}
         <div className="lg:col-span-4 space-y-6">
-          <HDMarketCountdown />
+          {/* Session Scenarios (If/Then Playbook) */}
+          <HDSessionScenarios
+            scenarios={sessionScenariosData}
+            onAddToBattlePlan={handleAddFromScenario}
+          />
 
           {/* Weekly Economic Calendar */}
           <HDWeeklyCalendar maxEvents={6} />
-
-          {/* Session Tips */}
-          <SessionTips session={session} futures={futures} />
-
-          {/* Checklist */}
-          <PrepChecklist session={session} />
         </div>
 
-        {/* Right Column - Analysis */}
+        {/* Right Column - Setups & Planning */}
         <div className="lg:col-span-8 space-y-6">
-          <HDSetupsToWatch maxSetups={6} />
-          <HDKeyLevelsPanel maxSymbols={5} />
+          {/* Opportunity Matrix (Scatter Chart) */}
+          <OpportunityMatrix data={opportunityData} onAddTicker={handleAddTicker} />
+
+          {/* Battle Plan Board (Kanban) */}
+          <BattlePlanBoard
+            items={battlePlanItems}
+            onUpdateItem={handleUpdateItem}
+            onRemoveItem={handleRemoveItem}
+          />
         </div>
       </div>
 
       {/* Footer */}
       <div className="text-center py-4 border-t border-[var(--border-hairline)]">
         <p className="text-sm text-[var(--text-muted)]">
-          Data refreshes every 5 minutes during off-hours.{" "}
-          <button onClick={refresh} className="text-[var(--brand-primary)] hover:underline">
-            Refresh now
+          War Room refreshes with market data.{" "}
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="text-[var(--brand-primary)] hover:underline disabled:opacity-50"
+          >
+            {loading ? "Refreshing..." : "Refresh now"}
           </button>
         </p>
       </div>
@@ -162,164 +232,4 @@ export function HDRadarOffHours({ className }: HDRadarOffHoursProps) {
   );
 }
 
-// Quick stat badge
-function QuickStat({
-  icon: Icon,
-  value,
-  label,
-  color = "text-[var(--text-high)]",
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  value: number;
-  label: string;
-  color?: string;
-}) {
-  return (
-    <div className="text-center">
-      <div className={cn("flex items-center justify-center gap-1 text-2xl font-bold", color)}>
-        <Icon className="w-5 h-5" />
-        {value}
-      </div>
-      <div className="text-xs text-[var(--text-muted)]">{label}</div>
-    </div>
-  );
-}
-
-// Session-specific tips
-function SessionTips({
-  session,
-  futures,
-}: {
-  session: string;
-  futures: ReturnType<typeof useOffHoursData>["futures"];
-}) {
-  const tips: { icon: React.ReactNode; text: string; highlight?: boolean }[] = [];
-
-  if (session === "CLOSED") {
-    tips.push({
-      icon: <Calendar className="w-4 h-4 text-purple-400" />,
-      text: "Review economic calendar for upcoming catalysts",
-    });
-    tips.push({
-      icon: <Bookmark className="w-4 h-4 text-blue-400" />,
-      text: "Note key earnings dates in your watchlist",
-    });
-    tips.push({
-      icon: <Target className="w-4 h-4 text-green-400" />,
-      text: "Identify 2-3 high-probability setups to focus on",
-    });
-  } else if (session === "PRE") {
-    tips.push({
-      icon: <Activity className="w-4 h-4 text-yellow-400" />,
-      text: "Check overnight futures direction",
-      highlight: true,
-    });
-    tips.push({
-      icon: <AlertTriangle className="w-4 h-4 text-orange-400" />,
-      text: "Review any pre-market news or earnings",
-    });
-    tips.push({
-      icon: <Clock className="w-4 h-4 text-blue-400" />,
-      text: "Set alerts for key levels before open",
-    });
-  } else if (session === "POST") {
-    tips.push({
-      icon: <Target className="w-4 h-4 text-green-400" />,
-      text: "Journal your trades from today",
-    });
-    tips.push({
-      icon: <Activity className="w-4 h-4 text-purple-400" />,
-      text: "Check after-hours movers in your watchlist",
-    });
-    tips.push({
-      icon: <Calendar className="w-4 h-4 text-blue-400" />,
-      text: "Preview tomorrow's economic data",
-    });
-  }
-
-  // Add VIX warning if elevated
-  if (futures && futures.vix.level === "high") {
-    tips.unshift({
-      icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
-      text: `VIX at ${futures.vix.value.toFixed(1)} - High volatility expected. Consider reducing position sizes.`,
-      highlight: true,
-    });
-  }
-
-  return (
-    <div className="rounded-xl bg-[var(--surface-1)] border border-[var(--border-hairline)] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--border-hairline)]">
-        <h3 className="font-semibold text-[var(--text-high)] flex items-center gap-2">
-          <Clock className="w-4 h-4 text-[var(--brand-primary)]" />
-          Session Tips
-        </h3>
-      </div>
-      <div className="p-4 space-y-3">
-        {tips.map((tip, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              "flex items-start gap-3 p-2 rounded-lg",
-              tip.highlight && "bg-[var(--surface-2)] border border-yellow-500/30"
-            )}
-          >
-            {tip.icon}
-            <span className="text-sm text-[var(--text-muted)]">{tip.text}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Pre-session checklist
-function PrepChecklist({ session }: { session: string }) {
-  const items =
-    session === "PRE"
-      ? [
-          { id: "review", label: "Review overnight levels", done: false },
-          { id: "alerts", label: "Set key level alerts", done: false },
-          { id: "plan", label: "Confirm trade plan", done: false },
-          { id: "size", label: "Check position sizing", done: false },
-        ]
-      : session === "CLOSED"
-        ? [
-            { id: "journal", label: "Review last week's trades", done: false },
-            { id: "levels", label: "Mark key weekly levels", done: false },
-            { id: "watchlist", label: "Update watchlist", done: false },
-            { id: "calendar", label: "Check economic calendar", done: false },
-          ]
-        : [
-            { id: "journal", label: "Journal today's trades", done: false },
-            { id: "review", label: "Review what worked/didn't", done: false },
-            { id: "prep", label: "Note levels for tomorrow", done: false },
-          ];
-
-  return (
-    <div className="rounded-xl bg-[var(--surface-1)] border border-[var(--border-hairline)] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--border-hairline)]">
-        <h3 className="font-semibold text-[var(--text-high)] flex items-center gap-2">
-          <Bookmark className="w-4 h-4 text-[var(--brand-primary)]" />
-          Prep Checklist
-        </h3>
-      </div>
-      <div className="p-4 space-y-2">
-        {items.map((item) => (
-          <label
-            key={item.id}
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--surface-2)] cursor-pointer transition-colors"
-          >
-            <input
-              type="checkbox"
-              className="w-4 h-4 rounded border-[var(--border-hairline)] text-[var(--brand-primary)] focus:ring-[var(--brand-primary)]"
-            />
-            <span className="text-sm text-[var(--text-muted)]">{item.label}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Export for use in Radar page
 export default HDRadarOffHours;
