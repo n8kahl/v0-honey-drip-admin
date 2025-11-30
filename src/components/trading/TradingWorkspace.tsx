@@ -12,6 +12,8 @@ import { useMemo } from "react";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
 import type { KeyLevels } from "../../lib/riskEngine/types";
+import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
+import { useContractRecommendation } from "../../hooks/useContractRecommendation";
 
 interface TradingWorkspaceProps {
   watchlist: Ticker[];
@@ -31,6 +33,8 @@ interface TradingWorkspaceProps {
   onMoveSL?: () => void;
   onAdd?: () => void;
   onExit?: () => void;
+  // Composite signals for contract recommendation
+  compositeSignals?: CompositeSignal[];
 }
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
@@ -50,10 +54,19 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onMoveSL,
   onAdd,
   onExit,
+  compositeSignals,
 }) => {
   const currentPrice = activeTicker
     ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
     : 0;
+
+  // Get contract recommendation based on active signals
+  const recommendation = useContractRecommendation({
+    symbol: activeTicker?.symbol || "",
+    contracts,
+    activeSignals: compositeSignals || [],
+    currentPrice,
+  });
 
   const enteredTrade = tradeState === "ENTERED" && currentTrade && !showAlert ? currentTrade : null;
   // Enable key level computation for LOADED and ENTERED states
@@ -235,6 +248,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           onContractSelect={onContractSelect}
           onEnter={onEnterTrade}
           onDiscard={onDiscard}
+          recommendation={recommendation}
         />
       )}
       {!currentTrade && !activeTicker && (

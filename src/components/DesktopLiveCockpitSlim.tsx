@@ -268,6 +268,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 onMoveSL={() => actions.handleUpdateSL()}
                 onAdd={() => actions.handleAdd()}
                 onExit={() => actions.handleExit()}
+                compositeSignals={compositeSignals}
               />
             )}
         </div>
