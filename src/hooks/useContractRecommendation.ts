@@ -29,6 +29,8 @@ export interface UseContractRecommendationOptions {
   activeSignals: CompositeSignal[];
   /** Current underlying price (for fallback ATM selection) */
   currentPrice?: number;
+  /** Price change percent for trend detection (fallback when no signal) */
+  changePercent?: number;
 }
 
 export interface ContractRecommendation {
@@ -94,10 +96,45 @@ function getDirectionFromSignal(signal: CompositeSignal): "call" | "put" {
 /**
  * Hook to get contract recommendations based on active signals
  */
+/**
+ * Find the best ATM contract for a given direction and price
+ */
+function findATMContract(
+  contracts: Contract[],
+  currentPrice: number,
+  direction: "call" | "put"
+): Contract | null {
+  const optionType = direction === "call" ? "C" : "P";
+
+  // Filter by option type and find nearest DTE (1-3 days ideal for day trades)
+  const filteredContracts = contracts.filter((c) => c.type === optionType);
+  if (filteredContracts.length === 0) return null;
+
+  // Sort by DTE first, then by distance from ATM
+  const sorted = [...filteredContracts].sort((a, b) => {
+    // Prefer 0-3 DTE
+    const aDTE = a.daysToExpiry ?? 999;
+    const bDTE = b.daysToExpiry ?? 999;
+    const aIdealDTE = aDTE >= 0 && aDTE <= 3;
+    const bIdealDTE = bDTE >= 0 && bDTE <= 3;
+
+    if (aIdealDTE !== bIdealDTE) {
+      return aIdealDTE ? -1 : 1;
+    }
+
+    // Then sort by distance from current price (ATM)
+    const aDistance = Math.abs(a.strike - currentPrice);
+    const bDistance = Math.abs(b.strike - currentPrice);
+    return aDistance - bDistance;
+  });
+
+  return sorted[0] || null;
+}
+
 export function useContractRecommendation(
   options: UseContractRecommendationOptions
 ): ContractRecommendation {
-  const { symbol, contracts, activeSignals, currentPrice } = options;
+  const { symbol, contracts, activeSignals, currentPrice, changePercent } = options;
 
   return useMemo(() => {
     // Default empty result
@@ -121,8 +158,39 @@ export function useContractRecommendation(
     const topSignal = getTopSignalForSymbol(symbol, activeSignals);
 
     if (!topSignal) {
-      // No signal - return empty (UI can fall back to ATM highlighting)
-      return emptyResult;
+      // No signal - use ATM fallback based on trend
+      if (!currentPrice || currentPrice <= 0) {
+        return emptyResult;
+      }
+
+      // Determine direction from price change
+      // Positive change = bullish = calls, Negative = bearish = puts
+      const direction: "call" | "put" = (changePercent ?? 0) >= 0 ? "call" : "put";
+
+      // Find the best ATM contract
+      const atmContract = findATMContract(contracts, currentPrice, direction);
+
+      if (!atmContract) {
+        return emptyResult;
+      }
+
+      return {
+        bestContract: atmContract,
+        bestResult: null,
+        rankedContracts: [],
+        drivingSignal: null,
+        strategyType: null,
+        direction,
+        strategyDescription: {
+          description: `ATM ${direction === "call" ? "Call" : "Put"} (${(changePercent ?? 0) >= 0 ? "bullish" : "bearish"} trend)`,
+          rationale: `No active signal. Defaulting to ATM ${direction} based on ${Math.abs(changePercent ?? 0).toFixed(2)}% ${(changePercent ?? 0) >= 0 ? "gain" : "loss"} today.`,
+          idealDelta: "0.50",
+          idealDTE: "0-3 DTE",
+          needsHighGamma: false,
+        },
+        hasRecommendation: true,
+        confidence: "low",
+      };
     }
 
     // Get strategy and direction from signal
@@ -162,7 +230,7 @@ export function useContractRecommendation(
       hasRecommendation: bestContract !== null && confidence !== "none",
       confidence,
     };
-  }, [symbol, contracts, activeSignals, currentPrice]);
+  }, [symbol, contracts, activeSignals, currentPrice, changePercent]);
 }
 
 /**

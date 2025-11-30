@@ -191,6 +191,7 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     console.log(`[Trades API] Creating trade for user ${userId}:`, trade.ticker);
 
     // Create trade in database
+    // Note: Client sends camelCase, we normalize to snake_case for database
     const tradeData: TradeInsert = {
       user_id: userId,
       ticker: trade.ticker,
@@ -199,10 +200,10 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       expiration: trade.contract?.expiry || null,
       quantity: trade.quantity || 1,
       status: trade.status || "loaded",
-      entry_price: trade.entry_price || null,
-      target_price: trade.targetPrice || null,
-      stop_loss: trade.stopLoss || null,
-      entry_time: trade.entryTime || null,
+      entry_price: trade.entryPrice || trade.entry_price || null,
+      target_price: trade.targetPrice || trade.target_price || null,
+      stop_loss: trade.stopLoss || trade.stop_loss || null,
+      entry_time: trade.entryTime || trade.entry_time || null,
       notes: trade.notes || null,
       contract: trade.contract || null, // Store full contract object as JSONB (includes bid, ask, volume, Greeks, etc.)
       // Confluence and setup type from signal detection

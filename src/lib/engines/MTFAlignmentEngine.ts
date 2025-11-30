@@ -14,19 +14,19 @@
  * Uses Massive.com Advanced historical aggregates for accurate backtesting
  */
 
-import { createClient } from '../supabase/client';
+import { createClient } from "../supabase/client.js";
 
 /**
  * Timeframe trend classification
  */
-export type TrendDirection = 'STRONG_UP' | 'UP' | 'NEUTRAL' | 'DOWN' | 'STRONG_DOWN';
+export type TrendDirection = "STRONG_UP" | "UP" | "NEUTRAL" | "DOWN" | "STRONG_DOWN";
 
 /**
  * Timeframe definition
  */
 export interface Timeframe {
   name: string;
-  interval: '1' | '5' | '15' | '60' | '1D' | '1W';
+  interval: "1" | "5" | "15" | "60" | "1D" | "1W";
   weight: number; // Weight in alignment calculation (higher TF = more weight)
   barsNeeded: number; // Number of bars to analyze
 }
@@ -57,13 +57,13 @@ export interface MTFContext {
   timeframes: Record<string, TimeframeAnalysis>;
 
   // Overall alignment
-  alignment: 'FULLY_ALIGNED' | 'MOSTLY_ALIGNED' | 'NEUTRAL' | 'DIVERGING' | 'CONFLICTING';
+  alignment: "FULLY_ALIGNED" | "MOSTLY_ALIGNED" | "NEUTRAL" | "DIVERGING" | "CONFLICTING";
   alignmentScore: number; // 0-100 (higher = more aligned)
   dominantTrend: TrendDirection;
   trendStrength: number;
 
   // Trading recommendations
-  recommendation: 'STRONG_SIGNAL' | 'CONFIRM_SIGNAL' | 'WAIT_ALIGNMENT' | 'AVOID_DIVERGENCE';
+  recommendation: "STRONG_SIGNAL" | "CONFIRM_SIGNAL" | "WAIT_ALIGNMENT" | "AVOID_DIVERGENCE";
   confidence: number;
 
   // Metadata
@@ -80,36 +80,36 @@ export interface MTFBoostConfig {
 
   // Alignment thresholds
   alignmentThresholds: {
-    fullyAligned: number;    // Default: 85 (85%+ alignment)
-    mostlyAligned: number;   // Default: 65
-    neutral: number;         // Default: 45
-    diverging: number;       // Default: 25
+    fullyAligned: number; // Default: 85 (85%+ alignment)
+    mostlyAligned: number; // Default: 65
+    neutral: number; // Default: 45
+    diverging: number; // Default: 25
   };
 
   // Boost multipliers by alignment
   alignmentBoosts: {
-    FULLY_ALIGNED: number;   // Default: 1.25 (+25%)
-    MOSTLY_ALIGNED: number;  // Default: 1.10 (+10%)
-    NEUTRAL: number;         // Default: 1.00 (no change)
-    DIVERGING: number;       // Default: 0.85 (-15%)
-    CONFLICTING: number;     // Default: 0.65 (-35%)
+    FULLY_ALIGNED: number; // Default: 1.25 (+25%)
+    MOSTLY_ALIGNED: number; // Default: 1.10 (+10%)
+    NEUTRAL: number; // Default: 1.00 (no change)
+    DIVERGING: number; // Default: 0.85 (-15%)
+    CONFLICTING: number; // Default: 0.65 (-35%)
   };
 
   // Direction-specific boosts
   directionBoosts: {
     LONG: {
-      alignedUpBoost: number;     // Default: 1.20 (favor aligned longs)
-      divergingPenalty: number;   // Default: 0.70 (avoid diverging longs)
+      alignedUpBoost: number; // Default: 1.20 (favor aligned longs)
+      divergingPenalty: number; // Default: 0.70 (avoid diverging longs)
     };
     SHORT: {
-      alignedDownBoost: number;   // Default: 1.20 (favor aligned shorts)
-      divergingPenalty: number;   // Default: 0.70 (avoid diverging shorts)
+      alignedDownBoost: number; // Default: 1.20 (favor aligned shorts)
+      divergingPenalty: number; // Default: 0.70 (avoid diverging shorts)
     };
   };
 
   // EMA periods for trend detection
-  emaPeriod: number;  // Default: 20 (20-bar EMA)
-  atrPeriod: number;  // Default: 14 (ATR for volatility)
+  emaPeriod: number; // Default: 20 (20-bar EMA)
+  atrPeriod: number; // Default: 14 (ATR for volatility)
 
   // Stale threshold
   staleThresholdHours: number; // Default: 4 hours
@@ -120,10 +120,10 @@ export interface MTFBoostConfig {
  */
 const DEFAULT_MTF_BOOST_CONFIG: MTFBoostConfig = {
   timeframes: [
-    { name: '1W', interval: '1W', weight: 3.0, barsNeeded: 20 },   // Weekly: highest weight
-    { name: '1D', interval: '1D', weight: 2.0, barsNeeded: 30 },   // Daily: high weight
-    { name: '1H', interval: '60', weight: 1.0, barsNeeded: 40 },   // 1H: medium weight
-    { name: '15m', interval: '15', weight: 0.5, barsNeeded: 50 },  // 15m: low weight
+    { name: "1W", interval: "1W", weight: 3.0, barsNeeded: 20 }, // Weekly: highest weight
+    { name: "1D", interval: "1D", weight: 2.0, barsNeeded: 30 }, // Daily: high weight
+    { name: "1H", interval: "60", weight: 1.0, barsNeeded: 40 }, // 1H: medium weight
+    { name: "15m", interval: "15", weight: 0.5, barsNeeded: 50 }, // 15m: low weight
   ],
   alignmentThresholds: {
     fullyAligned: 85,
@@ -133,19 +133,19 @@ const DEFAULT_MTF_BOOST_CONFIG: MTFBoostConfig = {
   },
   alignmentBoosts: {
     FULLY_ALIGNED: 1.25,
-    MOSTLY_ALIGNED: 1.10,
-    NEUTRAL: 1.00,
+    MOSTLY_ALIGNED: 1.1,
+    NEUTRAL: 1.0,
     DIVERGING: 0.85,
     CONFLICTING: 0.65,
   },
   directionBoosts: {
     LONG: {
-      alignedUpBoost: 1.20,
-      divergingPenalty: 0.70,
+      alignedUpBoost: 1.2,
+      divergingPenalty: 0.7,
     },
     SHORT: {
-      alignedDownBoost: 1.20,
-      divergingPenalty: 0.70,
+      alignedDownBoost: 1.2,
+      divergingPenalty: 0.7,
     },
   },
   emaPeriod: 20,
@@ -239,7 +239,7 @@ export class MTFAlignmentEngine {
   applyMTFBoost(
     baseScore: number,
     mtfContext: MTFContext | null,
-    direction: 'LONG' | 'SHORT'
+    direction: "LONG" | "SHORT"
   ): number {
     // No context = no boost
     if (!mtfContext) {
@@ -258,7 +258,7 @@ export class MTFAlignmentEngine {
     // Combine boosts with confidence weighting
     const combinedBoost = alignmentBoost * directionBoost;
     const confidenceWeight = mtfContext.confidence / 100;
-    const finalBoost = 1.0 + ((combinedBoost - 1.0) * confidenceWeight) - stalePenalty;
+    const finalBoost = 1.0 + (combinedBoost - 1.0) * confidenceWeight - stalePenalty;
 
     // Apply boost
     const adjustedScore = baseScore * finalBoost;
@@ -280,9 +280,9 @@ export class MTFAlignmentEngine {
       return `MTF data not available for ${symbol}`;
     }
 
-    const alignment = context.alignment.replace(/_/g, ' ');
-    const trend = context.dominantTrend.replace(/_/g, ' ');
-    const rec = context.recommendation.replace(/_/g, ' ');
+    const alignment = context.alignment.replace(/_/g, " ");
+    const trend = context.dominantTrend.replace(/_/g, " ");
+    const rec = context.recommendation.replace(/_/g, " ");
 
     return `MTF: ${alignment} (${trend}) → ${rec} (${context.alignmentScore.toFixed(0)}%)`;
   }
@@ -302,11 +302,11 @@ export class MTFAlignmentEngine {
     try {
       // Query historical bars from database (Phase 1 persistent storage)
       const { data, error } = await supabase
-        .from('historical_bars')
-        .select('*')
-        .eq('symbol', symbol)
-        .eq('timeframe', this.mapIntervalToTimeframe(tf.interval))
-        .order('timestamp', { ascending: false })
+        .from("historical_bars")
+        .select("*")
+        .eq("symbol", symbol)
+        .eq("timeframe", this.mapIntervalToTimeframe(tf.interval))
+        .order("timestamp", { ascending: false })
         .limit(tf.barsNeeded);
 
       if (error || !data || data.length < tf.barsNeeded / 2) {
@@ -367,12 +367,12 @@ export class MTFAlignmentEngine {
    */
   private mapIntervalToTimeframe(interval: string): string {
     const map: Record<string, string> = {
-      '1': '1m',
-      '5': '5m',
-      '15': '15m',
-      '60': '1h',
-      '1D': 'day',
-      '1W': 'week',
+      "1": "1m",
+      "5": "5m",
+      "15": "15m",
+      "60": "1h",
+      "1D": "day",
+      "1W": "week",
     };
     return map[interval] || interval;
   }
@@ -395,12 +395,7 @@ export class MTFAlignmentEngine {
   /**
    * Calculate ATR (Average True Range)
    */
-  private calculateATR(
-    highs: number[],
-    lows: number[],
-    closes: number[],
-    period: number
-  ): number {
+  private calculateATR(highs: number[], lows: number[], closes: number[], period: number): number {
     const trueRanges: number[] = [];
 
     for (let i = 1; i < highs.length; i++) {
@@ -434,11 +429,11 @@ export class MTFAlignmentEngine {
    * Classify trend based on price vs EMA and slope
    */
   private classifyTrend(priceVsEMA: number, emaSlope: number): TrendDirection {
-    if (priceVsEMA > 3 && emaSlope > 0.5) return 'STRONG_UP';
-    if (priceVsEMA > 1 && emaSlope > 0) return 'UP';
-    if (priceVsEMA < -3 && emaSlope < -0.5) return 'STRONG_DOWN';
-    if (priceVsEMA < -1 && emaSlope < 0) return 'DOWN';
-    return 'NEUTRAL';
+    if (priceVsEMA > 3 && emaSlope > 0.5) return "STRONG_UP";
+    if (priceVsEMA > 1 && emaSlope > 0) return "UP";
+    if (priceVsEMA < -3 && emaSlope < -0.5) return "STRONG_DOWN";
+    if (priceVsEMA < -1 && emaSlope < 0) return "DOWN";
+    return "NEUTRAL";
   }
 
   /**
@@ -454,14 +449,14 @@ export class MTFAlignmentEngine {
     const slopeScore = Math.min(100, Math.abs(emaSlope) * 20);
     const volatilityScore = Math.min(100, (atr / price) * 100 * 5);
 
-    return (priceScore * 0.4 + slopeScore * 0.4 + volatilityScore * 0.2);
+    return priceScore * 0.4 + slopeScore * 0.4 + volatilityScore * 0.2;
   }
 
   /**
    * Calculate alignment across timeframes
    */
   private calculateAlignment(timeframes: Record<string, TimeframeAnalysis>): {
-    alignment: MTFContext['alignment'];
+    alignment: MTFContext["alignment"];
     alignmentScore: number;
     dominantTrend: TrendDirection;
     trendStrength: number;
@@ -500,27 +495,27 @@ export class MTFAlignmentEngine {
     const alignmentScore = (alignedWeight / totalWeight) * 100;
 
     // Determine alignment classification
-    let alignment: MTFContext['alignment'];
+    let alignment: MTFContext["alignment"];
     if (alignmentScore >= this.config.alignmentThresholds.fullyAligned) {
-      alignment = 'FULLY_ALIGNED';
+      alignment = "FULLY_ALIGNED";
     } else if (alignmentScore >= this.config.alignmentThresholds.mostlyAligned) {
-      alignment = 'MOSTLY_ALIGNED';
+      alignment = "MOSTLY_ALIGNED";
     } else if (alignmentScore >= this.config.alignmentThresholds.neutral) {
-      alignment = 'NEUTRAL';
+      alignment = "NEUTRAL";
     } else if (alignmentScore >= this.config.alignmentThresholds.diverging) {
-      alignment = 'DIVERGING';
+      alignment = "DIVERGING";
     } else {
-      alignment = 'CONFLICTING';
+      alignment = "CONFLICTING";
     }
 
     // Determine dominant trend
     const avgTrendScore = weightedTrendScore / totalWeight;
     let dominantTrend: TrendDirection;
-    if (avgTrendScore > 1.5) dominantTrend = 'STRONG_UP';
-    else if (avgTrendScore > 0.5) dominantTrend = 'UP';
-    else if (avgTrendScore < -1.5) dominantTrend = 'STRONG_DOWN';
-    else if (avgTrendScore < -0.5) dominantTrend = 'DOWN';
-    else dominantTrend = 'NEUTRAL';
+    if (avgTrendScore > 1.5) dominantTrend = "STRONG_UP";
+    else if (avgTrendScore > 0.5) dominantTrend = "UP";
+    else if (avgTrendScore < -1.5) dominantTrend = "STRONG_DOWN";
+    else if (avgTrendScore < -0.5) dominantTrend = "DOWN";
+    else dominantTrend = "NEUTRAL";
 
     // Calculate overall trend strength
     const trendStrength = Math.min(100, Math.abs(avgTrendScore) * 50);
@@ -531,29 +526,29 @@ export class MTFAlignmentEngine {
   /**
    * Get direction-specific boost
    */
-  private getDirectionBoost(direction: 'LONG' | 'SHORT', context: MTFContext): number {
-    if (direction === 'LONG') {
+  private getDirectionBoost(direction: "LONG" | "SHORT", context: MTFContext): number {
+    if (direction === "LONG") {
       // Favor longs when aligned up
-      if (context.dominantTrend === 'STRONG_UP' || context.dominantTrend === 'UP') {
-        if (context.alignment === 'FULLY_ALIGNED' || context.alignment === 'MOSTLY_ALIGNED') {
+      if (context.dominantTrend === "STRONG_UP" || context.dominantTrend === "UP") {
+        if (context.alignment === "FULLY_ALIGNED" || context.alignment === "MOSTLY_ALIGNED") {
           return this.config.directionBoosts.LONG.alignedUpBoost;
         }
       }
 
       // Penalize longs when diverging or down trending
-      if (context.alignment === 'DIVERGING' || context.alignment === 'CONFLICTING') {
+      if (context.alignment === "DIVERGING" || context.alignment === "CONFLICTING") {
         return this.config.directionBoosts.LONG.divergingPenalty;
       }
-    } else if (direction === 'SHORT') {
+    } else if (direction === "SHORT") {
       // Favor shorts when aligned down
-      if (context.dominantTrend === 'STRONG_DOWN' || context.dominantTrend === 'DOWN') {
-        if (context.alignment === 'FULLY_ALIGNED' || context.alignment === 'MOSTLY_ALIGNED') {
+      if (context.dominantTrend === "STRONG_DOWN" || context.dominantTrend === "DOWN") {
+        if (context.alignment === "FULLY_ALIGNED" || context.alignment === "MOSTLY_ALIGNED") {
           return this.config.directionBoosts.SHORT.alignedDownBoost;
         }
       }
 
       // Penalize shorts when diverging or up trending
-      if (context.alignment === 'DIVERGING' || context.alignment === 'CONFLICTING') {
+      if (context.alignment === "DIVERGING" || context.alignment === "CONFLICTING") {
         return this.config.directionBoosts.SHORT.divergingPenalty;
       }
     }
@@ -565,22 +560,22 @@ export class MTFAlignmentEngine {
    * Get trading recommendation
    */
   private getRecommendation(
-    alignment: MTFContext['alignment'],
+    alignment: MTFContext["alignment"],
     dominantTrend: TrendDirection
-  ): MTFContext['recommendation'] {
-    if (alignment === 'FULLY_ALIGNED' && dominantTrend !== 'NEUTRAL') {
-      return 'STRONG_SIGNAL';
+  ): MTFContext["recommendation"] {
+    if (alignment === "FULLY_ALIGNED" && dominantTrend !== "NEUTRAL") {
+      return "STRONG_SIGNAL";
     }
 
-    if (alignment === 'MOSTLY_ALIGNED') {
-      return 'CONFIRM_SIGNAL';
+    if (alignment === "MOSTLY_ALIGNED") {
+      return "CONFIRM_SIGNAL";
     }
 
-    if (alignment === 'DIVERGING' || alignment === 'CONFLICTING') {
-      return 'AVOID_DIVERGENCE';
+    if (alignment === "DIVERGING" || alignment === "CONFLICTING") {
+      return "AVOID_DIVERGENCE";
     }
 
-    return 'WAIT_ALIGNMENT';
+    return "WAIT_ALIGNMENT";
   }
 
   /**

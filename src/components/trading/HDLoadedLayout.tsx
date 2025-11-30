@@ -7,6 +7,7 @@
 import type { Trade, Contract, Ticker } from "../../types";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
+import type { ContractRecommendation } from "../../hooks/useContractRecommendation";
 
 interface HDLoadedLayoutProps {
   trade: Trade;
@@ -17,6 +18,7 @@ interface HDLoadedLayoutProps {
   onContractSelect: (contract: Contract) => void;
   onEnter: () => void;
   onDiscard: () => void;
+  recommendation?: ContractRecommendation | null;
 }
 
 export function HDLoadedLayout({
@@ -28,6 +30,7 @@ export function HDLoadedLayout({
   onContractSelect,
   onEnter,
   onDiscard,
+  recommendation,
 }: HDLoadedLayoutProps) {
   return (
     <div className="flex flex-col lg:flex-row gap-0 lg:gap-6 px-4 lg:px-6 py-4 lg:py-6 pointer-events-auto relative z-10 h-full">
@@ -43,6 +46,7 @@ export function HDLoadedLayout({
               currentPrice={currentPrice}
               ticker={ticker}
               onContractSelect={onContractSelect}
+              recommendation={recommendation}
               className="text-sm"
             />
           ) : (

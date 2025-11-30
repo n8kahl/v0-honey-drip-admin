@@ -72,6 +72,8 @@ const impactStyles: Record<string, { bg: string; text: string; border: string }>
   },
 };
 
+const MARKET_TZ = "America/New_York";
+
 function formatEventTime(datetime: string): {
   date: string;
   time: string;
@@ -80,30 +82,48 @@ function formatEventTime(datetime: string): {
 } {
   const eventDate = new Date(datetime);
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const eventDay = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
 
-  const isToday = eventDay.getTime() === today.getTime();
-  const isTomorrow = eventDay.getTime() === tomorrow.getTime();
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: MARKET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const toKey = (d: Date) =>
+    formatter
+      .formatToParts(d)
+      .filter((p) => p.type === "year" || p.type === "month" || p.type === "day")
+      .map((p) => p.value)
+      .join("-");
+
+  const todayKey = toKey(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toKey(tomorrow);
+  const eventKey = toKey(eventDate);
+
+  const isToday = eventKey === todayKey;
+  const isTomorrow = eventKey === tomorrowKey;
 
   const date = isToday
     ? "Today"
     : isTomorrow
       ? "Tomorrow"
-      : eventDate.toLocaleDateString("en-US", {
+      : new Intl.DateTimeFormat("en-US", {
+          timeZone: MARKET_TZ,
           weekday: "short",
           month: "short",
           day: "numeric",
-        });
+        }).format(eventDate);
 
-  const time = eventDate.toLocaleTimeString("en-US", {
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone: MARKET_TZ,
     hour: "numeric",
     minute: "2-digit",
-  });
+  }).format(eventDate);
 
-  return { date, time, isToday, isTomorrow };
+  return { date, time: `${time} ET`, isToday, isTomorrow };
 }
 
 function getTimeUntil(datetime: string): { text: string; isImminent: boolean; isSoon: boolean } {

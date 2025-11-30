@@ -65,6 +65,26 @@ export async function ingestHistoricalGreeks(
       };
     }
 
+    // Extract underlying price from first contract's underlying_asset (Massive.com API format)
+    // The underlying_price is NOT at the top level, it's in each contract's underlying_asset.price
+    const firstContract = chain.contracts[0];
+    const underlyingPrice =
+      chain.underlying_price ??
+      firstContract?.underlying_asset?.price ??
+      firstContract?.underlying_asset?.last_updated_price ??
+      null;
+
+    if (underlyingPrice === null) {
+      return {
+        success: false,
+        symbol,
+        contractsProcessed: 0,
+        contractsStored: 0,
+        timestamp,
+        error: "Could not determine underlying price from options chain",
+      };
+    }
+
     // Map contracts to Greeks records (filter out invalid contracts)
     // Massive.com API structure: contract.details contains ticker, strike_price, expiration_date, contract_type
     const records: GreeksRecord[] = chain.contracts
@@ -118,7 +138,7 @@ export async function ingestHistoricalGreeks(
           implied_volatility: contract.implied_volatility ?? null,
           iv_rank: null, // Calculated separately
           iv_percentile: null, // Calculated separately
-          underlying_price: chain.underlying_price,
+          underlying_price: underlyingPrice,
           dte: calculateDTE(new Date(expiration)),
           option_type: optionType as "call" | "put",
           bid,

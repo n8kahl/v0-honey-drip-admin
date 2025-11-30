@@ -12,7 +12,7 @@
  * - Between walls → TRENDING potential
  */
 
-import { createClient } from '../supabase/client';
+import { createClient } from "../supabase/client.js";
 
 /**
  * Gamma Context Result
@@ -46,14 +46,19 @@ export interface GammaContext {
 
   // Dealer positioning
   dealerNetGamma: number;
-  dealerPositioning: 'LONG_GAMMA' | 'SHORT_GAMMA' | 'NEUTRAL';
-  positioningStrength: 'WEAK' | 'MODERATE' | 'STRONG' | 'EXTREME';
+  dealerPositioning: "LONG_GAMMA" | "SHORT_GAMMA" | "NEUTRAL";
+  positioningStrength: "WEAK" | "MODERATE" | "STRONG" | "EXTREME";
 
   // Market behavior prediction
-  expectedBehavior: 'PINNING' | 'TRENDING' | 'VOLATILE' | 'RANGE_BOUND';
+  expectedBehavior: "PINNING" | "TRENDING" | "VOLATILE" | "RANGE_BOUND";
 
   // Trading recommendations
-  recommendation: 'BREAKOUT_SETUP' | 'TREND_CONTINUATION' | 'AVOID_PINNING' | 'RANGE_TRADE' | 'NEUTRAL';
+  recommendation:
+    | "BREAKOUT_SETUP"
+    | "TREND_CONTINUATION"
+    | "AVOID_PINNING"
+    | "RANGE_TRADE"
+    | "NEUTRAL";
   confidence: number;
 
   // Metadata
@@ -84,23 +89,23 @@ export interface GammaBoostConfig {
 
   // Behavior-specific boosts
   behaviorBoosts: {
-    PINNING: number;      // Default: 0.70 (avoid pinning zones)
-    TRENDING: number;     // Default: 1.15 (favor trends)
-    VOLATILE: number;     // Default: 1.20 (amplified moves)
-    RANGE_BOUND: number;  // Default: 0.85 (choppy)
+    PINNING: number; // Default: 0.70 (avoid pinning zones)
+    TRENDING: number; // Default: 1.15 (favor trends)
+    VOLATILE: number; // Default: 1.20 (amplified moves)
+    RANGE_BOUND: number; // Default: 0.85 (choppy)
   };
 
   // Direction-specific modifiers
   directionBoosts: {
     LONG: {
-      shortGammaBoost: number;     // Default: 1.10 (favor longs when dealers short)
-      longGammaPenalty: number;    // Default: 0.90 (caution when dealers long)
+      shortGammaBoost: number; // Default: 1.10 (favor longs when dealers short)
+      longGammaPenalty: number; // Default: 0.90 (caution when dealers long)
       nearResistancePenalty: number; // Default: 0.85 (avoid longs near walls)
     };
     SHORT: {
-      shortGammaPenalty: number;   // Default: 0.90 (caution when dealers short)
-      longGammaBoost: number;      // Default: 1.05 (favor shorts when dealers long)
-      nearSupportPenalty: number;  // Default: 0.85 (avoid shorts near support)
+      shortGammaPenalty: number; // Default: 0.90 (caution when dealers short)
+      longGammaBoost: number; // Default: 1.05 (favor shorts when dealers long)
+      nearSupportPenalty: number; // Default: 0.85 (avoid shorts near support)
     };
   };
 
@@ -116,32 +121,32 @@ const DEFAULT_GAMMA_BOOST_CONFIG: GammaBoostConfig = {
   positioningBoosts: {
     LONG_GAMMA: {
       WEAK: 0.95,
-      MODERATE: 0.90,
+      MODERATE: 0.9,
       STRONG: 0.85,
-      EXTREME: 0.80,
+      EXTREME: 0.8,
     },
     SHORT_GAMMA: {
       WEAK: 1.05,
-      MODERATE: 1.10,
+      MODERATE: 1.1,
       STRONG: 1.15,
-      EXTREME: 1.20,
+      EXTREME: 1.2,
     },
-    NEUTRAL: 1.00,
+    NEUTRAL: 1.0,
   },
   behaviorBoosts: {
-    PINNING: 0.70,
+    PINNING: 0.7,
     TRENDING: 1.15,
-    VOLATILE: 1.20,
+    VOLATILE: 1.2,
     RANGE_BOUND: 0.85,
   },
   directionBoosts: {
     LONG: {
-      shortGammaBoost: 1.10,
-      longGammaPenalty: 0.90,
+      shortGammaBoost: 1.1,
+      longGammaPenalty: 0.9,
       nearResistancePenalty: 0.85,
     },
     SHORT: {
-      shortGammaPenalty: 0.90,
+      shortGammaPenalty: 0.9,
       longGammaBoost: 1.05,
       nearSupportPenalty: 0.85,
     },
@@ -172,10 +177,10 @@ export class GammaExposureEngine {
     try {
       // Query latest gamma snapshot
       const { data, error } = await supabase
-        .from('gamma_exposure_snapshots')
-        .select('*')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: false })
+        .from("gamma_exposure_snapshots")
+        .select("*")
+        .eq("symbol", symbol)
+        .order("timestamp", { ascending: false })
         .limit(1)
         .single();
 
@@ -244,7 +249,7 @@ export class GammaExposureEngine {
   applyGammaBoost(
     baseScore: number,
     gammaContext: GammaContext | null,
-    direction: 'LONG' | 'SHORT',
+    direction: "LONG" | "SHORT",
     currentPrice?: number
   ): number {
     // No context = no boost
@@ -274,7 +279,7 @@ export class GammaExposureEngine {
     // Combine boosts with confidence weighting
     const combinedBoost = positioningBoost * behaviorBoost * directionBoost;
     const confidenceWeight = gammaContext.confidence / 100;
-    const finalBoost = 1.0 + ((combinedBoost - 1.0) * confidenceWeight) - stalePenalty;
+    const finalBoost = 1.0 + (combinedBoost - 1.0) * confidenceWeight - stalePenalty;
 
     // Apply boost
     const adjustedScore = baseScore * finalBoost;
@@ -296,11 +301,11 @@ export class GammaExposureEngine {
       return `Gamma data not available for ${symbol}`;
     }
 
-    const positioning = context.dealerPositioning.replace(/_/g, ' ');
+    const positioning = context.dealerPositioning.replace(/_/g, " ");
     const behavior = context.expectedBehavior;
-    const rec = context.recommendation.replace(/_/g, ' ');
+    const rec = context.recommendation.replace(/_/g, " ");
 
-    let wallInfo = '';
+    let wallInfo = "";
     if (context.gammaWallResistance && context.distanceToResistancePct !== null) {
       wallInfo = ` | Resist: ${context.gammaWallResistance.toFixed(0)} (${context.distanceToResistancePct.toFixed(1)}%)`;
     }
@@ -321,11 +326,17 @@ export class GammaExposureEngine {
   isNearGammaWall(context: GammaContext, currentPrice: number): boolean {
     const threshold = this.config.nearWallThresholdPct;
 
-    if (context.distanceToResistancePct !== null && Math.abs(context.distanceToResistancePct) < threshold) {
+    if (
+      context.distanceToResistancePct !== null &&
+      Math.abs(context.distanceToResistancePct) < threshold
+    ) {
       return true;
     }
 
-    if (context.distanceToSupportPct !== null && Math.abs(context.distanceToSupportPct) < threshold) {
+    if (
+      context.distanceToSupportPct !== null &&
+      Math.abs(context.distanceToSupportPct) < threshold
+    ) {
       return true;
     }
 
@@ -340,10 +351,10 @@ export class GammaExposureEngine {
    * Get positioning boost multiplier
    */
   private getPositioningBoost(
-    positioning: GammaContext['dealerPositioning'],
-    strength: GammaContext['positioningStrength']
+    positioning: GammaContext["dealerPositioning"],
+    strength: GammaContext["positioningStrength"]
   ): number {
-    if (positioning === 'NEUTRAL') {
+    if (positioning === "NEUTRAL") {
       return this.config.positioningBoosts.NEUTRAL;
     }
 
@@ -354,20 +365,20 @@ export class GammaExposureEngine {
    * Get direction-specific boost
    */
   private getDirectionBoost(
-    direction: 'LONG' | 'SHORT',
+    direction: "LONG" | "SHORT",
     context: GammaContext,
     currentPrice: number
   ): number {
     let boost = 1.0;
 
-    if (direction === 'LONG') {
+    if (direction === "LONG") {
       // Favor longs when dealers are short gamma (amplified upside)
-      if (context.dealerPositioning === 'SHORT_GAMMA') {
+      if (context.dealerPositioning === "SHORT_GAMMA") {
         boost *= this.config.directionBoosts.LONG.shortGammaBoost;
       }
 
       // Penalize longs when dealers are long gamma (dampened upside)
-      if (context.dealerPositioning === 'LONG_GAMMA') {
+      if (context.dealerPositioning === "LONG_GAMMA") {
         boost *= this.config.directionBoosts.LONG.longGammaPenalty;
       }
 
@@ -378,14 +389,14 @@ export class GammaExposureEngine {
       ) {
         boost *= this.config.directionBoosts.LONG.nearResistancePenalty;
       }
-    } else if (direction === 'SHORT') {
+    } else if (direction === "SHORT") {
       // Penalize shorts when dealers are short gamma (amplified downside risk)
-      if (context.dealerPositioning === 'SHORT_GAMMA') {
+      if (context.dealerPositioning === "SHORT_GAMMA") {
         boost *= this.config.directionBoosts.SHORT.shortGammaPenalty;
       }
 
       // Favor shorts when dealers are long gamma (dampened downside)
-      if (context.dealerPositioning === 'LONG_GAMMA') {
+      if (context.dealerPositioning === "LONG_GAMMA") {
         boost *= this.config.directionBoosts.SHORT.longGammaBoost;
       }
 
@@ -409,32 +420,34 @@ export class GammaExposureEngine {
     behavior: string,
     distanceToResistance: number | null,
     distanceToSupport: number | null
-  ): GammaContext['recommendation'] {
+  ): GammaContext["recommendation"] {
     // Near gamma walls → Avoid pinning zones
     const nearWall =
-      (distanceToResistance !== null && Math.abs(distanceToResistance) < this.config.nearWallThresholdPct) ||
-      (distanceToSupport !== null && Math.abs(distanceToSupport) < this.config.nearWallThresholdPct);
+      (distanceToResistance !== null &&
+        Math.abs(distanceToResistance) < this.config.nearWallThresholdPct) ||
+      (distanceToSupport !== null &&
+        Math.abs(distanceToSupport) < this.config.nearWallThresholdPct);
 
-    if (nearWall && behavior === 'PINNING') {
-      return 'AVOID_PINNING';
+    if (nearWall && behavior === "PINNING") {
+      return "AVOID_PINNING";
     }
 
     // Short gamma + not near wall → Breakout potential
-    if (positioning === 'SHORT_GAMMA' && !nearWall) {
-      return 'BREAKOUT_SETUP';
+    if (positioning === "SHORT_GAMMA" && !nearWall) {
+      return "BREAKOUT_SETUP";
     }
 
     // Short gamma + trending behavior → Trend continuation
-    if (positioning === 'SHORT_GAMMA' && behavior === 'TRENDING') {
-      return 'TREND_CONTINUATION';
+    if (positioning === "SHORT_GAMMA" && behavior === "TRENDING") {
+      return "TREND_CONTINUATION";
     }
 
     // Long gamma + range bound → Range trading
-    if (positioning === 'LONG_GAMMA' && behavior === 'RANGE_BOUND') {
-      return 'RANGE_TRADE';
+    if (positioning === "LONG_GAMMA" && behavior === "RANGE_BOUND") {
+      return "RANGE_TRADE";
     }
 
-    return 'NEUTRAL';
+    return "NEUTRAL";
   }
 
   /**
@@ -450,9 +463,9 @@ export class GammaExposureEngine {
     }
 
     // Penalize weak positioning strength
-    if (data.positioning_strength === 'WEAK') {
+    if (data.positioning_strength === "WEAK") {
       confidence -= 15;
-    } else if (data.positioning_strength === 'MODERATE') {
+    } else if (data.positioning_strength === "MODERATE") {
       confidence -= 5;
     }
 

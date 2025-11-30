@@ -15,14 +15,14 @@
  * for real-time unusual activity detection
  */
 
-import { createClient } from '../supabase/client';
+import { createClient } from "../supabase/client.js";
 
 /**
  * Flow Classification
  */
-export type FlowType = 'SWEEP' | 'BLOCK' | 'SPLIT' | 'LARGE' | 'REGULAR';
-export type FlowSentiment = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
-export type FlowAggressiveness = 'PASSIVE' | 'MODERATE' | 'AGGRESSIVE' | 'VERY_AGGRESSIVE';
+export type FlowType = "SWEEP" | "BLOCK" | "SPLIT" | "LARGE" | "REGULAR";
+export type FlowSentiment = "BULLISH" | "BEARISH" | "NEUTRAL";
+export type FlowAggressiveness = "PASSIVE" | "MODERATE" | "AGGRESSIVE" | "VERY_AGGRESSIVE";
 
 /**
  * Flow Analysis Result
@@ -68,7 +68,7 @@ export interface FlowContext {
   institutionalScore: number; // 0-100 (higher = more institutional activity)
 
   // Trading recommendations
-  recommendation: 'FOLLOW_FLOW' | 'CONFIRM_FLOW' | 'NEUTRAL' | 'FADE_FLOW' | 'WAIT';
+  recommendation: "FOLLOW_FLOW" | "CONFIRM_FLOW" | "NEUTRAL" | "FADE_FLOW" | "WAIT";
   confidence: number;
 
   // Metadata
@@ -82,60 +82,60 @@ export interface FlowContext {
 export interface FlowBoostConfig {
   // Time windows to analyze (most recent first)
   timeWindows: {
-    short: number;   // Default: 1 hour (milliseconds)
-    medium: number;  // Default: 4 hours
-    long: number;    // Default: 24 hours
+    short: number; // Default: 1 hour (milliseconds)
+    medium: number; // Default: 4 hours
+    long: number; // Default: 24 hours
   };
 
   // Sentiment thresholds (put/call ratios)
   sentimentThresholds: {
-    strongBullish: number;   // Default: 0.5 (2:1 call:put)
-    bullish: number;         // Default: 0.7 (1.4:1)
-    bearish: number;         // Default: 1.3 (1:1.3)
-    strongBearish: number;   // Default: 2.0 (1:2)
+    strongBullish: number; // Default: 0.5 (2:1 call:put)
+    bullish: number; // Default: 0.7 (1.4:1)
+    bearish: number; // Default: 1.3 (1:1.3)
+    strongBearish: number; // Default: 2.0 (1:2)
   };
 
   // Boost multipliers by sentiment strength
   sentimentBoosts: {
     BULLISH: {
-      WEAK: number;         // Default: 1.05
-      MODERATE: number;     // Default: 1.10
-      STRONG: number;       // Default: 1.15
-      VERY_STRONG: number;  // Default: 1.20
+      WEAK: number; // Default: 1.05
+      MODERATE: number; // Default: 1.10
+      STRONG: number; // Default: 1.15
+      VERY_STRONG: number; // Default: 1.20
     };
     BEARISH: {
-      WEAK: number;         // Default: 1.05
-      MODERATE: number;     // Default: 1.10
-      STRONG: number;       // Default: 1.15
-      VERY_STRONG: number;  // Default: 1.20
+      WEAK: number; // Default: 1.05
+      MODERATE: number; // Default: 1.10
+      STRONG: number; // Default: 1.15
+      VERY_STRONG: number; // Default: 1.20
     };
-    NEUTRAL: number;        // Default: 1.00
+    NEUTRAL: number; // Default: 1.00
   };
 
   // Direction-specific boosts
   directionBoosts: {
     LONG: {
-      bullishFlowBoost: number;     // Default: 1.15 (favor longs with bullish flow)
-      bearishFlowPenalty: number;   // Default: 0.80 (avoid longs with bearish flow)
+      bullishFlowBoost: number; // Default: 1.15 (favor longs with bullish flow)
+      bearishFlowPenalty: number; // Default: 0.80 (avoid longs with bearish flow)
     };
     SHORT: {
-      bearishFlowBoost: number;     // Default: 1.15 (favor shorts with bearish flow)
-      bullishFlowPenalty: number;   // Default: 0.80 (avoid shorts with bullish flow)
+      bearishFlowBoost: number; // Default: 1.15 (favor shorts with bearish flow)
+      bullishFlowPenalty: number; // Default: 0.80 (avoid shorts with bullish flow)
     };
   };
 
   // Institutional activity boosts
   institutionalBoosts: {
-    low: number;        // Default: 0.95 (< 30 institutional score)
-    moderate: number;   // Default: 1.05 (30-60)
-    high: number;       // Default: 1.10 (60-80)
-    veryHigh: number;   // Default: 1.15 (> 80)
+    low: number; // Default: 0.95 (< 30 institutional score)
+    moderate: number; // Default: 1.05 (30-60)
+    high: number; // Default: 1.10 (60-80)
+    veryHigh: number; // Default: 1.15 (> 80)
   };
 
   // Minimum thresholds for confidence
-  minTradeCount: number;        // Default: 10
-  minPremium: number;           // Default: $50,000
-  staleThresholdHours: number;  // Default: 2 hours
+  minTradeCount: number; // Default: 10
+  minPremium: number; // Default: $50,000
+  staleThresholdHours: number; // Default: 2 hours
 }
 
 /**
@@ -143,9 +143,9 @@ export interface FlowBoostConfig {
  */
 const DEFAULT_FLOW_BOOST_CONFIG: FlowBoostConfig = {
   timeWindows: {
-    short: 60 * 60 * 1000,      // 1 hour
+    short: 60 * 60 * 1000, // 1 hour
     medium: 4 * 60 * 60 * 1000, // 4 hours
-    long: 24 * 60 * 60 * 1000,  // 24 hours
+    long: 24 * 60 * 60 * 1000, // 24 hours
   },
   sentimentThresholds: {
     strongBullish: 0.5,
@@ -156,32 +156,32 @@ const DEFAULT_FLOW_BOOST_CONFIG: FlowBoostConfig = {
   sentimentBoosts: {
     BULLISH: {
       WEAK: 1.05,
-      MODERATE: 1.10,
+      MODERATE: 1.1,
       STRONG: 1.15,
-      VERY_STRONG: 1.20,
+      VERY_STRONG: 1.2,
     },
     BEARISH: {
       WEAK: 1.05,
-      MODERATE: 1.10,
+      MODERATE: 1.1,
       STRONG: 1.15,
-      VERY_STRONG: 1.20,
+      VERY_STRONG: 1.2,
     },
-    NEUTRAL: 1.00,
+    NEUTRAL: 1.0,
   },
   directionBoosts: {
     LONG: {
       bullishFlowBoost: 1.15,
-      bearishFlowPenalty: 0.80,
+      bearishFlowPenalty: 0.8,
     },
     SHORT: {
       bearishFlowBoost: 1.15,
-      bullishFlowPenalty: 0.80,
+      bullishFlowPenalty: 0.8,
     },
   },
   institutionalBoosts: {
     low: 0.95,
     moderate: 1.05,
-    high: 1.10,
+    high: 1.1,
     veryHigh: 1.15,
   },
   minTradeCount: 10,
@@ -208,7 +208,7 @@ export class FlowAnalysisEngine {
    */
   async getFlowContext(
     symbol: string,
-    window: 'short' | 'medium' | 'long' = 'medium'
+    window: "short" | "medium" | "long" = "medium"
   ): Promise<FlowContext | null> {
     const supabase = createClient();
 
@@ -219,14 +219,17 @@ export class FlowAnalysisEngine {
 
       // Query flow history from database
       const { data, error } = await supabase
-        .from('options_flow_history')
-        .select('*')
-        .eq('symbol', symbol)
-        .gte('timestamp', since)
-        .order('timestamp', { ascending: false });
+        .from("options_flow_history")
+        .select("*")
+        .eq("symbol", symbol)
+        .gte("timestamp", since)
+        .order("timestamp", { ascending: false });
 
       if (error || !data || data.length === 0) {
-        console.warn(`[FlowAnalysisEngine] No flow data for ${symbol} (${window}):`, error?.message);
+        console.warn(
+          `[FlowAnalysisEngine] No flow data for ${symbol} (${window}):`,
+          error?.message
+        );
         return null;
       }
 
@@ -297,7 +300,7 @@ export class FlowAnalysisEngine {
   applyFlowBoost(
     baseScore: number,
     flowContext: FlowContext | null,
-    direction: 'LONG' | 'SHORT'
+    direction: "LONG" | "SHORT"
   ): number {
     // No context = no boost
     if (!flowContext) {
@@ -316,7 +319,10 @@ export class FlowAnalysisEngine {
     const stalePenalty = flowContext.isStale ? 0.3 : 0;
 
     // Get sentiment boost
-    const sentimentBoost = this.getSentimentBoost(flowContext.sentiment, flowContext.sentimentStrength);
+    const sentimentBoost = this.getSentimentBoost(
+      flowContext.sentiment,
+      flowContext.sentimentStrength
+    );
 
     // Get direction-specific boost
     const directionBoost = this.getDirectionBoost(direction, flowContext.sentiment);
@@ -327,7 +333,7 @@ export class FlowAnalysisEngine {
     // Combine boosts with confidence weighting
     const combinedBoost = sentimentBoost * directionBoost * institutionalBoost;
     const confidenceWeight = flowContext.confidence / 100;
-    const finalBoost = 1.0 + ((combinedBoost - 1.0) * confidenceWeight) - stalePenalty;
+    const finalBoost = 1.0 + (combinedBoost - 1.0) * confidenceWeight - stalePenalty;
 
     // Apply boost
     const adjustedScore = baseScore * finalBoost;
@@ -343,7 +349,10 @@ export class FlowAnalysisEngine {
    * @param window - Time window
    * @returns Human-readable summary
    */
-  async getFlowSummary(symbol: string, window: 'short' | 'medium' | 'long' = 'medium'): Promise<string> {
+  async getFlowSummary(
+    symbol: string,
+    window: "short" | "medium" | "long" = "medium"
+  ): Promise<string> {
     const context = await this.getFlowContext(symbol, window);
 
     if (!context) {
@@ -353,7 +362,7 @@ export class FlowAnalysisEngine {
     const sentiment = context.sentiment;
     const strength = context.sentimentStrength.toFixed(0);
     const instScore = context.institutionalScore.toFixed(0);
-    const rec = context.recommendation.replace(/_/g, ' ');
+    const rec = context.recommendation.replace(/_/g, " ");
 
     return `Flow (${context.window}): ${sentiment} (${strength}%) | Inst: ${instScore}% → ${rec}`;
   }
@@ -408,7 +417,7 @@ export class FlowAnalysisEngine {
       totalVolume += volume;
       totalPremium += premium;
 
-      if (flow.option_type === 'call') {
+      if (flow.option_type === "call") {
         callVolume += volume;
         callPremium += premium;
       } else {
@@ -416,7 +425,7 @@ export class FlowAnalysisEngine {
         putPremium += premium;
       }
 
-      if (flow.side === 'buy') {
+      if (flow.side === "buy") {
         buyVolume += volume;
         buyPremium += premium;
       } else {
@@ -425,10 +434,10 @@ export class FlowAnalysisEngine {
       }
 
       // Count flow types
-      if (flow.type === 'SWEEP') sweepCount++;
-      else if (flow.type === 'BLOCK') blockCount++;
-      else if (flow.type === 'SPLIT') splitCount++;
-      else if (flow.type === 'LARGE') largeCount++;
+      if (flow.type === "SWEEP") sweepCount++;
+      else if (flow.type === "BLOCK") blockCount++;
+      else if (flow.type === "SPLIT") splitCount++;
+      else if (flow.type === "LARGE") largeCount++;
     }
 
     const putCallVolumeRatio = callVolume > 0 ? putVolume / callVolume : 0;
@@ -474,19 +483,19 @@ export class FlowAnalysisEngine {
     let strength: number;
 
     if (avgRatio < this.config.sentimentThresholds.strongBullish) {
-      sentiment = 'BULLISH';
+      sentiment = "BULLISH";
       strength = Math.min(100, (1 - avgRatio) * 100);
     } else if (avgRatio < this.config.sentimentThresholds.bullish) {
-      sentiment = 'BULLISH';
+      sentiment = "BULLISH";
       strength = Math.min(80, (1 - avgRatio) * 80);
     } else if (avgRatio > this.config.sentimentThresholds.strongBearish) {
-      sentiment = 'BEARISH';
+      sentiment = "BEARISH";
       strength = Math.min(100, (avgRatio - 1) * 100);
     } else if (avgRatio > this.config.sentimentThresholds.bearish) {
-      sentiment = 'BEARISH';
+      sentiment = "BEARISH";
       strength = Math.min(80, (avgRatio - 1) * 80);
     } else {
-      sentiment = 'NEUTRAL';
+      sentiment = "NEUTRAL";
       strength = 50;
     }
 
@@ -507,10 +516,10 @@ export class FlowAnalysisEngine {
 
     const aggressivenessScore = (sweepPercentage + buyPremiumPercentage) / 2;
 
-    if (aggressivenessScore > 75) return 'VERY_AGGRESSIVE';
-    if (aggressivenessScore > 60) return 'AGGRESSIVE';
-    if (aggressivenessScore > 40) return 'MODERATE';
-    return 'PASSIVE';
+    if (aggressivenessScore > 75) return "VERY_AGGRESSIVE";
+    if (aggressivenessScore > 60) return "AGGRESSIVE";
+    if (aggressivenessScore > 40) return "MODERATE";
+    return "PASSIVE";
   }
 
   /**
@@ -529,11 +538,13 @@ export class FlowAnalysisEngine {
     else if (aggregated.avgTradeSize > 10000) score += 5;
 
     // Sweep activity (0-20 points)
-    const sweepPercentage = aggregated.tradeCount > 0 ? (aggregated.sweepCount / aggregated.tradeCount) * 100 : 0;
+    const sweepPercentage =
+      aggregated.tradeCount > 0 ? (aggregated.sweepCount / aggregated.tradeCount) * 100 : 0;
     score += Math.min(20, sweepPercentage);
 
     // Block activity (0-10 points)
-    const blockPercentage = aggregated.tradeCount > 0 ? (aggregated.blockCount / aggregated.tradeCount) * 100 : 0;
+    const blockPercentage =
+      aggregated.tradeCount > 0 ? (aggregated.blockCount / aggregated.tradeCount) * 100 : 0;
     score += Math.min(10, blockPercentage);
 
     return Math.min(100, score);
@@ -543,11 +554,14 @@ export class FlowAnalysisEngine {
    * Get sentiment boost multiplier
    */
   private getSentimentBoost(sentiment: FlowSentiment, strength: number): number {
-    if (sentiment === 'NEUTRAL') {
+    if (sentiment === "NEUTRAL") {
       return this.config.sentimentBoosts.NEUTRAL;
     }
 
-    const category = sentiment === 'BULLISH' ? this.config.sentimentBoosts.BULLISH : this.config.sentimentBoosts.BEARISH;
+    const category =
+      sentiment === "BULLISH"
+        ? this.config.sentimentBoosts.BULLISH
+        : this.config.sentimentBoosts.BEARISH;
 
     if (strength > 80) return category.VERY_STRONG;
     if (strength > 60) return category.STRONG;
@@ -558,19 +572,19 @@ export class FlowAnalysisEngine {
   /**
    * Get direction-specific boost
    */
-  private getDirectionBoost(direction: 'LONG' | 'SHORT', sentiment: FlowSentiment): number {
-    if (direction === 'LONG') {
-      if (sentiment === 'BULLISH') {
+  private getDirectionBoost(direction: "LONG" | "SHORT", sentiment: FlowSentiment): number {
+    if (direction === "LONG") {
+      if (sentiment === "BULLISH") {
         return this.config.directionBoosts.LONG.bullishFlowBoost;
       }
-      if (sentiment === 'BEARISH') {
+      if (sentiment === "BEARISH") {
         return this.config.directionBoosts.LONG.bearishFlowPenalty;
       }
-    } else if (direction === 'SHORT') {
-      if (sentiment === 'BEARISH') {
+    } else if (direction === "SHORT") {
+      if (sentiment === "BEARISH") {
         return this.config.directionBoosts.SHORT.bearishFlowBoost;
       }
-      if (sentiment === 'BULLISH') {
+      if (sentiment === "BULLISH") {
         return this.config.directionBoosts.SHORT.bullishFlowPenalty;
       }
     }
@@ -596,33 +610,33 @@ export class FlowAnalysisEngine {
     strength: number,
     institutionalScore: number,
     tradeCount: number
-  ): FlowContext['recommendation'] {
+  ): FlowContext["recommendation"] {
     // Insufficient data
     if (tradeCount < this.config.minTradeCount) {
-      return 'WAIT';
+      return "WAIT";
     }
 
     // Strong sentiment + high institutional = follow flow
     if (strength > 70 && institutionalScore > 70) {
-      return 'FOLLOW_FLOW';
+      return "FOLLOW_FLOW";
     }
 
     // Moderate sentiment + moderate institutional = confirm flow
     if (strength > 50 && institutionalScore > 50) {
-      return 'CONFIRM_FLOW';
+      return "CONFIRM_FLOW";
     }
 
     // Weak sentiment or low institutional = neutral
-    if (sentiment === 'NEUTRAL' || institutionalScore < 30) {
-      return 'NEUTRAL';
+    if (sentiment === "NEUTRAL" || institutionalScore < 30) {
+      return "NEUTRAL";
     }
 
     // Counter-trend (retail heavy) = fade flow
     if (institutionalScore < 20 && strength > 60) {
-      return 'FADE_FLOW';
+      return "FADE_FLOW";
     }
 
-    return 'NEUTRAL';
+    return "NEUTRAL";
   }
 
   /**

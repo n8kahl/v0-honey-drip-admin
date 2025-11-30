@@ -7,7 +7,7 @@
  * Color: Direction (green=long, red=short)
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../../../lib/utils";
 import {
   ScatterChart,
@@ -21,6 +21,7 @@ import {
   ReferenceArea,
   Cell,
 } from "recharts";
+import type { TooltipProps } from "recharts";
 import { Target, TrendingUp, TrendingDown } from "lucide-react";
 import type { OpportunityDot } from "../../../../types/radar-visuals";
 
@@ -59,6 +60,22 @@ export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityM
       z: dot.volatility * 10, // Scale for bubble size
     }));
   }, [data]);
+
+  // Track viewport size to swap chart/table views responsively
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < 768;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile(); // Sync on mount in case of SSR
+
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   if (data.length === 0) {
     return (
@@ -263,7 +280,11 @@ export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityM
 }
 
 // Custom tooltip
-function CustomTooltip({ active, payload, onAddTicker }: any) {
+type OpportunityTooltipProps = TooltipProps<number, string> & {
+  onAddTicker?: (symbol: string) => void;
+};
+
+function CustomTooltip({ active, payload, onAddTicker }: OpportunityTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   const data = payload[0].payload as OpportunityDot;

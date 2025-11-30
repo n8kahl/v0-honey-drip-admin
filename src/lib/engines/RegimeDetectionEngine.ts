@@ -12,33 +12,38 @@
  * - EUPHORIA: Extreme greed → Contrarian shorts
  */
 
-import { createClient } from '../supabase/client';
+import { createClient } from "../supabase/client.js";
 
 /**
  * Market Regime Classification
  */
 export type MarketRegime =
-  | 'STRONG_UPTREND'
-  | 'WEAK_UPTREND'
-  | 'CHOPPY_BULLISH'
-  | 'RANGE_BOUND'
-  | 'CHOPPY_BEARISH'
-  | 'WEAK_DOWNTREND'
-  | 'STRONG_DOWNTREND'
-  | 'BREAKOUT'
-  | 'BREAKDOWN'
-  | 'CAPITULATION'
-  | 'EUPHORIA';
+  | "STRONG_UPTREND"
+  | "WEAK_UPTREND"
+  | "CHOPPY_BULLISH"
+  | "RANGE_BOUND"
+  | "CHOPPY_BEARISH"
+  | "WEAK_DOWNTREND"
+  | "STRONG_DOWNTREND"
+  | "BREAKOUT"
+  | "BREAKDOWN"
+  | "CAPITULATION"
+  | "EUPHORIA";
 
 /**
  * VIX Regime
  */
-export type VIXRegime = 'EXTREMELY_LOW' | 'LOW' | 'NORMAL' | 'ELEVATED' | 'HIGH' | 'EXTREME';
+export type VIXRegime = "EXTREMELY_LOW" | "LOW" | "NORMAL" | "ELEVATED" | "HIGH" | "EXTREME";
 
 /**
  * Breadth Regime
  */
-export type BreadthRegime = 'EXTREMELY_BEARISH' | 'BEARISH' | 'NEUTRAL' | 'BULLISH' | 'EXTREMELY_BULLISH';
+export type BreadthRegime =
+  | "EXTREMELY_BEARISH"
+  | "BEARISH"
+  | "NEUTRAL"
+  | "BULLISH"
+  | "EXTREMELY_BULLISH";
 
 /**
  * Regime Context Result
@@ -68,7 +73,14 @@ export interface RegimeContext {
   confidenceScore: number;
 
   // Trading recommendations
-  recommendation: 'AGGRESSIVE_LONGS' | 'SELECTIVE_LONGS' | 'NEUTRAL' | 'SELECTIVE_SHORTS' | 'AGGRESSIVE_SHORTS' | 'AVOID_TRADING' | 'CONTRARIAN_OPPORTUNITY';
+  recommendation:
+    | "AGGRESSIVE_LONGS"
+    | "SELECTIVE_LONGS"
+    | "NEUTRAL"
+    | "SELECTIVE_SHORTS"
+    | "AGGRESSIVE_SHORTS"
+    | "AVOID_TRADING"
+    | "CONTRARIAN_OPPORTUNITY";
   strategyAdvice: string;
 
   // Metadata
@@ -82,50 +94,50 @@ export interface RegimeContext {
 export interface RegimeBoostConfig {
   // Boost multipliers by market regime
   regimeBoosts: {
-    STRONG_UPTREND: number;       // Default: 1.25
-    WEAK_UPTREND: number;         // Default: 1.10
-    CHOPPY_BULLISH: number;       // Default: 0.95
-    RANGE_BOUND: number;          // Default: 0.80
-    CHOPPY_BEARISH: number;       // Default: 0.90
-    WEAK_DOWNTREND: number;       // Default: 1.05
-    STRONG_DOWNTREND: number;     // Default: 1.20
-    BREAKOUT: number;             // Default: 1.30
-    BREAKDOWN: number;            // Default: 1.25
-    CAPITULATION: number;         // Default: 1.40 (contrarian)
-    EUPHORIA: number;             // Default: 0.70 (caution)
+    STRONG_UPTREND: number; // Default: 1.25
+    WEAK_UPTREND: number; // Default: 1.10
+    CHOPPY_BULLISH: number; // Default: 0.95
+    RANGE_BOUND: number; // Default: 0.80
+    CHOPPY_BEARISH: number; // Default: 0.90
+    WEAK_DOWNTREND: number; // Default: 1.05
+    STRONG_DOWNTREND: number; // Default: 1.20
+    BREAKOUT: number; // Default: 1.30
+    BREAKDOWN: number; // Default: 1.25
+    CAPITULATION: number; // Default: 1.40 (contrarian)
+    EUPHORIA: number; // Default: 0.70 (caution)
   };
 
   // VIX-based boosts
   vixBoosts: {
-    EXTREMELY_LOW: number;  // Default: 1.05 (complacency)
-    LOW: number;            // Default: 1.10 (low vol)
-    NORMAL: number;         // Default: 1.00
-    ELEVATED: number;       // Default: 0.95 (caution)
-    HIGH: number;           // Default: 0.85 (high vol)
-    EXTREME: number;        // Default: 0.70 (panic/opportunity)
+    EXTREMELY_LOW: number; // Default: 1.05 (complacency)
+    LOW: number; // Default: 1.10 (low vol)
+    NORMAL: number; // Default: 1.00
+    ELEVATED: number; // Default: 0.95 (caution)
+    HIGH: number; // Default: 0.85 (high vol)
+    EXTREME: number; // Default: 0.70 (panic/opportunity)
   };
 
   // Direction-specific modifiers
   directionBoosts: {
     LONG: {
-      uptrendBoost: number;          // Default: 1.20
-      downtrendPenalty: number;      // Default: 0.70
-      capitulationBoost: number;     // Default: 1.30 (buy fear)
-      euphoriaPenalty: number;       // Default: 0.60 (avoid greed)
+      uptrendBoost: number; // Default: 1.20
+      downtrendPenalty: number; // Default: 0.70
+      capitulationBoost: number; // Default: 1.30 (buy fear)
+      euphoriaPenalty: number; // Default: 0.60 (avoid greed)
     };
     SHORT: {
-      downtrendBoost: number;        // Default: 1.20
-      uptrendPenalty: number;        // Default: 0.70
-      euphoriaBoost: number;         // Default: 1.25 (sell greed)
-      capitulationPenalty: number;   // Default: 0.65 (avoid panic)
+      downtrendBoost: number; // Default: 1.20
+      uptrendPenalty: number; // Default: 0.70
+      euphoriaBoost: number; // Default: 1.25 (sell greed)
+      capitulationPenalty: number; // Default: 0.65 (avoid panic)
     };
   };
 
   // Strategy-specific recommendations
   strategyFilters: {
-    SCALP: MarketRegime[];    // Favorable regimes for scalping
-    DAY: MarketRegime[];      // Favorable regimes for day trading
-    SWING: MarketRegime[];    // Favorable regimes for swings
+    SCALP: MarketRegime[]; // Favorable regimes for scalping
+    DAY: MarketRegime[]; // Favorable regimes for day trading
+    SWING: MarketRegime[]; // Favorable regimes for swings
   };
 
   staleThresholdHours: number; // Default: 24 hours
@@ -137,43 +149,50 @@ export interface RegimeBoostConfig {
 const DEFAULT_REGIME_BOOST_CONFIG: RegimeBoostConfig = {
   regimeBoosts: {
     STRONG_UPTREND: 1.25,
-    WEAK_UPTREND: 1.10,
+    WEAK_UPTREND: 1.1,
     CHOPPY_BULLISH: 0.95,
-    RANGE_BOUND: 0.80,
-    CHOPPY_BEARISH: 0.90,
+    RANGE_BOUND: 0.8,
+    CHOPPY_BEARISH: 0.9,
     WEAK_DOWNTREND: 1.05,
-    STRONG_DOWNTREND: 1.20,
-    BREAKOUT: 1.30,
+    STRONG_DOWNTREND: 1.2,
+    BREAKOUT: 1.3,
     BREAKDOWN: 1.25,
-    CAPITULATION: 1.40,
-    EUPHORIA: 0.70,
+    CAPITULATION: 1.4,
+    EUPHORIA: 0.7,
   },
   vixBoosts: {
     EXTREMELY_LOW: 1.05,
-    LOW: 1.10,
-    NORMAL: 1.00,
+    LOW: 1.1,
+    NORMAL: 1.0,
     ELEVATED: 0.95,
     HIGH: 0.85,
-    EXTREME: 0.70,
+    EXTREME: 0.7,
   },
   directionBoosts: {
     LONG: {
-      uptrendBoost: 1.20,
-      downtrendPenalty: 0.70,
-      capitulationBoost: 1.30,
-      euphoriaPenalty: 0.60,
+      uptrendBoost: 1.2,
+      downtrendPenalty: 0.7,
+      capitulationBoost: 1.3,
+      euphoriaPenalty: 0.6,
     },
     SHORT: {
-      downtrendBoost: 1.20,
-      uptrendPenalty: 0.70,
+      downtrendBoost: 1.2,
+      uptrendPenalty: 0.7,
       euphoriaBoost: 1.25,
       capitulationPenalty: 0.65,
     },
   },
   strategyFilters: {
-    SCALP: ['STRONG_UPTREND', 'WEAK_UPTREND', 'BREAKOUT', 'STRONG_DOWNTREND', 'BREAKDOWN'],
-    DAY: ['STRONG_UPTREND', 'WEAK_UPTREND', 'STRONG_DOWNTREND', 'WEAK_DOWNTREND', 'BREAKOUT', 'BREAKDOWN'],
-    SWING: ['STRONG_UPTREND', 'STRONG_DOWNTREND', 'BREAKOUT', 'BREAKDOWN', 'CAPITULATION'],
+    SCALP: ["STRONG_UPTREND", "WEAK_UPTREND", "BREAKOUT", "STRONG_DOWNTREND", "BREAKDOWN"],
+    DAY: [
+      "STRONG_UPTREND",
+      "WEAK_UPTREND",
+      "STRONG_DOWNTREND",
+      "WEAK_DOWNTREND",
+      "BREAKOUT",
+      "BREAKDOWN",
+    ],
+    SWING: ["STRONG_UPTREND", "STRONG_DOWNTREND", "BREAKOUT", "BREAKDOWN", "CAPITULATION"],
   },
   staleThresholdHours: 24,
 };
@@ -199,9 +218,9 @@ export class RegimeDetectionEngine {
     try {
       // Query latest market regime
       const { data, error } = await supabase
-        .from('market_regime_history')
-        .select('*')
-        .order('date', { ascending: false })
+        .from("market_regime_history")
+        .select("*")
+        .order("date", { ascending: false })
         .limit(1)
         .single();
 
@@ -259,8 +278,8 @@ export class RegimeDetectionEngine {
   applyRegimeBoost(
     baseScore: number,
     regimeContext: RegimeContext | null,
-    direction: 'LONG' | 'SHORT',
-    tradingStyle?: 'SCALP' | 'DAY' | 'SWING'
+    direction: "LONG" | "SHORT",
+    tradingStyle?: "SCALP" | "DAY" | "SWING"
   ): number {
     // No context = no boost
     if (!regimeContext) {
@@ -288,7 +307,7 @@ export class RegimeDetectionEngine {
     // Combine boosts with confidence weighting
     const combinedBoost = regimeBoost * vixBoost * directionBoost * strategyFilter;
     const confidenceWeight = regimeContext.confidenceScore / 100;
-    const finalBoost = 1.0 + ((combinedBoost - 1.0) * confidenceWeight) - stalePenalty;
+    const finalBoost = 1.0 + (combinedBoost - 1.0) * confidenceWeight - stalePenalty;
 
     // Apply boost
     const adjustedScore = baseScore * finalBoost;
@@ -309,9 +328,9 @@ export class RegimeDetectionEngine {
       return `Regime data not available`;
     }
 
-    const regime = context.marketRegime.replace(/_/g, ' ');
-    const vix = context.vixRegime.replace(/_/g, ' ');
-    const rec = context.recommendation.replace(/_/g, ' ');
+    const regime = context.marketRegime.replace(/_/g, " ");
+    const vix = context.vixRegime.replace(/_/g, " ");
+    const rec = context.recommendation.replace(/_/g, " ");
 
     return `Regime: ${regime} | VIX: ${vix} (${context.vixLevel.toFixed(1)}) → ${rec}`;
   }
@@ -322,7 +341,7 @@ export class RegimeDetectionEngine {
    * @param style - Trading style
    * @returns True if favorable, false otherwise
    */
-  async isFavorableForStyle(style: 'SCALP' | 'DAY' | 'SWING'): Promise<boolean> {
+  async isFavorableForStyle(style: "SCALP" | "DAY" | "SWING"): Promise<boolean> {
     const context = await this.getRegimeContext();
     if (!context) return true; // Unknown regime = neutral (don't filter)
 
@@ -336,41 +355,51 @@ export class RegimeDetectionEngine {
   /**
    * Check if regime is favorable for a strategy
    */
-  private isFavorableRegime(regime: MarketRegime, style: 'SCALP' | 'DAY' | 'SWING'): boolean {
+  private isFavorableRegime(regime: MarketRegime, style: "SCALP" | "DAY" | "SWING"): boolean {
     return this.config.strategyFilters[style].includes(regime);
   }
 
   /**
    * Get direction-specific boost
    */
-  private getDirectionBoost(direction: 'LONG' | 'SHORT', regime: MarketRegime): number {
-    const uptrendRegimes: MarketRegime[] = ['STRONG_UPTREND', 'WEAK_UPTREND', 'CHOPPY_BULLISH', 'BREAKOUT'];
-    const downtrendRegimes: MarketRegime[] = ['STRONG_DOWNTREND', 'WEAK_DOWNTREND', 'CHOPPY_BEARISH', 'BREAKDOWN'];
+  private getDirectionBoost(direction: "LONG" | "SHORT", regime: MarketRegime): number {
+    const uptrendRegimes: MarketRegime[] = [
+      "STRONG_UPTREND",
+      "WEAK_UPTREND",
+      "CHOPPY_BULLISH",
+      "BREAKOUT",
+    ];
+    const downtrendRegimes: MarketRegime[] = [
+      "STRONG_DOWNTREND",
+      "WEAK_DOWNTREND",
+      "CHOPPY_BEARISH",
+      "BREAKDOWN",
+    ];
 
-    if (direction === 'LONG') {
+    if (direction === "LONG") {
       if (uptrendRegimes.includes(regime)) {
         return this.config.directionBoosts.LONG.uptrendBoost;
       }
       if (downtrendRegimes.includes(regime)) {
         return this.config.directionBoosts.LONG.downtrendPenalty;
       }
-      if (regime === 'CAPITULATION') {
+      if (regime === "CAPITULATION") {
         return this.config.directionBoosts.LONG.capitulationBoost;
       }
-      if (regime === 'EUPHORIA') {
+      if (regime === "EUPHORIA") {
         return this.config.directionBoosts.LONG.euphoriaPenalty;
       }
-    } else if (direction === 'SHORT') {
+    } else if (direction === "SHORT") {
       if (downtrendRegimes.includes(regime)) {
         return this.config.directionBoosts.SHORT.downtrendBoost;
       }
       if (uptrendRegimes.includes(regime)) {
         return this.config.directionBoosts.SHORT.uptrendPenalty;
       }
-      if (regime === 'EUPHORIA') {
+      if (regime === "EUPHORIA") {
         return this.config.directionBoosts.SHORT.euphoriaBoost;
       }
-      if (regime === 'CAPITULATION') {
+      if (regime === "CAPITULATION") {
         return this.config.directionBoosts.SHORT.capitulationPenalty;
       }
     }
@@ -384,40 +413,40 @@ export class RegimeDetectionEngine {
   private getRecommendation(
     regime: MarketRegime,
     vixRegime: VIXRegime
-  ): RegimeContext['recommendation'] {
+  ): RegimeContext["recommendation"] {
     // Extreme conditions
-    if (regime === 'CAPITULATION') {
-      return 'CONTRARIAN_OPPORTUNITY';
+    if (regime === "CAPITULATION") {
+      return "CONTRARIAN_OPPORTUNITY";
     }
-    if (regime === 'EUPHORIA') {
-      return 'CONTRARIAN_OPPORTUNITY';
+    if (regime === "EUPHORIA") {
+      return "CONTRARIAN_OPPORTUNITY";
     }
 
     // Strong trends
-    if (regime === 'STRONG_UPTREND' || regime === 'BREAKOUT') {
-      return 'AGGRESSIVE_LONGS';
+    if (regime === "STRONG_UPTREND" || regime === "BREAKOUT") {
+      return "AGGRESSIVE_LONGS";
     }
-    if (regime === 'STRONG_DOWNTREND' || regime === 'BREAKDOWN') {
-      return 'AGGRESSIVE_SHORTS';
+    if (regime === "STRONG_DOWNTREND" || regime === "BREAKDOWN") {
+      return "AGGRESSIVE_SHORTS";
     }
 
     // Weak trends
-    if (regime === 'WEAK_UPTREND' || regime === 'CHOPPY_BULLISH') {
-      return 'SELECTIVE_LONGS';
+    if (regime === "WEAK_UPTREND" || regime === "CHOPPY_BULLISH") {
+      return "SELECTIVE_LONGS";
     }
-    if (regime === 'WEAK_DOWNTREND' || regime === 'CHOPPY_BEARISH') {
-      return 'SELECTIVE_SHORTS';
+    if (regime === "WEAK_DOWNTREND" || regime === "CHOPPY_BEARISH") {
+      return "SELECTIVE_SHORTS";
     }
 
     // Range bound
-    if (regime === 'RANGE_BOUND') {
-      if (vixRegime === 'EXTREMELY_LOW' || vixRegime === 'LOW') {
-        return 'NEUTRAL';
+    if (regime === "RANGE_BOUND") {
+      if (vixRegime === "EXTREMELY_LOW" || vixRegime === "LOW") {
+        return "NEUTRAL";
       }
-      return 'AVOID_TRADING';
+      return "AVOID_TRADING";
     }
 
-    return 'NEUTRAL';
+    return "NEUTRAL";
   }
 
   /**
@@ -425,20 +454,20 @@ export class RegimeDetectionEngine {
    */
   private getStrategyAdvice(regime: MarketRegime): string {
     const advice: Record<MarketRegime, string> = {
-      STRONG_UPTREND: 'Favor trend-following longs. Use pullbacks as entries. Ride winners.',
-      WEAK_UPTREND: 'Selective longs on strong setups. Take profits at resistance. Reduce size.',
-      CHOPPY_BULLISH: 'Quick scalps only. Avoid holding overnight. Watch for false breakouts.',
-      RANGE_BOUND: 'Range-bound strategies only. Fade extremes. Reduce exposure.',
-      CHOPPY_BEARISH: 'Quick scalps or avoid. High probability of whipsaws. Reduce size.',
-      WEAK_DOWNTREND: 'Selective shorts on weak bounces. Cover at support. Reduce size.',
-      STRONG_DOWNTREND: 'Favor trend-following shorts. Sell rallies. Ride winners.',
-      BREAKOUT: 'Aggressive entries on breakout confirmation. Trail stops. Full size.',
-      BREAKDOWN: 'Aggressive shorts on breakdown confirmation. Trail stops. Full size.',
-      CAPITULATION: 'Contrarian longs near panic lows. Wait for reversal signals. Scale in.',
-      EUPHORIA: 'Contrarian shorts near greed highs. Wait for exhaustion. Scale in.',
+      STRONG_UPTREND: "Favor trend-following longs. Use pullbacks as entries. Ride winners.",
+      WEAK_UPTREND: "Selective longs on strong setups. Take profits at resistance. Reduce size.",
+      CHOPPY_BULLISH: "Quick scalps only. Avoid holding overnight. Watch for false breakouts.",
+      RANGE_BOUND: "Range-bound strategies only. Fade extremes. Reduce exposure.",
+      CHOPPY_BEARISH: "Quick scalps or avoid. High probability of whipsaws. Reduce size.",
+      WEAK_DOWNTREND: "Selective shorts on weak bounces. Cover at support. Reduce size.",
+      STRONG_DOWNTREND: "Favor trend-following shorts. Sell rallies. Ride winners.",
+      BREAKOUT: "Aggressive entries on breakout confirmation. Trail stops. Full size.",
+      BREAKDOWN: "Aggressive shorts on breakdown confirmation. Trail stops. Full size.",
+      CAPITULATION: "Contrarian longs near panic lows. Wait for reversal signals. Scale in.",
+      EUPHORIA: "Contrarian shorts near greed highs. Wait for exhaustion. Scale in.",
     };
 
-    return advice[regime] || 'Monitor market conditions closely.';
+    return advice[regime] || "Monitor market conditions closely.";
   }
 }
 
