@@ -172,6 +172,11 @@ export function HDContractGrid({
   // Build set of recommended contract IDs for highlighting
   const recommendedIds = useMemo(() => {
     const ids = new Set<string>();
+    // Include bestContract directly (covers ATM fallback case where rankedContracts is empty)
+    if (recommendation?.bestContract?.id) {
+      ids.add(recommendation.bestContract.id);
+    }
+    // Also include any ranked contracts marked as recommended
     if (recommendation?.rankedContracts) {
       for (const result of recommendation.rankedContracts) {
         if (result.isRecommended && result.contract.id) {
