@@ -208,7 +208,7 @@ export class SignalPerformanceTracker {
       };
 
       const { data, error } = await this.supabase
-        .from("signal_performance")
+        .from("signal_performance_metrics")
         .insert(this.toSnakeCase(record) as any)
         .select("id")
         .single();
@@ -238,7 +238,7 @@ export class SignalPerformanceTracker {
   ): Promise<boolean> {
     try {
       const { error } = await this.supabase
-        .from("signal_performance")
+        .from("signal_performance_metrics")
         .update({
           entry_price: entryPrice,
           entry_time: entryTime.toISOString(),
@@ -279,7 +279,7 @@ export class SignalPerformanceTracker {
     try {
       // First get the entry data to calculate metrics
       const { data: existing } = await this.supabase
-        .from("signal_performance")
+        .from("signal_performance_metrics")
         .select("entry_price, entry_time, projected_stop, direction")
         .eq("id", performanceId)
         .single();
@@ -313,7 +313,7 @@ export class SignalPerformanceTracker {
       }
 
       const { error } = await this.supabase
-        .from("signal_performance")
+        .from("signal_performance_metrics")
         .update({
           outcome,
           exit_price: exitPrice,
@@ -511,7 +511,7 @@ export class SignalPerformanceTracker {
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
       const { data, error } = await this.supabase
-        .from("signal_performance")
+        .from("signal_performance_metrics")
         .select("*")
         .eq("user_id", userId)
         .gte("signal_time", since);
