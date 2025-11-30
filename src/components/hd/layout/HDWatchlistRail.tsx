@@ -17,6 +17,7 @@ interface HDWatchlistRailProps {
   onAddTicker?: () => void;
   onRemoveTicker?: (ticker: Ticker) => void;
   onLoadedTradeClick?: (trade: Trade) => void;
+  onActiveTradeClick?: (trade: Trade) => void;
   onRemoveLoadedTrade?: (trade: Trade) => void;
   activeTicker?: string;
   activeTrades?: Trade[]; // Add this prop
@@ -47,6 +48,7 @@ export function HDWatchlistRail({
   onAddTicker,
   onRemoveTicker,
   onLoadedTradeClick,
+  onActiveTradeClick,
   onRemoveLoadedTrade,
   activeTicker,
   activeTrades: propActiveTrades,
@@ -237,7 +239,12 @@ export function HDWatchlistRail({
                         "bg-blue-500/10 border-l-2 border-l-blue-500 shadow-sm"
                     )}
                     onClick={() => {
-                      useTradeStore.setState({ currentTrade: trade, tradeState: trade.state });
+                      // Use callback if provided, otherwise fallback to direct store mutation
+                      if (onActiveTradeClick) {
+                        onActiveTradeClick(trade);
+                      } else {
+                        useTradeStore.setState({ currentTrade: trade, tradeState: trade.state });
+                      }
                     }}
                     data-testid={`active-trade-${trade.id}`}
                   >
