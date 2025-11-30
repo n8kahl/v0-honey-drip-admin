@@ -1,13 +1,15 @@
 {
-  "version": "1.0.0",
-  "timestamp": "2025-11-24T00:00:00.000Z",
+  "version": "1.1.0",
+  "timestamp": "2025-11-30T01:57:53.000Z",
   "optimizationMethod": "genetic-algorithm",
-  "backtestPeriod": "Default baseline parameters (not yet optimized)",
+  "backtestPeriod": "5 generations, 10 configurations each",
   "performance": {
-    "winRate": 0.58,
-    "profitFactor": 1.75,
-    "totalTrades": 0,
-    "note": "These are baseline defaults - run 'pnpm optimize' to generate optimized parameters"
+    "winRate": 0.485,
+    "profitFactor": 0.87,
+    "totalTrades": 2770,
+    "fitness": 29.65,
+    "bestGeneration": 2,
+    "note": "First optimization run - baseline for future improvements"
   },
   "parameters": {
     "minScores": {
@@ -21,7 +23,7 @@
     },
     "gammaBoosts": {
       "shortGamma": 0.15,
-      "longGamma": -0.1
+      "longGamma": -0.099
     },
     "flowBoosts": {
       "aligned": 0.2,
@@ -31,7 +33,7 @@
       "weekly": 3.0,
       "daily": 2.0,
       "hourly": 1.0,
-      "fifteenMin": 0.5
+      "fifteenMin": 0.604
     },
     "riskReward": {
       "targetMultiple": 1.5,
@@ -39,12 +41,25 @@
       "maxHoldBars": 20
     }
   },
-  "notes": [
-    "These are the default baseline parameters from Phase 5 design",
-    "To generate optimized parameters:",
-    "1. Run 'pnpm optimize:quick' for quick test (5-10 mins)",
-    "2. Run 'pnpm optimize' for full optimization (20-30 mins)",
-    "3. Copy the best parameters from optimization-results-*.json to this file",
-    "4. Restart the composite scanner worker to apply new parameters"
+  "history": [
+    {
+      "version": "1.0.0",
+      "timestamp": "2025-11-24T00:00:00.000Z",
+      "note": "Initial baseline defaults"
+    },
+    {
+      "version": "1.1.0",
+      "timestamp": "2025-11-30T01:57:53.000Z",
+      "winRate": 0.485,
+      "profitFactor": 0.87,
+      "totalTrades": 2770,
+      "note": "First GA optimization with historical bars data"
+    }
+  ],
+  "nextSteps": [
+    "Enable Greeks ingestion to unlock gamma_squeeze, iv_crush detectors",
+    "Collect signal outcomes for real win rate tracking",
+    "Re-run optimizer after 1 week of outcome data",
+    "Consider higher minScores (50-60) to filter lower quality signals"
   ]
 }
