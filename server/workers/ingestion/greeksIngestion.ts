@@ -65,37 +65,47 @@ export async function ingestHistoricalGreeks(
       };
     }
 
-    // Map contracts to Greeks records
-    const records: GreeksRecord[] = chain.contracts.map((contract: any) => {
-      const bid = contract.bid || null;
-      const ask = contract.ask || null;
-      const midPrice = bid && ask ? (bid + ask) / 2 : null;
+    // Map contracts to Greeks records (filter out invalid contracts)
+    const records: GreeksRecord[] = chain.contracts
+      .filter((contract: any) => {
+        // Must have required fields
+        return (
+          contract.ticker &&
+          contract.strike !== undefined &&
+          contract.expiration &&
+          contract.option_type
+        );
+      })
+      .map((contract: any) => {
+        const bid = contract.bid || null;
+        const ask = contract.ask || null;
+        const midPrice = bid && ask ? (bid + ask) / 2 : null;
 
-      return {
-        symbol,
-        contract_ticker: contract.ticker,
-        strike: contract.strike,
-        expiration: contract.expiration,
-        timestamp,
-        delta: contract.greeks?.delta || null,
-        gamma: contract.greeks?.gamma || null,
-        theta: contract.greeks?.theta || null,
-        vega: contract.greeks?.vega || null,
-        rho: contract.greeks?.rho || null,
-        implied_volatility: contract.implied_volatility || null,
-        iv_rank: null, // Calculated separately
-        iv_percentile: null, // Calculated separately
-        underlying_price: chain.underlying_price,
-        dte: calculateDTE(new Date(contract.expiration)),
-        option_type: contract.option_type.toLowerCase() as "call" | "put",
-        bid,
-        ask,
-        last: contract.last || null,
-        mid_price: midPrice,
-        volume: contract.volume || null,
-        open_interest: contract.open_interest || null,
-      };
-    });
+        return {
+          symbol,
+          contract_ticker: contract.ticker,
+          strike: contract.strike,
+          expiration: contract.expiration,
+          timestamp,
+          delta: contract.greeks?.delta || null,
+          gamma: contract.greeks?.gamma || null,
+          theta: contract.greeks?.theta || null,
+          vega: contract.greeks?.vega || null,
+          rho: contract.greeks?.rho || null,
+          implied_volatility: contract.implied_volatility || null,
+          iv_rank: null, // Calculated separately
+          iv_percentile: null, // Calculated separately
+          underlying_price: chain.underlying_price,
+          dte: calculateDTE(new Date(contract.expiration)),
+          option_type: contract.option_type.toLowerCase() as "call" | "put",
+          bid,
+          ask,
+          last: contract.last || null,
+          mid_price: midPrice,
+          volume: contract.volume || null,
+          open_interest: contract.open_interest || null,
+        };
+      });
 
     // Store in database (upsert to handle duplicates)
     const { error } = await supabase.from("historical_greeks").upsert(records as any, {
