@@ -95,17 +95,28 @@ export default function PlanPage() {
     [lastSessionDate]
   );
 
-  // Calculate date range for fetching signals
-  // In playbook mode (off-hours): fetch signals from last 3 days to get Friday's signals
-  const fromDate = useMemo(() => {
+  // Calculate stable date range for fetching signals
+  // Using timestamp to avoid Date object reference changes
+  const fromDateTimestamp = useMemo(() => {
     if (effectiveMode === "playbook") {
       const threeDaysAgo = new Date();
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
       threeDaysAgo.setHours(0, 0, 0, 0);
-      return threeDaysAgo;
+      return threeDaysAgo.getTime();
+    }
+    return null;
+  }, [effectiveMode]);
+
+  // Memoize filters to prevent infinite re-renders
+  const signalFilters = useMemo(() => {
+    if (effectiveMode === "playbook" && fromDateTimestamp) {
+      return {
+        status: ["ACTIVE", "EXPIRED"] as string[],
+        fromDate: new Date(fromDateTimestamp),
+      };
     }
     return undefined;
-  }, [effectiveMode]);
+  }, [effectiveMode, fromDateTimestamp]);
 
   // Load composite signals
   // In playbook mode: fetch all signals (including expired) from last 3 days
@@ -117,13 +128,7 @@ export default function PlanPage() {
   } = useCompositeSignals({
     userId,
     autoSubscribe: true,
-    filters:
-      effectiveMode === "playbook"
-        ? {
-            status: ["ACTIVE", "EXPIRED"], // Include expired for weekend review
-            fromDate,
-          }
-        : undefined, // Default behavior for session mode
+    filters: signalFilters,
   });
 
   // In playbook mode, use all signals (including expired); in session mode, only active

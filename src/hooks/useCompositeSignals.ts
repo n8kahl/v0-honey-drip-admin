@@ -130,6 +130,17 @@ export function useCompositeSignals(
 
   const supabase = createClient();
 
+  // Create a stable key for filters to prevent infinite re-renders
+  // This serializes the filter values so we can use it in the dependency array
+  const filtersKey = JSON.stringify({
+    status: filters?.status,
+    symbol: filters?.symbol,
+    opportunityType: filters?.opportunityType,
+    recommendedStyle: filters?.recommendedStyle,
+    fromDate: filters?.fromDate?.getTime(),
+    toDate: filters?.toDate?.getTime(),
+  });
+
   /**
    * Load signals from database
    */
@@ -155,7 +166,7 @@ export function useCompositeSignals(
     } finally {
       setLoading(false);
     }
-  }, [userId, filters]);
+  }, [userId, filtersKey]);
 
   /**
    * Refresh signals
