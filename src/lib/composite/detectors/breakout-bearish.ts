@@ -97,8 +97,10 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
       evaluate: (features) => {
         // Check proximity to known levels (use available pattern data)
         const price = features.price?.current ?? 0;
-        const orbLow = features.pattern?.orbLow ?? 0;
-        const swingLow = features.pattern?.swingLow ?? 0;
+        const orbLowRaw = features.pattern?.orbLow;
+        const swingLowRaw = features.pattern?.swingLow;
+        const orbLow = typeof orbLowRaw === "number" ? orbLowRaw : 0;
+        const swingLow = typeof swingLowRaw === "number" ? swingLowRaw : 0;
         const levelProximity = (level: number) =>
           price > 0 && level > 0 ? Math.abs(price - level) / price : 1;
 

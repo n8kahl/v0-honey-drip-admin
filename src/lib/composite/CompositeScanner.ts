@@ -62,13 +62,13 @@ import {
 } from "../greeks/IVGating.js";
 
 // Phase 2: Import Context Engines
-import { contextEngines } from "../engines/index.js";
-import type {
-  IVContext,
-  GammaContext,
-  MTFContext,
-  FlowContext,
-  RegimeContext,
+import {
+  contextEngines,
+  type IVContext,
+  type GammaContext,
+  type MTFContext,
+  type FlowContext,
+  type RegimeContext,
 } from "../engines/index.js";
 
 // Import trading style profiles (to be created in Phase 4)

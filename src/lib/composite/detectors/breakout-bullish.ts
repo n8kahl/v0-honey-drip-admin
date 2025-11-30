@@ -97,8 +97,10 @@ export const breakoutBullishDetector: OpportunityDetector = createDetector({
       evaluate: (features) => {
         // Check proximity to known levels (use available pattern data)
         const price = features.price?.current ?? 0;
-        const orbHigh = features.pattern?.orbHigh ?? 0;
-        const swingHigh = features.pattern?.swingHigh ?? 0;
+        const orbHighRaw = features.pattern?.orbHigh;
+        const swingHighRaw = features.pattern?.swingHigh;
+        const orbHigh = typeof orbHighRaw === "number" ? orbHighRaw : 0;
+        const swingHigh = typeof swingHighRaw === "number" ? swingHighRaw : 0;
         const levelProximity = (level: number) =>
           price > 0 && level > 0 ? Math.abs(price - level) / price : 1;
 

@@ -5,7 +5,7 @@
  * by leveraging historical data warehouse (Phase 1).
  */
 
-// Import engines (with .js extensions for ES module compatibility)
+// Import engines (.js extensions required for ES module resolution in Node.js server build)
 import {
   IVPercentileEngine,
   ivPercentileEngine as _ivPercentileEngine,
