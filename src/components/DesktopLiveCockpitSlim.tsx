@@ -226,8 +226,20 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
         {/* Options chain area */}
         <div className="flex-1 relative flex flex-col">
           {!activeTicker && (
-            <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">
-              Select a contract to load a trade
+            <div className="flex-1 relative flex items-center justify-center bg-[#0a0a0a]">
+              <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
+                <img
+                  src="/src/assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png"
+                  alt="Honey Drip"
+                  className="w-auto h-[50vh] max-w-[60vw] object-contain"
+                />
+              </div>
+              <div className="relative z-10 text-center space-y-4 max-w-md">
+                <h3 className="text-xl lg:text-2xl font-semibold text-white">Honey Drip Admin</h3>
+                <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">
+                  Select a Ticker from the Watchlist or Loaded Trades to begin
+                </p>
+              </div>
             </div>
           )}
           {activeTicker && optionsLoading && (
