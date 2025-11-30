@@ -2,6 +2,7 @@
   "name": "honeydrip-admin-trading-dashboard",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "prebuild": "pnpm run clean:strategy-js && pnpm run clean:dist",
     "build": "vite build && tsc -p tsconfig.server.json",
