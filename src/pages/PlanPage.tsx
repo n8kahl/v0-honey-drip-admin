@@ -28,8 +28,48 @@ import { useCompositeSignals } from "../hooks/useCompositeSignals";
 import { useSetupGradingBatch } from "../hooks/useSetupGrading";
 import { useMarketStore } from "../stores";
 import { cn } from "../lib/utils";
-import { ClipboardList, Activity, Moon, Sun, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import {
+  ClipboardList,
+  Activity,
+  Moon,
+  Sun,
+  Minus,
+  Calendar,
+  Clock,
+  AlertTriangle,
+} from "lucide-react";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
+
+/**
+ * Get the last trading session date (Friday if weekend, yesterday if weekday)
+ */
+function getLastSessionDate(): Date {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+
+  // Sunday = 0, Saturday = 6
+  if (dayOfWeek === 0) {
+    // Sunday: go back 2 days to Friday
+    return new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+  } else if (dayOfWeek === 6) {
+    // Saturday: go back 1 day to Friday
+    return new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+  } else {
+    // Weekday: go back 1 day
+    return new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+  }
+}
+
+/**
+ * Format date for display (e.g., "Friday, Nov 29")
+ */
+function formatSessionDate(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 type PlanMode = "auto" | "session" | "playbook";
 
@@ -44,14 +84,53 @@ export default function PlanPage() {
   const watchlist = useMarketStore((s) => s.watchlist);
   const watchlistSymbols = useMemo(() => watchlist.map((t) => t.symbol), [watchlist]);
 
+  // Determine effective mode early so we can use it for data fetching
+  const isOffHours = session === "CLOSED" || session === "PRE" || session === "POST";
+  const effectiveMode = mode === "auto" ? (isOffHours ? "playbook" : "session") : mode;
+
+  // Get last session date for weekend display
+  const lastSessionDate = useMemo(() => getLastSessionDate(), []);
+  const lastSessionDateFormatted = useMemo(
+    () => formatSessionDate(lastSessionDate),
+    [lastSessionDate]
+  );
+
+  // Calculate date range for fetching signals
+  // In playbook mode (off-hours): fetch signals from last 3 days to get Friday's signals
+  const fromDate = useMemo(() => {
+    if (effectiveMode === "playbook") {
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      threeDaysAgo.setHours(0, 0, 0, 0);
+      return threeDaysAgo;
+    }
+    return undefined;
+  }, [effectiveMode]);
+
   // Load composite signals
-  const { activeSignals, loading: signalsLoading } = useCompositeSignals({
+  // In playbook mode: fetch all signals (including expired) from last 3 days
+  // In session mode: only fetch ACTIVE signals
+  const {
+    signals: allSignals,
+    activeSignals,
+    loading: signalsLoading,
+  } = useCompositeSignals({
     userId,
     autoSubscribe: true,
+    filters:
+      effectiveMode === "playbook"
+        ? {
+            status: ["ACTIVE", "EXPIRED"], // Include expired for weekend review
+            fromDate,
+          }
+        : undefined, // Default behavior for session mode
   });
 
+  // In playbook mode, use all signals (including expired); in session mode, only active
+  const signalsToDisplay = effectiveMode === "playbook" ? allSignals : activeSignals;
+
   // Grade all signals
-  const gradedSignals = useSetupGradingBatch(activeSignals);
+  const gradedSignals = useSetupGradingBatch(signalsToDisplay);
 
   // Group signals by symbol
   const signalsBySymbol = useMemo(() => {
@@ -63,7 +142,7 @@ export default function PlanPage() {
     }
 
     // Add signals to their symbols
-    for (const signal of activeSignals) {
+    for (const signal of signalsToDisplay) {
       if (!grouped[signal.symbol]) {
         grouped[signal.symbol] = [];
       }
@@ -71,7 +150,7 @@ export default function PlanPage() {
     }
 
     return grouped;
-  }, [activeSignals, watchlistSymbols]);
+  }, [signalsToDisplay, watchlistSymbols]);
 
   // Get symbols with signals (sorted by number of active signals)
   const symbolsWithSignals = useMemo(() => {
@@ -94,10 +173,6 @@ export default function PlanPage() {
     }
     return counts;
   }, [gradedSignals]);
-
-  // Determine effective mode
-  const isOffHours = session === "CLOSED" || session === "PRE" || session === "POST";
-  const effectiveMode = mode === "auto" ? (isOffHours ? "playbook" : "session") : mode;
 
   // Handle strategy click - navigate to trading workspace
   const handleStrategyClick = (signal: CompositeSignal) => {
@@ -130,12 +205,25 @@ export default function PlanPage() {
           </div>
 
           {/* Signal Summary Bar */}
-          {!isLoading && activeSignals.length > 0 && (
+          {!isLoading && signalsToDisplay.length > 0 && (
             <div className="flex items-center gap-4 p-3 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-[var(--text-muted)]">Active Signals:</span>
-                <span className="font-bold text-[var(--text-high)]">{activeSignals.length}</span>
+                <span className="text-sm text-[var(--text-muted)]">
+                  {effectiveMode === "playbook" ? "Setups from Last Session:" : "Active Signals:"}
+                </span>
+                <span className="font-bold text-[var(--text-high)]">{signalsToDisplay.length}</span>
               </div>
+
+              {/* Last session date (playbook mode) */}
+              {effectiveMode === "playbook" && (
+                <>
+                  <div className="h-4 w-px bg-[var(--border-hairline)]" />
+                  <div className="flex items-center gap-1.5 text-purple-400">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span className="text-xs font-medium">{lastSessionDateFormatted}</span>
+                  </div>
+                </>
+              )}
 
               <div className="h-4 w-px bg-[var(--border-hairline)]" />
 
@@ -269,6 +357,8 @@ export default function PlanPage() {
               gradedSignals={gradedSignals}
               onStrategyClick={handleStrategyClick}
               tierCounts={tierCounts}
+              lastSessionDate={lastSessionDateFormatted}
+              hasNoSignals={signalsToDisplay.length === 0}
             />
           )}
         </div>
@@ -282,11 +372,62 @@ function PlaybookView({
   gradedSignals,
   onStrategyClick,
   tierCounts,
+  lastSessionDate,
+  hasNoSignals,
 }: {
   gradedSignals: Array<{ signal: CompositeSignal; grading: any }>;
   onStrategyClick: (signal: CompositeSignal) => void;
   tierCounts: { aTier: number; bTier: number; cTier: number };
+  lastSessionDate: string;
+  hasNoSignals: boolean;
 }) {
+  // Show empty state when no signals found
+  if (hasNoSignals) {
+    return (
+      <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)] p-8">
+        <div className="text-center max-w-md mx-auto">
+          <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
+            <Moon className="w-8 h-8 text-purple-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-[var(--text-high)] mb-2">
+            No Signals from Last Session
+          </h3>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
+            The composite scanner didn't detect any setups during the {lastSessionDate} session, or
+            signals have expired.
+          </p>
+
+          {/* What to do next */}
+          <div className="bg-[var(--surface-2)] rounded-lg p-4 text-left space-y-3">
+            <h4 className="text-sm font-medium text-[var(--text-high)] flex items-center gap-2">
+              <Clock className="w-4 h-4 text-purple-400" />
+              Prep for Next Session
+            </h4>
+            <ul className="text-xs text-[var(--text-muted)] space-y-2">
+              <li className="flex items-start gap-2">
+                <span className="text-green-400">•</span>
+                <span>Review your watchlist for Monday's potential setups</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-400">•</span>
+                <span>Check the Weekly Calendar for economic events</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-400">•</span>
+                <span>Mark key support/resistance levels on your charts</span>
+              </li>
+            </ul>
+          </div>
+
+          <p className="text-xs text-[var(--text-muted)] mt-4">
+            <AlertTriangle className="w-3 h-3 inline mr-1" />
+            Signals are generated during market hours (9:30am - 4:00pm ET)
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* A-Tier Column */}

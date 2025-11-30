@@ -5,9 +5,9 @@
  * React hook for managing composite trade signals with realtime updates
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '../lib/supabase/client.js';
-import type { CompositeSignal } from '../lib/composite/CompositeSignal.js';
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "../lib/supabase/client.js";
+import type { CompositeSignal } from "../lib/composite/CompositeSignal.js";
 import {
   getActiveSignals,
   getSignals,
@@ -19,8 +19,8 @@ import {
   markSignalAlerted,
   expireOldSignals,
   type CompositeSignalRow,
-} from '../lib/supabase/compositeSignals.js';
-import { updatePerformanceMetricsForSignal } from '../lib/supabase/performanceAnalytics.js';
+} from "../lib/supabase/compositeSignals.js";
+import { updatePerformanceMetricsForSignal } from "../lib/supabase/performanceAnalytics.js";
 
 /**
  * Options for useCompositeSignals hook
@@ -34,6 +34,8 @@ export interface UseCompositeSignalsOptions {
     symbol?: string;
     opportunityType?: string;
     recommendedStyle?: string;
+    fromDate?: Date; // Only fetch signals created after this date
+    toDate?: Date; // Only fetch signals created before this date
   };
 }
 
@@ -52,7 +54,11 @@ export interface UseCompositeSignalsReturn {
   addSignal: (signal: CompositeSignal) => Promise<CompositeSignal>;
   dismiss: (id: string) => Promise<void>;
   fill: (id: string, fillPrice: number, contracts?: number) => Promise<void>;
-  exit: (id: string, exitPrice: number, exitReason: 'STOP' | 'T1' | 'T2' | 'T3' | 'MANUAL' | 'EXPIRED') => Promise<void>;
+  exit: (
+    id: string,
+    exitPrice: number,
+    exitReason: "STOP" | "T1" | "T2" | "T3" | "MANUAL" | "EXPIRED"
+  ) => Promise<void>;
   markAlerted: (id: string) => Promise<void>;
   expireOld: () => Promise<number>;
 }
@@ -68,13 +74,13 @@ function rowToSignal(row: CompositeSignalRow): CompositeSignal {
     owner: row.owner,
     symbol: row.symbol,
     opportunityType: row.opportunity_type as any,
-    direction: row.direction as 'LONG' | 'SHORT',
+    direction: row.direction as "LONG" | "SHORT",
     assetClass: row.asset_class as any,
     baseScore: row.base_score,
     scalpScore: row.scalp_score,
     dayTradeScore: row.day_trade_score,
     swingScore: row.swing_score,
-    recommendedStyle: row.recommended_style as 'scalp' | 'day_trade' | 'swing',
+    recommendedStyle: row.recommended_style as "scalp" | "day_trade" | "swing",
     recommendedStyleScore: row.recommended_style_score,
     confluence: row.confluence,
     entryPrice: row.entry_price,
@@ -113,7 +119,9 @@ function rowToSignal(row: CompositeSignalRow): CompositeSignal {
  * @param options - Hook options
  * @returns Hook return object
  */
-export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCompositeSignalsReturn {
+export function useCompositeSignals(
+  options: UseCompositeSignalsOptions
+): UseCompositeSignalsReturn {
   const { userId, autoSubscribe = true, autoExpire = true, filters } = options;
 
   const [signals, setSignals] = useState<CompositeSignal[]>([]);
@@ -135,13 +143,15 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
         symbol: filters?.symbol,
         opportunityType: filters?.opportunityType,
         recommendedStyle: filters?.recommendedStyle,
+        fromDate: filters?.fromDate,
+        toDate: filters?.toDate,
         limit: 100,
       });
 
       setSignals(data);
     } catch (err) {
       setError(err as Error);
-      console.error('[useCompositeSignals] Failed to load signals:', err);
+      console.error("[useCompositeSignals] Failed to load signals:", err);
     } finally {
       setLoading(false);
     }
@@ -157,19 +167,16 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
   /**
    * Add a new signal
    */
-  const addSignal = useCallback(
-    async (signal: CompositeSignal): Promise<CompositeSignal> => {
-      try {
-        const inserted = await insertCompositeSignal(signal);
-        setSignals((prev) => [inserted, ...prev]);
-        return inserted;
-      } catch (err) {
-        setError(err as Error);
-        throw err;
-      }
-    },
-    []
-  );
+  const addSignal = useCallback(async (signal: CompositeSignal): Promise<CompositeSignal> => {
+    try {
+      const inserted = await insertCompositeSignal(signal);
+      setSignals((prev) => [inserted, ...prev]);
+      return inserted;
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    }
+  }, []);
 
   /**
    * Dismiss a signal
@@ -178,11 +185,7 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
     try {
       await dismissSignal(id);
       setSignals((prev) =>
-        prev.map((s) =>
-          s.id === id
-            ? { ...s, status: 'DISMISSED', dismissedAt: new Date() }
-            : s
-        )
+        prev.map((s) => (s.id === id ? { ...s, status: "DISMISSED", dismissedAt: new Date() } : s))
       );
     } catch (err) {
       setError(err as Error);
@@ -201,7 +204,7 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
           s.id === id
             ? {
                 ...s,
-                status: 'FILLED',
+                status: "FILLED",
                 filledAt: new Date(),
                 fillPrice,
                 contractsTraded: contracts,
@@ -219,7 +222,11 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
    * Exit a signal
    */
   const exit = useCallback(
-    async (id: string, exitPrice: number, exitReason: 'STOP' | 'T1' | 'T2' | 'T3' | 'MANUAL' | 'EXPIRED') => {
+    async (
+      id: string,
+      exitPrice: number,
+      exitReason: "STOP" | "T1" | "T2" | "T3" | "MANUAL" | "EXPIRED"
+    ) => {
       try {
         const updated = await exitSignal(id, exitPrice, exitReason);
         setSignals((prev) => prev.map((s) => (s.id === id ? updated : s)));
@@ -240,9 +247,7 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
   const markAlerted = useCallback(async (id: string) => {
     try {
       await markSignalAlerted(id);
-      setSignals((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, alertedAt: new Date() } : s))
-      );
+      setSignals((prev) => prev.map((s) => (s.id === id ? { ...s, alertedAt: new Date() } : s)));
     } catch (err) {
       setError(err as Error);
       throw err;
@@ -282,27 +287,25 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
     if (!autoSubscribe) return;
 
     const channel = supabase
-      .channel('composite_signals_changes')
+      .channel("composite_signals_changes")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'composite_signals',
+          event: "*",
+          schema: "public",
+          table: "composite_signals",
           filter: `owner=eq.${userId}`,
         },
         (payload) => {
-          console.log('[useCompositeSignals] Realtime update:', payload);
+          console.log("[useCompositeSignals] Realtime update:", payload);
 
-          if (payload.eventType === 'INSERT') {
+          if (payload.eventType === "INSERT") {
             const newSignal = rowToSignal(payload.new as CompositeSignalRow);
             setSignals((prev) => [newSignal, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
+          } else if (payload.eventType === "UPDATE") {
             const updatedSignal = rowToSignal(payload.new as CompositeSignalRow);
-            setSignals((prev) =>
-              prev.map((s) => (s.id === updatedSignal.id ? updatedSignal : s))
-            );
-          } else if (payload.eventType === 'DELETE') {
+            setSignals((prev) => prev.map((s) => (s.id === updatedSignal.id ? updatedSignal : s)));
+          } else if (payload.eventType === "DELETE") {
             setSignals((prev) => prev.filter((s) => s.id !== (payload.old as any).id));
           }
         }
@@ -315,7 +318,7 @@ export function useCompositeSignals(options: UseCompositeSignalsOptions): UseCom
   }, [autoSubscribe, userId, supabase]);
 
   // Filter for active signals
-  const activeSignals = signals.filter((s) => s.status === 'ACTIVE');
+  const activeSignals = signals.filter((s) => s.status === "ACTIVE");
 
   return {
     signals,
