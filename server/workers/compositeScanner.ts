@@ -591,7 +591,9 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     );
 
     // Fetch sequentially with small delays to avoid rate limits
-    const featureResults: Array<PromiseSettledResult<ReturnType<typeof fetchSymbolFeatures>>> = [];
+    const featureResults: Array<
+      PromiseSettledResult<Awaited<ReturnType<typeof fetchSymbolFeatures>>>
+    > = [];
     for (let i = 0; i < symbols.length; i++) {
       const symbol = symbols[i];
       try {
@@ -600,7 +602,7 @@ async function scanUserWatchlist(userId: string): Promise<number> {
 
         // Add small delay between symbols to avoid bursting API (except for last symbol)
         if (i < symbols.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay = max 5 requests/second
+          await new Promise((resolve) => setTimeout(resolve, 200)); // 200ms delay = max 5 requests/second
         }
       } catch (error) {
         featureResults.push({ status: "rejected", reason: error });
