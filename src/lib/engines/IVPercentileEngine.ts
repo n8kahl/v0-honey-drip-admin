@@ -11,7 +11,7 @@
  * - HIGH IV (80-100th percentile): Options are expensive → WAIT or SELL_PREMIUM
  */
 
-import { createClient } from '../supabase/client';
+import { createClient } from "../supabase/client.js";
 
 /**
  * IV Percentile Context Result
@@ -33,10 +33,10 @@ export interface IVContext {
   ivStdDev: number;
 
   // Regime classification
-  ivRegime: 'EXTREMELY_LOW' | 'LOW' | 'NORMAL' | 'ELEVATED' | 'HIGH' | 'EXTREMELY_HIGH';
+  ivRegime: "EXTREMELY_LOW" | "LOW" | "NORMAL" | "ELEVATED" | "HIGH" | "EXTREMELY_HIGH";
 
   // Trading recommendations
-  recommendation: 'BUY_PREMIUM' | 'BUY_FAVORABLE' | 'NEUTRAL' | 'WAIT_FOR_IV_DROP' | 'SELL_PREMIUM';
+  recommendation: "BUY_PREMIUM" | "BUY_FAVORABLE" | "NEUTRAL" | "WAIT_FOR_IV_DROP" | "SELL_PREMIUM";
   confidence: number;
 
   // Optional metadata
@@ -50,28 +50,28 @@ export interface IVContext {
 export interface IVBoostConfig {
   // Boost multipliers by regime (applied to base score)
   regimeBoosts: {
-    EXTREMELY_LOW: number;  // Default: 1.20 (+20% for cheap options)
-    LOW: number;            // Default: 1.10 (+10%)
-    NORMAL: number;         // Default: 1.00 (neutral)
-    ELEVATED: number;       // Default: 0.95 (-5%)
-    HIGH: number;           // Default: 0.85 (-15%)
+    EXTREMELY_LOW: number; // Default: 1.20 (+20% for cheap options)
+    LOW: number; // Default: 1.10 (+10%)
+    NORMAL: number; // Default: 1.00 (neutral)
+    ELEVATED: number; // Default: 0.95 (-5%)
+    HIGH: number; // Default: 0.85 (-15%)
     EXTREMELY_HIGH: number; // Default: 0.70 (-30% for expensive options)
   };
 
   // Direction-specific boosts
   directionBoosts: {
     LONG: {
-      lowIVBoost: number;    // Default: 1.15 (favor longs when IV is low)
+      lowIVBoost: number; // Default: 1.15 (favor longs when IV is low)
       highIVPenalty: number; // Default: 0.80 (avoid longs when IV is high)
     };
     SHORT: {
-      lowIVPenalty: number;  // Default: 0.90 (avoid shorts when IV is low)
-      highIVBoost: number;   // Default: 1.10 (favor shorts when IV is high)
+      lowIVPenalty: number; // Default: 0.90 (avoid shorts when IV is low)
+      highIVBoost: number; // Default: 1.10 (favor shorts when IV is high)
     };
   };
 
   // Confidence thresholds
-  minDataPoints: number;  // Minimum 52-week bars required
+  minDataPoints: number; // Minimum 52-week bars required
   staleThresholdHours: number; // Consider data stale after N hours
 }
 
@@ -80,21 +80,21 @@ export interface IVBoostConfig {
  */
 const DEFAULT_IV_BOOST_CONFIG: IVBoostConfig = {
   regimeBoosts: {
-    EXTREMELY_LOW: 1.20,
-    LOW: 1.10,
-    NORMAL: 1.00,
+    EXTREMELY_LOW: 1.2,
+    LOW: 1.1,
+    NORMAL: 1.0,
     ELEVATED: 0.95,
     HIGH: 0.85,
-    EXTREMELY_HIGH: 0.70,
+    EXTREMELY_HIGH: 0.7,
   },
   directionBoosts: {
     LONG: {
       lowIVBoost: 1.15,
-      highIVPenalty: 0.80,
+      highIVPenalty: 0.8,
     },
     SHORT: {
-      lowIVPenalty: 0.90,
-      highIVBoost: 1.10,
+      lowIVPenalty: 0.9,
+      highIVBoost: 1.1,
     },
   },
   minDataPoints: 200, // ~40 weeks of daily data
@@ -123,10 +123,10 @@ export class IVPercentileEngine {
     try {
       // Query latest IV percentile from cache
       const { data, error } = await supabase
-        .from('iv_percentile_cache')
-        .select('*')
-        .eq('symbol', symbol)
-        .order('date', { ascending: false })
+        .from("iv_percentile_cache")
+        .select("*")
+        .eq("symbol", symbol)
+        .order("date", { ascending: false })
         .limit(1)
         .single();
 
@@ -183,7 +183,7 @@ export class IVPercentileEngine {
   applyIVBoost(
     baseScore: number,
     ivContext: IVContext | null,
-    direction: 'LONG' | 'SHORT'
+    direction: "LONG" | "SHORT"
   ): number {
     // No context = no boost
     if (!ivContext) {
@@ -198,13 +198,13 @@ export class IVPercentileEngine {
 
     // Get direction-specific boost
     let directionBoost = 1.0;
-    if (direction === 'LONG') {
+    if (direction === "LONG") {
       if (ivContext.ivPercentile < 20) {
         directionBoost = this.config.directionBoosts.LONG.lowIVBoost;
       } else if (ivContext.ivPercentile > 80) {
         directionBoost = this.config.directionBoosts.LONG.highIVPenalty;
       }
-    } else if (direction === 'SHORT') {
+    } else if (direction === "SHORT") {
       if (ivContext.ivPercentile < 20) {
         directionBoost = this.config.directionBoosts.SHORT.lowIVPenalty;
       } else if (ivContext.ivPercentile > 80) {
@@ -215,7 +215,7 @@ export class IVPercentileEngine {
     // Combine boosts (regime × direction) with confidence weighting
     const combinedBoost = regimeBoost * directionBoost;
     const confidenceWeight = ivContext.confidence / 100;
-    const finalBoost = 1.0 + ((combinedBoost - 1.0) * confidenceWeight) - stalePenalty;
+    const finalBoost = 1.0 + (combinedBoost - 1.0) * confidenceWeight - stalePenalty;
 
     // Apply boost
     const adjustedScore = baseScore * finalBoost;
@@ -238,8 +238,8 @@ export class IVPercentileEngine {
     }
 
     const percentile = context.ivPercentile.toFixed(0);
-    const regime = context.ivRegime.replace(/_/g, ' ');
-    const rec = context.recommendation.replace(/_/g, ' ');
+    const regime = context.ivRegime.replace(/_/g, " ");
+    const rec = context.recommendation.replace(/_/g, " ");
 
     return `IV: ${percentile}th %ile (${regime}) → ${rec}`;
   }
@@ -251,42 +251,40 @@ export class IVPercentileEngine {
   /**
    * Classify IV regime based on percentile
    */
-  private classifyIVRegime(
-    percentile: number
-  ): IVContext['ivRegime'] {
-    if (percentile < 10) return 'EXTREMELY_LOW';
-    if (percentile < 20) return 'LOW';
-    if (percentile < 40) return 'NORMAL';
-    if (percentile < 60) return 'NORMAL';
-    if (percentile < 80) return 'ELEVATED';
-    if (percentile < 90) return 'HIGH';
-    return 'EXTREMELY_HIGH';
+  private classifyIVRegime(percentile: number): IVContext["ivRegime"] {
+    if (percentile < 10) return "EXTREMELY_LOW";
+    if (percentile < 20) return "LOW";
+    if (percentile < 40) return "NORMAL";
+    if (percentile < 60) return "NORMAL";
+    if (percentile < 80) return "ELEVATED";
+    if (percentile < 90) return "HIGH";
+    return "EXTREMELY_HIGH";
   }
 
   /**
    * Get trading recommendation based on IV regime
    */
   private getRecommendation(
-    regime: IVContext['ivRegime'],
+    regime: IVContext["ivRegime"],
     percentile: number
-  ): IVContext['recommendation'] {
-    if (regime === 'EXTREMELY_LOW' || regime === 'LOW') {
-      return 'BUY_PREMIUM';
+  ): IVContext["recommendation"] {
+    if (regime === "EXTREMELY_LOW" || regime === "LOW") {
+      return "BUY_PREMIUM";
     }
 
-    if (regime === 'NORMAL' && percentile < 40) {
-      return 'BUY_FAVORABLE';
+    if (regime === "NORMAL" && percentile < 40) {
+      return "BUY_FAVORABLE";
     }
 
-    if (regime === 'NORMAL') {
-      return 'NEUTRAL';
+    if (regime === "NORMAL") {
+      return "NEUTRAL";
     }
 
-    if (regime === 'ELEVATED' || regime === 'HIGH') {
-      return 'WAIT_FOR_IV_DROP';
+    if (regime === "ELEVATED" || regime === "HIGH") {
+      return "WAIT_FOR_IV_DROP";
     }
 
-    return 'SELL_PREMIUM'; // EXTREMELY_HIGH
+    return "SELL_PREMIUM"; // EXTREMELY_HIGH
   }
 
   /**
