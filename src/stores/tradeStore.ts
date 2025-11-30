@@ -233,6 +233,10 @@ export const useTradeStore = create<TradeStore>()(
               entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
               exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
               currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              targetPrice: (t as any).target_price
+                ? parseFloat((t as any).target_price)
+                : undefined,
+              stopLoss: (t as any).stop_loss ? parseFloat((t as any).stop_loss) : undefined,
               state: mapStatusToState(t.status),
               updates: t.trade_updates || [],
               tradeType: "Day" as TradeType,
