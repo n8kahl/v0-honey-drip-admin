@@ -123,7 +123,27 @@ export async function snapshotGammaExposure(
       };
     }
 
-    const underlyingPrice = chain.underlying_price;
+    // Extract underlying price from first contract's underlying_asset (Massive.com API format)
+    // The underlying_price is NOT at the top level, it's in each contract's underlying_asset.price
+    const firstContract = chain.contracts[0];
+    const underlyingPrice =
+      chain.underlying_price ??
+      firstContract?.underlying_asset?.price ??
+      firstContract?.underlying_asset?.last_updated_price ??
+      null;
+
+    if (underlyingPrice === null) {
+      return {
+        success: false,
+        symbol,
+        timestamp,
+        dealerPositioning: null,
+        gammaWallResistance: null,
+        gammaWallSupport: null,
+        contractsAnalyzed: 0,
+        error: "Could not determine underlying price from options chain",
+      };
+    }
 
     // Filter out invalid contracts (missing required fields)
     // Massive.com API structure: contract.details contains strike_price, contract_type
