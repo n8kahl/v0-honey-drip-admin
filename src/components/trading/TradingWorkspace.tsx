@@ -60,12 +60,13 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
     ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
     : 0;
 
-  // Get contract recommendation based on active signals
+  // Get contract recommendation based on active signals (with ATM fallback using trend)
   const recommendation = useContractRecommendation({
     symbol: activeTicker?.symbol || "",
     contracts,
     activeSignals: compositeSignals || [],
     currentPrice,
+    changePercent: activeTicker?.changePercent,
   });
 
   const enteredTrade = tradeState === "ENTERED" && currentTrade && !showAlert ? currentTrade : null;
