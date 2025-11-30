@@ -108,10 +108,25 @@ export function useThesisValidation(trade: Trade | null): ThesisValidationResult
     const vixWeight = 20;
     totalWeight += vixWeight;
 
-    const vixAtEntry = setupConditions?.vixLevel || trade.confluence?.factors?.regime?.value;
-    const vixCurrent = macro?.vix?.level;
+    // Ensure VIX values are proper numbers before using
+    const vixAtEntryRaw = setupConditions?.vixLevel || trade.confluence?.factors?.regime?.value;
+    const vixCurrentRaw = macro?.vix?.level;
 
-    if (vixAtEntry && vixCurrent) {
+    // Safely extract numeric values (might be objects or other types)
+    const vixAtEntry =
+      typeof vixAtEntryRaw === "number"
+        ? vixAtEntryRaw
+        : typeof vixAtEntryRaw === "object" && vixAtEntryRaw !== null && "value" in vixAtEntryRaw
+          ? Number((vixAtEntryRaw as any).value)
+          : undefined;
+    const vixCurrent =
+      typeof vixCurrentRaw === "number"
+        ? vixCurrentRaw
+        : typeof vixCurrentRaw === "object" && vixCurrentRaw !== null && "value" in vixCurrentRaw
+          ? Number((vixCurrentRaw as any).value)
+          : undefined;
+
+    if (vixAtEntry && vixCurrent && !isNaN(vixAtEntry) && !isNaN(vixCurrent)) {
       const vixChange = Math.abs(vixCurrent - vixAtEntry);
       const vixChangePercent = (vixChange / vixAtEntry) * 100;
 
@@ -132,7 +147,7 @@ export function useThesisValidation(trade: Trade | null): ThesisValidationResult
       totalScore += vixScore;
       checks.push({
         name: "VIX Stability",
-        atEntry: `${vixAtEntry.toFixed(1)}`,
+        atEntry: vixAtEntry.toFixed(1),
         current: `${vixCurrent.toFixed(1)} (${vixChangePercent > 0 ? "+" : ""}${vixChangePercent.toFixed(1)}%)`,
         status: vixStatus,
         weight: vixWeight,
@@ -143,7 +158,7 @@ export function useThesisValidation(trade: Trade | null): ThesisValidationResult
       checks.push({
         name: "VIX Stability",
         atEntry: "N/A",
-        current: vixCurrent?.toFixed(1) || "N/A",
+        current: vixCurrent && !isNaN(vixCurrent) ? vixCurrent.toFixed(1) : "N/A",
         status: "warn",
         weight: vixWeight,
       });
