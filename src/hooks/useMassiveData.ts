@@ -1,16 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { massive, type MassiveQuote, type MassiveOptionsChain } from '../lib/massive';
-import { MassiveError } from '../lib/massive/proxy';
-import { createTransport } from '../lib/massive/transport-policy';
-import type { Contract } from '../types';
-import { fetchNormalizedChain } from '../services/options';
-import { fetchQuotes as fetchUnifiedQuotes } from '../services/quotes';
-import { useMarketDataStore } from '../stores/marketDataStore';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { massive, type MassiveQuote, type MassiveOptionsChain } from "../lib/massive";
+import { MassiveError } from "../lib/massive/proxy";
+import { createTransport } from "../lib/massive/transport-policy";
+import type { Contract } from "../types";
+import { fetchNormalizedChain } from "../services/options";
+import { fetchQuotes as fetchUnifiedQuotes } from "../services/quotes";
+import { useMarketDataStore } from "../stores/marketDataStore";
+import { calculateNetPnLPercent } from "../services/pnlCalculator";
 
 // Group contracts by expiration for backwards compatibility with old MassiveOptionsChain format
 function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain {
   const expiryMap = new Map<string, any[]>();
-  
+
   for (const contract of contracts) {
     if (!expiryMap.has(contract.expiry)) {
       expiryMap.set(contract.expiry, []);
@@ -33,14 +34,17 @@ function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain 
       vega: contract.vega,
     });
   }
-  
+
   return {
     results: Array.from(expiryMap.values()).flat(),
   } as MassiveOptionsChain;
 }
 
 // Cache for options chain data with symbol+window as key
-const optionsChainCache = new Map<string, { data: { contracts: Contract[], chain: MassiveOptionsChain }, timestamp: number }>();
+const optionsChainCache = new Map<
+  string,
+  { data: { contracts: Contract[]; chain: MassiveOptionsChain }; timestamp: number }
+>();
 const CACHE_TTL_MS = 10000; // 10 seconds
 
 export function useOptionsChain(symbol: string | null, window: number = 8) {
@@ -62,7 +66,9 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
     const cacheKey = `${symbol}-${window}`;
     const cached = optionsChainCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log(`[v0] useOptionsChain: Using cached data for ${symbol} (${Math.round((Date.now() - cached.timestamp) / 1000)}s old)`);
+      console.log(
+        `[v0] useOptionsChain: Using cached data for ${symbol} (${Math.round((Date.now() - cached.timestamp) / 1000)}s old)`
+      );
       setContracts(cached.data.contracts);
       setOptionsChain(cached.data.chain);
       setAsOf(cached.timestamp);
@@ -74,7 +80,8 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
     setError(null);
     const fetch = async () => {
       try {
-        const USE_UNIFIED = ((import.meta as any)?.env?.VITE_USE_UNIFIED_CHAIN ?? 'true') === 'true';
+        const USE_UNIFIED =
+          ((import.meta as any)?.env?.VITE_USE_UNIFIED_CHAIN ?? "true") === "true";
         let contracts: Contract[] = [];
         if (USE_UNIFIED) {
           const tokenManager = massive.getTokenManager();
@@ -93,7 +100,7 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
         }
         const chain = groupContractsByExpiration(contracts);
         const now = Date.now();
-        
+
         // Store in cache
         const cacheKey = `${symbol}-${window}`;
         optionsChainCache.set(cacheKey, {
@@ -101,13 +108,13 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
           timestamp: now,
         });
         console.log(`[v0] useOptionsChain: Cached fresh data for ${symbol}`);
-        
+
         setContracts(contracts);
         setOptionsChain(chain);
         setAsOf(now);
         setLoading(false);
       } catch (err: any) {
-        setError(err?.message || 'Failed to fetch options chain');
+        setError(err?.message || "Failed to fetch options chain");
         setLoading(false);
       }
     };
@@ -118,21 +125,27 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
 }
 
 export function useQuotes(symbols: string[]) {
-  const [quotes, setQuotes] = useState<Map<string, MassiveQuote & { asOf: number; source: 'websocket' | 'rest' }>>(new Map());
+  const [quotes, setQuotes] = useState<
+    Map<string, MassiveQuote & { asOf: number; source: "websocket" | "rest" }>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Get marketDataStore setter to keep symbol timestamps in sync
-  const setSymbolTimestamp = useMarketDataStore(state => state.symbols);
+  const setSymbolTimestamp = useMarketDataStore((state) => state.symbols);
 
   const handleUpdate = useCallback(
-    (update?: MassiveQuote | null, source: 'websocket' | 'rest' = 'rest', timestamp = Date.now()) => {
+    (
+      update?: MassiveQuote | null,
+      source: "websocket" | "rest" = "rest",
+      timestamp = Date.now()
+    ) => {
       if (!update) return;
       if (!update.symbol) {
-        console.warn('[useQuotes] Received quote without symbol, ignoring', update);
+        console.warn("[useQuotes] Received quote without symbol, ignoring", update);
         return;
       }
-      setQuotes(prev => {
+      setQuotes((prev) => {
         const next = new Map(prev);
         next.set(update.symbol, {
           ...update,
@@ -172,7 +185,7 @@ export function useQuotes(symbols: string[]) {
       return;
     }
 
-    console.log('[useQuotes] Starting streaming for symbols:', symbols);
+    console.log("[useQuotes] Starting streaming for symbols:", symbols);
 
     const unsubscribes: Array<() => void> = [];
 
@@ -198,18 +211,18 @@ export function useQuotes(symbols: string[]) {
               previousClose: q.last,
               timestamp: q.asOf || now,
             } as any,
-            'rest',
+            "rest",
             q.asOf || now
           )
         );
       } catch (e) {
-        console.warn('[useQuotes] Initial batch fill failed', e);
+        console.warn("[useQuotes] Initial batch fill failed", e);
       }
     })();
 
-    symbols.forEach(symbol => {
-      const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
-      
+    symbols.forEach((symbol) => {
+      const isIndex = symbol.startsWith("I:") || ["SPX", "NDX", "VIX", "RUT"].includes(symbol);
+
       const unsubscribe = createTransport(
         symbol,
         (data, source, timestamp) => {
@@ -225,25 +238,24 @@ export function useQuotes(symbols: string[]) {
     setLoading(false);
 
     return () => {
-      console.log('[useQuotes] Cleaning up transports for symbols:', symbols);
-      unsubscribes.forEach(unsub => unsub());
+      console.log("[useQuotes] Cleaning up transports for symbols:", symbols);
+      unsubscribes.forEach((unsub) => unsub());
     };
-  }, [symbols.join(',')]);
+  }, [symbols.join(",")]);
 
   return { quotes, loading, error };
 }
-
 
 export function useActiveTradePnL(contractTicker: string | null, entryPrice: number) {
   const [currentPrice, setCurrentPrice] = useState(entryPrice);
   const [pnlPercent, setPnlPercent] = useState(0);
   const [asOf, setAsOf] = useState(Date.now());
-  const [source, setSource] = useState<'websocket' | 'rest'>('rest');
+  const [source, setSource] = useState<"websocket" | "rest">("rest");
 
   useEffect(() => {
     if (!contractTicker) return;
 
-    console.log('[useActiveTradePnL] Starting PnL tracking for contract:', contractTicker);
+    console.log("[useActiveTradePnL] Starting PnL tracking for contract:", contractTicker);
 
     const unsubscribe = createTransport(
       contractTicker,
@@ -262,11 +274,12 @@ export function useActiveTradePnL(contractTicker: string | null, entryPrice: num
           // Standard retail options: $0.65 per contract at entry + $0.65 at exit = $1.30 total
           // Bid-ask spread slippage: ~0.5% for liquid contracts like SPX/SPY
           // This matches real-world trading conditions
-          const { calculateNetPnLPercent } = require('../services/pnlCalculator');
           const pnl = calculateNetPnLPercent(entryPrice, price, 1);
           setPnlPercent(pnl);
 
-          console.log(`[useActiveTradePnL] ${transportSource} update for ${contractTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? '+' : ''}${grossPnl.toFixed(1)}%, net after costs: ${pnl > 0 ? '+' : ''}${pnl.toFixed(1)}%)`);
+          console.log(
+            `[useActiveTradePnL] ${transportSource} update for ${contractTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? "+" : ""}${grossPnl.toFixed(1)}%, net after costs: ${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%)`
+          );
         }
       },
       { isOption: true, pollInterval: 3000 }

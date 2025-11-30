@@ -10,9 +10,10 @@
  * Integrates with alertEscalationStore for risk warnings.
  */
 
-import { Contract, Trade } from '../types';
-import { recordIV, detectIVCrush, detectIVSpike } from '../lib/greeks/ivHistory';
-import { getMetricsService } from './monitoring';
+import { Contract, Trade } from "../types";
+import { recordIV, detectIVCrush, detectIVSpike } from "../lib/greeks/ivHistory";
+import { getMetricsService } from "./monitoring";
+import { useAlertEscalationStore } from "../stores/alertEscalationStore";
 
 // ============================================================================
 // Types
@@ -74,7 +75,7 @@ export interface GreeksSnapshot {
   symbol: string; // Option symbol (e.g., "AAPL250117C00180000")
   strike: number;
   expiry: string;
-  type: 'C' | 'P';
+  type: "C" | "P";
   greeks: Greeks;
   underlyingPrice: number;
   optionPrice: number;
@@ -111,7 +112,7 @@ class GreeksMonitorService {
   private portfolioGreeks: PortfolioGreeks | null = null;
   private pollingInterval: number | null = null;
   private readonly POLL_INTERVAL_MS = 10000; // 10 seconds
-  private readonly TRADIER_API_URL = 'https://api.tradier.com/v1';
+  private readonly TRADIER_API_URL = "https://api.tradier.com/v1";
 
   /**
    * Start monitoring Greeks for active trades
@@ -178,9 +179,7 @@ class GreeksMonitorService {
     try {
       const daysToExpiry = Math.max(
         0,
-        Math.ceil(
-          (trade.contract.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-        )
+        Math.ceil((trade.contract.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
       );
 
       // Construct option ticker (OCC format: TICKER + YYMMDD + C/P + Strike)
@@ -190,7 +189,7 @@ class GreeksMonitorService {
       const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN;
       const response = await fetch(`/api/massive/snapshot/options/${trade.ticker}?limit=250`, {
         headers: {
-          'x-massive-proxy-token': PROXY_TOKEN || '',
+          "x-massive-proxy-token": PROXY_TOKEN || "",
         },
       });
 
@@ -207,7 +206,7 @@ class GreeksMonitorService {
         return (
           details.strike_price === trade.contract.strike &&
           details.expiration_date === trade.contract.expiry &&
-          (details.contract_type || '').toLowerCase().startsWith(trade.contract.type.toLowerCase())
+          (details.contract_type || "").toLowerCase().startsWith(trade.contract.type.toLowerCase())
         );
       });
 
@@ -223,7 +222,8 @@ class GreeksMonitorService {
 
       const bid = lastQuote.bid || lastQuote.bp || 0;
       const ask = lastQuote.ask || lastQuote.ap || 0;
-      const optionPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : (contract.last_trade?.price || trade.contract.mid);
+      const optionPrice =
+        bid > 0 && ask > 0 ? (bid + ask) / 2 : contract.last_trade?.price || trade.contract.mid;
 
       // Create safe Greeks with validation and fallback bounds
       const apiGreeks: Partial<Greeks> = {
@@ -249,7 +249,9 @@ class GreeksMonitorService {
       }
 
       if (greeksValidation.isEstimated) {
-        console.warn(`[GreeksMonitor] ⚠️ Using estimated Greeks for ${optionTicker} (API data incomplete)`);
+        console.warn(
+          `[GreeksMonitor] ⚠️ Using estimated Greeks for ${optionTicker} (API data incomplete)`
+        );
       }
 
       const snapshot: GreeksSnapshot = {
@@ -265,18 +267,22 @@ class GreeksMonitorService {
 
       // Record IV for historical tracking
       if (snapshot.greeks.impliedVolatility > 0) {
-        recordIV(trade.ticker, snapshot.greeks.impliedVolatility, 'massive');
+        recordIV(trade.ticker, snapshot.greeks.impliedVolatility, "massive");
 
         // Check for IV crush or spike
         const crush = detectIVCrush(trade.ticker);
         const spike = detectIVSpike(trade.ticker);
 
         if (crush.isCrush) {
-          console.warn(`[GreeksMonitor] ⚠️ IV CRUSH detected for ${trade.ticker}: ${crush.dropPercent.toFixed(1)}% drop`);
+          console.warn(
+            `[GreeksMonitor] ⚠️ IV CRUSH detected for ${trade.ticker}: ${crush.dropPercent.toFixed(1)}% drop`
+          );
         }
 
         if (spike.isSpike) {
-          console.warn(`[GreeksMonitor] ⚠️ IV SPIKE detected for ${trade.ticker}: ${spike.risePercent.toFixed(1)}% rise`);
+          console.warn(
+            `[GreeksMonitor] ⚠️ IV SPIKE detected for ${trade.ticker}: ${spike.risePercent.toFixed(1)}% rise`
+          );
         }
       }
 
@@ -304,7 +310,7 @@ class GreeksMonitorService {
       expiry: trade.contract.expiry,
       type: trade.contract.type,
       greeks: {
-        delta: trade.contract.delta || (trade.contract.type === 'C' ? 0.5 : -0.5),
+        delta: trade.contract.delta || (trade.contract.type === "C" ? 0.5 : -0.5),
         gamma: trade.contract.gamma || 0,
         theta: trade.contract.theta || 0,
         vega: trade.contract.vega || 0,
@@ -359,7 +365,6 @@ class GreeksMonitorService {
    * Check for Greeks-based alerts
    */
   private checkGreeksAlerts(snapshots: GreeksSnapshot[]) {
-    const { useAlertEscalationStore } = require('../stores/alertEscalationStore');
     const alertStore = useAlertEscalationStore.getState();
 
     snapshots.forEach((snapshot) => {
@@ -422,7 +427,7 @@ class GreeksMonitorService {
       if (accelerationFactor > 1.0) {
         const date = new Date(Date.now() + i * 24 * 60 * 60 * 1000);
         inflectionPoints.push({
-          date: date.toISOString().split('T')[0],
+          date: date.toISOString().split("T")[0],
           accelerationFactor,
         });
       }
@@ -467,54 +472,67 @@ export function validateGreeks(greeks: Partial<Greeks>): GreeksValidationResult 
   // Validate delta
   if (greeks.delta !== undefined) {
     if (greeks.delta < GREEKS_BOUNDS.DELTA_MIN || greeks.delta > GREEKS_BOUNDS.DELTA_MAX) {
-      errors.push(`Delta ${greeks.delta} out of bounds [${GREEKS_BOUNDS.DELTA_MIN}, ${GREEKS_BOUNDS.DELTA_MAX}]`);
+      errors.push(
+        `Delta ${greeks.delta} out of bounds [${GREEKS_BOUNDS.DELTA_MIN}, ${GREEKS_BOUNDS.DELTA_MAX}]`
+      );
     }
   } else {
-    warnings.push('Delta not provided (will use fallback)');
+    warnings.push("Delta not provided (will use fallback)");
     isEstimated = true;
   }
 
   // Validate gamma (must be non-negative, never 0)
   if (greeks.gamma !== undefined) {
     if (greeks.gamma < GREEKS_BOUNDS.GAMMA_MIN || greeks.gamma > GREEKS_BOUNDS.GAMMA_MAX) {
-      warnings.push(`Gamma ${greeks.gamma} outside typical range [${GREEKS_BOUNDS.GAMMA_MIN}, ${GREEKS_BOUNDS.GAMMA_MAX}]`);
+      warnings.push(
+        `Gamma ${greeks.gamma} outside typical range [${GREEKS_BOUNDS.GAMMA_MIN}, ${GREEKS_BOUNDS.GAMMA_MAX}]`
+      );
     }
     if (greeks.gamma === 0) {
-      errors.push('Gamma cannot be exactly 0 (API likely missing data)');
+      errors.push("Gamma cannot be exactly 0 (API likely missing data)");
       isEstimated = true;
     }
   } else {
-    errors.push('Gamma not provided (critical for position risk)');
+    errors.push("Gamma not provided (critical for position risk)");
     isEstimated = true;
   }
 
   // Validate theta
   if (greeks.theta !== undefined) {
     if (greeks.theta < GREEKS_BOUNDS.THETA_MIN || greeks.theta > GREEKS_BOUNDS.THETA_MAX) {
-      warnings.push(`Theta ${greeks.theta} outside typical range [${GREEKS_BOUNDS.THETA_MIN}, ${GREEKS_BOUNDS.THETA_MAX}]`);
+      warnings.push(
+        `Theta ${greeks.theta} outside typical range [${GREEKS_BOUNDS.THETA_MIN}, ${GREEKS_BOUNDS.THETA_MAX}]`
+      );
     }
   } else {
-    warnings.push('Theta not provided (will use 0)');
+    warnings.push("Theta not provided (will use 0)");
     isEstimated = true;
   }
 
   // Validate vega
   if (greeks.vega !== undefined) {
     if (greeks.vega < GREEKS_BOUNDS.VEGA_MIN || greeks.vega > GREEKS_BOUNDS.VEGA_MAX) {
-      warnings.push(`Vega ${greeks.vega} outside typical range [${GREEKS_BOUNDS.VEGA_MIN}, ${GREEKS_BOUNDS.VEGA_MAX}]`);
+      warnings.push(
+        `Vega ${greeks.vega} outside typical range [${GREEKS_BOUNDS.VEGA_MIN}, ${GREEKS_BOUNDS.VEGA_MAX}]`
+      );
     }
   } else {
-    warnings.push('Vega not provided (will use 0)');
+    warnings.push("Vega not provided (will use 0)");
     isEstimated = true;
   }
 
   // Validate IV
   if (greeks.impliedVolatility !== undefined) {
-    if (greeks.impliedVolatility < GREEKS_BOUNDS.IV_MIN || greeks.impliedVolatility > GREEKS_BOUNDS.IV_MAX) {
-      warnings.push(`IV ${(greeks.impliedVolatility * 100).toFixed(1)}% outside typical range [${GREEKS_BOUNDS.IV_MIN * 100}%, ${GREEKS_BOUNDS.IV_MAX * 100}%]`);
+    if (
+      greeks.impliedVolatility < GREEKS_BOUNDS.IV_MIN ||
+      greeks.impliedVolatility > GREEKS_BOUNDS.IV_MAX
+    ) {
+      warnings.push(
+        `IV ${(greeks.impliedVolatility * 100).toFixed(1)}% outside typical range [${GREEKS_BOUNDS.IV_MIN * 100}%, ${GREEKS_BOUNDS.IV_MAX * 100}%]`
+      );
     }
   } else {
-    warnings.push('IV not provided');
+    warnings.push("IV not provided");
     isEstimated = true;
   }
 
@@ -530,7 +548,7 @@ export function validateGreeks(greeks: Partial<Greeks>): GreeksValidationResult 
  */
 export function createSafeGreeks(
   apiGreeks: Partial<Greeks>,
-  optionType: 'C' | 'P'
+  optionType: "C" | "P"
 ): { greeks: Greeks; validation: GreeksValidationResult } {
   const validation = validateGreeks(apiGreeks);
 
@@ -558,7 +576,7 @@ export function createSafeGreeks(
   // Delta: Only use fallback if completely missing
   if (delta === undefined) {
     // Use reasonable defaults based on contract type and ATM assumption
-    delta = optionType === 'C' ? 0.5 : -0.5;
+    delta = optionType === "C" ? 0.5 : -0.5;
   } else if (delta < GREEKS_BOUNDS.DELTA_MIN || delta > GREEKS_BOUNDS.DELTA_MAX) {
     // Clamp out-of-bounds deltas
     delta = Math.max(GREEKS_BOUNDS.DELTA_MIN, Math.min(GREEKS_BOUNDS.DELTA_MAX, delta));

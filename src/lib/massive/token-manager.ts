@@ -5,10 +5,14 @@
  * Handles automatic token refresh before expiry.
  */
 
+import { buildApiUrl, isTestEnv } from "../env";
+
 interface TokenResponse {
   token: string;
   expiresAt: number;
 }
+
+const IS_TEST = isTestEnv();
 
 export class MassiveTokenManager {
   private token: string | null = null;
@@ -52,10 +56,17 @@ export class MassiveTokenManager {
    * Fetch new token from server
    */
   private async fetchToken(): Promise<string> {
+    if (IS_TEST) {
+      // Short-circuit in tests to avoid network calls
+      this.token = "test-token";
+      this.tokenExpiry = Date.now() + 60 * 60 * 1000;
+      return this.token;
+    }
+
     try {
-      const response = await fetch('/api/ws-token', {
-        method: 'POST',
-        credentials: 'include',
+      const response = await fetch(buildApiUrl("/api/ws-token"), {
+        method: "POST",
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -65,7 +76,7 @@ export class MassiveTokenManager {
       const data: TokenResponse = await response.json();
 
       if (!data.token || !data.expiresAt) {
-        throw new Error('Invalid token response format');
+        throw new Error("Invalid token response format");
       }
 
       this.token = data.token;
@@ -74,11 +85,14 @@ export class MassiveTokenManager {
       // Schedule auto-refresh 1 minute before expiry
       this.scheduleRefresh();
 
-      console.log('[TokenManager] Token acquired, expires at', new Date(data.expiresAt).toISOString());
+      console.log(
+        "[TokenManager] Token acquired, expires at",
+        new Date(data.expiresAt).toISOString()
+      );
 
       return data.token;
     } catch (error) {
-      console.error('[TokenManager] Failed to fetch token:', error);
+      console.error("[TokenManager] Failed to fetch token:", error);
       throw error;
     }
   }
@@ -100,9 +114,9 @@ export class MassiveTokenManager {
 
     if (timeUntilRefresh > 0) {
       this.refreshTimeout = setTimeout(() => {
-        console.log('[TokenManager] Auto-refreshing token');
-        this.refreshToken().catch(err => {
-          console.error('[TokenManager] Auto-refresh failed:', err);
+        console.log("[TokenManager] Auto-refreshing token");
+        this.refreshToken().catch((err) => {
+          console.error("[TokenManager] Auto-refresh failed:", err);
         });
       }, timeUntilRefresh);
     }
@@ -143,7 +157,7 @@ export class MassiveTokenManager {
       this.refreshTimeout = null;
     }
 
-    console.log('[TokenManager] Token cleared');
+    console.log("[TokenManager] Token cleared");
   }
 
   /**

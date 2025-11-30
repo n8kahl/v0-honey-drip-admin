@@ -1,6 +1,6 @@
-import type { SymbolFeatures } from '../../strategy/engine.js';
-import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
-import { shouldRunDetector } from './utils.js';
+import type { SymbolFeatures } from "../../strategy/engine.js";
+import { createDetector, type OpportunityDetector } from "../OpportunityDetector.js";
+import { shouldRunDetector } from "./utils.js";
 
 /**
  * Breakout Bearish Detector
@@ -11,25 +11,25 @@ import { shouldRunDetector } from './utils.js';
  * Expected Frequency: 2-4 signals/day per symbol
  */
 export const breakoutBearishDetector: OpportunityDetector = createDetector({
-  type: 'breakout_bearish',
-  direction: 'SHORT',
-  assetClass: ['EQUITY_ETF', 'STOCK'],
+  type: "breakout_bearish",
+  direction: "SHORT",
+  assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
 
   detect: (features: SymbolFeatures) => {
     // 1. Must have pattern data
     if (!features.pattern) return false;
 
-    // 2. Breakdown detected
-    const hasBreakdown = features.pattern.breakout_bearish === true;
+    // 2. Breakdown detected (featuresBuilder sets camelCase keys)
+    const hasBreakdown = features.pattern.breakoutBearish === true;
     if (!hasBreakdown) return false;
 
     // 3. Volume surge (>1.5x average)
-    const hasVolumeSpike = features.volume?.relativeToAvg && features.volume.relativeToAvg > 1.5;
+    const hasVolumeSpike = (features.volume?.relativeToAvg || 0) > 1.5;
     if (!hasVolumeSpike) return false;
 
     // 4. Price below VWAP
-    const belowVWAP = features.vwap?.distancePct && features.vwap.distancePct < 0;
+    const belowVWAP = (features.vwap?.distancePct || 0) < 0;
     if (!belowVWAP) return false;
 
     // 5. Check if detector should run (market hours or weekend mode)
@@ -40,8 +40,8 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
 
   scoreFactors: [
     {
-      name: 'volume_intensity',
-      weight: 0.30,
+      name: "volume_intensity",
+      weight: 0.3,
       evaluate: (features) => {
         const rvol = features.volume?.relativeToAvg || 1.0;
         // 1.5x = 50, 2.5x = 75, 4.0x+ = 100
@@ -49,34 +49,34 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
         if (rvol >= 2.5) return 75;
         if (rvol >= 1.5) return 50;
         return Math.min(100, (rvol - 1.0) * 33);
-      }
+      },
     },
     {
-      name: 'flow_alignment',
+      name: "flow_alignment",
       weight: 0.25,
       evaluate: (features) => {
         if (!features.flow) return 50; // Neutral if no flow data
 
-        const { flowScore = 50, flowBias = 'neutral', sweepCount = 0 } = features.flow;
+        const { flowScore = 50, flowBias = "neutral", sweepCount = 0 } = features.flow;
 
         // Strong bearish flow
-        if (flowBias === 'bearish' && flowScore > 70) return 100;
-        if (flowBias === 'bearish' && flowScore > 60) return 85;
+        if (flowBias === "bearish" && flowScore > 70) return 100;
+        if (flowBias === "bearish" && flowScore > 60) return 85;
 
         // Sweep activity (bearish sweeps)
         if (sweepCount > 3) return 90;
         if (sweepCount > 0) return 70;
 
         // Neutral or weak
-        if (flowBias === 'neutral') return 60;
-        if (flowBias === 'bullish') return 30; // Bullish flow on bearish breakdown = poor
+        if (flowBias === "neutral") return 60;
+        if (flowBias === "bullish") return 30; // Bullish flow on bearish breakdown = poor
 
         return 50;
-      }
+      },
     },
     {
-      name: 'vwap_weakness',
-      weight: 0.20,
+      name: "vwap_weakness",
+      weight: 0.2,
       evaluate: (features) => {
         const vwapDist = features.vwap?.distancePct || 0;
 
@@ -89,29 +89,32 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
         if (vwapDist <= 0) return 50;
 
         return 0; // Above VWAP = poor for shorts
-      }
+      },
     },
     {
-      name: 'breakdown_strength',
+      name: "breakdown_strength",
       weight: 0.15,
       evaluate: (features) => {
-        // Check if price is breaking key levels
-        const nearORB = features.pattern?.near_orb_low === true;
-        const nearSwingLow = features.pattern?.near_swing_low === true;
-        const breakingSupport = features.pattern?.breaking_support === true;
+        // Check proximity to known levels (use available pattern data)
+        const price = features.price?.current ?? 0;
+        const orbLow = features.pattern?.orbLow ?? 0;
+        const swingLow = features.pattern?.swingLow ?? 0;
+        const levelProximity = (level: number) =>
+          price > 0 && level > 0 ? Math.abs(price - level) / price : 1;
+
+        const nearOrb = levelProximity(orbLow) < 0.003; // ~0.3%
+        const nearSwing = levelProximity(swingLow) < 0.003;
 
         let score = 50; // Base score
-
-        if (breakingSupport) score += 30;
-        if (nearORB) score += 10;
-        if (nearSwingLow) score += 10;
+        if (nearOrb) score += 20;
+        if (nearSwing) score += 15;
 
         return Math.min(100, score);
-      }
+      },
     },
     {
-      name: 'mtf_alignment',
-      weight: 0.10,
+      name: "mtf_alignment",
+      weight: 0.1,
       evaluate: (features) => {
         if (!features.mtf) return 50;
 
@@ -120,13 +123,13 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
         let totalChecked = 0;
 
         // Check 5m, 15m, 60m RSI
-        const timeframes = ['5m', '15m', '60m'];
+        const timeframes = ["5m", "15m", "60m"];
 
         for (const tf of timeframes) {
           const tfData = features.mtf[tf];
-          if (tfData?.rsi?.['14']) {
+          if (tfData?.rsi?.["14"]) {
             totalChecked++;
-            const rsi = tfData.rsi['14'];
+            const rsi = tfData.rsi["14"];
             // RSI 30-50 = bearish but not oversold
             if (rsi >= 30 && rsi <= 50) {
               alignedCount++;
@@ -138,7 +141,7 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
 
         const alignmentPct = (alignedCount / totalChecked) * 100;
         return alignmentPct;
-      }
-    }
-  ]
+      },
+    },
+  ],
 });

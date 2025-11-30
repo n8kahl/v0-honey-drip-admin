@@ -65,37 +65,70 @@ export async function ingestHistoricalGreeks(
       };
     }
 
-    // Map contracts to Greeks records
-    const records: GreeksRecord[] = chain.contracts.map((contract: any) => {
-      const bid = contract.bid || null;
-      const ask = contract.ask || null;
-      const midPrice = bid && ask ? (bid + ask) / 2 : null;
+    // Map contracts to Greeks records (filter out invalid contracts)
+    // Massive.com API structure: contract.details contains ticker, strike_price, expiration_date, contract_type
+    const records: GreeksRecord[] = chain.contracts
+      .filter((contract: any) => {
+        // Extract fields from nested details object (Massive.com API format)
+        const details = contract.details || {};
+        const ticker = details.ticker || contract.ticker;
+        const strike = details.strike_price ?? contract.strike_price ?? contract.strike;
+        const expiration =
+          details.expiration_date || contract.expiration_date || contract.expiration;
+        const contractType =
+          details.contract_type || contract.contract_type || contract.option_type;
 
-      return {
-        symbol,
-        contract_ticker: contract.ticker,
-        strike: contract.strike,
-        expiration: contract.expiration,
-        timestamp,
-        delta: contract.greeks?.delta || null,
-        gamma: contract.greeks?.gamma || null,
-        theta: contract.greeks?.theta || null,
-        vega: contract.greeks?.vega || null,
-        rho: contract.greeks?.rho || null,
-        implied_volatility: contract.implied_volatility || null,
-        iv_rank: null, // Calculated separately
-        iv_percentile: null, // Calculated separately
-        underlying_price: chain.underlying_price,
-        dte: calculateDTE(new Date(contract.expiration)),
-        option_type: contract.option_type.toLowerCase() as "call" | "put",
-        bid,
-        ask,
-        last: contract.last || null,
-        mid_price: midPrice,
-        volume: contract.volume || null,
-        open_interest: contract.open_interest || null,
-      };
-    });
+        // Must have required fields
+        return ticker && strike !== undefined && expiration && contractType;
+      })
+      .map((contract: any) => {
+        // Extract fields from nested details object (Massive.com API format)
+        const details = contract.details || {};
+        const ticker = details.ticker || contract.ticker;
+        const strike = details.strike_price ?? contract.strike_price ?? contract.strike;
+        const expiration =
+          details.expiration_date || contract.expiration_date || contract.expiration;
+        const contractType =
+          details.contract_type || contract.contract_type || contract.option_type || "";
+
+        // Extract quote data from nested last_quote object
+        const lastQuote = contract.last_quote || {};
+        const bid = lastQuote.bid ?? lastQuote.bp ?? contract.bid ?? null;
+        const ask = lastQuote.ask ?? lastQuote.ap ?? contract.ask ?? null;
+        const midPrice = bid && ask ? (bid + ask) / 2 : null;
+
+        // Extract trade data from nested last_trade object
+        const lastTrade = contract.last_trade || {};
+        const last = lastTrade.price ?? lastTrade.p ?? contract.last ?? null;
+
+        // Normalize contract type to call/put
+        const optionType = contractType.toString().toUpperCase().startsWith("C") ? "call" : "put";
+
+        return {
+          symbol,
+          contract_ticker: ticker,
+          strike: Number(strike) || 0,
+          expiration,
+          timestamp,
+          delta: contract.greeks?.delta ?? null,
+          gamma: contract.greeks?.gamma ?? null,
+          theta: contract.greeks?.theta ?? null,
+          vega: contract.greeks?.vega ?? null,
+          rho: contract.greeks?.rho ?? null,
+          implied_volatility: contract.implied_volatility ?? null,
+          iv_rank: null, // Calculated separately
+          iv_percentile: null, // Calculated separately
+          underlying_price: chain.underlying_price,
+          dte: calculateDTE(new Date(expiration)),
+          option_type: optionType as "call" | "put",
+          bid,
+          ask,
+          last,
+          mid_price: midPrice,
+          volume: contract.volume ?? contract.day?.volume ?? null,
+          open_interest: contract.open_interest ?? null,
+        };
+      });
 
     // Store in database (upsert to handle duplicates)
     const { error } = await supabase.from("historical_greeks").upsert(records as any, {

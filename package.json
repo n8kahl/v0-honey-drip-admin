@@ -2,6 +2,7 @@
   "name": "honeydrip-admin-trading-dashboard",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "prebuild": "pnpm run clean:strategy-js && pnpm run clean:dist",
     "build": "vite build && tsc -p tsconfig.server.json",
@@ -38,6 +39,8 @@
     "start:watchlist": "node server/dist/server/workers/flatFiles/WatchlistBackfill.js --worker",
     "start:all": "concurrently \"node server/dist/server/index.js\" \"node server/dist/server/workers/compositeScanner.js\"",
     "start:full": "concurrently \"node server/dist/server/index.js\" \"node server/dist/server/workers/compositeScanner.js\" \"node server/dist/server/workers/historicalDataIngestion.js\"",
+    "start:workers": "concurrently \"node server/dist/server/workers/compositeScanner.js\" \"node server/dist/server/workers/historicalDataIngestion.js\" \"node server/dist/server/workers/flatFiles/WatchlistBackfill.js --worker\"",
+    "dev:workers": "concurrently \"tsx watch server/workers/compositeScanner.ts\" \"tsx watch server/workers/historicalDataIngestion.ts\" \"tsx watch server/workers/flatFiles/WatchlistBackfill.ts --worker\"",
     "clean:strategy-js": "rm -f src/lib/strategy/*.js",
     "clean:dist": "rm -rf server/dist && rm -f *.tsbuildinfo",
     "test": "vitest run",

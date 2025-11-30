@@ -56,7 +56,10 @@ interface GammaSnapshot {
 /**
  * Calculate dealer gamma positioning strength
  */
-function calculatePositioningStrength(netGamma: number, totalGamma: number): GammaSnapshot["positioning_strength"] {
+function calculatePositioningStrength(
+  netGamma: number,
+  totalGamma: number
+): GammaSnapshot["positioning_strength"] {
   const ratio = Math.abs(netGamma / totalGamma);
 
   if (ratio > 0.75) return "EXTREME";
@@ -121,7 +124,29 @@ export async function snapshotGammaExposure(
     }
 
     const underlyingPrice = chain.underlying_price;
-    const contracts = chain.contracts;
+
+    // Filter out invalid contracts (missing required fields)
+    // Massive.com API structure: contract.details contains strike_price, contract_type
+    const contracts = chain.contracts.filter((contract: any) => {
+      const details = contract.details || {};
+      const strike = details.strike_price ?? contract.strike_price ?? contract.strike;
+      const contractType = details.contract_type || contract.contract_type || contract.option_type;
+
+      return strike !== undefined && contractType && typeof contractType === "string";
+    });
+
+    if (contracts.length === 0) {
+      return {
+        success: false,
+        symbol,
+        timestamp,
+        dealerPositioning: null,
+        gammaWallResistance: null,
+        gammaWallSupport: null,
+        contractsAnalyzed: 0,
+        error: "No valid contracts in options chain",
+      };
+    }
 
     // Initialize accumulators
     let totalGamma = 0;
@@ -146,14 +171,21 @@ export async function snapshotGammaExposure(
 
     // Process each contract
     for (const contract of contracts) {
-      const strike = contract.strike;
+      // Extract fields from nested details object (Massive.com API format)
+      const details = contract.details || {};
+      const strike = details.strike_price ?? contract.strike_price ?? contract.strike;
       const strikeKey = strike.toString();
       const gamma = contract.greeks?.gamma || 0;
       const oi = contract.open_interest || 0;
-      const volume = contract.volume || 0;
-      const optionType = contract.option_type.toLowerCase();
+      const volume = contract.volume ?? contract.day?.volume ?? 0;
+      const contractType =
+        details.contract_type || contract.contract_type || contract.option_type || "";
+      const optionType = contractType.toString().toLowerCase().startsWith("c") ? "call" : "put";
+      const expiration = details.expiration_date || contract.expiration_date || contract.expiration;
 
-      expirations.add(contract.expiration);
+      if (expiration) {
+        expirations.add(expiration);
+      }
 
       // Dealer gamma = -Market gamma (dealers are on the other side)
       // For market participants: long calls/puts = positive gamma
@@ -247,7 +279,10 @@ export async function snapshotGammaExposure(
       dealerPositioning = "NEUTRAL";
     }
 
-    const positioningStrength = calculatePositioningStrength(totalGamma, Math.abs(totalGamma) + Math.abs(callGamma) + Math.abs(putGamma));
+    const positioningStrength = calculatePositioningStrength(
+      totalGamma,
+      Math.abs(totalGamma) + Math.abs(callGamma) + Math.abs(putGamma)
+    );
 
     // Calculate distances to gamma walls
     const distanceToResistance = gammaWallResistance
@@ -259,7 +294,11 @@ export async function snapshotGammaExposure(
       : null;
 
     // Predict behavior
-    const expectedBehavior = predictBehavior(dealerPositioning, distanceToResistance, distanceToSupport);
+    const expectedBehavior = predictBehavior(
+      dealerPositioning,
+      distanceToResistance,
+      distanceToSupport
+    );
 
     // Calculate ratios
     const gammaSkew = putGamma !== 0 ? callGamma / putGamma : 0;
@@ -269,9 +308,12 @@ export async function snapshotGammaExposure(
     // Find dominant expiration (most OI)
     const expirationOI = new Map<string, number>();
     for (const contract of contracts) {
-      const exp = contract.expiration;
+      const details = contract.details || {};
+      const exp = details.expiration_date || contract.expiration_date || contract.expiration;
       const oi = contract.open_interest || 0;
-      expirationOI.set(exp, (expirationOI.get(exp) || 0) + oi);
+      if (exp) {
+        expirationOI.set(exp, (expirationOI.get(exp) || 0) + oi);
+      }
     }
 
     const expirationFocus = Array.from(expirationOI.entries()).reduce(

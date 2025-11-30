@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { Ticker } from "../types";
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from "../lib/supabase/database";
+import { buildApiUrl, isTestEnv } from "../lib/env";
 import { useMarketDataStore } from "./marketDataStore";
 import { toast } from "sonner";
 
@@ -10,8 +11,12 @@ import { toast } from "sonner";
  * Called when a new ticker is added to the watchlist
  */
 async function triggerBackfill(symbol: string, days: number = 90): Promise<void> {
+  if (isTestEnv()) {
+    return; // Skip network calls in tests
+  }
+
   try {
-    const response = await fetch("/api/backfill/trigger", {
+    const response = await fetch(buildApiUrl("/api/backfill/trigger"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol, days }),
