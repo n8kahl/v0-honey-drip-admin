@@ -56,7 +56,10 @@ interface GammaSnapshot {
 /**
  * Calculate dealer gamma positioning strength
  */
-function calculatePositioningStrength(netGamma: number, totalGamma: number): GammaSnapshot["positioning_strength"] {
+function calculatePositioningStrength(
+  netGamma: number,
+  totalGamma: number
+): GammaSnapshot["positioning_strength"] {
   const ratio = Math.abs(netGamma / totalGamma);
 
   if (ratio > 0.75) return "EXTREME";
@@ -121,7 +124,28 @@ export async function snapshotGammaExposure(
     }
 
     const underlyingPrice = chain.underlying_price;
-    const contracts = chain.contracts;
+
+    // Filter out invalid contracts (missing required fields)
+    const contracts = chain.contracts.filter((contract: any) => {
+      return (
+        contract.strike !== undefined &&
+        contract.option_type &&
+        typeof contract.option_type === "string"
+      );
+    });
+
+    if (contracts.length === 0) {
+      return {
+        success: false,
+        symbol,
+        timestamp,
+        dealerPositioning: null,
+        gammaWallResistance: null,
+        gammaWallSupport: null,
+        contractsAnalyzed: 0,
+        error: "No valid contracts in options chain",
+      };
+    }
 
     // Initialize accumulators
     let totalGamma = 0;
@@ -247,7 +271,10 @@ export async function snapshotGammaExposure(
       dealerPositioning = "NEUTRAL";
     }
 
-    const positioningStrength = calculatePositioningStrength(totalGamma, Math.abs(totalGamma) + Math.abs(callGamma) + Math.abs(putGamma));
+    const positioningStrength = calculatePositioningStrength(
+      totalGamma,
+      Math.abs(totalGamma) + Math.abs(callGamma) + Math.abs(putGamma)
+    );
 
     // Calculate distances to gamma walls
     const distanceToResistance = gammaWallResistance
@@ -259,7 +286,11 @@ export async function snapshotGammaExposure(
       : null;
 
     // Predict behavior
-    const expectedBehavior = predictBehavior(dealerPositioning, distanceToResistance, distanceToSupport);
+    const expectedBehavior = predictBehavior(
+      dealerPositioning,
+      distanceToResistance,
+      distanceToSupport
+    );
 
     // Calculate ratios
     const gammaSkew = putGamma !== 0 ? callGamma / putGamma : 0;
