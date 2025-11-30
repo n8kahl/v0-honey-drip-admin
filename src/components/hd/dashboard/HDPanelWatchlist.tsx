@@ -330,6 +330,7 @@ export function HDPanelWatchlist({
                   active={ticker.symbol === activeTicker}
                   onClick={() => onTickerClick?.(ticker)}
                   onRemove={() => setConfirmDialog({ isOpen: true, type: "ticker", item: ticker })}
+                  compositeSignals={compositeSignals?.filter((s) => s.symbol === ticker.symbol)}
                 />
               ))}
             </div>

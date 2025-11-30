@@ -5,15 +5,25 @@ import { useSymbolData } from "../../../stores/marketDataStore";
 import { useUIStore } from "../../../stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
 import { useRef, useEffect } from "react";
+import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
+import { CompositeSignalBadge } from "../signals/CompositeSignalBadge";
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
   active?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
+  /** Composite signals for this symbol (from useCompositeSignals) */
+  compositeSignals?: CompositeSignal[];
 }
 
-export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatchlistProps) {
+export function HDRowWatchlist({
+  ticker,
+  active,
+  onClick,
+  onRemove,
+  compositeSignals,
+}: HDRowWatchlistProps) {
   // Get all data from marketDataStore (single source of truth)
   const symbolData = useSymbolData(ticker.symbol);
   const setActiveTab = useUIStore((state) => state.setActiveTab);
@@ -145,7 +155,17 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
       >
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
-            {activeSignalCount > 0 && (
+            {/* Composite signals - primary signal display */}
+            {compositeSignals && compositeSignals.length > 0 && (
+              <CompositeSignalBadge
+                symbol={ticker.symbol}
+                signals={compositeSignals}
+                compact
+                className="mr-1"
+              />
+            )}
+            {/* Fallback to legacy signals if no composite signals */}
+            {(!compositeSignals || compositeSignals.length === 0) && activeSignalCount > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
@@ -170,8 +190,7 @@ export function HDRowWatchlist({ ticker, active, onClick, onRemove }: HDRowWatch
             )}
             <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
 
-            {/* Minimal indicator only; no per-strategy badges */}
-
+            {/* Confluence indicator when no signals but high confluence */}
             {confluence && confluence.overall > 70 && (
               <span title={`Confluence: ${confluence.overall}`}>
                 <Zap className="w-3 h-3 text-yellow-500" />

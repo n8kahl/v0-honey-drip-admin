@@ -15,6 +15,7 @@ import {
   Settings,
   Radar,
   LogOut,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { DESIGN_TOKENS } from "../../lib/designTokens";
@@ -254,6 +255,7 @@ const ChallengeRing: React.FC<ChallengeRingProps> = ({ completed, target, rMulti
 interface MobileMenuProps {
   onSettingsClick?: () => void;
   onRadarClick?: () => void;
+  onPlanClick?: () => void;
   onMonitoringClick?: () => void;
   onLogout?: () => void;
 }
@@ -261,6 +263,7 @@ interface MobileMenuProps {
 const MobileMenu: React.FC<MobileMenuProps> = ({
   onSettingsClick,
   onRadarClick,
+  onPlanClick,
   onMonitoringClick,
   onLogout,
 }) => {
@@ -274,6 +277,11 @@ const MobileMenu: React.FC<MobileMenuProps> = ({
   const handleRadarClick = () => {
     setIsOpen(false);
     onRadarClick?.();
+  };
+
+  const handlePlanClick = () => {
+    setIsOpen(false);
+    onPlanClick?.();
   };
 
   const handleMonitoringClick = () => {
@@ -319,6 +327,17 @@ const MobileMenu: React.FC<MobileMenuProps> = ({
           >
             <Settings className="w-4 h-4" />
             <span>Settings</span>
+          </button>
+          <button
+            onClick={handlePlanClick}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm text-[var(--text-high)] hover:bg-[var(--surface-2)] rounded-md",
+              colorTransition,
+              focusStateSmooth
+            )}
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>Plan</span>
           </button>
           <button
             onClick={handleRadarClick}
@@ -613,6 +632,11 @@ export const TraderHeader: React.FC = () => {
     navigate("/radar");
   };
 
+  const handlePlanClick = () => {
+    console.log("[v0] Plan clicked");
+    navigate("/plan");
+  };
+
   const handleMonitoringClick = () => {
     console.log("[v0] Monitoring clicked");
     navigate("/monitoring");
@@ -709,6 +733,7 @@ export const TraderHeader: React.FC = () => {
           <MobileMenu
             onSettingsClick={handleSettingsClick}
             onRadarClick={handleRadarClick}
+            onPlanClick={handlePlanClick}
             onMonitoringClick={handleMonitoringClick}
             onLogout={handleLogout}
           />
@@ -722,9 +747,9 @@ export const TraderHeader: React.FC = () => {
             onClick={() => navigate("/")}
           />
           <TabButton
-            label="Radar"
-            active={location.pathname === "/radar"}
-            onClick={() => navigate("/radar")}
+            label="Plan"
+            active={location.pathname === "/plan"}
+            onClick={() => navigate("/plan")}
           />
           <TabButton
             label="Review"
