@@ -61,22 +61,6 @@ export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityM
     }));
   }, [data]);
 
-  // Track viewport size to swap chart/table views responsively
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.innerWidth < 768;
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile(); // Sync on mount in case of SSR
-
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
-
   if (data.length === 0) {
     return (
       <div
