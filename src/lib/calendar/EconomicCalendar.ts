@@ -9,6 +9,8 @@
  * - Major earnings events (from Alpha Vantage)
  */
 
+import { buildApiUrl, isTestEnv } from "../env";
+
 // ============= Types =============
 
 export type EventImpact = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -155,6 +157,8 @@ const EVENT_BUFFER = {
   LOW: 5,
 };
 
+const IS_TEST = isTestEnv();
+
 // ============= API Functions =============
 
 /**
@@ -165,6 +169,34 @@ export async function fetchEconomicCalendar(
   endDate: Date,
   config: CalendarConfig = {}
 ): Promise<EconomicEvent[]> {
+  // In test env, return deterministic stub data without network calls
+  if (IS_TEST) {
+    const stub: EconomicEvent[] = [
+      {
+        id: "evt-1",
+        name: "CPI",
+        datetime: new Date(startDate.getTime() + 6 * 60 * 60 * 1000),
+        impact: "CRITICAL",
+        category: "INFLATION",
+        affectsSymbols: ["SPY", "SPX"],
+      },
+      {
+        id: "evt-2",
+        name: "Initial Jobless Claims",
+        datetime: new Date(startDate.getTime() + 2 * 24 * 60 * 60 * 1000),
+        impact: "MEDIUM",
+        category: "EMPLOYMENT",
+        affectsSymbols: ["SPY"],
+      },
+    ];
+    return stub.filter((e) => {
+      const inRange = e.datetime >= startDate && e.datetime <= endDate;
+      const impactOk =
+        !config.impactFilter?.length || config.impactFilter.includes(e.impact as EventImpact);
+      return inRange && impactOk;
+    });
+  }
+
   try {
     const params = new URLSearchParams({
       start: startDate.toISOString(),
@@ -175,7 +207,7 @@ export async function fetchEconomicCalendar(
       params.set("impact", config.impactFilter.join(","));
     }
 
-    const response = await fetch(`/api/calendar/events?${params}`);
+    const response = await fetch(buildApiUrl(`/api/calendar/events?${params}`));
 
     if (!response.ok) {
       console.error("[EconomicCalendar] API error:", response.status);
@@ -214,6 +246,29 @@ export async function fetchEarningsCalendar(
   endDate: Date,
   symbols?: string[]
 ): Promise<EarningsEvent[]> {
+  // In test env, return deterministic stub data without network calls
+  if (IS_TEST) {
+    const stub: EarningsEvent[] = [
+      {
+        symbol: "AAPL",
+        name: "Apple Inc.",
+        datetime: new Date(startDate.getTime() + 3 * 24 * 60 * 60 * 1000),
+        timing: "AMC",
+      },
+      {
+        symbol: "MSFT",
+        name: "Microsoft Corp.",
+        datetime: new Date(startDate.getTime() + 5 * 24 * 60 * 60 * 1000),
+        timing: "BMO",
+      },
+    ];
+    const filtered = stub.filter((e) => e.datetime >= startDate && e.datetime <= endDate);
+    if (symbols?.length) {
+      return filtered.filter((e) => symbols.includes(e.symbol));
+    }
+    return filtered;
+  }
+
   try {
     const params = new URLSearchParams({
       start: startDate.toISOString(),
@@ -224,7 +279,7 @@ export async function fetchEarningsCalendar(
       params.set("symbols", symbols.join(","));
     }
 
-    const response = await fetch(`/api/calendar/earnings?${params}`);
+    const response = await fetch(buildApiUrl(`/api/calendar/earnings?${params}`));
 
     if (!response.ok) {
       console.error("[EconomicCalendar] Earnings API error:", response.status);
