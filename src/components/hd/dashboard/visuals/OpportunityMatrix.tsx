@@ -32,6 +32,25 @@ export interface OpportunityMatrixProps {
 }
 
 export function OpportunityMatrix({ data, onAddTicker, className }: OpportunityMatrixProps) {
+  // Mobile responsive state
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    // Check if we're in browser
+    if (typeof window === "undefined") return;
+
+    const checkMobile = () => window.innerWidth < 768;
+
+    // Set initial state
+    setIsMobile(checkMobile());
+
+    // Add resize listener
+    const handler = () => setIsMobile(checkMobile());
+    window.addEventListener("resize", handler);
+
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
   // Prepare data for scatter chart
   const chartData = useMemo(() => {
     return data.map((dot) => ({
