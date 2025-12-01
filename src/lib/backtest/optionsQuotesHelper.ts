@@ -209,11 +209,12 @@ export async function getSpreadStats(
   }
 
   try {
-    const { data, error } = await db.rpc("get_avg_spread_stats", {
+    // Cast db to any to bypass strict RPC typing
+    const { data, error } = await (db as any).rpc("get_avg_spread_stats", {
       p_underlying: underlying,
       p_start_ts: startTs,
       p_end_ts: endTs,
-    } as any);
+    });
 
     // Cast to any for untyped RPC function
     const rows = data as any[];
