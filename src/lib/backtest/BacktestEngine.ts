@@ -657,16 +657,27 @@ export class BacktestEngine {
     const stopMultiple = params?.riskReward?.stopMultiple ?? this.config.stopMultiple;
     const maxHoldBars = params?.riskReward?.maxHoldBars ?? this.config.maxHoldBars;
 
-    // Calculate target and stop based on ATR
+    // Check if this is a KCU detector - use level-based targets
+    const isKCUDetector = detector.type.startsWith("kcu_");
+
+    // Calculate target and stop
     let targetPrice: number;
     let stopPrice: number;
 
-    if (direction === "LONG") {
-      targetPrice = entryPrice + atr * targetMultiple;
-      stopPrice = entryPrice - atr * stopMultiple;
+    if (isKCUDetector) {
+      // KCU Level-Based Targets: Use key levels instead of ATR multiples
+      const levelTargets = this.calculateKCUTargets(entryPrice, direction, features, atr);
+      targetPrice = levelTargets.target;
+      stopPrice = levelTargets.stop;
     } else {
-      targetPrice = entryPrice - atr * targetMultiple;
-      stopPrice = entryPrice + atr * stopMultiple;
+      // Standard ATR-based targets for non-KCU detectors
+      if (direction === "LONG") {
+        targetPrice = entryPrice + atr * targetMultiple;
+        stopPrice = entryPrice - atr * stopMultiple;
+      } else {
+        targetPrice = entryPrice - atr * targetMultiple;
+        stopPrice = entryPrice + atr * stopMultiple;
+      }
     }
 
     // Apply slippage - use realistic bid/ask data if available
@@ -1057,5 +1068,220 @@ export class BacktestEngine {
     dstEnd.setUTCHours(6); // 2 AM ET = 6 AM UTC (still in EDT before switch)
 
     return date >= dstStart && date < dstEnd;
+  }
+
+  /**
+   * KCU Level-Based Target Calculation
+   *
+   * Instead of using simple ATR multiples, KCU methodology uses key levels as targets:
+   * - For LONG: Target = Next resistance level above entry (PDH, ORB High, VWAP extension)
+   * - For SHORT: Target = Next support level below entry (PDL, ORB Low, VWAP extension)
+   * - Stop is placed at the nearest support (LONG) or resistance (SHORT)
+   *
+   * If no suitable level found, falls back to ATR-based calculation with minimum 1.5R target
+   */
+  private calculateKCUTargets(
+    entryPrice: number,
+    direction: "LONG" | "SHORT",
+    features: SymbolFeatures,
+    atr: number
+  ): { target: number; stop: number; targetType: string; stopType: string } {
+    // Build list of available levels from features
+    const levels: { price: number; type: string; strength: number }[] = [];
+
+    // Extract levels from features.pattern
+    const pattern = features.pattern as any;
+
+    // ORB levels (high strength for intraday)
+    if (pattern?.orbHigh && pattern.orbHigh > 0) {
+      levels.push({ price: pattern.orbHigh, type: "ORB_HIGH", strength: 80 });
+    }
+    if (pattern?.orbLow && pattern.orbLow > 0) {
+      levels.push({ price: pattern.orbLow, type: "ORB_LOW", strength: 80 });
+    }
+
+    // Prior day levels (medium-high strength)
+    if (pattern?.priorDayHigh && pattern.priorDayHigh > 0) {
+      levels.push({ price: pattern.priorDayHigh, type: "PRIOR_DAY_HIGH", strength: 85 });
+    }
+    if (pattern?.priorDayLow && pattern.priorDayLow > 0) {
+      levels.push({ price: pattern.priorDayLow, type: "PRIOR_DAY_LOW", strength: 85 });
+    }
+
+    // VWAP (the King - highest strength)
+    if (features.vwap?.value && features.vwap.value > 0) {
+      levels.push({ price: features.vwap.value, type: "VWAP", strength: 90 });
+    }
+
+    // EMAs (medium strength)
+    if (features.ema?.["8"] && features.ema["8"] > 0) {
+      levels.push({ price: features.ema["8"], type: "EMA_8", strength: 60 });
+    }
+    if (features.ema?.["21"] && features.ema["21"] > 0) {
+      levels.push({ price: features.ema["21"], type: "EMA_21", strength: 65 });
+    }
+
+    // Add ORB extension levels (1x and 1.5x ORB range)
+    if (pattern?.orbHigh && pattern?.orbLow) {
+      const orbRange = pattern.orbHigh - pattern.orbLow;
+      if (orbRange > 0) {
+        // Upper extensions for LONG targets
+        levels.push({
+          price: pattern.orbHigh + orbRange,
+          type: "ORB_EXT_1X",
+          strength: 70,
+        });
+        levels.push({
+          price: pattern.orbHigh + orbRange * 1.5,
+          type: "ORB_EXT_1.5X",
+          strength: 65,
+        });
+        // Lower extensions for SHORT targets
+        levels.push({
+          price: pattern.orbLow - orbRange,
+          type: "ORB_EXT_1X_DOWN",
+          strength: 70,
+        });
+        levels.push({
+          price: pattern.orbLow - orbRange * 1.5,
+          type: "ORB_EXT_1.5X_DOWN",
+          strength: 65,
+        });
+      }
+    }
+
+    // Sort levels by price
+    levels.sort((a, b) => a.price - b.price);
+
+    let targetPrice: number;
+    let stopPrice: number;
+    let targetType = "ATR_FALLBACK";
+    let stopType = "ATR_FALLBACK";
+
+    // Minimum distance filter (ignore levels within 0.1% of entry - too close)
+    const minDistancePercent = 0.1;
+    const minDistance = entryPrice * (minDistancePercent / 100);
+
+    if (direction === "LONG") {
+      // Find target: First resistance level above entry with enough distance
+      const resistanceLevels = levels.filter(
+        (l) => l.price > entryPrice + minDistance && l.strength >= 60
+      );
+
+      // Prefer levels in this order: PDH > ORB_HIGH > ORB_EXT > VWAP (if above)
+      const sortedByPriority = resistanceLevels.sort((a, b) => {
+        // Priority order (higher = better)
+        const priority: Record<string, number> = {
+          PRIOR_DAY_HIGH: 100,
+          ORB_HIGH: 90,
+          ORB_EXT_1X: 80,
+          "ORB_EXT_1.5X": 70,
+          VWAP: 85,
+          EMA_21: 50,
+          EMA_8: 40,
+        };
+        return (priority[b.type] || 0) - (priority[a.type] || 0);
+      });
+
+      if (sortedByPriority.length > 0) {
+        // Take the nearest high-priority level
+        const nearestResistance = sortedByPriority.reduce((nearest, current) =>
+          current.price < nearest.price ? current : nearest
+        );
+        targetPrice = nearestResistance.price;
+        targetType = nearestResistance.type;
+      } else {
+        // Fallback: ATR-based with 1.5x multiple (minimum 1.5R)
+        targetPrice = entryPrice + atr * 1.5;
+      }
+
+      // Find stop: Nearest support level below entry, or ATR-based
+      const supportLevels = levels.filter(
+        (l) => l.price < entryPrice - minDistance && l.strength >= 60
+      );
+
+      if (supportLevels.length > 0) {
+        // Take the nearest support (highest price below entry)
+        const nearestSupport = supportLevels.reduce((nearest, current) =>
+          current.price > nearest.price ? current : nearest
+        );
+        stopPrice = nearestSupport.price;
+        stopType = nearestSupport.type;
+      } else {
+        // Fallback: ATR-based stop
+        stopPrice = entryPrice - atr;
+      }
+    } else {
+      // SHORT direction
+      // Find target: First support level below entry with enough distance
+      const supportLevels = levels.filter(
+        (l) => l.price < entryPrice - minDistance && l.strength >= 60
+      );
+
+      // Prefer levels in this order: PDL > ORB_LOW > ORB_EXT_DOWN > VWAP (if below)
+      const sortedByPriority = supportLevels.sort((a, b) => {
+        const priority: Record<string, number> = {
+          PRIOR_DAY_LOW: 100,
+          ORB_LOW: 90,
+          ORB_EXT_1X_DOWN: 80,
+          "ORB_EXT_1.5X_DOWN": 70,
+          VWAP: 85,
+          EMA_21: 50,
+          EMA_8: 40,
+        };
+        return (priority[b.type] || 0) - (priority[a.type] || 0);
+      });
+
+      if (sortedByPriority.length > 0) {
+        // Take the nearest high-priority level
+        const nearestSupport = sortedByPriority.reduce((nearest, current) =>
+          current.price > nearest.price ? current : nearest
+        );
+        targetPrice = nearestSupport.price;
+        targetType = nearestSupport.type;
+      } else {
+        // Fallback: ATR-based with 1.5x multiple
+        targetPrice = entryPrice - atr * 1.5;
+      }
+
+      // Find stop: Nearest resistance level above entry, or ATR-based
+      const resistanceLevels = levels.filter(
+        (l) => l.price > entryPrice + minDistance && l.strength >= 60
+      );
+
+      if (resistanceLevels.length > 0) {
+        // Take the nearest resistance (lowest price above entry)
+        const nearestResistance = resistanceLevels.reduce((nearest, current) =>
+          current.price < nearest.price ? current : nearest
+        );
+        stopPrice = nearestResistance.price;
+        stopType = nearestResistance.type;
+      } else {
+        // Fallback: ATR-based stop
+        stopPrice = entryPrice + atr;
+      }
+    }
+
+    // Sanity check: Ensure minimum R:R of 1.0 (target distance >= stop distance)
+    const targetDistance = Math.abs(targetPrice - entryPrice);
+    const stopDistance = Math.abs(stopPrice - entryPrice);
+
+    if (targetDistance < stopDistance) {
+      // Target too close - extend to at least 1.0R
+      if (direction === "LONG") {
+        targetPrice = entryPrice + stopDistance;
+        targetType = `${targetType}_EXTENDED`;
+      } else {
+        targetPrice = entryPrice - stopDistance;
+        targetType = `${targetType}_EXTENDED`;
+      }
+    }
+
+    return {
+      target: targetPrice,
+      stop: stopPrice,
+      targetType,
+      stopType,
+    };
   }
 }
