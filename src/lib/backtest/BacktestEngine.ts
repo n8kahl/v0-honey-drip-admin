@@ -30,32 +30,18 @@ export interface BacktestConfig {
 }
 
 /**
- * Extended watchlist for backtesting
- * Includes major indices, ETFs, and high-volume stocks
+ * Watchlist for backtesting - symbols with available historical data
  */
 export const BACKTEST_WATCHLIST = [
-  // Major Indices
   "SPY",
   "SPX",
   "NDX",
   "QQQ",
-  "IWM",
-  "DIA",
-  // Sector ETFs
-  "XLF",
-  "XLE",
-  "XLK",
-  "XLV",
-  "XLI",
-  // High-volume stocks
-  "AAPL",
-  "MSFT",
-  "NVDA",
   "TSLA",
+  "SOFI",
   "AMD",
-  "META",
-  "AMZN",
-  "GOOGL",
+  "NVDA",
+  "MSFT",
 ];
 
 /**
