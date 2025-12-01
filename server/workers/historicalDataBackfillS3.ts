@@ -63,6 +63,7 @@ const args = process.argv.slice(2);
 const daysArg = args.find((a) => a.startsWith("--days="))?.split("=")[1];
 const symbolArg = args.find((a) => a.startsWith("--symbol="))?.split("=")[1];
 const skipCheck = args.includes("--skip-check");
+const forceS3 = args.includes("--force-s3"); // Force Massive S3 for stocks (requires subscription)
 
 const DAYS_TO_BACKFILL = daysArg ? parseInt(daysArg) : 90;
 
@@ -75,7 +76,7 @@ type AssetType = "index" | "stock";
 /**
  * Determine asset type from symbol
  * Indices: Use Massive.com S3 flatfiles (fast, no limits)
- * Stocks: Use Yahoo Finance API (free intraday data)
+ * Stocks: Use Yahoo Finance API (free) or Massive S3 (with --force-s3)
  */
 function getAssetType(symbol: string): AssetType {
   const indexSymbols = ["SPX", "NDX", "VIX", "RUT", "DJI"];
@@ -215,9 +216,12 @@ interface BackfillStats {
 
 async function backfillSymbol(symbol: string, stats: BackfillStats): Promise<void> {
   const assetType = getAssetType(symbol);
-  const source = assetType === "index" ? "Massive S3" : "Yahoo Finance";
+  const useS3ForThisSymbol = assetType === "index" || forceS3;
+  const source = useS3ForThisSymbol ? "Massive S3" : "Yahoo Finance";
 
-  console.log(`\n[Backfill] 📥 Processing ${symbol} (${assetType}) via ${source}...`);
+  console.log(
+    `\n[Backfill] 📥 Processing ${symbol} (${assetType}) via ${source}${forceS3 && assetType === "stock" ? " (--force-s3)" : ""}...`
+  );
 
   // Date range
   const endDate = new Date();
@@ -241,15 +245,22 @@ async function backfillSymbol(symbol: string, stats: BackfillStats): Promise<voi
     }
 
     // Fetch 1-minute bars from appropriate source
+    // Use Massive S3 for indices OR when --force-s3 flag is set (requires Massive stocks subscription)
     let minuteBars: any[];
+    const useS3 = assetType === "index" || forceS3;
 
-    if (assetType === "index") {
+    if (useS3) {
       // Use Massive.com S3 flatfiles (fast, no limits)
-      console.log(`[Backfill] Downloading 1m bars from Massive S3...`);
+      console.log(
+        `[Backfill] Downloading 1m bars from Massive S3${forceS3 && assetType === "stock" ? " (forced)" : ""}...`
+      );
       minuteBars = await downloadSymbolHistory(symbol, startDate, endDate);
     } else {
       // Use Yahoo Finance API (free intraday data for stocks)
       console.log(`[Backfill] Fetching 1m bars from Yahoo Finance...`);
+      console.log(
+        `[Backfill] ⚠️ Note: Yahoo limits 5m data to 60 days. Use --force-s3 for full history (requires Massive stocks subscription).`
+      );
       minuteBars = await fetchYahooStockBars(symbol, startDate, endDate);
     }
 
