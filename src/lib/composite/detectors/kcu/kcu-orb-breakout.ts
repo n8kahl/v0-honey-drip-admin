@@ -94,7 +94,6 @@ function hasORBLowBreak(price: number, orbLow: number, threshold: number = 0.001
 
 /**
  * Check if ORB range is valid (not too wide or narrow)
- * OPTIMIZED: Tightened from 0.5-2.5x ATR to 0.75-2.0x ATR for better quality signals
  */
 function isValidORBRange(orbHigh: number, orbLow: number, atr: number): boolean {
   if (!orbHigh || !orbLow || !atr) return false;
@@ -102,9 +101,9 @@ function isValidORBRange(orbHigh: number, orbLow: number, atr: number): boolean 
   const range = orbHigh - orbLow;
   const rangeToATR = range / atr;
 
-  // Range should be 0.75x to 2.0x ATR (tightened from 0.5-2.5x)
+  // Range should be 0.5x to 2.5x ATR
   // Too narrow = noise, too wide = chop day
-  return rangeToATR >= 0.75 && rangeToATR <= 2.0;
+  return rangeToATR >= 0.5 && rangeToATR <= 2.5;
 }
 
 /**
@@ -133,18 +132,18 @@ function isOptimalAssetClass(features: SymbolFeatures): boolean {
 const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
   {
     name: "asset_class",
-    weight: 0.15, // New factor: boost indices/ETFs
+    weight: 0.1, // Slight boost for indices/ETFs
     evaluate: (features) => {
-      // Indices and ETFs perform significantly better with ORB
+      // Indices and ETFs perform slightly better with ORB
       if (isOptimalAssetClass(features)) {
         return 100; // Full score for indices/ETFs
       }
-      return 50; // Reduced score for individual stocks
+      return 75; // Modest reduction for individual stocks (was 50)
     },
   },
   {
     name: "level_confluence",
-    weight: 0.2, // Reduced from 0.25 to accommodate asset_class
+    weight: 0.25, // Restored to original weight
     evaluate: (features) => {
       const price = features.price?.current ?? 0;
       const orbLevels = getORBLevels(features);
@@ -179,7 +178,7 @@ const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
   },
   {
     name: "trend_strength",
-    weight: 0.2, // Reduced from 0.25 to accommodate asset_class
+    weight: 0.2,
     evaluate: (features) => {
       // For ORB breakout, the breakout itself IS the trend confirmation
       const price = features.price?.current ?? 0;
@@ -233,7 +232,7 @@ const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
   },
   {
     name: "volume_confirmation",
-    weight: 0.15, // Reduced from 0.2 to accommodate asset_class
+    weight: 0.15,
     evaluate: (features) => {
       const rvol = features.volume?.relativeToAvg ?? 1.0;
 
@@ -303,28 +302,27 @@ export const kcuORBBreakoutBullishDetector: OpportunityDetector = createDetector
     // Must have valid ORB levels
     if (!orbLevels.high || !orbLevels.low) return false;
 
-    // OPTIMIZED: ORB must be formed (after first 15 minutes)
-    // and most effective within first 60 minutes (9:45-10:30)
+    // ORB must be formed (after first 15 minutes)
+    // Most effective within first 2 hours (9:45-11:30)
     const minutesSinceOpen = features.session?.minutesSinceOpen ?? 0;
     if (minutesSinceOpen < 15) return false;
-    if (minutesSinceOpen > 90) return false; // After 11:00 AM, ORB less reliable
+    if (minutesSinceOpen > 120) return false; // Extended to 2 hours
 
     // Check for ORB high break
     if (!hasORBHighBreak(price, orbLevels.high, 0.001)) {
       return false;
     }
 
-    // Validate ORB range (tightened: 0.75-2.0x ATR)
+    // Validate ORB range (0.5-2.5x ATR - restored to original)
     const atr = getATR(features);
     if (!isValidORBRange(orbLevels.high, orbLevels.low, atr)) {
       return false;
     }
 
-    // OPTIMIZED: Volume must be above average (raised from 0.8x to 1.2x)
-    // ORB breakouts need volume confirmation
+    // Volume should be at least average (restored from 1.2x to 1.0x)
     const rvol = features.volume?.relativeToAvg ?? 0;
-    if (rvol < 1.2) {
-      return false; // Need above-average volume for valid breakout
+    if (rvol < 1.0) {
+      return false; // Need at least average volume
     }
 
     return true;

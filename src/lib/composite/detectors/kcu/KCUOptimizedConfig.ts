@@ -57,12 +57,11 @@ export interface KCUOptimizedParams {
  * achieves target win rate (64.3% with 4.32 PF). All other detectors disabled.
  */
 export const KCU_OPTIMIZED_PARAMS: KCUOptimizedParams = {
-  // Minimum scores - raised for higher quality signals
-  // OPTIMIZED: Based on Dec 1 backtest showing 50.2% win rate needs improvement
+  // Minimum scores - balanced for trade volume vs quality
   minScores: {
-    scalp: 70, // Raised from 60
-    day: 70, // Raised from 60
-    swing: 65, // Raised from 55
+    scalp: 60,
+    day: 60,
+    swing: 55,
   },
 
   riskReward: {
@@ -71,13 +70,17 @@ export const KCU_OPTIMIZED_PARAMS: KCUOptimizedParams = {
     maxHoldBars: 16,
   },
 
-  // ONLY enable ORB Breakout Long - the only profitable detector
+  // Enable ORB Breakout (Long and Short)
   detectorOverrides: {
-    // ORB Breakout Long - 64.3% win rate on indices, 50.2% overall
-    // OPTIMIZED: Raised minScore to filter low-quality signals
+    // ORB Breakout Long - 64.3% win rate on indices
     kcu_orb_breakout_long: {
       enabled: true,
-      minScore: 70, // Raised from 55 for higher quality
+      minScore: 60,
+    },
+    // ORB Breakout Short - enabled for two-sided trading
+    kcu_orb_breakout_short: {
+      enabled: true,
+      minScore: 60,
     },
 
     // Disable all other detectors based on backtest results
@@ -91,13 +94,11 @@ export const KCU_OPTIMIZED_PARAMS: KCUOptimizedParams = {
       enabled: false, // 33.3% win rate - below target
     },
 
-    // SHORT detectors - all disabled
+    // Other SHORT detectors - disabled
     kcu_ema_bounce_short: {
       enabled: false,
     },
-    kcu_orb_breakout_short: {
-      enabled: false,
-    },
+    // kcu_orb_breakout_short is enabled above
     kcu_king_queen_short: {
       enabled: false,
     },
