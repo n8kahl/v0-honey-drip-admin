@@ -27,6 +27,10 @@ export { gammaFlipBullishDetector } from "./gamma-flip-bullish.js";
 export { gammaFlipBearishDetector } from "./gamma-flip-bearish.js";
 export { eodPinSetupDetector } from "./eod-pin-setup.js";
 
+// KCU LTP Strategy Detectors
+export * from "./kcu/index.js";
+import { ALL_KCU_DETECTORS } from "./kcu/index.js";
+
 // Convenience array of all detectors
 import type { OpportunityDetector } from "../OpportunityDetector.js";
 import { breakoutBullishDetector } from "./breakout-bullish.js";
@@ -174,4 +178,41 @@ export const OPTIONS_DEPENDENT_DETECTORS: OpportunityDetector[] = [
   gammaFlipBullishDetector,
   gammaFlipBearishDetector,
   eodPinSetupDetector,
+];
+
+/**
+ * KCU LTP STRATEGY DETECTORS
+ * Mr. K Capital University trading methodology:
+ * - EMA Bounce (8 detectors - 4 strategies × 2 directions)
+ * - VWAP Standard
+ * - King & Queen
+ * - ORB Breakout
+ */
+export const KCU_DETECTORS: OpportunityDetector[] = ALL_KCU_DETECTORS;
+
+/**
+ * ALL DETECTORS INCLUDING KCU
+ * Total: 25 detectors (17 original + 8 KCU)
+ */
+export const ALL_DETECTORS_WITH_KCU: OpportunityDetector[] = [...ALL_DETECTORS, ...KCU_DETECTORS];
+
+/**
+ * BACKTESTABLE KCU DETECTORS
+ * All KCU detectors can be backtested as they rely on:
+ * - Price action (OHLC)
+ * - VWAP (computed from volume)
+ * - EMAs (computed from price)
+ * - ORB levels (computed from first 15-30 min)
+ *
+ * None require real-time options data.
+ */
+export const BACKTESTABLE_KCU_DETECTORS: OpportunityDetector[] = ALL_KCU_DETECTORS;
+
+/**
+ * BACKTESTABLE DETECTORS WITH KCU
+ * Total: 20 detectors (12 original backtestable + 8 KCU)
+ */
+export const BACKTESTABLE_DETECTORS_WITH_KCU: OpportunityDetector[] = [
+  ...BACKTESTABLE_DETECTORS,
+  ...BACKTESTABLE_KCU_DETECTORS,
 ];

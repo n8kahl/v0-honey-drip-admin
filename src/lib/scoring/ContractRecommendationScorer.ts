@@ -317,6 +317,94 @@ export const STRATEGY_CRITERIA: Record<OpportunityType, StrategyContractCriteria
     description: "EOD pin setup",
     rationale: "0DTE ATM at high OI strike. Pinning happens where dealer hedging is concentrated.",
   },
+
+  // ===== KCU LTP STRATEGIES =====
+  kcu_ema_bounce: {
+    idealDeltaRange: { min: 0.45, max: 0.55 }, // ATM for EMA bounce
+    deltaWeight: 0.25,
+    idealDTERange: { min: 0, max: 3 }, // Short-term scalp/day trade
+    dteWeight: 0.3,
+    preferHighGamma: true, // Want fast moves on bounce
+    gammaWeight: 0.25,
+    minVolume: 300,
+    minOpenInterest: 800,
+    maxSpreadPercent: 3,
+    liquidityWeight: 0.2,
+    description: "KCU EMA Bounce",
+    rationale: "ATM for EMA bounce plays. 0-3 DTE for quick scalp on pullback bounce.",
+  },
+  kcu_vwap_standard: {
+    idealDeltaRange: { min: 0.48, max: 0.55 }, // ATM to slightly ITM
+    deltaWeight: 0.3,
+    idealDTERange: { min: 0, max: 2 }, // Same day or next day
+    dteWeight: 0.3,
+    preferHighGamma: true,
+    gammaWeight: 0.25,
+    minVolume: 400,
+    minOpenInterest: 1000,
+    maxSpreadPercent: 3,
+    liquidityWeight: 0.15,
+    description: "KCU VWAP Standard",
+    rationale: "ATM for VWAP bounce/rejection. Short DTE for intraday momentum.",
+  },
+  kcu_vwap_advanced: {
+    idealDeltaRange: { min: 0.45, max: 0.55 }, // ATM
+    deltaWeight: 0.25,
+    idealDTERange: { min: 0, max: 3 },
+    dteWeight: 0.3,
+    preferHighGamma: true,
+    gammaWeight: 0.25,
+    minVolume: 400,
+    minOpenInterest: 1000,
+    maxSpreadPercent: 3,
+    liquidityWeight: 0.2,
+    description: "KCU VWAP Advanced",
+    rationale: "ATM for advanced VWAP plays with level confluence.",
+  },
+  kcu_king_queen: {
+    idealDeltaRange: { min: 0.48, max: 0.55 }, // ATM - trading at major confluence
+    deltaWeight: 0.3,
+    idealDTERange: { min: 0, max: 2 }, // High conviction, short-term
+    dteWeight: 0.3,
+    preferHighGamma: true, // High conviction moves
+    gammaWeight: 0.25,
+    minVolume: 500,
+    minOpenInterest: 1000,
+    maxSpreadPercent: 2.5,
+    liquidityWeight: 0.15,
+    description: "KCU King & Queen",
+    rationale:
+      "High conviction confluence at VWAP + EMA. ATM for max probability, short DTE for leverage.",
+  },
+  kcu_orb_breakout: {
+    idealDeltaRange: { min: 0.4, max: 0.55 }, // ATM to slightly OTM for breakout leverage
+    deltaWeight: 0.25,
+    idealDTERange: { min: 0, max: 1 }, // 0DTE preferred for ORB
+    dteWeight: 0.35,
+    preferHighGamma: true, // Want explosive breakout moves
+    gammaWeight: 0.25,
+    minVolume: 500,
+    minOpenInterest: 1000,
+    maxSpreadPercent: 2,
+    liquidityWeight: 0.15,
+    description: "KCU ORB Breakout",
+    rationale: "0DTE for opening range breakout. Slightly OTM for leverage on breakout move.",
+  },
+  kcu_cloud_bounce: {
+    idealDeltaRange: { min: 0.45, max: 0.55 }, // ATM for cloud bounce
+    deltaWeight: 0.25,
+    idealDTERange: { min: 1, max: 5 }, // Slightly longer for cloud setups
+    dteWeight: 0.3,
+    preferHighGamma: false, // Cloud bounces may take time
+    gammaWeight: 0.15,
+    minVolume: 300,
+    minOpenInterest: 800,
+    maxSpreadPercent: 4,
+    liquidityWeight: 0.3,
+    description: "KCU Cloud Bounce",
+    rationale:
+      "ATM for Ichimoku cloud bounces. 1-5 DTE allows time for cloud support/resistance to hold.",
+  },
 };
 
 /**

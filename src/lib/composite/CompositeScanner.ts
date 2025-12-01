@@ -27,7 +27,7 @@ import {
   passesUniversalFilters,
 } from "./ScannerConfig.js";
 import { SignalDeduplication, checkDeduplication } from "./SignalDeduplication.js";
-import { ALL_DETECTORS } from "./detectors/index.js";
+import { ALL_DETECTORS, ALL_DETECTORS_WITH_KCU } from "./detectors/index.js";
 import type { ParameterConfig } from "../../types/optimizedParameters.js";
 
 // Phase 1 Enhancement: Import adaptive thresholds, IV gating, and confidence scoring
@@ -161,6 +161,7 @@ export interface CompositeScannerOptions {
   config?: Partial<ScannerConfig>;
   optionsDataProvider?: (symbol: string) => Promise<OptionsChainData | null>;
   optimizedParams?: ParameterConfig; // Phase 6: Optimized parameters from genetic algorithm
+  enableKCU?: boolean; // Enable KCU LTP Strategy detectors (default: false)
   // Phase 1 Enhancement: Enable/disable features
   phase1Options?: {
     enableAdaptiveThresholds?: boolean; // Default: true
@@ -188,7 +189,8 @@ export class CompositeScanner {
     this.owner = options.owner;
     this.config = { ...DEFAULT_SCANNER_CONFIG, ...options.config };
     this.deduplication = new SignalDeduplication();
-    this.detectors = ALL_DETECTORS;
+    // Use KCU detectors if enabled, otherwise use standard detectors
+    this.detectors = options.enableKCU ? ALL_DETECTORS_WITH_KCU : ALL_DETECTORS;
     this.optionsDataProvider = options.optionsDataProvider;
     this.optimizedParams = options.optimizedParams; // Phase 6: Store optimized params
     // Phase 1 Enhancement: Initialize with defaults
