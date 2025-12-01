@@ -253,7 +253,7 @@ const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
  * KCU ORB Breakout Detector (Bullish)
  */
 export const kcuORBBreakoutBullishDetector: OpportunityDetector = createDetector({
-  type: "kcu_orb_breakout" as any,
+  type: "kcu_orb_breakout_long" as any,
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
@@ -300,7 +300,7 @@ export const kcuORBBreakoutBullishDetector: OpportunityDetector = createDetector
  * KCU ORB Breakout Detector (Bearish)
  */
 export const kcuORBBreakoutBearishDetector: OpportunityDetector = createDetector({
-  type: "kcu_orb_breakout" as any,
+  type: "kcu_orb_breakout_short" as any,
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,

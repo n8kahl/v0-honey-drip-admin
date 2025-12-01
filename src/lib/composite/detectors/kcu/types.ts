@@ -18,14 +18,27 @@ import type {
 /**
  * KCU-specific opportunity types
  * These extend the base OpportunityType union
+ * Each strategy has distinct long/short variants for proper backtest tracking
  */
 export type KCUOpportunityType =
-  | "kcu_ema_bounce"
-  | "kcu_vwap_standard"
-  | "kcu_vwap_advanced"
-  | "kcu_king_queen"
-  | "kcu_orb_breakout"
-  | "kcu_cloud_bounce";
+  // EMA Bounce
+  | "kcu_ema_bounce_long"
+  | "kcu_ema_bounce_short"
+  // VWAP Standard
+  | "kcu_vwap_standard_long"
+  | "kcu_vwap_standard_short"
+  // VWAP Advanced
+  | "kcu_vwap_advanced_long"
+  | "kcu_vwap_advanced_short"
+  // King & Queen
+  | "kcu_king_queen_long"
+  | "kcu_king_queen_short"
+  // ORB Breakout
+  | "kcu_orb_breakout_long"
+  | "kcu_orb_breakout_short"
+  // Cloud Bounce
+  | "kcu_cloud_bounce_long"
+  | "kcu_cloud_bounce_short";
 
 /**
  * All opportunity types including KCU-specific ones
@@ -474,12 +487,18 @@ export const KCU_SCORE_WEIGHTS = {
  */
 export function formatKCUOpportunityType(type: KCUOpportunityType): string {
   const typeMap: Record<KCUOpportunityType, string> = {
-    kcu_ema_bounce: "KCU EMA Bounce",
-    kcu_vwap_standard: "KCU VWAP Standard",
-    kcu_vwap_advanced: "KCU VWAP Reclaim",
-    kcu_king_queen: "KCU King & Queen",
-    kcu_orb_breakout: "KCU ORB Breakout",
-    kcu_cloud_bounce: "KCU Cloud Bounce",
+    kcu_ema_bounce_long: "KCU EMA Bounce Long",
+    kcu_ema_bounce_short: "KCU EMA Bounce Short",
+    kcu_vwap_standard_long: "KCU VWAP Standard Long",
+    kcu_vwap_standard_short: "KCU VWAP Standard Short",
+    kcu_vwap_advanced_long: "KCU VWAP Reclaim Long",
+    kcu_vwap_advanced_short: "KCU VWAP Reclaim Short",
+    kcu_king_queen_long: "KCU King & Queen Long",
+    kcu_king_queen_short: "KCU King & Queen Short",
+    kcu_orb_breakout_long: "KCU ORB Breakout Long",
+    kcu_orb_breakout_short: "KCU ORB Breakout Short",
+    kcu_cloud_bounce_long: "KCU Cloud Bounce Long",
+    kcu_cloud_bounce_short: "KCU Cloud Bounce Short",
   };
   return typeMap[type] || type;
 }
@@ -496,12 +515,18 @@ export function isKCUOpportunityType(type: string): type is KCUOpportunityType {
  */
 export function getKCUExpectedFrequency(type: KCUOpportunityType): string {
   const frequencies: Record<KCUOpportunityType, string> = {
-    kcu_ema_bounce: "3-5 signals/day",
-    kcu_vwap_standard: "2-4 signals/day",
-    kcu_vwap_advanced: "1-2 signals/day",
-    kcu_king_queen: "2-3 signals/day",
-    kcu_orb_breakout: "1-2 signals/day",
-    kcu_cloud_bounce: "1-3 signals/day (afternoon)",
+    kcu_ema_bounce_long: "2-3 signals/day",
+    kcu_ema_bounce_short: "2-3 signals/day",
+    kcu_vwap_standard_long: "1-2 signals/day",
+    kcu_vwap_standard_short: "1-2 signals/day",
+    kcu_vwap_advanced_long: "0-1 signals/day",
+    kcu_vwap_advanced_short: "0-1 signals/day",
+    kcu_king_queen_long: "1-2 signals/day",
+    kcu_king_queen_short: "1-2 signals/day",
+    kcu_orb_breakout_long: "0-1 signals/day",
+    kcu_orb_breakout_short: "0-1 signals/day",
+    kcu_cloud_bounce_long: "0-1 signals/day (afternoon)",
+    kcu_cloud_bounce_short: "0-1 signals/day (afternoon)",
   };
   return frequencies[type] || "Unknown";
 }

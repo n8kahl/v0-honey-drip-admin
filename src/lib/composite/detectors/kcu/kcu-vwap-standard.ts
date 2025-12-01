@@ -237,7 +237,7 @@ const kcuVWAPScoreFactors: ScoreFactor[] = [
  * KCU VWAP Standard Detector (Long)
  */
 export const kcuVWAPStandardDetector: OpportunityDetector = createDetector({
-  type: "kcu_vwap_standard" as any,
+  type: "kcu_vwap_standard_long" as any,
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
@@ -288,7 +288,7 @@ export const kcuVWAPStandardDetector: OpportunityDetector = createDetector({
  * KCU VWAP Standard Detector (Short)
  */
 export const kcuVWAPStandardBearishDetector: OpportunityDetector = createDetector({
-  type: "kcu_vwap_standard" as any,
+  type: "kcu_vwap_standard_short" as any,
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,

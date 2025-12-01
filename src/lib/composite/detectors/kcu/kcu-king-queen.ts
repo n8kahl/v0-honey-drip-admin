@@ -265,7 +265,7 @@ const kcuKingQueenScoreFactors: ScoreFactor[] = [
  * KCU King & Queen Detector (Long)
  */
 export const kcuKingQueenDetector: OpportunityDetector = createDetector({
-  type: "kcu_king_queen" as any,
+  type: "kcu_king_queen_long" as any,
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
@@ -316,7 +316,7 @@ export const kcuKingQueenDetector: OpportunityDetector = createDetector({
  * KCU King & Queen Detector (Short)
  */
 export const kcuKingQueenBearishDetector: OpportunityDetector = createDetector({
-  type: "kcu_king_queen" as any,
+  type: "kcu_king_queen_short" as any,
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,

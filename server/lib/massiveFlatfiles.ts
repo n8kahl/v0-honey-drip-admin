@@ -12,6 +12,10 @@
  * File Format: CSV.GZ (gzipped CSV)
  * Path: {bucket}/{year}/{month}/{date}.csv.gz
  * Example: us_indices/minute_aggs_v1/2025/11/2025-11-21.csv.gz
+ *
+ * Required Environment Variables:
+ * - MASSIVE_AWS_ACCESS_KEY: S3 access key from Massive.com
+ * - MASSIVE_AWS_SECRET_KEY: S3 secret key from Massive.com
  */
 
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -23,11 +27,19 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-// S3 Configuration
+// S3 Configuration - Use environment variables
 const S3_ENDPOINT = "https://files.massive.com";
-const S3_ACCESS_KEY = "702efe59-fd51-4674-a7fb-16584e982261";
-const S3_SECRET_KEY = "9Cdq8BI5iFsF8NZ2niJPn3zqJrrLk7X5";
+const S3_ACCESS_KEY = process.env.MASSIVE_AWS_ACCESS_KEY || "";
+const S3_SECRET_KEY = process.env.MASSIVE_AWS_SECRET_KEY || "";
 const S3_BUCKET = "flatfiles";
+
+// Validate credentials
+if (!S3_ACCESS_KEY || !S3_SECRET_KEY) {
+  console.warn(
+    "[MassiveFlatfiles] ⚠️ Missing MASSIVE_AWS_ACCESS_KEY or MASSIVE_AWS_SECRET_KEY environment variables"
+  );
+  console.warn("[MassiveFlatfiles] S3 flatfile downloads will fail. Set these in .env.local");
+}
 
 // S3 Paths by asset type
 const S3_PATHS = {
