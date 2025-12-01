@@ -238,26 +238,58 @@ export class BacktestEngine {
    *
    * NOTE: Uses BACKTESTABLE_DETECTORS which excludes options-dependent detectors
    * (gamma_squeeze, gamma_flip, eod_pin) that require real-time options data.
+   *
+   * @param includeKCU - Include KCU LTP Strategy detectors (default: false)
    */
-  async backtestAll(): Promise<BacktestStats[]> {
+  async backtestAll(includeKCU = false): Promise<BacktestStats[]> {
     // Import only detectors that can be backtested with historical price/volume data
     // Options-dependent detectors are excluded (gamma_*, eod_pin)
-    const { BACKTESTABLE_DETECTORS } = await import("../composite/detectors/index.js");
+    const { BACKTESTABLE_DETECTORS, BACKTESTABLE_DETECTORS_WITH_KCU } = await import(
+      "../composite/detectors/index.js"
+    );
+
+    const detectors = includeKCU ? BACKTESTABLE_DETECTORS_WITH_KCU : BACKTESTABLE_DETECTORS;
 
     console.log(
-      `[BacktestEngine] Running backtests for ${BACKTESTABLE_DETECTORS.length} backtestable detectors...`
+      `[BacktestEngine] Running backtests for ${detectors.length} backtestable detectors${includeKCU ? " (including KCU)" : ""}...`
     );
 
     const results: BacktestStats[] = [];
 
-    for (const detector of BACKTESTABLE_DETECTORS) {
+    for (const detector of detectors) {
       const stats = await this.backtestDetector(detector);
       results.push(stats);
     }
 
+    console.log(`[BacktestEngine] Completed backtests for ${detectors.length} detectors`);
+
+    return results;
+  }
+
+  /**
+   * Run backtest for KCU LTP Strategy detectors only
+   *
+   * KCU strategies include:
+   * - EMA Bounce (long/short)
+   * - VWAP Standard (long/short)
+   * - King & Queen (long/short)
+   * - ORB Breakout (long/short)
+   */
+  async backtestKCU(): Promise<BacktestStats[]> {
+    const { BACKTESTABLE_KCU_DETECTORS } = await import("../composite/detectors/index.js");
+
     console.log(
-      `[BacktestEngine] Completed backtests for ${BACKTESTABLE_DETECTORS.length} detectors`
+      `[BacktestEngine] Running backtests for ${BACKTESTABLE_KCU_DETECTORS.length} KCU detectors...`
     );
+
+    const results: BacktestStats[] = [];
+
+    for (const detector of BACKTESTABLE_KCU_DETECTORS) {
+      const stats = await this.backtestDetector(detector);
+      results.push(stats);
+    }
+
+    console.log(`[BacktestEngine] Completed KCU backtests for ${results.length} detectors`);
 
     return results;
   }

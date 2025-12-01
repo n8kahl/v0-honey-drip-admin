@@ -1,17 +1,17 @@
-import { SessionStatus } from '../../../types';
-import { HDPill } from '../common/HDPill';
-import { Settings, Mic, User, LogOut, WifiOff, Wifi } from 'lucide-react';
-import { cn } from '../../../lib/utils';
-const honeyDripLogo = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/hdn-l492QBW7lTUL3waoOAnhU3p8Ep7YNp.png';
-import { useAuth } from '../../../contexts/AuthContext';
-import { useState, useEffect, useRef } from 'react';
-import { useMarketDataConnection } from '../../../hooks/useMassiveData';
-import { massive } from '../../../lib/massive';
-import { useStreamingIndex } from '../../../hooks/useIndicesAdvanced';
-import { useMarketSession } from '../../../hooks/useMarketSession';
-import { getSessionColor } from '../../../lib/marketSession';
+import { SessionStatus } from "../../../types";
+import { HDPill } from "../common/HDPill";
+import { Settings, Mic, User, LogOut, WifiOff, Wifi } from "lucide-react";
+import { cn } from "../../../lib/utils";
+import { branding } from "../../../lib/config/branding";
+import { useAuth } from "../../../contexts/AuthContext";
+import { useState, useEffect, useRef } from "react";
+import { useMarketDataConnection } from "../../../hooks/useMassiveData";
+import { massive } from "../../../lib/massive";
+import { useStreamingIndex } from "../../../hooks/useIndicesAdvanced";
+import { useMarketSession } from "../../../hooks/useMarketSession";
+import { getSessionColor } from "../../../lib/marketSession";
 
-export type VoiceState = 'idle' | 'listening' | 'processing';
+export type VoiceState = "idle" | "listening" | "processing";
 
 interface HDHeaderProps {
   sessionStatus: SessionStatus;
@@ -23,78 +23,82 @@ interface HDHeaderProps {
 
 export function HDHeader({
   sessionStatus,
-  voiceState = 'idle',
+  voiceState = "idle",
   onSettingsClick,
   onMicClick,
-  className
+  className,
 }: HDHeaderProps) {
   const { signOut, user } = useAuth();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  
-  const { quote: spxQuote } = useStreamingIndex('SPX');
-  const { quote: vixQuote } = useStreamingIndex('VIX');
-  
+
+  const { quote: spxQuote } = useStreamingIndex("SPX");
+  const { quote: vixQuote } = useStreamingIndex("VIX");
+
   const { session, sessionState } = useMarketSession();
-  
+
   const { isConnected, hasApiKey, lastError } = useMarketDataConnection();
 
   const getConnectionStatus = () => {
     if (!isConnected) {
       return {
-        label: 'DISCONNECTED',
-        tooltip: lastError || 'Unable to connect to market data API',
-        color: 'red',
-        icon: WifiOff
+        label: "DISCONNECTED",
+        tooltip: lastError || "Unable to connect to market data API",
+        color: "red",
+        icon: WifiOff,
       };
     }
     return {
-      label: 'LIVE DATA',
-      tooltip: 'Connected to live market data',
-      color: 'green',
-      icon: Wifi
+      label: "LIVE DATA",
+      tooltip: "Connected to live market data",
+      color: "green",
+      icon: Wifi,
     };
   };
 
   const connectionStatus = getConnectionStatus();
   const StatusIcon = connectionStatus.icon;
-  
+
   const getMarketStatusDisplay = () => {
     if (!sessionState) return null;
-    
+
     const colorClass = getSessionColor(session);
-    
-    const time = new Date(sessionState.asOf).toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
+
+    const time = new Date(sessionState.asOf).toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      minute: "2-digit",
       hour12: false,
     });
-    
+
     return {
       label: sessionState.label,
       time: `${time} ET`,
       color: colorClass,
     };
   };
-  
+
   const marketDisplay = getMarketStatusDisplay();
 
   return (
     <header
       className={cn(
-        'flex items-center justify-between px-3 lg:px-6 h-16 lg:h-14 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]',
+        "flex items-center justify-between px-3 lg:px-6 h-16 lg:h-14 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]",
         className
       )}
     >
       <div className="flex items-center gap-2 lg:gap-3 min-w-0">
-        <img src={honeyDripLogo || "/placeholder.svg"} alt="Honey Drip" className="w-9 h-9 lg:w-8 lg:h-8 rounded flex-shrink-0" />
+        <img
+          src={branding.logoUrl || "/placeholder.svg"}
+          alt={branding.appName}
+          className="w-9 h-9 lg:w-8 lg:h-8 rounded flex-shrink-0"
+        />
         <h1 className="text-[var(--text-high)] font-semibold tracking-tight text-sm lg:text-base truncate">
-          <span className="hidden lg:inline">Honey Drip Admin</span>
-          <span className="lg:hidden">Honey Drip</span>
+          <span className="hidden lg:inline">{branding.appName} Admin</span>
+          <span className="lg:hidden">{branding.appName}</span>
         </h1>
       </div>
-      
+
       <div className="flex items-center justify-center gap-2 flex-shrink-0 mx-2">
         {spxQuote && (
           <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)]">
@@ -102,15 +106,18 @@ export function HDHeader({
             <span className="text-xs font-medium text-[var(--text-high)]">
               {spxQuote.value.toFixed(2)}
             </span>
-            <span className={cn(
-              "text-xs font-medium",
-              spxQuote.changePercent > 0 ? "text-green-500" : "text-red-500"
-            )}>
-              {spxQuote.changePercent > 0 ? '+' : ''}{spxQuote.changePercent.toFixed(2)}%
+            <span
+              className={cn(
+                "text-xs font-medium",
+                spxQuote.changePercent > 0 ? "text-green-500" : "text-red-500"
+              )}
+            >
+              {spxQuote.changePercent > 0 ? "+" : ""}
+              {spxQuote.changePercent.toFixed(2)}%
             </span>
           </div>
         )}
-        
+
         {vixQuote && (
           <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)]">
             <span className="text-xs font-medium text-[var(--text-muted)]">VIX</span>
@@ -119,7 +126,7 @@ export function HDHeader({
             </span>
           </div>
         )}
-        
+
         {marketDisplay && (
           <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)]">
             <div className="flex items-center gap-1.5">
@@ -128,60 +135,72 @@ export function HDHeader({
                 {marketDisplay.label}
               </span>
             </div>
-            <span className="text-xs text-[var(--text-muted)]">
-              {marketDisplay.time}
-            </span>
+            <span className="text-xs text-[var(--text-muted)]">{marketDisplay.time}</span>
           </div>
         )}
-        
-        <div 
+
+        <div
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 rounded-full border",
-            connectionStatus.color === 'yellow' && "bg-yellow-500/10 border-yellow-500/20",
-            connectionStatus.color === 'red' && "bg-red-500/10 border-red-500/20",
-            connectionStatus.color === 'green' && "bg-green-500/10 border-green-500/20"
+            connectionStatus.color === "yellow" && "bg-yellow-500/10 border-yellow-500/20",
+            connectionStatus.color === "red" && "bg-red-500/10 border-red-500/20",
+            connectionStatus.color === "green" && "bg-green-500/10 border-green-500/20"
           )}
           title={connectionStatus.tooltip}
         >
-          <StatusIcon className={cn(
-            "w-3 h-3",
-            connectionStatus.color === 'yellow' && "text-yellow-500",
-            connectionStatus.color === 'red' && "text-red-500",
-            connectionStatus.color === 'green' && "text-green-500"
-          )} />
-          <span className={cn(
-            "text-[10px] font-medium hidden lg:inline",
-            connectionStatus.color === 'yellow' && "text-yellow-500",
-            connectionStatus.color === 'red' && "text-red-500",
-            connectionStatus.color === 'green' && "text-green-500"
-          )}>
+          <StatusIcon
+            className={cn(
+              "w-3 h-3",
+              connectionStatus.color === "yellow" && "text-yellow-500",
+              connectionStatus.color === "red" && "text-red-500",
+              connectionStatus.color === "green" && "text-green-500"
+            )}
+          />
+          <span
+            className={cn(
+              "text-[10px] font-medium hidden lg:inline",
+              connectionStatus.color === "yellow" && "text-yellow-500",
+              connectionStatus.color === "red" && "text-red-500",
+              connectionStatus.color === "green" && "text-green-500"
+            )}
+          >
             {connectionStatus.label}
           </span>
         </div>
       </div>
-      
+
       <div className="flex items-center gap-1 lg:gap-2 flex-shrink-0">
         <button
           onClick={onMicClick}
           className={cn(
-            'relative h-8 w-8 lg:w-auto lg:px-3 flex items-center justify-center gap-2 rounded-[var(--radius)] transition-all',
-            voiceState === 'idle' && 'bg-[var(--brand-primary)] text-[var(--bg-base)] hover:bg-[var(--brand-primary-hover)]',
-            voiceState === 'listening' && 'bg-[var(--brand-primary)] text-[var(--bg-base)] shadow-lg',
-            voiceState === 'processing' && 'bg-[var(--brand-primary)]/80 text-[var(--bg-base)]'
+            "relative h-8 w-8 lg:w-auto lg:px-3 flex items-center justify-center gap-2 rounded-[var(--radius)] transition-all",
+            voiceState === "idle" &&
+              "bg-[var(--brand-primary)] text-[var(--bg-base)] hover:bg-[var(--brand-primary-hover)]",
+            voiceState === "listening" &&
+              "bg-[var(--brand-primary)] text-[var(--bg-base)] shadow-lg",
+            voiceState === "processing" && "bg-[var(--brand-primary)]/80 text-[var(--bg-base)]"
           )}
           aria-label="Voice command"
-          title={voiceState === 'idle' ? 'Voice commands (press M)' : voiceState === 'listening' ? 'Listening...' : 'Processing...'}
+          title={
+            voiceState === "idle"
+              ? "Voice commands (press M)"
+              : voiceState === "listening"
+                ? "Listening..."
+                : "Processing..."
+          }
         >
-          {voiceState === 'listening' && (
+          {voiceState === "listening" && (
             <div className="absolute inset-0 rounded-[var(--radius)] animate-ping">
               <div className="w-full h-full rounded-[var(--radius)] bg-[var(--brand-primary)] opacity-40" />
             </div>
           )}
-          
-          <Mic className={cn(
-            'w-3.5 h-3.5 relative z-10',
-            voiceState === 'listening' && 'animate-pulse'
-          )} />
+
+          <Mic
+            className={cn(
+              "w-3.5 h-3.5 relative z-10",
+              voiceState === "listening" && "animate-pulse"
+            )}
+          />
           <span className="hidden lg:inline text-xs font-medium relative z-10">Voice</span>
         </button>
 
