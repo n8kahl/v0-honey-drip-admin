@@ -57,11 +57,12 @@ export interface KCUOptimizedParams {
  * achieves target win rate (64.3% with 4.32 PF). All other detectors disabled.
  */
 export const KCU_OPTIMIZED_PARAMS: KCUOptimizedParams = {
-  // Minimum scores - only applies to enabled detectors
+  // Minimum scores - raised for higher quality signals
+  // OPTIMIZED: Based on Dec 1 backtest showing 50.2% win rate needs improvement
   minScores: {
-    scalp: 60,
-    day: 60,
-    swing: 55,
+    scalp: 70, // Raised from 60
+    day: 70, // Raised from 60
+    swing: 65, // Raised from 55
   },
 
   riskReward: {
@@ -72,10 +73,11 @@ export const KCU_OPTIMIZED_PARAMS: KCUOptimizedParams = {
 
   // ONLY enable ORB Breakout Long - the only profitable detector
   detectorOverrides: {
-    // ORB Breakout Long - 64.3% win rate, 4.32 PF - KEEP
+    // ORB Breakout Long - 64.3% win rate on indices, 50.2% overall
+    // OPTIMIZED: Raised minScore to filter low-quality signals
     kcu_orb_breakout_long: {
       enabled: true,
-      minScore: 55, // Lower threshold to get more trades
+      minScore: 70, // Raised from 55 for higher quality
     },
 
     // Disable all other detectors based on backtest results

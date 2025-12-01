@@ -94,6 +94,7 @@ function hasORBLowBreak(price: number, orbLow: number, threshold: number = 0.001
 
 /**
  * Check if ORB range is valid (not too wide or narrow)
+ * OPTIMIZED: Tightened from 0.5-2.5x ATR to 0.75-2.0x ATR for better quality signals
  */
 function isValidORBRange(orbHigh: number, orbLow: number, atr: number): boolean {
   if (!orbHigh || !orbLow || !atr) return false;
@@ -101,8 +102,28 @@ function isValidORBRange(orbHigh: number, orbLow: number, atr: number): boolean 
   const range = orbHigh - orbLow;
   const rangeToATR = range / atr;
 
-  // Range should be 0.5x to 2.5x ATR
-  return rangeToATR >= 0.5 && rangeToATR <= 2.5;
+  // Range should be 0.75x to 2.0x ATR (tightened from 0.5-2.5x)
+  // Too narrow = noise, too wide = chop day
+  return rangeToATR >= 0.75 && rangeToATR <= 2.0;
+}
+
+/**
+ * Check if asset class is optimal for ORB strategy
+ * OPTIMIZED: Indices and ETFs perform better than individual stocks
+ */
+function isOptimalAssetClass(features: SymbolFeatures): boolean {
+  const symbol = (features as any).symbol || "";
+
+  // Indices - best performers
+  const indices = ["SPX", "NDX", "VIX", "DJX", "RUT"];
+  if (indices.includes(symbol)) return true;
+
+  // ETFs - good performers
+  const etfs = ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "TQQQ", "SQQQ"];
+  if (etfs.includes(symbol)) return true;
+
+  // Individual stocks - lower priority (can still trade but lower score)
+  return false;
 }
 
 // ============================================================================
@@ -111,8 +132,19 @@ function isValidORBRange(orbHigh: number, orbLow: number, atr: number): boolean 
 
 const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
   {
+    name: "asset_class",
+    weight: 0.15, // New factor: boost indices/ETFs
+    evaluate: (features) => {
+      // Indices and ETFs perform significantly better with ORB
+      if (isOptimalAssetClass(features)) {
+        return 100; // Full score for indices/ETFs
+      }
+      return 50; // Reduced score for individual stocks
+    },
+  },
+  {
     name: "level_confluence",
-    weight: 0.25,
+    weight: 0.2, // Reduced from 0.25 to accommodate asset_class
     evaluate: (features) => {
       const price = features.price?.current ?? 0;
       const orbLevels = getORBLevels(features);
@@ -147,7 +179,7 @@ const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
   },
   {
     name: "trend_strength",
-    weight: 0.25,
+    weight: 0.2, // Reduced from 0.25 to accommodate asset_class
     evaluate: (features) => {
       // For ORB breakout, the breakout itself IS the trend confirmation
       const price = features.price?.current ?? 0;
@@ -201,7 +233,7 @@ const kcuORBBreakoutScoreFactors: ScoreFactor[] = [
   },
   {
     name: "volume_confirmation",
-    weight: 0.2, // Higher weight for ORB - volume is critical
+    weight: 0.15, // Reduced from 0.2 to accommodate asset_class
     evaluate: (features) => {
       const rvol = features.volume?.relativeToAvg ?? 1.0;
 
@@ -271,25 +303,28 @@ export const kcuORBBreakoutBullishDetector: OpportunityDetector = createDetector
     // Must have valid ORB levels
     if (!orbLevels.high || !orbLevels.low) return false;
 
-    // ORB must be formed (after first 15 minutes)
+    // OPTIMIZED: ORB must be formed (after first 15 minutes)
+    // and most effective within first 60 minutes (9:45-10:30)
     const minutesSinceOpen = features.session?.minutesSinceOpen ?? 0;
     if (minutesSinceOpen < 15) return false;
+    if (minutesSinceOpen > 90) return false; // After 11:00 AM, ORB less reliable
 
     // Check for ORB high break
     if (!hasORBHighBreak(price, orbLevels.high, 0.001)) {
       return false;
     }
 
-    // Validate ORB range
+    // Validate ORB range (tightened: 0.75-2.0x ATR)
     const atr = getATR(features);
     if (!isValidORBRange(orbLevels.high, orbLevels.low, atr)) {
       return false;
     }
 
-    // Volume should be present
+    // OPTIMIZED: Volume must be above average (raised from 0.8x to 1.2x)
+    // ORB breakouts need volume confirmation
     const rvol = features.volume?.relativeToAvg ?? 0;
-    if (rvol < 0.8) {
-      return false; // Too low volume
+    if (rvol < 1.2) {
+      return false; // Need above-average volume for valid breakout
     }
 
     return true;

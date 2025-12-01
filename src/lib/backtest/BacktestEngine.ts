@@ -33,14 +33,16 @@ export interface BacktestConfig {
  * Watchlist for backtesting - symbols with available historical data
  */
 export const BACKTEST_WATCHLIST = [
+  // Indices - best ORB performance
   "SPY",
   "SPX",
   "NDX",
   "QQQ",
+  // Individual stocks
   "TSLA",
   "SOFI",
   "AMD",
-  "NVDA",
+  // "NVDA", // Removed - no historical data available
   "MSFT",
 ];
 
