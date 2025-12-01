@@ -194,17 +194,32 @@ export class BacktestEngine {
           const { getOptimizedParams } = await import("../composite/OptimizedScannerConfig.js");
           const params = getOptimizedParams();
 
-          // Check if score meets minimum threshold
-          // Default to 40 if no params set (baseline)
-          const minScoreThreshold = params?.minScores?.day || 40;
+          // Check if this is a KCU detector and apply KCU-specific filtering
+          const isKCUDetector = detector.type.startsWith("kcu_");
+          let minScoreThreshold = params?.minScores?.day || 40;
+          let maxHoldBars = params?.riskReward?.maxHoldBars ?? this.config.maxHoldBars;
+
+          if (isKCUDetector) {
+            // Import KCU optimized config
+            const { isDetectorEnabled, getDetectorMinScore, KCU_OPTIMIZED_PARAMS } = await import(
+              "../composite/detectors/kcu/KCUOptimizedConfig.js"
+            );
+
+            // Check if detector is enabled in KCU config
+            if (!isDetectorEnabled(detector.type)) {
+              // Detector disabled by optimization config - skip
+              continue;
+            }
+
+            // Use KCU-specific minimum score
+            minScoreThreshold = getDetectorMinScore(detector.type, "day");
+            maxHoldBars = KCU_OPTIMIZED_PARAMS.riskReward.maxHoldBars;
+          }
 
           if (result.baseScore < minScoreThreshold) {
             // Signal detected but score too low - skip trade
             continue;
           }
-
-          // Get max hold bars from optimized params (for trade simulation)
-          const maxHoldBars = params?.riskReward?.maxHoldBars ?? this.config.maxHoldBars;
 
           // Simulate trade
           const trade = await this.simulateTrade(

@@ -127,7 +127,7 @@ function hasPulledBackToEMA(features: SymbolFeatures, direction: "LONG" | "SHORT
 const kcuEMABounceScoreFactors: ScoreFactor[] = [
   {
     name: "level_confluence",
-    weight: 0.3, // L - Levels
+    weight: 0.25, // L - Levels (reduced from 0.3 to add MTF weight)
     evaluate: (features) => {
       const currentPrice = features.price?.current ?? 0;
       const ema8 = features.ema?.["8"] ?? 0;
@@ -224,7 +224,7 @@ const kcuEMABounceScoreFactors: ScoreFactor[] = [
   },
   {
     name: "session_timing",
-    weight: 0.1,
+    weight: 0.05, // Reduced from 0.1 to balance weights (total=1.0)
     evaluate: (features) => {
       const minutesSinceOpen = features.session?.minutesSinceOpen ?? 0;
 
@@ -246,6 +246,45 @@ const kcuEMABounceScoreFactors: ScoreFactor[] = [
       }
 
       return 60;
+    },
+  },
+  {
+    name: "mtf_alignment",
+    weight: 0.1, // Multi-timeframe trend alignment bonus
+    evaluate: (features) => {
+      // Check if EMAs are properly stacked (8 > 21 > 50 for uptrend)
+      const ema8 = features.ema?.["8"] ?? 0;
+      const ema21 = features.ema?.["21"] ?? 0;
+      const ema50 = features.ema?.["50"] ?? 0;
+      const price = features.price?.current ?? 0;
+
+      if (!ema8 || !ema21) return 50;
+
+      let score = 50; // Base
+
+      // Check EMA stacking for uptrend (price > 8 EMA > 21 EMA > 50 EMA)
+      if (price > ema8 && ema8 > ema21) {
+        score += 25; // EMAs properly stacked for uptrend
+        if (ema50 && ema21 > ema50) {
+          score += 15; // Full 3-EMA stack
+        }
+      }
+
+      // Check for downtrend stack (price < 8 EMA < 21 EMA < 50 EMA)
+      if (price < ema8 && ema8 < ema21) {
+        score += 25;
+        if (ema50 && ema21 < ema50) {
+          score += 15;
+        }
+      }
+
+      // Check RSI alignment (not overbought/oversold in trend direction)
+      const rsi = features.rsi?.["14"] ?? 50;
+      if (rsi > 40 && rsi < 70) {
+        score += 10; // RSI in healthy range for longs
+      }
+
+      return Math.min(100, score);
     },
   },
 ];

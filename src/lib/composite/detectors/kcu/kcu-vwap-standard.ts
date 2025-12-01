@@ -81,11 +81,12 @@ function getPremarketLevels(features: SymbolFeatures): { high: number; low: numb
 
 /**
  * Check if price is in VWAP zone (within threshold)
+ * OPTIMIZED: Widened from 0.3% to 0.5% default for more signal generation
  */
 function isInVWAPZone(
   currentPrice: number,
   vwap: number,
-  thresholdPercent: number = 0.3 // 0.3% = ~15 cents on $50 stock
+  thresholdPercent: number = 0.5 // 0.5% = ~25 cents on $50 stock (widened from 0.3%)
 ): boolean {
   if (!vwap || vwap <= 0) return false;
   const distancePct = (Math.abs(currentPrice - vwap) / currentPrice) * 100;
@@ -128,9 +129,13 @@ const kcuVWAPScoreFactors: ScoreFactor[] = [
 
       let score = 0;
 
-      // At VWAP (The King)
-      if (isInVWAPZone(price, vwap, 0.3)) {
-        score += 50;
+      // At VWAP (The King) - OPTIMIZED: widened zone, tiered scoring
+      if (isInVWAPZone(price, vwap, 0.2)) {
+        score += 60; // Tight zone = higher score
+      } else if (isInVWAPZone(price, vwap, 0.5)) {
+        score += 45; // Medium zone
+      } else if (isInVWAPZone(price, vwap, 0.7)) {
+        score += 30; // Wide zone = still counts
       }
 
       // Additional levels nearby (Queens)
@@ -262,22 +267,26 @@ export const kcuVWAPStandardDetector: OpportunityDetector = createDetector({
 
     const trend = detectLTPTrend(bars, orbLevels, premarketLevels, features);
 
-    // For VWAP long, trend should be UPTREND
-    if (trend.direction !== "UPTREND" || !isTrendTradeable(trend)) {
+    // For VWAP long, trend should be UPTREND or at least not DOWNTREND
+    // OPTIMIZED: Allow trades in CHOP/ranging markets if other conditions are strong
+    if (trend.direction === "DOWNTREND" && !trend.isMicroTrend) {
       return false;
     }
 
-    // Price must be in VWAP zone
-    if (!isInVWAPZone(price, vwap, 0.5)) {
+    // Price must be in VWAP zone - OPTIMIZED: widened to 0.7%
+    if (!isInVWAPZone(price, vwap, 0.7)) {
       return false;
     }
 
-    // Check for approaching pattern
-    if (!isApproachingVWAP(features, "LONG")) {
-      // At minimum need patience candle
-      if (features.pattern?.patientCandle !== true) {
-        return false;
-      }
+    // Check for approaching pattern OR price holding above VWAP
+    // OPTIMIZED: Relaxed - don't require both approach AND patience candle
+    const isApproaching = isApproachingVWAP(features, "LONG");
+    const hasPatienceCandle = features.pattern?.patientCandle === true;
+    const isHoldingAboveVWAP = price >= vwap * 0.998;
+
+    // Need at least one confirming signal
+    if (!isApproaching && !hasPatienceCandle && !isHoldingAboveVWAP) {
+      return false;
     }
 
     return true;
