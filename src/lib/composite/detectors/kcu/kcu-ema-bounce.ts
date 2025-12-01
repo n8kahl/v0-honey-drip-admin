@@ -263,7 +263,7 @@ const kcuEMABounceScoreFactors: ScoreFactor[] = [
  * 4. Entry on break of patience candle
  */
 export const kcuEMABounceDetector: OpportunityDetector = createDetector({
-  type: "kcu_ema_bounce" as any, // KCU type extends base OpportunityType
+  type: "kcu_ema_bounce_long" as any, // KCU type extends base OpportunityType
   direction: "LONG", // Default direction, actual determined by trend
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
@@ -320,7 +320,7 @@ export const kcuEMABounceDetector: OpportunityDetector = createDetector({
  * Bearish version of EMA Bounce
  */
 export const kcuEMABounceBearishDetector: OpportunityDetector = createDetector({
-  type: "kcu_ema_bounce" as any,
+  type: "kcu_ema_bounce_short" as any,
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
