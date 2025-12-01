@@ -53,54 +53,54 @@ export interface KCUOptimizedParams {
 /**
  * Default KCU Optimized Parameters
  *
- * Focused on quality over quantity - fewer but higher probability trades
+ * UPDATED: Based on Dec 1 backtest results showing only ORB Breakout Long
+ * achieves target win rate (64.3% with 4.32 PF). All other detectors disabled.
  */
 export const KCU_OPTIMIZED_PARAMS: KCUOptimizedParams = {
-  // Raise minimum score from 40 to 70 for better signal quality
+  // Minimum scores - only applies to enabled detectors
   minScores: {
-    scalp: 70,
-    day: 70,
-    swing: 65,
+    scalp: 60,
+    day: 60,
+    swing: 55,
   },
 
   riskReward: {
     targetMultiple: 1.5,
     stopMultiple: 1.0,
-    maxHoldBars: 16, // Slightly shorter hold for day trades
+    maxHoldBars: 16,
   },
 
-  // Disable underperforming short detectors
+  // ONLY enable ORB Breakout Long - the only profitable detector
   detectorOverrides: {
-    // LONG detectors - keep enabled with standard thresholds
-    kcu_ema_bounce_long: {
-      enabled: true,
-      minScore: 65, // Best performer, slightly lower threshold
-    },
+    // ORB Breakout Long - 64.3% win rate, 4.32 PF - KEEP
     kcu_orb_breakout_long: {
       enabled: true,
-      minScore: 70,
-    },
-    kcu_king_queen_long: {
-      enabled: true,
-      minScore: 70,
-    },
-    kcu_vwap_standard_long: {
-      enabled: true,
-      minScore: 60, // Lower threshold since it's under-triggering
+      minScore: 55, // Lower threshold to get more trades
     },
 
-    // SHORT detectors - disable or require much higher scores
+    // Disable all other detectors based on backtest results
+    kcu_ema_bounce_long: {
+      enabled: false, // 47.5% win rate - below target
+    },
+    kcu_king_queen_long: {
+      enabled: false, // 35.0% win rate - below target
+    },
+    kcu_vwap_standard_long: {
+      enabled: false, // 33.3% win rate - below target
+    },
+
+    // SHORT detectors - all disabled
     kcu_ema_bounce_short: {
-      enabled: false, // 31.8% win rate - disable
+      enabled: false,
     },
     kcu_orb_breakout_short: {
-      enabled: false, // 31.8% win rate - disable
+      enabled: false,
     },
     kcu_king_queen_short: {
-      enabled: false, // 28.3% win rate - disable
+      enabled: false,
     },
     kcu_vwap_standard_short: {
-      enabled: false, // 20% win rate - disable
+      enabled: false,
     },
   },
 

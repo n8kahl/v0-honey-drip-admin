@@ -30,10 +30,39 @@ export interface BacktestConfig {
 }
 
 /**
+ * Extended watchlist for backtesting
+ * Includes major indices, ETFs, and high-volume stocks
+ */
+export const BACKTEST_WATCHLIST = [
+  // Major Indices
+  "SPY",
+  "SPX",
+  "NDX",
+  "QQQ",
+  "IWM",
+  "DIA",
+  // Sector ETFs
+  "XLF",
+  "XLE",
+  "XLK",
+  "XLV",
+  "XLI",
+  // High-volume stocks
+  "AAPL",
+  "MSFT",
+  "NVDA",
+  "TSLA",
+  "AMD",
+  "META",
+  "AMZN",
+  "GOOGL",
+];
+
+/**
  * Default backtest configuration
  */
 export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
-  symbols: ["SPY", "SPX", "NDX"],
+  symbols: BACKTEST_WATCHLIST,
   startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   endDate: new Date().toISOString().split("T")[0],
   timeframe: "15m",
