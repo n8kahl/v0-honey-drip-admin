@@ -53,8 +53,10 @@ export const BACKTEST_WATCHLIST = [
   "TSLA",
   "SOFI",
   "AMD",
-  // "NVDA", // Removed - no historical data available
+  "NVDA",
   "MSFT",
+  "PLTR",
+  "UNH",
 ];
 
 /**

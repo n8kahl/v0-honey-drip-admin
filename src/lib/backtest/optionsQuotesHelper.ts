@@ -73,6 +73,8 @@ const ESTIMATED_SPREADS: Record<string, { spread: number; spreadPct: number }> =
   AMD: { spread: 0.03, spreadPct: 0.8 },
   NVDA: { spread: 0.05, spreadPct: 0.8 },
   MSFT: { spread: 0.03, spreadPct: 0.6 },
+  PLTR: { spread: 0.02, spreadPct: 0.8 },
+  UNH: { spread: 0.5, spreadPct: 0.8 },
 
   // Less liquid stocks
   SOFI: { spread: 0.02, spreadPct: 2.0 },
