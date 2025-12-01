@@ -142,16 +142,18 @@ export async function getQuoteAtTime(
       };
     }
 
+    // Cast data to any to avoid TypeScript errors with untyped table
+    const row = data as any;
     const quote: OptionsQuote = {
-      underlying: data.underlying,
-      option_ticker: data.option_ticker,
-      timestamp: data.timestamp,
-      bid_price: parseFloat(data.bid_price),
-      ask_price: parseFloat(data.ask_price),
-      bid_size: data.bid_size,
-      ask_size: data.ask_size,
-      mid_price: parseFloat(data.mid_price),
-      spread_percent: parseFloat(data.spread_percent),
+      underlying: row.underlying,
+      option_ticker: row.option_ticker,
+      timestamp: row.timestamp,
+      bid_price: parseFloat(row.bid_price),
+      ask_price: parseFloat(row.ask_price),
+      bid_size: row.bid_size,
+      ask_size: row.ask_size,
+      mid_price: parseFloat(row.mid_price),
+      spread_percent: parseFloat(row.spread_percent),
     };
 
     return {
@@ -209,9 +211,12 @@ export async function getSpreadStats(
       p_underlying: underlying,
       p_start_ts: startTs,
       p_end_ts: endTs,
-    });
+    } as any);
 
-    if (error || !data || data.length === 0) {
+    // Cast to any for untyped RPC function
+    const rows = data as any[];
+
+    if (error || !rows || rows.length === 0) {
       const est = ESTIMATED_SPREADS[underlying] || ESTIMATED_SPREADS.DEFAULT;
       return {
         avgSpreadPct: est.spreadPct,
@@ -222,10 +227,10 @@ export async function getSpreadStats(
     }
 
     return {
-      avgSpreadPct: parseFloat(data[0].avg_spread_pct) || 1.0,
-      minSpreadPct: parseFloat(data[0].min_spread_pct) || 0.5,
-      maxSpreadPct: parseFloat(data[0].max_spread_pct) || 2.0,
-      quoteCount: parseInt(data[0].quote_count) || 0,
+      avgSpreadPct: parseFloat(rows[0].avg_spread_pct) || 1.0,
+      minSpreadPct: parseFloat(rows[0].min_spread_pct) || 0.5,
+      maxSpreadPct: parseFloat(rows[0].max_spread_pct) || 2.0,
+      quoteCount: parseInt(rows[0].quote_count) || 0,
     };
   } catch (err) {
     console.warn(`[OptionsQuotes] Error fetching stats: ${err}`);
