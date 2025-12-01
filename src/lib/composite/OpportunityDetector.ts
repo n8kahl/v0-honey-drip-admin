@@ -1,4 +1,4 @@
-import type { SymbolFeatures } from '../strategy/engine.js';
+import type { SymbolFeatures } from "../strategy/engine.js";
 
 /**
  * Options Chain Data Interface
@@ -40,36 +40,43 @@ export interface OptionsChainData {
 /**
  * Direction of trade opportunity
  */
-export type OpportunityDirection = 'LONG' | 'SHORT';
+export type OpportunityDirection = "LONG" | "SHORT";
 
 /**
  * Type of opportunity detected
  */
 export type OpportunityType =
   // Universal Equity
-  | 'breakout_bullish'
-  | 'breakout_bearish'
-  | 'mean_reversion_long'
-  | 'mean_reversion_short'
-  | 'trend_continuation_long'
-  | 'trend_continuation_short'
+  | "breakout_bullish"
+  | "breakout_bearish"
+  | "mean_reversion_long"
+  | "mean_reversion_short"
+  | "trend_continuation_long"
+  | "trend_continuation_short"
   // SPX/NDX Specific
-  | 'gamma_squeeze_bullish'
-  | 'gamma_squeeze_bearish'
-  | 'power_hour_reversal_bullish'
-  | 'power_hour_reversal_bearish'
-  | 'index_mean_reversion_long'
-  | 'index_mean_reversion_short'
-  | 'opening_drive_bullish'
-  | 'opening_drive_bearish'
-  | 'gamma_flip_bullish'
-  | 'gamma_flip_bearish'
-  | 'eod_pin_setup';
+  | "gamma_squeeze_bullish"
+  | "gamma_squeeze_bearish"
+  | "power_hour_reversal_bullish"
+  | "power_hour_reversal_bearish"
+  | "index_mean_reversion_long"
+  | "index_mean_reversion_short"
+  | "opening_drive_bullish"
+  | "opening_drive_bearish"
+  | "gamma_flip_bullish"
+  | "gamma_flip_bearish"
+  | "eod_pin_setup"
+  // KCU LTP Strategies
+  | "kcu_ema_bounce"
+  | "kcu_vwap_standard"
+  | "kcu_vwap_advanced"
+  | "kcu_king_queen"
+  | "kcu_orb_breakout"
+  | "kcu_cloud_bounce";
 
 /**
  * Asset class classification
  */
-export type AssetClass = 'INDEX' | 'EQUITY_ETF' | 'STOCK';
+export type AssetClass = "INDEX" | "EQUITY_ETF" | "STOCK";
 
 /**
  * Score factor for weighted confluence calculation
@@ -146,7 +153,7 @@ export function calculateCompositeScore(
 
   return {
     score: Math.min(100, Math.max(0, baseScore)),
-    factorScores
+    factorScores,
   };
 }
 
@@ -163,7 +170,10 @@ export function createDetector(config: {
 }): OpportunityDetector {
   return {
     ...config,
-    detectWithScore: (features: SymbolFeatures, optionsData?: OptionsChainData): DetectionResult => {
+    detectWithScore: (
+      features: SymbolFeatures,
+      optionsData?: OptionsChainData
+    ): DetectionResult => {
       const detected = config.detect(features, optionsData);
 
       if (!detected) {
@@ -171,7 +181,7 @@ export function createDetector(config: {
           detected: false,
           baseScore: 0,
           factorScores: {},
-          confidence: 0
+          confidence: 0,
         };
       }
 
@@ -185,9 +195,9 @@ export function createDetector(config: {
         detected: true,
         baseScore: score,
         factorScores,
-        confidence: score
+        confidence: score,
       };
-    }
+    },
   };
 }
 
@@ -196,7 +206,7 @@ export function createDetector(config: {
  */
 export function isSPXorNDX(symbol: string): boolean {
   const upper = symbol.toUpperCase();
-  return upper === 'SPX' || upper === 'NDX' || upper === '$SPX' || upper === '$NDX';
+  return upper === "SPX" || upper === "NDX" || upper === "$SPX" || upper === "$NDX";
 }
 
 /**
@@ -204,17 +214,17 @@ export function isSPXorNDX(symbol: string): boolean {
  */
 export function getAssetClass(symbol: string): AssetClass {
   if (isSPXorNDX(symbol)) {
-    return 'INDEX';
+    return "INDEX";
   }
 
   const upper = symbol.toUpperCase();
-  const etfSymbols = ['SPY', 'QQQ', 'IWM', 'DIA', 'XLF', 'XLE', 'XLK', 'XLV', 'XLI', 'XLP'];
+  const etfSymbols = ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV", "XLI", "XLP"];
 
   if (etfSymbols.includes(upper)) {
-    return 'EQUITY_ETF';
+    return "EQUITY_ETF";
   }
 
-  return 'STOCK';
+  return "STOCK";
 }
 
 /**
@@ -223,26 +233,34 @@ export function getAssetClass(symbol: string): AssetClass {
 export function getExpectedFrequency(type: OpportunityType): string {
   const frequencies: Record<OpportunityType, string> = {
     // Universal Equity
-    breakout_bullish: '2-4 signals/day',
-    breakout_bearish: '2-4 signals/day',
-    mean_reversion_long: '3-5 signals/day',
-    mean_reversion_short: '3-5 signals/day',
-    trend_continuation_long: '1-3 signals/day',
-    trend_continuation_short: '1-3 signals/day',
+    breakout_bullish: "2-4 signals/day",
+    breakout_bearish: "2-4 signals/day",
+    mean_reversion_long: "3-5 signals/day",
+    mean_reversion_short: "3-5 signals/day",
+    trend_continuation_long: "1-3 signals/day",
+    trend_continuation_short: "1-3 signals/day",
 
     // SPX/NDX Specific
-    gamma_squeeze_bullish: '2-4 signals/day on 0DTE',
-    gamma_squeeze_bearish: '2-4 signals/day on 0DTE',
-    power_hour_reversal_bullish: '1-2 signals/day',
-    power_hour_reversal_bearish: '1-2 signals/day',
-    index_mean_reversion_long: '3-5 signals/day',
-    index_mean_reversion_short: '3-5 signals/day',
-    opening_drive_bullish: '1-2 signals/day',
-    opening_drive_bearish: '1-2 signals/day',
-    gamma_flip_bullish: '0-1 signals/day',
-    gamma_flip_bearish: '0-1 signals/day',
-    eod_pin_setup: '0-1 signals/day on 0DTE'
+    gamma_squeeze_bullish: "2-4 signals/day on 0DTE",
+    gamma_squeeze_bearish: "2-4 signals/day on 0DTE",
+    power_hour_reversal_bullish: "1-2 signals/day",
+    power_hour_reversal_bearish: "1-2 signals/day",
+    index_mean_reversion_long: "3-5 signals/day",
+    index_mean_reversion_short: "3-5 signals/day",
+    opening_drive_bullish: "1-2 signals/day",
+    opening_drive_bearish: "1-2 signals/day",
+    gamma_flip_bullish: "0-1 signals/day",
+    gamma_flip_bearish: "0-1 signals/day",
+    eod_pin_setup: "0-1 signals/day on 0DTE",
+
+    // KCU LTP Strategies
+    kcu_ema_bounce: "3-5 signals/day",
+    kcu_vwap_standard: "2-4 signals/day",
+    kcu_vwap_advanced: "1-2 signals/day",
+    kcu_king_queen: "2-3 signals/day",
+    kcu_orb_breakout: "1-2 signals/day",
+    kcu_cloud_bounce: "1-3 signals/day (afternoon)",
   };
 
-  return frequencies[type] || 'Unknown';
+  return frequencies[type] || "Unknown";
 }
