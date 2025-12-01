@@ -31,8 +31,10 @@ import type { Bar } from "../../../strategy/patternDetection.js";
  * Convert SymbolFeatures candles to Bar format
  */
 function featuresToBars(features: SymbolFeatures): Bar[] {
-  if (features.pattern?.rawBars && Array.isArray(features.pattern.rawBars)) {
-    return features.pattern.rawBars as Bar[];
+  // Check if we have raw bars at top level (BacktestEngine) or in pattern data
+  const rawBars = (features as any).rawBars || features.pattern?.rawBars;
+  if (rawBars && Array.isArray(rawBars)) {
+    return rawBars as Bar[];
   }
 
   if (!features.price?.current) return [];

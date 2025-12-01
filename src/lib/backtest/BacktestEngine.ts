@@ -436,7 +436,8 @@ export class BacktestEngine {
     const lows = previous.map((b: any) => b.low);
     const volumes = previous.map((b: any) => b.volume);
 
-    // Simple EMA calculation
+    // Simple EMA calculation (including EMA 8 for KCU strategies)
+    const ema8 = this.calculateEMA(closes, 8);
     const ema9 = this.calculateEMA(closes, 9);
     const ema21 = this.calculateEMA(closes, 21);
     const ema50 = this.calculateEMA(closes, 50);
@@ -458,6 +459,14 @@ export class BacktestEngine {
     const breakoutBullish = current.high > highestHigh;
     // Bearish breakout: current low breaks below prior 20-bar low
     const breakoutBearish = current.low < lowestLow;
+
+    // Calculate ORB (Opening Range Breakout) levels for KCU strategies
+    // ORB is typically first 15-30 minutes of trading (depends on timeframe)
+    const { orbHigh, orbLow, priorDayHigh, priorDayLow } = this.calculateDayLevels(
+      bars,
+      currentIndex,
+      current.timestamp
+    );
 
     // VWAP calculation - recalculate from bars instead of using database value
     // Calculate VWAP over the previous bars (includes current bar)
@@ -500,6 +509,7 @@ export class BacktestEngine {
             }
           : undefined,
       ema: {
+        "8": ema8[ema8.length - 1],
         "9": ema9[ema9.length - 1],
         "21": ema21[ema21.length - 1],
         "50": ema50[ema50.length - 1],
@@ -531,7 +541,25 @@ export class BacktestEngine {
         // Breakout flags for breakout detectors
         breakout_bullish: breakoutBullish,
         breakout_bearish: breakoutBearish,
+        // ORB levels for KCU strategies
+        orbHigh,
+        orbLow,
+        // Prior day levels for KCU strategies
+        priorDayHigh,
+        priorDayLow,
+        // Premarket levels (approximated from first few bars of day)
+        preMarketHigh: orbHigh, // Use ORB as proxy for premarket
+        preMarketLow: orbLow,
       },
+      // Raw bars for KCU trend detection (stored at top level due to pattern type constraints)
+      rawBars: previous.slice(-20).map((b: any) => ({
+        time: b.timestamp / 1000,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume || 0,
+      })),
     };
 
     return features;
@@ -862,6 +890,71 @@ export class BacktestEngine {
     const minutesSinceOpen = this.calculateMinutesSinceOpen(timestamp);
     // Market is open from 0 to 390 minutes after open (9:30 AM to 4:00 PM = 6.5 hours = 390 minutes)
     return minutesSinceOpen >= 0 && minutesSinceOpen <= 390;
+  }
+
+  /**
+   * Helper: Calculate ORB and prior day levels for KCU strategies
+   * ORB = Opening Range Breakout (first 15-30 minutes of trading)
+   */
+  private calculateDayLevels(
+    bars: any[],
+    currentIndex: number,
+    currentTimestamp: number
+  ): { orbHigh: number; orbLow: number; priorDayHigh: number; priorDayLow: number } {
+    const currentDate = new Date(currentTimestamp);
+    const currentDay = currentDate.toISOString().split("T")[0];
+
+    // Find bars from today (for ORB) and yesterday (for prior day levels)
+    const todayBars: any[] = [];
+    const yesterdayBars: any[] = [];
+    let yesterdayDate = "";
+
+    // Look back through bars to find today's and yesterday's bars
+    for (
+      let i = currentIndex;
+      i >= 0 && (todayBars.length < 50 || yesterdayBars.length < 200);
+      i--
+    ) {
+      const bar = bars[i];
+      const barDate = new Date(bar.timestamp).toISOString().split("T")[0];
+
+      if (barDate === currentDay) {
+        todayBars.unshift(bar);
+      } else if (yesterdayDate === "" || barDate === yesterdayDate) {
+        if (yesterdayDate === "") {
+          yesterdayDate = barDate;
+        }
+        if (barDate === yesterdayDate) {
+          yesterdayBars.unshift(bar);
+        }
+      }
+    }
+
+    // Calculate ORB from first N bars of today (depends on timeframe)
+    // For 15m: first 2 bars = 30 minutes
+    // For 5m: first 6 bars = 30 minutes
+    // For 1m: first 15-30 bars
+    const orbBarCount = Math.min(
+      this.config.timeframe === "1m"
+        ? 15
+        : this.config.timeframe === "5m"
+          ? 6
+          : this.config.timeframe === "15m"
+            ? 2
+            : 4,
+      todayBars.length
+    );
+
+    const orbBars = todayBars.slice(0, orbBarCount);
+    const orbHigh = orbBars.length > 0 ? Math.max(...orbBars.map((b) => b.high)) : 0;
+    const orbLow = orbBars.length > 0 ? Math.min(...orbBars.map((b) => b.low)) : 0;
+
+    // Calculate prior day high/low
+    const priorDayHigh =
+      yesterdayBars.length > 0 ? Math.max(...yesterdayBars.map((b) => b.high)) : 0;
+    const priorDayLow = yesterdayBars.length > 0 ? Math.min(...yesterdayBars.map((b) => b.low)) : 0;
+
+    return { orbHigh, orbLow, priorDayHigh, priorDayLow };
   }
 
   /**
