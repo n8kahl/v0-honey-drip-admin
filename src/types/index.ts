@@ -84,7 +84,22 @@ export type SetupType =
   | "DIVERGENCE"
   | "SUPPORT_BOUNCE"
   | "RESISTANCE_REJECTION"
-  | "CUSTOM";
+  | "CUSTOM"
+  // KCU LTP Strategy Types
+  | "KCU_EMA_BOUNCE"
+  | "KCU_VWAP_STANDARD"
+  | "KCU_VWAP_ADVANCED"
+  | "KCU_KING_QUEEN"
+  | "KCU_ORB_BREAKOUT"
+  | "KCU_CLOUD_BOUNCE";
+
+/**
+ * Check if a setup type is a KCU LTP strategy
+ */
+export function isKCUSetupType(setupType?: SetupType): boolean {
+  if (!setupType) return false;
+  return setupType.startsWith("KCU_");
+}
 
 // Individual confluence factor with value and status
 export interface ConfluenceFactor {
