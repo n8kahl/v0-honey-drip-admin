@@ -14,6 +14,11 @@
 import type { OpportunityDetector } from "../composite/OpportunityDetector";
 import type { SymbolFeatures } from "../strategy/engine";
 import { createClient } from "@supabase/supabase-js";
+import {
+  calculateRealisticSlippage,
+  checkLiquidity,
+  clearQuoteCache,
+} from "./optionsQuotesHelper.js";
 
 /**
  * Backtest configuration
@@ -26,7 +31,13 @@ export interface BacktestConfig {
   targetMultiple: number; // Target profit multiple (e.g., 1.5 = 1.5R)
   stopMultiple: number; // Stop loss multiple (e.g., 1.0 = 1R)
   maxHoldBars: number; // Max bars to hold position
-  slippage: number; // Slippage in % (e.g., 0.001 = 0.1%)
+  slippage: number; // Slippage in % (e.g., 0.001 = 0.1%) - fallback if no quote data
+
+  // Realistic slippage options (uses options_quotes table)
+  useRealisticSlippage?: boolean; // Use bid/ask data for slippage (default: true)
+  maxSpreadPercent?: number; // Max spread to accept trade (default: 2.0%)
+  minLiquiditySize?: number; // Min bid/ask size in lots (default: 10)
+  filterIlliquid?: boolean; // Skip trades with poor liquidity (default: true)
 }
 
 /**
@@ -57,7 +68,13 @@ export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   targetMultiple: 1.5,
   stopMultiple: 1.0,
   maxHoldBars: 20, // ~5 hours on 15m
-  slippage: 0.001,
+  slippage: 0.001, // Fallback slippage if no quote data
+
+  // Realistic slippage defaults
+  useRealisticSlippage: true, // Use bid/ask data when available
+  maxSpreadPercent: 2.0, // Max 2% spread to take trade
+  minLiquiditySize: 10, // Min 10 lots on bid/ask
+  filterIlliquid: true, // Skip illiquid trades
 };
 
 /**
@@ -599,6 +616,7 @@ export class BacktestEngine {
 
   /**
    * Simulate a trade and calculate outcome
+   * Now uses realistic bid/ask slippage from options_quotes table
    */
   private async simulateTrade(
     symbol: string,
@@ -610,6 +628,21 @@ export class BacktestEngine {
     const direction = detector.direction;
     const entryPrice = entryBar.close;
     const atr = features.pattern?.atr || features.indicators?.atr || 2.0;
+
+    // Check liquidity before taking trade (if enabled)
+    if (this.config.filterIlliquid !== false) {
+      const liquidity = await checkLiquidity(
+        symbol,
+        entryBar.timestamp,
+        this.config.maxSpreadPercent ?? 2.0,
+        this.config.minLiquiditySize ?? 10
+      );
+
+      if (!liquidity.isLiquid) {
+        // Skip this trade due to poor liquidity
+        return null;
+      }
+    }
 
     // Get optimized parameters (for genetic algorithm)
     const { getOptimizedParams } = await import("../composite/OptimizedScannerConfig.js");
@@ -632,10 +665,23 @@ export class BacktestEngine {
       stopPrice = entryPrice + atr * stopMultiple;
     }
 
-    // Apply slippage
-    const slippageAmount = entryPrice * this.config.slippage;
-    const entryPriceWithSlippage =
-      direction === "LONG" ? entryPrice + slippageAmount : entryPrice - slippageAmount;
+    // Apply slippage - use realistic bid/ask data if available
+    let slippageAmount: number;
+    if (this.config.useRealisticSlippage !== false) {
+      const slippageResult = await calculateRealisticSlippage(
+        symbol,
+        entryBar.timestamp,
+        entryPrice,
+        direction
+      );
+      slippageAmount = slippageResult.slippage;
+    } else {
+      // Fallback to configured flat slippage
+      slippageAmount = entryPrice * this.config.slippage;
+      if (direction === "SHORT") slippageAmount = -slippageAmount;
+    }
+
+    const entryPriceWithSlippage = entryPrice + slippageAmount;
 
     // Simulate holding the trade
     let exitPrice = entryPriceWithSlippage;
