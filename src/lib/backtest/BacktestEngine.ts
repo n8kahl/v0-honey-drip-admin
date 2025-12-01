@@ -53,8 +53,10 @@ export const BACKTEST_WATCHLIST = [
   "TSLA",
   "SOFI",
   "AMD",
-  // "NVDA", // Removed - no historical data available
+  "NVDA",
   "MSFT",
+  "PLTR",
+  "UNH",
 ];
 
 /**
@@ -68,13 +70,15 @@ export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   targetMultiple: 1.5,
   stopMultiple: 1.0,
   maxHoldBars: 20, // ~5 hours on 15m
-  slippage: 0.001, // Fallback slippage if no quote data
+  slippage: 0.001, // Fallback slippage (0.1% - realistic for underlying)
 
-  // Realistic slippage defaults
-  useRealisticSlippage: true, // Use bid/ask data when available
+  // Realistic slippage options (requires options_quotes data)
+  // DISABLED by default - ESTIMATED_SPREADS are for options, not underlying
+  // Enable once options quotes are ingested via: pnpm quotes:ingest
+  useRealisticSlippage: false, // Disabled until options quote data is available
   maxSpreadPercent: 2.0, // Max 2% spread to take trade
   minLiquiditySize: 10, // Min 10 lots on bid/ask
-  filterIlliquid: true, // Skip illiquid trades
+  filterIlliquid: false, // Disabled until options quote data is available
 };
 
 /**
