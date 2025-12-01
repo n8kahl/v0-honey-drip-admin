@@ -30,10 +30,25 @@ export interface BacktestConfig {
 }
 
 /**
+ * Watchlist for backtesting - symbols with available historical data
+ */
+export const BACKTEST_WATCHLIST = [
+  "SPY",
+  "SPX",
+  "NDX",
+  "QQQ",
+  "TSLA",
+  "SOFI",
+  "AMD",
+  "NVDA",
+  "MSFT",
+];
+
+/**
  * Default backtest configuration
  */
 export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
-  symbols: ["SPY", "SPX", "NDX"],
+  symbols: BACKTEST_WATCHLIST,
   startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   endDate: new Date().toISOString().split("T")[0],
   timeframe: "15m",
