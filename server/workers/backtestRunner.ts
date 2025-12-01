@@ -5,6 +5,8 @@
  * Usage:
  *   pnpm backtest              # Run backtestable detectors (excludes options-dependent)
  *   pnpm backtest --all        # Run ALL detectors including options-dependent
+ *   pnpm backtest --kcu        # Run KCU LTP Strategy detectors only
+ *   pnpm backtest --with-kcu   # Run all backtestable + KCU detectors
  *   pnpm backtest --detector breakout_bullish  # Run single detector
  *   pnpm backtest --symbol SPY  # Run on single symbol
  *
@@ -21,7 +23,12 @@ import {
   type BacktestStats,
   DEFAULT_BACKTEST_CONFIG,
 } from "../../src/lib/backtest/BacktestEngine.js";
-import { ALL_DETECTORS, BACKTESTABLE_DETECTORS } from "../../src/lib/composite/detectors/index.js";
+import {
+  ALL_DETECTORS,
+  BACKTESTABLE_DETECTORS,
+  BACKTESTABLE_KCU_DETECTORS,
+  BACKTESTABLE_DETECTORS_WITH_KCU,
+} from "../../src/lib/composite/detectors/index.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -72,11 +79,34 @@ async function runBacktests() {
   console.log(`  Max Hold: ${config.maxHoldBars} bars`);
   console.log();
 
-  // Filter detectors - use BACKTESTABLE_DETECTORS by default
-  // (excludes gamma_*, eod_pin which require real-time options data)
-  // Allow --all flag to include all detectors for reference
+  // Filter detectors based on flags:
+  // --all: All detectors (including options-dependent)
+  // --kcu: KCU LTP Strategy detectors only
+  // --with-kcu: Backtestable + KCU detectors
+  // default: Backtestable only (excludes gamma_*, eod_pin)
   const useAllDetectors = args.includes("--all");
-  const baseDetectors = useAllDetectors ? ALL_DETECTORS : BACKTESTABLE_DETECTORS;
+  const useKCUOnly = args.includes("--kcu");
+  const useWithKCU = args.includes("--with-kcu");
+
+  let baseDetectors;
+  let detectorSetName: string;
+
+  if (useKCUOnly) {
+    baseDetectors = BACKTESTABLE_KCU_DETECTORS;
+    detectorSetName = "KCU LTP Strategy";
+  } else if (useWithKCU) {
+    baseDetectors = BACKTESTABLE_DETECTORS_WITH_KCU;
+    detectorSetName = "Backtestable + KCU";
+  } else if (useAllDetectors) {
+    baseDetectors = ALL_DETECTORS;
+    detectorSetName = "ALL (including options-dependent)";
+  } else {
+    baseDetectors = BACKTESTABLE_DETECTORS;
+    detectorSetName = "Backtestable";
+  }
+
+  console.log(`Detector Set: ${detectorSetName}\n`);
+
   const detectorsToTest = detectorFilter
     ? baseDetectors.filter((d) => d.type === detectorFilter)
     : baseDetectors;
