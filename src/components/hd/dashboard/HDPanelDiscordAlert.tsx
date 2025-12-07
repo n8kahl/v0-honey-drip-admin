@@ -5,7 +5,7 @@ import { Button } from '../../ui/button';
 import { Checkbox } from '../../ui/checkbox';
 import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
-import { HDShareCard } from '../cards/HDShareCard';
+import { HDShareCardV2 } from '../cards/HDShareCardV2';
 
 interface HDPanelDiscordAlertProps {
   trade: Trade | null;
@@ -217,7 +217,7 @@ export function HDPanelDiscordAlert({
                 for screenshot / image attachment
               </span>
             </div>
-            <HDShareCard trade={trade} challenges={challenges} />
+            <HDShareCardV2 trade={trade} challenges={challenges} />
             
             {/* Toggle to attach card */}
             <div className="flex items-start space-x-2 p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">

@@ -600,11 +600,16 @@ export function useTradeStateMachine({
         }
         case "exit": {
           const exitPrice = basePrice;
+          // Calculate P&L percentage
+          const movePercent = newTrade.entryPrice
+            ? ((exitPrice - newTrade.entryPrice) / newTrade.entryPrice) * 100
+            : 0;
           newTrade = {
             ...newTrade,
             state: "EXITED",
             exitPrice,
             exitTime: new Date(),
+            movePercent,
             updates: [
               ...currentUpdates,
               makeUpdate("exit", exitPrice, message || "Exited position"),
@@ -683,6 +688,7 @@ export function useTradeStateMachine({
               entry_time: newTrade.entryTime,
               exit_price: newTrade.exitPrice,
               exit_time: newTrade.exitTime,
+              move_percent: newTrade.movePercent,
             }).catch((error) => {
               console.error("[v0] Failed to update trade state:", error);
               throw error;
