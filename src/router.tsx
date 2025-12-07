@@ -12,6 +12,7 @@ const PageLoader = () => (
 const TradeDetailPage = lazy(() => import("./pages/TradeDetailPage"));
 const RadarPage = lazy(() => import("./pages/RadarPage"));
 const PlanPage = lazy(() => import("./pages/PlanPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
 
 /**
  * Router Configuration for Vite App
@@ -26,6 +27,7 @@ const PlanPage = lazy(() => import("./pages/PlanPage"));
  * - /history → Trade History view
  * - /settings → Settings page
  * - /monitoring → Monitoring view
+ * - /profile → User profile page
  * - /radar → Composite Signal Radar (legacy)
  * - /plan → Plan tab (Mission Playbook)
  * - /trades/:id → Trade detail page
@@ -50,6 +52,14 @@ export const router = createBrowserRouter([
   {
     path: "/monitoring",
     element: <App />,
+  },
+  {
+    path: "/profile",
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <ProfilePage />
+      </Suspense>
+    ),
   },
   {
     path: "/radar",
