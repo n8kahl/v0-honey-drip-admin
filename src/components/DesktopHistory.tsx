@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { Trade, DiscordChannel, Challenge } from '../types';
-import { HDTagTradeType } from './hd/common/HDTagTradeType';
 import { HDInput } from './hd/common/HDInput';
-import { HDButton } from './hd/common/HDButton';
-import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
+import { cn } from '../lib/utils';
 import { getShareText, getSummaryText } from '../lib/utils/discord';
-import { Search, Share2, Download, ChevronDown, History } from 'lucide-react';
+import { Search, Download, ChevronDown, History } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { HDPanelDiscordAlert } from './hd/dashboard/HDPanelDiscordAlert';
+import { HDTradeRowExpanded } from './hd/cards/HDTradeRowExpanded';
 import { EmptyState } from './ui/EmptyState';
 import { useAppToast } from '../hooks/useAppToast';
 import { useDiscord } from '../hooks/useDiscord';
+import { useAuth } from '../contexts/AuthContext';
+import { useTradeStore } from '../stores';
+import { updateTradeApi, linkChallengesApi, unlinkChallengeApi } from '../lib/api/tradeApi';
 import { MobileWatermark } from './MobileWatermark';
 
 interface DesktopHistoryProps {
@@ -24,10 +26,12 @@ type DateRangeFilter = 'all' | 'today' | '7d' | '30d';
 export function DesktopHistory({ trades, channels = [], challenges = [] }: DesktopHistoryProps) {
   const toast = useAppToast();
   const discord = useDiscord();
+  const { user } = useAuth();
+  const { updateTrade } = useTradeStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tickerFilter, setTickerFilter] = useState('');
-  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('7d'); // Default to last 7 days
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('all'); // Default to all time to show all exited trades
   const [challengeFilter, setChallengeFilter] = useState<string>('all');
   const [showAdditionalFilters, setShowAdditionalFilters] = useState(false); // Collapsed by default
 
@@ -35,7 +39,120 @@ export function DesktopHistory({ trades, channels = [], challenges = [] }: Deskt
   const [showAlertDialog, setShowAlertDialog] = useState(false);
   const [alertMode, setAlertMode] = useState<'export' | 'share'>('export');
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
-  
+
+  // For expandable rows
+  const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
+
+  // Handler for editing trade entry/exit price with P&L recalculation
+  const handleEditTradePrice = async (
+    tradeId: string,
+    field: 'entryPrice' | 'exitPrice',
+    newPrice: number
+  ) => {
+    if (!user?.id) {
+      toast.error('Not authenticated');
+      throw new Error('Not authenticated');
+    }
+
+    // Find the trade to get current prices
+    const trade = trades.find(t => t.id === tradeId);
+    if (!trade) {
+      toast.error('Trade not found');
+      throw new Error('Trade not found');
+    }
+
+    // Calculate new entry/exit prices
+    const entryPrice = field === 'entryPrice' ? newPrice : (trade.entryPrice || 0);
+    const exitPrice = field === 'exitPrice' ? newPrice : (trade.exitPrice || 0);
+
+    // Recalculate P&L
+    const movePercent = entryPrice > 0
+      ? ((exitPrice - entryPrice) / entryPrice) * 100
+      : 0;
+
+    try {
+      // Update via API
+      await updateTradeApi(user.id, tradeId, {
+        entry_price: entryPrice,
+        exit_price: exitPrice,
+        move_percent: movePercent,
+      });
+
+      // Update local store
+      await updateTrade(tradeId, {
+        entryPrice,
+        exitPrice,
+        movePercent,
+      });
+
+      toast.success(`${field === 'entryPrice' ? 'Entry' : 'Exit'} price updated`);
+    } catch (error) {
+      console.error('[DesktopHistory] Failed to update trade price:', error);
+      toast.error('Failed to update price');
+      throw error;
+    }
+  };
+
+  // Handler for linking a challenge to a trade
+  const handleLinkChallenge = async (tradeId: string, challengeId: string) => {
+    if (!user?.id) {
+      toast.error('Not authenticated');
+      throw new Error('Not authenticated');
+    }
+
+    const trade = trades.find(t => t.id === tradeId);
+    if (!trade) {
+      toast.error('Trade not found');
+      throw new Error('Trade not found');
+    }
+
+    try {
+      // Link via API
+      await linkChallengesApi(user.id, tradeId, [challengeId]);
+
+      // Update local store
+      await updateTrade(tradeId, {
+        challenges: [...trade.challenges, challengeId],
+      });
+
+      toast.success('Challenge linked');
+    } catch (error) {
+      console.error('[DesktopHistory] Failed to link challenge:', error);
+      toast.error('Failed to link challenge');
+      throw error;
+    }
+  };
+
+  // Handler for unlinking a challenge from a trade
+  const handleUnlinkChallenge = async (tradeId: string, challengeId: string) => {
+    if (!user?.id) {
+      toast.error('Not authenticated');
+      throw new Error('Not authenticated');
+    }
+
+    const trade = trades.find(t => t.id === tradeId);
+    if (!trade) {
+      toast.error('Trade not found');
+      throw new Error('Trade not found');
+    }
+
+    try {
+      // Unlink via API
+      await unlinkChallengeApi(user.id, tradeId, challengeId);
+
+      // Update local store
+      await updateTrade(tradeId, {
+        challenges: trade.challenges.filter(c => c !== challengeId),
+      });
+
+      toast.success('Challenge unlinked');
+    } catch (error) {
+      console.error('[DesktopHistory] Failed to unlink challenge:', error);
+      toast.error('Failed to unlink challenge');
+      throw error;
+    }
+  };
+
   // Filter logic
   const filtered = trades.filter(trade => {
     // Search term
@@ -324,52 +441,21 @@ export function DesktopHistory({ trades, channels = [], challenges = [] }: Deskt
                     />
                   </div>
                 ) : (
-                  filtered.map((trade) => {
-                    const isProfit = (trade.movePercent || 0) >= 0;
-                    
-                    return (
-                      <button
-                        key={trade.id}
-                        onClick={() => handleShareClick(trade)}
-                        className="w-full grid grid-cols-[auto_1fr_1.5fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-4 py-4 border-b border-[var(--border-hairline)] hover:bg-[var(--surface-1)] transition-colors text-left items-center cursor-pointer"
-                      >
-                        {/* Share icon indicator */}
-                        <div className="flex items-center">
-                          <Share2 className="w-4 h-4 text-[var(--text-muted)]" />
-                        </div>
-                        
-                        <div className="text-[var(--text-high)] font-medium">
-                          {trade.ticker}
-                        </div>
-                        <div className="text-[var(--text-muted)] text-sm">
-                          {trade.contract.strike}{trade.contract.type} {trade.contract.expiry}
-                        </div>
-                        <div>
-                          <HDTagTradeType type={trade.tradeType} />
-                        </div>
-                        <div className="text-[var(--text-high)] tabular-nums">
-                          ${formatPrice(trade.entryPrice || 0)}
-                        </div>
-                        <div className="text-[var(--text-high)] tabular-nums">
-                          ${formatPrice(trade.exitPrice || 0)}
-                        </div>
-                        <div
-                          className={cn(
-                            'tabular-nums',
-                            isProfit ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
-                          )}
-                        >
-                          {formatPercent(trade.movePercent || 0)}
-                        </div>
-                        <div className="text-[var(--text-muted)] text-sm">
-                          {trade.exitTime ? formatDate(trade.exitTime) : '--'}
-                        </div>
-                        <div className="text-[var(--text-muted)] text-sm">
-                          {trade.exitTime ? formatTime(trade.exitTime) : '--'}
-                        </div>
-                      </button>
-                    );
-                  })
+                  filtered.map((trade) => (
+                    <HDTradeRowExpanded
+                      key={trade.id}
+                      trade={trade}
+                      challenges={challenges}
+                      isExpanded={expandedTradeId === trade.id}
+                      onToggleExpand={() => setExpandedTradeId(
+                        expandedTradeId === trade.id ? null : trade.id
+                      )}
+                      onShare={handleShareClick}
+                      onEditTradePrice={handleEditTradePrice}
+                      onLinkChallenge={handleLinkChallenge}
+                      onUnlinkChallenge={handleUnlinkChallenge}
+                    />
+                  ))
                 )}
               </div>
             </div>

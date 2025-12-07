@@ -208,3 +208,25 @@ export async function linkChallengesApi(
     }
   });
 }
+
+/**
+ * Unlink a challenge from trade via API
+ */
+export async function unlinkChallengeApi(
+  userId: string,
+  tradeId: string,
+  challengeId: string
+): Promise<void> {
+  return apiCallWithRetry(async () => {
+    const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
+      method: "DELETE",
+      headers: {
+        "x-user-id": userId,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to unlink challenge: ${response.status}`);
+    }
+  });
+}
