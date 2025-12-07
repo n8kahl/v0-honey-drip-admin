@@ -109,12 +109,14 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
             },
           ]
         : []),
-      ...(enteredTrade.updates || []).map((update) => ({
-        type: update.type as any,
-        timestamp: new Date(update.timestamp).getTime(),
-        price: update.price || enteredTrade.contract.mid,
-        label: update.type.charAt(0).toUpperCase() + update.type.slice(1),
-      })),
+      ...(enteredTrade.updates || [])
+        .filter((update) => update.type)
+        .map((update) => ({
+          type: update.type as any,
+          timestamp: new Date(update.timestamp).getTime(),
+          price: update.price || enteredTrade.contract.mid,
+          label: update.type.charAt(0).toUpperCase() + update.type.slice(1),
+        })),
     ];
   }, [enteredTrade]);
 
