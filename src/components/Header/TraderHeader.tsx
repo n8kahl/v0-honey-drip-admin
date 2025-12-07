@@ -607,8 +607,7 @@ export const TraderHeader: React.FC = () => {
 
   const handleProfileClick = () => {
     console.log("[v0] Profile clicked");
-    // TODO: Implement profile page
-    // navigate('/profile');
+    navigate('/profile');
   };
 
   const handleSettingsClick = () => {
