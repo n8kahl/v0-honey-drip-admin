@@ -3,17 +3,21 @@ import { AppSheet } from "../../ui/AppSheet";
 import { Label } from "../../ui/label";
 import { Input } from "../../ui/input";
 import { Switch } from "../../ui/switch";
+import { Textarea } from "../../ui/textarea";
 import { HDButton } from "../common/HDButton";
 import { DiscordChannel } from "../../../types";
-import { Trash2, Plus, Check, AlertCircle } from "lucide-react";
+import { Trash2, Plus, Check, AlertCircle, Star, Pencil, X } from "lucide-react";
 import { useAppToast } from "../../../hooks/useAppToast";
+import { cn } from "../../../lib/utils";
 
 interface HDDialogDiscordSettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   channels: DiscordChannel[];
-  onAddChannel: (name: string, webhookUrl: string) => void;
+  onAddChannel: (name: string, webhookUrl: string, description?: string) => void;
+  onUpdateChannel?: (id: string, updates: Partial<DiscordChannel>) => void;
   onRemoveChannel: (id: string) => void;
+  onSetDefaultChannel?: (id: string) => void;
   onTestWebhook?: (channel: DiscordChannel) => Promise<boolean>;
   discordAlertsEnabled: boolean;
   onToggleAlertsEnabled: (enabled: boolean) => void;
@@ -24,7 +28,9 @@ export function HDDialogDiscordSettings({
   onOpenChange,
   channels,
   onAddChannel,
+  onUpdateChannel,
   onRemoveChannel,
+  onSetDefaultChannel,
   onTestWebhook,
   discordAlertsEnabled,
   onToggleAlertsEnabled,
@@ -32,22 +38,34 @@ export function HDDialogDiscordSettings({
   const toast = useAppToast();
   const [newChannelName, setNewChannelName] = useState("");
   const [newWebhookUrl, setNewWebhookUrl] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [testingChannelId, setTestingChannelId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, "success" | "error">>({});
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ name: string; description: string }>({
+    name: "",
+    description: "",
+  });
 
   const handleAddChannel = () => {
     if (newChannelName.trim() && newWebhookUrl.trim()) {
-      // Basic webhook URL validation
-      if (!newWebhookUrl.startsWith("https://discord.com/api/webhooks/")) {
-        toast.error(
-          "Invalid Discord webhook URL. Must start with https://discord.com/api/webhooks/"
-        );
+      // Basic webhook URL validation - allow discord.com, discordapp.com, and canary/ptb variants
+      const validPrefixes = [
+        "https://discord.com/api/webhooks/",
+        "https://discordapp.com/api/webhooks/",
+        "https://canary.discord.com/api/webhooks/",
+        "https://ptb.discord.com/api/webhooks/",
+      ];
+
+      if (!validPrefixes.some((prefix) => newWebhookUrl.startsWith(prefix))) {
+        toast.error("Invalid Discord webhook URL. Must be a valid Discord webhook URL.");
         return;
       }
 
-      onAddChannel(newChannelName.trim(), newWebhookUrl.trim());
+      onAddChannel(newChannelName.trim(), newWebhookUrl.trim(), newDescription.trim() || undefined);
       setNewChannelName("");
       setNewWebhookUrl("");
+      setNewDescription("");
       toast.success(`Channel #${newChannelName.trim()} added successfully`);
     }
   };
@@ -72,10 +90,40 @@ export function HDDialogDiscordSettings({
     }
   };
 
-  const handleClose = () => {
-    onOpenChange(false);
-    toast.success("Settings saved");
+  const handleSetDefault = (channel: DiscordChannel) => {
+    if (onSetDefaultChannel) {
+      onSetDefaultChannel(channel.id);
+      toast.success(`#${channel.name} is now your default channel`);
+    }
   };
+
+  const handleStartEdit = (channel: DiscordChannel) => {
+    setEditingChannelId(channel.id);
+    setEditForm({
+      name: channel.name,
+      description: channel.description || "",
+    });
+  };
+
+  const handleSaveEdit = (channelId: string) => {
+    if (onUpdateChannel && editForm.name.trim()) {
+      onUpdateChannel(channelId, {
+        name: editForm.name.trim(),
+        description: editForm.description.trim() || undefined,
+      });
+      toast.success("Channel updated");
+    }
+    setEditingChannelId(null);
+    setEditForm({ name: "", description: "" });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingChannelId(null);
+    setEditForm({ name: "", description: "" });
+  };
+
+  // Get the default channel
+  const defaultChannel = channels.find((c) => c.isGlobalDefault);
 
   return (
     <AppSheet
@@ -106,6 +154,20 @@ export function HDDialogDiscordSettings({
             />
           </div>
         </div>
+
+        {/* Default Channel Info */}
+        {defaultChannel && (
+          <div className="p-3 bg-[var(--brand-primary)]/10 border border-[var(--brand-primary)]/30 rounded-[var(--radius)]">
+            <div className="flex items-center gap-2 text-sm">
+              <Star className="w-4 h-4 text-[var(--brand-primary)] fill-[var(--brand-primary)]" />
+              <span className="text-[var(--text-high)]">Default Channel:</span>
+              <span className="font-mono text-[var(--brand-primary)]">#{defaultChannel.name}</span>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mt-1 ml-6">
+              This channel will be pre-selected when composing alerts
+            </p>
+          </div>
+        )}
 
         {/* Add New Channel Section */}
         <div className="space-y-4 p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
@@ -146,6 +208,19 @@ export function HDDialogDiscordSettings({
               </p>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-[var(--text-med)]">
+                Description <span className="text-[var(--text-muted)]">(optional)</span>
+              </Label>
+              <Textarea
+                id="description"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="e.g., For 0DTE scalp alerts only"
+                className="bg-[var(--bg-base)] border-[var(--border-hairline)] text-[var(--text-high)] min-h-[60px]"
+              />
+            </div>
+
             <HDButton
               variant="primary"
               onClick={handleAddChannel}
@@ -173,64 +248,142 @@ export function HDDialogDiscordSettings({
               {channels.map((channel) => (
                 <div
                   key={channel.id}
-                  className="p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]"
+                  className={cn(
+                    "p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border",
+                    channel.isGlobalDefault
+                      ? "border-[var(--brand-primary)]/50"
+                      : "border-[var(--border-hairline)]"
+                  )}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h4 className="text-[var(--text-high)] font-mono">#{channel.name}</h4>
-                        {testResults[channel.id] === "success" && (
-                          <span className="flex items-center gap-1 text-xs text-[var(--positive)]">
-                            <Check className="w-3 h-3" />
-                            Tested
-                          </span>
-                        )}
-                        {testResults[channel.id] === "error" && (
-                          <span className="flex items-center gap-1 text-xs text-[var(--negative)]">
-                            <AlertCircle className="w-3 h-3" />
-                            Failed
-                          </span>
-                        )}
+                  {editingChannelId === channel.id ? (
+                    /* Edit Mode */
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label className="text-[var(--text-med)] text-xs">Channel Name</Label>
+                        <Input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                          className="bg-[var(--bg-base)] border-[var(--border-hairline)] text-[var(--text-high)]"
+                        />
                       </div>
-                      <div className="text-xs text-[var(--text-muted)] font-mono break-all">
-                        {channel.webhookUrl}
-                      </div>
-                      <div className="text-xs text-[var(--text-muted)] mt-2">
-                        Added {channel.createdAt.toLocaleDateString()}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {onTestWebhook && (
-                        <HDButton
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTestWebhook(channel)}
-                          disabled={testingChannelId === channel.id}
-                        >
-                          {testingChannelId === channel.id ? "Testing..." : "Test"}
-                        </HDButton>
-                      )}
-                      <HDButton
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Remove channel #${channel.name}?`)) {
-                            onRemoveChannel(channel.id);
-                            // Clear test result
-                            setTestResults((prev) => {
-                              const newResults = { ...prev };
-                              delete newResults[channel.id];
-                              return newResults;
-                            });
+                      <div className="space-y-2">
+                        <Label className="text-[var(--text-med)] text-xs">Description</Label>
+                        <Textarea
+                          value={editForm.description}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, description: e.target.value }))
                           }
-                        }}
-                        className="text-[var(--negative)] hover:bg-[var(--negative)]/10"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </HDButton>
+                          className="bg-[var(--bg-base)] border-[var(--border-hairline)] text-[var(--text-high)] min-h-[60px]"
+                          placeholder="Add a description..."
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <HDButton
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleSaveEdit(channel.id)}
+                          className="flex-1"
+                        >
+                          <Check className="w-3 h-3 mr-1" />
+                          Save
+                        </HDButton>
+                        <HDButton variant="outline" size="sm" onClick={handleCancelEdit}>
+                          <X className="w-3 h-3" />
+                        </HDButton>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* View Mode */
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {channel.isGlobalDefault && (
+                            <Star className="w-3.5 h-3.5 text-[var(--brand-primary)] fill-[var(--brand-primary)]" />
+                          )}
+                          <h4 className="text-[var(--text-high)] font-mono">#{channel.name}</h4>
+                          {testResults[channel.id] === "success" && (
+                            <span className="flex items-center gap-1 text-xs text-[var(--positive)]">
+                              <Check className="w-3 h-3" />
+                              Tested
+                            </span>
+                          )}
+                          {testResults[channel.id] === "error" && (
+                            <span className="flex items-center gap-1 text-xs text-[var(--negative)]">
+                              <AlertCircle className="w-3 h-3" />
+                              Failed
+                            </span>
+                          )}
+                        </div>
+                        {channel.description && (
+                          <p className="text-xs text-[var(--text-med)] mb-2">
+                            {channel.description}
+                          </p>
+                        )}
+                        <div className="text-xs text-[var(--text-muted)] font-mono break-all">
+                          {channel.webhookUrl.slice(0, 50)}...
+                        </div>
+                        <div className="text-xs text-[var(--text-muted)] mt-1">
+                          Added {channel.createdAt.toLocaleDateString()}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        {/* Default toggle */}
+                        {onSetDefaultChannel && !channel.isGlobalDefault && (
+                          <HDButton
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSetDefault(channel)}
+                            className="text-[var(--text-muted)] hover:text-[var(--brand-primary)]"
+                            title="Set as default"
+                          >
+                            <Star className="w-4 h-4" />
+                          </HDButton>
+                        )}
+                        {/* Edit button */}
+                        {onUpdateChannel && (
+                          <HDButton
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleStartEdit(channel)}
+                            className="text-[var(--text-muted)] hover:text-[var(--text-high)]"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </HDButton>
+                        )}
+                        {/* Test button */}
+                        {onTestWebhook && (
+                          <HDButton
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleTestWebhook(channel)}
+                            disabled={testingChannelId === channel.id}
+                            className="text-[var(--text-muted)] hover:text-[var(--text-high)] text-xs"
+                          >
+                            {testingChannelId === channel.id ? "..." : "Test"}
+                          </HDButton>
+                        )}
+                        {/* Delete button */}
+                        <HDButton
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Remove channel #${channel.name}?`)) {
+                              onRemoveChannel(channel.id);
+                              setTestResults((prev) => {
+                                const newResults = { ...prev };
+                                delete newResults[channel.id];
+                                return newResults;
+                              });
+                            }
+                          }}
+                          className="text-[var(--negative)] hover:bg-[var(--negative)]/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </HDButton>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
