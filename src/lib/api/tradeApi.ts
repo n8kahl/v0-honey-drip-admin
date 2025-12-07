@@ -208,3 +208,30 @@ export async function linkChallengesApi(
     }
   });
 }
+
+/**
+ * Update (replace) all challenge links for a trade
+ */
+export async function updateTradeChallengesApi(
+  userId: string,
+  tradeId: string,
+  challengeIds: string[]
+): Promise<any> {
+  return apiCallWithRetry(async () => {
+    const response = await fetch(`/api/trades/${tradeId}/challenges`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId,
+      },
+      body: JSON.stringify({ challengeIds }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  });
+}

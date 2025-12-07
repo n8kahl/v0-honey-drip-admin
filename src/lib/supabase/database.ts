@@ -171,6 +171,8 @@ export async function updateChallenge(
     name?: string;
     description?: string;
     current_balance?: number;
+    target_balance?: number;
+    end_date?: string;
     is_active?: boolean;
   }
 ) {
@@ -193,6 +195,37 @@ export async function deleteChallenge(id: string) {
   const { error } = await supabase.from("challenges").delete().eq("id", id);
 
   if (error) throw error;
+}
+
+export async function archiveChallenge(challengeId: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("challenges")
+    .update({
+      archived_at: new Date().toISOString(),
+      is_active: false,
+    })
+    .eq("id", challengeId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function restoreChallenge(challengeId: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("challenges")
+    .update({ archived_at: null })
+    .eq("id", challengeId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 // ============================================================================

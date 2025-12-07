@@ -1,4 +1,5 @@
-import { Trade, Challenge } from '../types';
+import { Trade, Challenge } from "../types";
+import { ensureArray } from "./utils/validation";
 
 /**
  * Get all trades that have been ENTERED for a specific challenge
@@ -12,15 +13,16 @@ export function getTradesForChallenge(
   exited: Trade[];
 } {
   // Filter trades that include this challenge and have been entered
+  // Use ensureArray to safely handle null/undefined/non-array challenges
   const tradesForChallenge = allTrades.filter(
     (t) =>
-      t.challenges.includes(challengeId) &&
-      (t.state === 'ENTERED' || t.state === 'EXITED')
+      ensureArray(t.challenges).includes(challengeId) &&
+      (t.state === "ENTERED" || t.state === "EXITED")
   );
 
   return {
-    active: tradesForChallenge.filter((t) => t.state === 'ENTERED'),
-    exited: tradesForChallenge.filter((t) => t.state === 'EXITED'),
+    active: tradesForChallenge.filter((t) => t.state === "ENTERED"),
+    exited: tradesForChallenge.filter((t) => t.state === "EXITED"),
   };
 }
 

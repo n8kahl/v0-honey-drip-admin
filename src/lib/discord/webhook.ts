@@ -231,6 +231,10 @@ class DiscordWebhookClient {
       iv?: number;
       underlyingPrice?: number;
       setupType?: string;
+      // Challenge context
+      challengeInfo?: {
+        name: string;
+      };
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
@@ -297,6 +301,15 @@ class DiscordWebhookClient {
     // Setup type
     if (data.setupType) {
       fields.push({ name: "📋 Setup", value: data.setupType, inline: true });
+    }
+
+    // Add challenge info if provided
+    if (data.challengeInfo) {
+      fields.push({
+        name: "🏆 Challenge",
+        value: data.challengeInfo.name,
+        inline: true,
+      });
     }
 
     if (data.notes) {
@@ -391,6 +404,12 @@ class DiscordWebhookClient {
       pnlPercent: number;
       notes?: string;
       imageUrl?: string;
+      // Challenge context
+      challengeInfo?: {
+        name: string;
+        winRate: number;
+        tradeCount: number;
+      };
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
@@ -404,6 +423,15 @@ class DiscordWebhookClient {
       { name: "Exit", value: `$${data.exitPrice.toFixed(2)}`, inline: true },
       { name: "P/L", value: `${pnlSign}${data.pnlPercent.toFixed(1)}%`, inline: true },
     ];
+
+    // Add challenge info if provided
+    if (data.challengeInfo) {
+      fields.push({
+        name: "🏆 Challenge",
+        value: `${data.challengeInfo.name}\nWin Rate: ${data.challengeInfo.winRate.toFixed(0)}% • ${data.challengeInfo.tradeCount} trades`,
+        inline: false,
+      });
+    }
 
     if (data.notes) {
       fields.push({ name: "Notes", value: data.notes, inline: false });
@@ -702,12 +730,25 @@ export async function sendToMultipleChannels(
   webhookUrls: string[],
   messageFn: (client: DiscordWebhookClient, url: string) => Promise<boolean>
 ): Promise<{ success: number; failed: number }> {
-  const results = await Promise.allSettled(
-    webhookUrls.map((url) => messageFn(discordWebhook, url))
-  );
+  // Filter out empty/invalid URLs before sending
+  const validUrls = webhookUrls.filter((url) => {
+    if (!url || typeof url !== "string" || url.trim() === "") {
+      console.warn("[Discord] Invalid or empty webhook URL in batch - skipping");
+      return false;
+    }
+    return true;
+  });
+
+  // Early return if no valid URLs
+  if (validUrls.length === 0) {
+    console.warn("[Discord] No valid webhook URLs to send to");
+    return { success: 0, failed: webhookUrls.length };
+  }
+
+  const results = await Promise.allSettled(validUrls.map((url) => messageFn(discordWebhook, url)));
 
   const success = results.filter((r) => r.status === "fulfilled" && r.value === true).length;
-  const failed = results.length - success;
+  const failed = results.length - success + (webhookUrls.length - validUrls.length);
 
   return { success, failed };
 }

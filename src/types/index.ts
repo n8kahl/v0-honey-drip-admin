@@ -68,6 +68,7 @@ export interface Challenge {
   endDate: string;
   isActive: boolean;
   createdAt: Date;
+  archivedAt?: Date | null;
   scope?: ChallengeScope;
   defaultChannel?: string;
 }

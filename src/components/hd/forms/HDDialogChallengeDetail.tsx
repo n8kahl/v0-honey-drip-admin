@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppSheet } from "../../ui/AppSheet";
 import { Challenge, Trade, DiscordChannel } from "../../../types";
 import { formatPrice, cn } from "../../../lib/utils";
+import { ensureArray } from "../../../lib/utils/validation";
 import { Download, Share2, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
 import { HDButton } from "../common/HDButton";
 import { formatChallengeDiscordExport } from "../../../lib/discordFormatter";
@@ -32,8 +33,11 @@ export function HDDialogChallengeDetail({
   if (!challenge) return null;
 
   // Filter to only ENTERED or EXITED trades for this challenge
+  // Use ensureArray to safely handle null/undefined/non-array challenges
   const challengeTrades = trades.filter(
-    (t) => (t.state === "ENTERED" || t.state === "EXITED") && t.challenges.includes(challenge.id)
+    (t) =>
+      (t.state === "ENTERED" || t.state === "EXITED") &&
+      ensureArray(t.challenges).includes(challenge.id)
   );
 
   // Calculate stats

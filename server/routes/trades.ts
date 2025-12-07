@@ -677,6 +677,87 @@ router.delete(
 );
 
 // ============================================================================
+// PUT /api/trades/:tradeId/challenges - Replace all challenge links for a trade
+// ============================================================================
+router.put("/api/trades/:tradeId/challenges", async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized: No user ID" });
+    }
+
+    const { tradeId } = req.params;
+    const { challengeIds } = req.body;
+
+    if (!tradeId) {
+      return res.status(400).json({ error: "Missing trade ID" });
+    }
+
+    if (!Array.isArray(challengeIds)) {
+      return res.status(400).json({ error: "challengeIds must be an array" });
+    }
+
+    console.log(
+      `[Trades API] Replacing challenges for trade ${tradeId}: ${challengeIds.length} challenges`
+    );
+
+    // First, verify the trade belongs to this user
+    const { data: tradeData, error: tradeError } = await getSupabaseClient()
+      .from("trades")
+      .select("id")
+      .eq("id", tradeId)
+      .eq("user_id", userId)
+      .single();
+
+    if (tradeError || !tradeData) {
+      return res.status(404).json({ error: "Trade not found or unauthorized" });
+    }
+
+    // Delete all existing challenge links for this trade
+    const { error: deleteError } = await getSupabaseClient()
+      .from("trades_challenges")
+      .delete()
+      .eq("trade_id", tradeId);
+
+    if (deleteError) {
+      console.error("[Trades API] Error deleting existing challenge links:", deleteError);
+      return res
+        .status(500)
+        .json({ error: "Failed to update challenges", details: deleteError.message });
+    }
+
+    // Insert new challenge links if any provided
+    if (challengeIds.length > 0) {
+      const challengeLinks = challengeIds.map((challengeId: string) => ({
+        trade_id: tradeId,
+        challenge_id: challengeId,
+      }));
+
+      const { error: insertError } = await getSupabaseClient()
+        .from("trades_challenges")
+        .insert(challengeLinks as any);
+
+      if (insertError) {
+        console.error("[Trades API] Error inserting new challenge links:", insertError);
+        return res
+          .status(500)
+          .json({ error: "Failed to update challenges", details: insertError.message });
+      }
+    }
+
+    console.log(`[Trades API] Successfully updated challenges for trade ${tradeId}`);
+    res.json({
+      message: "Challenges updated successfully",
+      tradeId,
+      challengeIds,
+    });
+  } catch (error: any) {
+    console.error("[Trades API] Unexpected error in PUT /api/trades/:tradeId/challenges:", error);
+    res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+});
+
+// ============================================================================
 // GET /api/trades/admin/stale-loaded - Get stale LOADED trades for cleanup
 // ============================================================================
 router.get("/api/trades/admin/stale-loaded", async (req: Request, res: Response) => {
