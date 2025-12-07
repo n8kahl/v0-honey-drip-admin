@@ -210,28 +210,23 @@ export async function linkChallengesApi(
 }
 
 /**
- * Update (replace) all challenge links for a trade
+ * Unlink a challenge from trade via API
  */
-export async function updateTradeChallengesApi(
+export async function unlinkChallengeApi(
   userId: string,
   tradeId: string,
-  challengeIds: string[]
-): Promise<any> {
+  challengeId: string
+): Promise<void> {
   return apiCallWithRetry(async () => {
-    const response = await fetch(`/api/trades/${tradeId}/challenges`, {
-      method: "PUT",
+    const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
+      method: "DELETE",
       headers: {
-        "Content-Type": "application/json",
         "x-user-id": userId,
       },
-      body: JSON.stringify({ challengeIds }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || `HTTP ${response.status}`);
+      throw new Error(`Failed to unlink challenge: ${response.status}`);
     }
-
-    return response.json();
   });
 }

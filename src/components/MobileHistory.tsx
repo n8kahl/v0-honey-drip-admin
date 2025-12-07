@@ -27,7 +27,7 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
   const discord = useDiscord();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('7d');
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('all'); // Default to all time
   const [challengeFilter, setChallengeFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);

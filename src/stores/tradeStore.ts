@@ -225,6 +225,30 @@ export const useTradeStore = create<TradeStore>()(
               (row: { challenge_id: string }) => row.challenge_id
             );
 
+            // Map trade_updates from snake_case DB format to camelCase TradeUpdate interface
+            const rawUpdates = t.trade_updates || [];
+            const mappedUpdates: TradeUpdate[] = rawUpdates.map((u: any) => ({
+              id: u.id,
+              type: u.type,
+              timestamp: u.timestamp ? new Date(u.timestamp) : new Date(u.created_at),
+              message: u.message || "",
+              price: u.price ? parseFloat(u.price) : 0,
+              pnlPercent: u.pnl_percent ? parseFloat(u.pnl_percent) : undefined,
+            }));
+
+            // Calculate movePercent from entry/exit prices if not stored in DB
+            // This handles legacy trades that were exited before we started storing move_percent
+            let movePercent = (t as any).move_percent
+              ? parseFloat((t as any).move_percent)
+              : undefined;
+            if (movePercent === undefined && t.entry_price && t.exit_price) {
+              const entry = parseFloat(t.entry_price);
+              const exit = parseFloat(t.exit_price);
+              if (entry > 0) {
+                movePercent = ((exit - entry) / entry) * 100;
+              }
+            }
+
             return {
               id: t.id,
               ticker: t.ticker,
@@ -238,8 +262,9 @@ export const useTradeStore = create<TradeStore>()(
                 ? parseFloat((t as any).target_price)
                 : undefined,
               stopLoss: (t as any).stop_loss ? parseFloat((t as any).stop_loss) : undefined,
+              movePercent,
               state: mapStatusToState(t.status),
-              updates: t.trade_updates || [],
+              updates: mappedUpdates,
               tradeType: "Day" as TradeType,
               discordChannels,
               challenges:
