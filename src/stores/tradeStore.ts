@@ -52,6 +52,7 @@ interface TradeStore {
   unlinkTradeFromChannel: (tradeId: string, channelId: string) => Promise<void>;
   linkTradeToChallenges: (tradeId: string, challengeIds: string[]) => Promise<void>;
   unlinkTradeFromChallenge: (tradeId: string, challengeId: string) => Promise<void>;
+  updateTradeChallenges: (userId: string, tradeId: string, challengeIds: string[]) => Promise<void>;
 
   // Utilities
   getTradeById: (tradeId: string) => Trade | undefined;
@@ -619,6 +620,38 @@ export const useTradeStore = create<TradeStore>()(
           }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to unlink challenge:", error);
+          set({ error: error.message });
+          throw error;
+        }
+      },
+
+      updateTradeChallenges: async (userId, tradeId, challengeIds) => {
+        try {
+          const response = await fetch(`/api/trades/${tradeId}/challenges`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "x-user-id": userId,
+            },
+            body: JSON.stringify({ challengeIds }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to update challenges: ${response.status}`);
+          }
+
+          // Update local state
+          set((state) => ({
+            activeTrades: state.activeTrades.map((t) =>
+              t.id === tradeId ? { ...t, challenges: challengeIds } : t
+            ),
+            currentTrade:
+              state.currentTrade?.id === tradeId
+                ? { ...state.currentTrade, challenges: challengeIds }
+                : state.currentTrade,
+          }));
+        } catch (error: any) {
+          console.error("[TradeStore] Failed to update trade challenges:", error);
           set({ error: error.message });
           throw error;
         }

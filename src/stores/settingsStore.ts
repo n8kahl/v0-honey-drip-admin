@@ -10,6 +10,8 @@ import {
   addChallenge,
   deleteChallenge,
   updateChallenge,
+  archiveChallenge,
+  restoreChallenge,
 } from "../lib/supabase/database";
 
 // TP/SL Settings Types
@@ -69,12 +71,15 @@ interface SettingsStore {
   createChallenge: (userId: string, challenge: Partial<Challenge>) => Promise<void>;
   removeChallenge: (challengeId: string) => Promise<void>;
   updateChallengeSettings: (challengeId: string, updates: Partial<Challenge>) => Promise<void>;
+  archiveChallengeAction: (challengeId: string) => Promise<void>;
+  restoreChallengeAction: (challengeId: string) => Promise<void>;
 
   // Utilities
   getChannelById: (channelId: string) => DiscordChannel | undefined;
   getChallengeById: (challengeId: string) => Challenge | undefined;
   getDefaultChannels: (type: "load" | "enter" | "exit" | "update") => DiscordChannel[];
   getActiveChallenges: () => Challenge[];
+  getArchivedChallenges: () => Challenge[];
 
   // TP Settings operations
   loadTPSettings: (userId: string) => Promise<void>;
@@ -246,6 +251,7 @@ export const useSettingsStore = create<SettingsStore>()(
             endDate: ch.end_date,
             isActive: ch.is_active,
             createdAt: new Date(ch.created_at),
+            archivedAt: ch.archived_at ? new Date(ch.archived_at) : null,
           }));
 
           set({ challenges: mappedChallenges, isLoading: false });
@@ -271,6 +277,7 @@ export const useSettingsStore = create<SettingsStore>()(
             endDate: ch.end_date,
             isActive: ch.is_active,
             createdAt: new Date(ch.created_at),
+            archivedAt: ch.archived_at ? new Date(ch.archived_at) : null,
           }));
 
           set({ challenges: mappedChallenges, isLoading: false });
@@ -298,7 +305,17 @@ export const useSettingsStore = create<SettingsStore>()(
       updateChallengeSettings: async (challengeId, updates) => {
         set({ isLoading: true, error: null });
         try {
-          await updateChallenge(challengeId, updates as any);
+          // Map camelCase frontend properties to snake_case database columns
+          const dbUpdates: Record<string, unknown> = {};
+          if (updates.name !== undefined) dbUpdates.name = updates.name;
+          if (updates.description !== undefined) dbUpdates.description = updates.description;
+          if (updates.currentBalance !== undefined)
+            dbUpdates.current_balance = updates.currentBalance;
+          if (updates.targetBalance !== undefined) dbUpdates.target_balance = updates.targetBalance;
+          if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate;
+          if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+
+          await updateChallenge(challengeId, dbUpdates as any);
 
           set((state) => ({
             challenges: state.challenges.map((ch) =>
@@ -309,6 +326,40 @@ export const useSettingsStore = create<SettingsStore>()(
         } catch (error) {
           console.error("[SettingsStore] Failed to update challenge:", error);
           set({ error: "Failed to update challenge", isLoading: false });
+        }
+      },
+
+      archiveChallengeAction: async (challengeId) => {
+        set({ isLoading: true, error: null });
+        try {
+          await archiveChallenge(challengeId);
+
+          set((state) => ({
+            challenges: state.challenges.map((ch) =>
+              ch.id === challengeId ? { ...ch, archivedAt: new Date(), isActive: false } : ch
+            ),
+            isLoading: false,
+          }));
+        } catch (error) {
+          console.error("[SettingsStore] Failed to archive challenge:", error);
+          set({ error: "Failed to archive challenge", isLoading: false });
+        }
+      },
+
+      restoreChallengeAction: async (challengeId) => {
+        set({ isLoading: true, error: null });
+        try {
+          await restoreChallenge(challengeId);
+
+          set((state) => ({
+            challenges: state.challenges.map((ch) =>
+              ch.id === challengeId ? { ...ch, archivedAt: null } : ch
+            ),
+            isLoading: false,
+          }));
+        } catch (error) {
+          console.error("[SettingsStore] Failed to restore challenge:", error);
+          set({ error: "Failed to restore challenge", isLoading: false });
         }
       },
 
@@ -338,7 +389,11 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       getActiveChallenges: () => {
-        return get().challenges.filter((ch) => ch.isActive);
+        return get().challenges.filter((ch) => ch.isActive && !ch.archivedAt);
+      },
+
+      getArchivedChallenges: () => {
+        return get().challenges.filter((ch) => ch.archivedAt != null);
       },
 
       // TP Settings operations

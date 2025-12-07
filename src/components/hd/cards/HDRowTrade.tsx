@@ -1,10 +1,12 @@
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { formatPercent, cn } from "../../../lib/utils";
-import { X } from "lucide-react";
+import { ensureArray } from "../../../lib/utils/validation";
+import { X, Trophy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HDConfluenceDiscsCompact } from "../signals/HDConfluenceDiscs";
 import { HDSetupTypeBadgeCompact } from "../signals/HDSetupTypeBadge";
+import { useSettingsStore } from "../../../stores/settingsStore";
 
 interface HDRowTradeProps {
   trade: Trade;
@@ -16,8 +18,15 @@ interface HDRowTradeProps {
 
 export function HDRowTrade({ trade, active, isFlashing, onClick, onRemove }: HDRowTradeProps) {
   const navigate = useNavigate();
+  const getChallengeById = useSettingsStore((s) => s.getChallengeById);
   const isPositive = (trade.movePercent || 0) >= 0;
   const isLoaded = trade.state === "LOADED";
+
+  // Get challenge names for display
+  const tradeChallenges = ensureArray(trade.challenges);
+  const challengeNames = tradeChallenges
+    .map((cid) => getChallengeById(cid)?.name)
+    .filter(Boolean) as string[];
 
   const handleClick = () => {
     if (onClick) {
@@ -57,6 +66,17 @@ export function HDRowTrade({ trade, active, isFlashing, onClick, onRemove }: HDR
           <HDTagTradeType type={trade.tradeType} />
           {/* Setup type badge */}
           {trade.setupType && <HDSetupTypeBadgeCompact setupType={trade.setupType} />}
+          {/* Challenge badges */}
+          {challengeNames.length > 0 && (
+            <div className="flex items-center gap-1">
+              <Trophy className="w-3 h-3 text-amber-500" />
+              <span className="text-[9px] text-amber-500 font-medium truncate max-w-[80px]">
+                {challengeNames.length === 1
+                  ? challengeNames[0]
+                  : `${challengeNames.length} challenges`}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
           <span>

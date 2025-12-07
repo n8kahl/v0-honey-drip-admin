@@ -41,7 +41,8 @@ export function useDiscord() {
     channels: DiscordChannel[],
     trade: Trade,
     notes?: string,
-    imageUrl?: string
+    imageUrl?: string,
+    challengeInfo?: { name: string }
   ) => {
     setSending(true);
     try {
@@ -58,6 +59,7 @@ export function useDiscord() {
           stopLoss: trade.stopLoss,
           notes,
           imageUrl,
+          challengeInfo,
         })
       );
       return results;
@@ -100,7 +102,8 @@ export function useDiscord() {
     channels: DiscordChannel[],
     trade: Trade,
     notes?: string,
-    imageUrl?: string
+    imageUrl?: string,
+    challengeInfo?: { name: string; winRate: number; tradeCount: number }
   ) => {
     setSending(true);
     try {
@@ -116,6 +119,7 @@ export function useDiscord() {
           pnlPercent: trade.movePercent!,
           notes,
           imageUrl,
+          challengeInfo,
         })
       );
       return results;

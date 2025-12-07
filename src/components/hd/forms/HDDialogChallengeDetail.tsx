@@ -2,11 +2,22 @@ import { useState } from "react";
 import { AppSheet } from "../../ui/AppSheet";
 import { Challenge, Trade, DiscordChannel } from "../../../types";
 import { formatPrice, cn } from "../../../lib/utils";
-import { Download, Share2, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
+import { ensureArray } from "../../../lib/utils/validation";
+import {
+  Download,
+  Share2,
+  TrendingUp,
+  TrendingDown,
+  Loader2,
+  DollarSign,
+  Plus,
+  Minus,
+} from "lucide-react";
 import { HDButton } from "../common/HDButton";
 import { formatChallengeDiscordExport } from "../../../lib/discordFormatter";
 import { useAppToast } from "../../../hooks/useAppToast";
 import { useDiscord } from "../../../hooks/useDiscord";
+import { useSettingsStore } from "../../../stores/settingsStore";
 
 interface HDDialogChallengeDetailProps {
   open: boolean;
@@ -27,13 +38,20 @@ export function HDDialogChallengeDetail({
 }: HDDialogChallengeDetailProps) {
   const toast = useAppToast();
   const discord = useDiscord();
+  const updateChallengeSettings = useSettingsStore((s) => s.updateChallengeSettings);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [adjustmentAmount, setAdjustmentAmount] = useState("");
+  const [adjustmentType, setAdjustmentType] = useState<"add" | "subtract">("add");
+  const [isAdjusting, setIsAdjusting] = useState(false);
 
   if (!challenge) return null;
 
   // Filter to only ENTERED or EXITED trades for this challenge
+  // Use ensureArray to safely handle null/undefined/non-array challenges
   const challengeTrades = trades.filter(
-    (t) => (t.state === "ENTERED" || t.state === "EXITED") && t.challenges.includes(challenge.id)
+    (t) =>
+      (t.state === "ENTERED" || t.state === "EXITED") &&
+      ensureArray(t.challenges).includes(challenge.id)
   );
 
   // Calculate stats
@@ -166,6 +184,45 @@ export function HDDialogChallengeDetail({
               </div>
             </div>
           </div>
+
+          {/* Balance Progress Section */}
+          <BalanceProgressSection
+            challenge={challenge}
+            adjustmentAmount={adjustmentAmount}
+            setAdjustmentAmount={setAdjustmentAmount}
+            adjustmentType={adjustmentType}
+            setAdjustmentType={setAdjustmentType}
+            isAdjusting={isAdjusting}
+            onAdjust={async () => {
+              const amount = parseFloat(adjustmentAmount);
+              if (isNaN(amount) || amount <= 0) {
+                toast.error("Please enter a valid amount");
+                return;
+              }
+
+              setIsAdjusting(true);
+              try {
+                const change = adjustmentType === "add" ? amount : -amount;
+                const newBalance = challenge.currentBalance + change;
+
+                if (newBalance < 0) {
+                  toast.error("Balance cannot go below zero");
+                  return;
+                }
+
+                await updateChallengeSettings(challenge.id, { currentBalance: newBalance });
+                toast.success(
+                  `Balance ${adjustmentType === "add" ? "increased" : "decreased"} by $${amount.toLocaleString()}`
+                );
+                setAdjustmentAmount("");
+              } catch (error) {
+                console.error("Failed to adjust balance:", error);
+                toast.error("Failed to adjust balance");
+              } finally {
+                setIsAdjusting(false);
+              }
+            }}
+          />
 
           {/* Best/Worst Trades */}
           {(stats.bestTrade || stats.worstTrade) && (
@@ -457,4 +514,163 @@ function calculateChallengeStats(trades: Trade[]) {
     bestTrade: best ? { ticker: best.ticker, pnl: best.movePercent || 0 } : null,
     worstTrade: worst ? { ticker: worst.ticker, pnl: worst.movePercent || 0 } : null,
   };
+}
+
+// Balance Progress Section Component
+function BalanceProgressSection({
+  challenge,
+  adjustmentAmount,
+  setAdjustmentAmount,
+  adjustmentType,
+  setAdjustmentType,
+  isAdjusting,
+  onAdjust,
+}: {
+  challenge: Challenge;
+  adjustmentAmount: string;
+  setAdjustmentAmount: (value: string) => void;
+  adjustmentType: "add" | "subtract";
+  setAdjustmentType: (value: "add" | "subtract") => void;
+  isAdjusting: boolean;
+  onAdjust: () => Promise<void>;
+}) {
+  const progressPercent = Math.min(
+    100,
+    ((challenge.currentBalance - challenge.startingBalance) /
+      (challenge.targetBalance - challenge.startingBalance)) *
+      100
+  );
+  const isOnTrack = challenge.currentBalance >= challenge.startingBalance;
+  const pnlAmount = challenge.currentBalance - challenge.startingBalance;
+  const pnlPercent = (pnlAmount / challenge.startingBalance) * 100;
+
+  return (
+    <div className="p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
+      <div className="flex items-center gap-2 mb-4">
+        <DollarSign className="w-5 h-5 text-[var(--brand-primary)]" />
+        <h3 className="text-[var(--text-high)] font-medium">Balance Progress</h3>
+      </div>
+
+      {/* Balance Overview */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div>
+          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-1">
+            Starting
+          </div>
+          <div className="text-lg font-semibold text-[var(--text-high)]">
+            ${challenge.startingBalance.toLocaleString()}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-1">
+            Current
+          </div>
+          <div
+            className={cn(
+              "text-lg font-semibold",
+              isOnTrack ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+            )}
+          >
+            ${challenge.currentBalance.toLocaleString()}
+          </div>
+          <div
+            className={cn(
+              "text-xs",
+              pnlAmount >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+            )}
+          >
+            {pnlAmount >= 0 ? "+" : ""}${pnlAmount.toLocaleString()} ({pnlPercent >= 0 ? "+" : ""}
+            {pnlPercent.toFixed(1)}%)
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-1">
+            Target
+          </div>
+          <div className="text-lg font-semibold text-[var(--text-high)]">
+            ${challenge.targetBalance.toLocaleString()}
+          </div>
+          <div className="text-xs text-[var(--text-muted)]">
+            ${(challenge.targetBalance - challenge.currentBalance).toLocaleString()} to go
+          </div>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-4">
+        <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
+          <span>Progress</span>
+          <span>{Math.max(0, progressPercent).toFixed(1)}%</span>
+        </div>
+        <div className="h-2 bg-[var(--surface-1)] rounded-full overflow-hidden">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              progressPercent >= 100
+                ? "bg-[var(--accent-positive)]"
+                : progressPercent >= 0
+                  ? "bg-[var(--brand-primary)]"
+                  : "bg-[var(--accent-negative)]"
+            )}
+            style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Manual Adjustment */}
+      <div className="pt-4 border-t border-[var(--border-hairline)]">
+        <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-2">
+          Manual Adjustment
+        </div>
+        <div className="flex gap-2">
+          <div className="flex rounded-[var(--radius)] overflow-hidden border border-[var(--border-hairline)]">
+            <button
+              onClick={() => setAdjustmentType("add")}
+              className={cn(
+                "px-3 py-2 text-sm font-medium transition-colors",
+                adjustmentType === "add"
+                  ? "bg-[var(--accent-positive)] text-white"
+                  : "bg-[var(--surface-1)] text-[var(--text-muted)] hover:text-[var(--text-high)]"
+              )}
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setAdjustmentType("subtract")}
+              className={cn(
+                "px-3 py-2 text-sm font-medium transition-colors",
+                adjustmentType === "subtract"
+                  ? "bg-[var(--accent-negative)] text-white"
+                  : "bg-[var(--surface-1)] text-[var(--text-muted)] hover:text-[var(--text-high)]"
+              )}
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+              $
+            </span>
+            <input
+              type="number"
+              value={adjustmentAmount}
+              onChange={(e) => setAdjustmentAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-full pl-7 pr-3 py-2 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] text-[var(--text-high)] placeholder:text-[var(--text-muted)]"
+            />
+          </div>
+          <HDButton
+            variant={adjustmentType === "add" ? "primary" : "destructive"}
+            onClick={onAdjust}
+            disabled={isAdjusting || !adjustmentAmount}
+          >
+            {isAdjusting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+          </HDButton>
+        </div>
+        <div className="text-xs text-[var(--text-muted)] mt-2">
+          Use this to manually adjust for deposits, withdrawals, or corrections
+        </div>
+      </div>
+    </div>
+  );
 }
