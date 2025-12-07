@@ -51,7 +51,12 @@ export async function getDiscordChannels(userId: string) {
   return data || [];
 }
 
-export async function addDiscordChannel(userId: string, name: string, webhookUrl: string) {
+export async function addDiscordChannel(
+  userId: string,
+  name: string,
+  webhookUrl: string,
+  description?: string
+) {
   const supabase = createClient();
 
   const { data, error } = await supabase
@@ -60,7 +65,9 @@ export async function addDiscordChannel(userId: string, name: string, webhookUrl
       user_id: userId,
       name,
       webhook_url: webhookUrl,
+      description: description || null,
       is_active: true,
+      is_global_default: false,
       is_default_load: false,
       is_default_enter: false,
       is_default_exit: false,
@@ -78,7 +85,9 @@ export async function updateDiscordChannel(
   updates: {
     name?: string;
     webhook_url?: string;
+    description?: string;
     is_active?: boolean;
+    is_global_default?: boolean;
     is_default_load?: boolean;
     is_default_enter?: boolean;
     is_default_exit?: boolean;

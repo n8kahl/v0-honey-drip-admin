@@ -9,6 +9,7 @@ import {
   DiscordChannel,
   SetupType,
 } from "../types";
+import type { PriceOverrides } from "../components/hd/alerts/HDAlertComposer";
 import { calculateRisk } from "../lib/riskEngine/calculator";
 import {
   inferTradeTypeByDTE,
@@ -31,6 +32,17 @@ import {
 import { recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
+
+// Helper to get risk defaults from TP settings store
+function getRiskDefaultsFromStore() {
+  const { tpSettings } = useSettingsStore.getState();
+  return {
+    mode: tpSettings.tpMode,
+    tpPercent: tpSettings.tpPercent,
+    slPercent: tpSettings.slPercent,
+    dteThresholds: DEFAULT_DTE_THRESHOLDS,
+  };
+}
 
 interface UseTradeStateMachineProps {
   hotTrades: Trade[];
@@ -65,23 +77,29 @@ interface TradeStateMachineActions {
     confluenceData?: { trend?: any; volatility?: any; liquidity?: any }
   ) => void;
   handleActiveTradeClick: (trade: Trade, watchlist: Ticker[]) => void;
-  handleSendAlert: (channelIds: string[], challengeIds: string[], comment?: string) => void;
+  handleSendAlert: (
+    channelIds: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
   handleEnterAndAlert: (
     channelIds: string[],
     challengeIds: string[],
     comment?: string,
-    entryPrice?: number
+    priceOverrides?: PriceOverrides
   ) => void;
   handleEnterTrade: (
     channelIds?: string[],
     challengeIds?: string[],
     comment?: string,
-    entryPrice?: number
+    priceOverrides?: PriceOverrides
   ) => void;
   handleCancelAlert: () => void;
   handleDiscard: () => void;
   handleUnloadTrade: () => void;
   handleTrim: () => void;
+  handleTakeProfit: () => void;
   handleUpdate: () => void;
   handleUpdateSL: () => void;
   handleTrailStop: () => void;
@@ -178,7 +196,16 @@ export function useTradeStateMachine({
       channelIds.forEach((id) => {
         const channel = settingsStore.getChannelById(id);
         if (channel) {
-          channels.push(channel);
+          // Validate webhook URL exists
+          if (!channel.webhookUrl) {
+            console.warn(
+              `[Discord] Channel "${channel.name}" (${id}) missing webhook URL - skipping`
+            );
+          } else {
+            channels.push(channel);
+          }
+        } else {
+          console.warn(`[Discord] Channel ID "${id}" not found in settings store - skipping`);
         }
       });
 
@@ -187,13 +214,26 @@ export function useTradeStateMachine({
         const challenge = settingsStore.getChallengeById(challengeId);
         if (challenge?.defaultChannel) {
           const channel = settingsStore.discordChannels.find(
-            (ch) => ch.name === challenge.defaultChannel
+            (ch) => ch.name.toLowerCase() === challenge.defaultChannel.toLowerCase()
           );
           if (channel && !channels.some((c) => c.id === channel.id)) {
-            channels.push(channel);
+            if (!channel.webhookUrl) {
+              console.warn(
+                `[Discord] Challenge channel "${channel.name}" missing webhook URL - skipping`
+              );
+            } else {
+              channels.push(channel);
+            }
           }
         }
       });
+
+      // Warn if we requested channels but none were valid
+      if (channelIds.length > 0 && channels.length === 0) {
+        console.warn(
+          `[Discord] No valid channels found from ${channelIds.length} requested channel IDs`
+        );
+      }
 
       return channels;
     },
@@ -305,12 +345,7 @@ export function useTradeStateMachine({
             tradeType,
             delta: contract.delta ?? 0.5,
             gamma: contract.gamma ?? 0,
-            defaults: {
-              mode: "percent",
-              tpPercent: 50,
-              slPercent: 50,
-              dteThresholds: DEFAULT_DTE_THRESHOLDS,
-            },
+            defaults: getRiskDefaultsFromStore(),
           });
           if (risk.targetPrice) targetPrice = risk.targetPrice;
           if (risk.stopLoss) stopLoss = risk.stopLoss;
@@ -373,7 +408,12 @@ export function useTradeStateMachine({
   );
 
   const handleSendAlert = useCallback(
-    async (channelIds: string[], challengeIds: string[], comment?: string) => {
+    async (
+      channelIds: string[],
+      challengeIds: string[],
+      comment?: string,
+      priceOverrides?: PriceOverrides
+    ) => {
       if (!currentTrade || !userId) {
         toast.error("Unable to send alert: Trade or user missing");
         return;
@@ -383,6 +423,26 @@ export function useTradeStateMachine({
         .map((id) => ({ id, name: `Channel ${id.slice(0, 8)}` }))
         .filter((c) => c);
 
+      // Apply price overrides from the alert composer (user-edited values)
+      const effectiveTargetPrice = priceOverrides?.targetPrice ?? currentTrade.targetPrice;
+      const effectiveStopLoss = priceOverrides?.stopLoss ?? currentTrade.stopLoss;
+      const effectiveCurrentPrice =
+        priceOverrides?.currentPrice ?? currentTrade.currentPrice ?? currentTrade.contract.mid;
+
+      console.warn("[v0] handleSendAlert price overrides:", {
+        from: {
+          target: currentTrade.targetPrice,
+          stop: currentTrade.stopLoss,
+          current: currentTrade.currentPrice,
+        },
+        overrides: priceOverrides,
+        effective: {
+          target: effectiveTargetPrice,
+          stop: effectiveStopLoss,
+          current: effectiveCurrentPrice,
+        },
+      });
+
       // LOAD alert: Keep trade in memory only (don't persist to database yet)
       // We'll persist when user enters the trade (LOADED → ENTERED transition)
       if (alertType === "load") {
@@ -390,9 +450,13 @@ export function useTradeStateMachine({
           console.warn("[v0] Loading trade (memory only, will persist on ENTER)");
 
           // Create trade object with temporary ID (no database persistence yet)
+          // Apply price overrides so they're reflected in the loaded trade
           const loadedTrade: Trade = {
             ...currentTrade,
             state: "LOADED",
+            targetPrice: effectiveTargetPrice,
+            stopLoss: effectiveStopLoss,
+            currentPrice: effectiveCurrentPrice,
             discordChannels: channelIds,
             challenges: challengeIds,
           };
@@ -413,7 +477,15 @@ export function useTradeStateMachine({
           const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
           const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
-          if (discordAlertsEnabled && channels.length > 0) {
+          if (!discordAlertsEnabled) {
+            toast.info("Discord alerts disabled", {
+              description: "Enable in Settings → Discord to send alerts to channels.",
+            } as any);
+          } else if (channels.length === 0 && channelIds.length > 0) {
+            toast.warning("No valid Discord channels", {
+              description: "Check channel configuration in Settings → Discord.",
+            } as any);
+          } else if (channels.length > 0) {
             try {
               await discord.sendLoadAlert(channels, loadedTrade);
               console.log("[Discord] LOAD alert sent successfully");
@@ -668,13 +740,27 @@ export function useTradeStateMachine({
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
-        if (discordAlertsEnabled && channels.length > 0) {
+        if (!discordAlertsEnabled) {
+          toast.info("Discord alerts disabled", {
+            description: "Enable in Settings → Discord to send alerts to channels.",
+          } as any);
+        } else if (channels.length === 0 && channelIds.length > 0) {
+          toast.warning("No valid Discord channels", {
+            description: "Check channel configuration in Settings → Discord.",
+          } as any);
+        } else if (channels.length > 0) {
           // Check rate limit
           if (!discordAlertLimiter.canProceed()) {
             const waitTime = discordAlertLimiter.getWaitTime();
             toast.error("Discord alert rate limit exceeded", {
               description: `Too many alerts sent. Wait ${formatWaitTime(waitTime)} before sending more.`,
             } as any);
+
+            // Rollback optimistic update since we won't send the alert
+            setActiveTrades((prev) =>
+              prev.map((t) => (t.id === currentTrade.id ? currentTrade : t))
+            );
+            setCurrentTrade(currentTrade);
             setShowAlert(false);
             return;
           }
@@ -740,7 +826,7 @@ export function useTradeStateMachine({
                 tradeId: newTrade.id,
                 alertType: alertType === "update-sl" ? "update-sl" : (alertType as any),
                 channelIds: channels.map((c) => c.id),
-                challengeIds: selectedChallenges,
+                challengeIds: challengeIds,
                 successCount: results.success,
                 failedCount: results.failed,
                 tradeTicker: newTrade.ticker,
@@ -762,7 +848,7 @@ export function useTradeStateMachine({
                 tradeId: newTrade.id,
                 alertType: alertType === "update-sl" ? "update-sl" : (alertType as any),
                 channelIds: channels.map((c) => c.id),
-                challengeIds: selectedChallenges,
+                challengeIds: challengeIds,
                 successCount: 0,
                 failedCount: channels.length,
                 errorMessage,
@@ -808,63 +894,67 @@ export function useTradeStateMachine({
   );
 
   const handleEnterTrade = useCallback(
-    (channelIds?: string[], challengeIds?: string[], comment?: string, entryPrice?: number) => {
+    (
+      channelIds?: string[],
+      challengeIds?: string[],
+      comment?: string,
+      priceOverrides?: PriceOverrides
+    ) => {
       if (!currentTrade) return;
 
-      const finalEntryPrice = entryPrice || currentTrade.contract.mid;
+      const finalEntryPrice = priceOverrides?.entryPrice || currentTrade.contract.mid;
 
-      // Recalculate TP/SL with actual entry price
-      let targetPrice = finalEntryPrice * 1.5;
-      let stopLoss = finalEntryPrice * 0.5;
+      // Use user-provided overrides if available, otherwise calculate defaults
+      let targetPrice = priceOverrides?.targetPrice ?? finalEntryPrice * 1.5;
+      let stopLoss = priceOverrides?.stopLoss ?? finalEntryPrice * 0.5;
 
-      try {
-        const tradeType = inferTradeTypeByDTE(
-          currentTrade.contract.expiry,
-          new Date(),
-          DEFAULT_DTE_THRESHOLDS
-        );
+      // Only recalculate if user didn't provide explicit overrides
+      if (!priceOverrides?.targetPrice || !priceOverrides?.stopLoss) {
+        try {
+          const tradeType = inferTradeTypeByDTE(
+            currentTrade.contract.expiry,
+            new Date(),
+            DEFAULT_DTE_THRESHOLDS
+          );
 
-        const risk = calculateRisk({
-          entryPrice: finalEntryPrice,
-          currentUnderlyingPrice: finalEntryPrice,
-          currentOptionMid: finalEntryPrice,
-          keyLevels: {
-            preMarketHigh: 0,
-            preMarketLow: 0,
-            orbHigh: 0,
-            orbLow: 0,
-            priorDayHigh: 0,
-            priorDayLow: 0,
-            vwap: 0,
-            vwapUpperBand: 0,
-            vwapLowerBand: 0,
-            bollingerUpper: 0,
-            bollingerLower: 0,
-            weeklyHigh: 0,
-            weeklyLow: 0,
-            monthlyHigh: 0,
-            monthlyLow: 0,
-            quarterlyHigh: 0,
-            quarterlyLow: 0,
-            yearlyHigh: 0,
-            yearlyLow: 0,
-          },
-          expirationISO: currentTrade.contract.expiry,
-          tradeType,
-          delta: currentTrade.contract.delta ?? 0.5,
-          gamma: currentTrade.contract.gamma ?? 0,
-          defaults: {
-            mode: "percent",
-            tpPercent: 50,
-            slPercent: 50,
-            dteThresholds: DEFAULT_DTE_THRESHOLDS,
-          },
-        });
+          const risk = calculateRisk({
+            entryPrice: finalEntryPrice,
+            currentUnderlyingPrice: finalEntryPrice,
+            currentOptionMid: finalEntryPrice,
+            keyLevels: {
+              preMarketHigh: 0,
+              preMarketLow: 0,
+              orbHigh: 0,
+              orbLow: 0,
+              priorDayHigh: 0,
+              priorDayLow: 0,
+              vwap: 0,
+              vwapUpperBand: 0,
+              vwapLowerBand: 0,
+              bollingerUpper: 0,
+              bollingerLower: 0,
+              weeklyHigh: 0,
+              weeklyLow: 0,
+              monthlyHigh: 0,
+              monthlyLow: 0,
+              quarterlyHigh: 0,
+              quarterlyLow: 0,
+              yearlyHigh: 0,
+              yearlyLow: 0,
+            },
+            expirationISO: currentTrade.contract.expiry,
+            tradeType,
+            delta: currentTrade.contract.delta ?? 0.5,
+            gamma: currentTrade.contract.gamma ?? 0,
+            defaults: getRiskDefaultsFromStore(),
+          });
 
-        if (risk.targetPrice) targetPrice = risk.targetPrice;
-        if (risk.stopLoss) stopLoss = risk.stopLoss;
-      } catch (error) {
-        console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
+          // Only apply calculated values for fields not overridden by user
+          if (!priceOverrides?.targetPrice && risk.targetPrice) targetPrice = risk.targetPrice;
+          if (!priceOverrides?.stopLoss && risk.stopLoss) stopLoss = risk.stopLoss;
+        } catch (error) {
+          console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
+        }
       }
 
       const enteredTrade: Trade = {
@@ -910,66 +1000,80 @@ export function useTradeStateMachine({
   );
 
   const handleEnterAndAlert = useCallback(
-    async (channelIds: string[], challengeIds: string[], comment?: string, entryPrice?: number) => {
+    async (
+      channelIds: string[],
+      challengeIds: string[],
+      comment?: string,
+      priceOverrides?: PriceOverrides
+    ) => {
       if (!currentTrade || !userId) {
         toast.error("Unable to enter trade: Trade or user missing");
         return;
       }
 
-      const finalEntryPrice = entryPrice || currentTrade.contract.mid;
+      const finalEntryPrice = priceOverrides?.entryPrice || currentTrade.contract.mid;
 
-      // Recalculate TP/SL with actual entry price
-      let targetPrice = finalEntryPrice * 1.5;
-      let stopLoss = finalEntryPrice * 0.5;
+      // Use user-provided overrides if available, otherwise calculate defaults
+      let targetPrice = priceOverrides?.targetPrice ?? finalEntryPrice * 1.5;
+      let stopLoss = priceOverrides?.stopLoss ?? finalEntryPrice * 0.5;
 
-      try {
-        const tradeType = inferTradeTypeByDTE(
-          currentTrade.contract.expiry,
-          new Date(),
-          DEFAULT_DTE_THRESHOLDS
-        );
+      console.warn("[v0] handleEnterAndAlert price overrides:", {
+        from: {
+          entry: currentTrade.contract.mid,
+          target: currentTrade.targetPrice,
+          stop: currentTrade.stopLoss,
+        },
+        overrides: priceOverrides,
+        effective: { entry: finalEntryPrice, target: targetPrice, stop: stopLoss },
+      });
 
-        const risk = calculateRisk({
-          entryPrice: finalEntryPrice,
-          currentUnderlyingPrice: finalEntryPrice,
-          currentOptionMid: finalEntryPrice,
-          keyLevels: {
-            preMarketHigh: 0,
-            preMarketLow: 0,
-            orbHigh: 0,
-            orbLow: 0,
-            priorDayHigh: 0,
-            priorDayLow: 0,
-            vwap: 0,
-            vwapUpperBand: 0,
-            vwapLowerBand: 0,
-            bollingerUpper: 0,
-            bollingerLower: 0,
-            weeklyHigh: 0,
-            weeklyLow: 0,
-            monthlyHigh: 0,
-            monthlyLow: 0,
-            quarterlyHigh: 0,
-            quarterlyLow: 0,
-            yearlyHigh: 0,
-            yearlyLow: 0,
-          },
-          expirationISO: currentTrade.contract.expiry,
-          tradeType,
-          delta: currentTrade.contract.delta ?? 0.5,
-          gamma: currentTrade.contract.gamma ?? 0,
-          defaults: {
-            mode: "percent",
-            tpPercent: 50,
-            slPercent: 50,
-            dteThresholds: DEFAULT_DTE_THRESHOLDS,
-          },
-        });
+      // Only recalculate if user didn't provide explicit overrides
+      if (!priceOverrides?.targetPrice || !priceOverrides?.stopLoss) {
+        try {
+          const tradeType = inferTradeTypeByDTE(
+            currentTrade.contract.expiry,
+            new Date(),
+            DEFAULT_DTE_THRESHOLDS
+          );
 
-        if (risk.targetPrice) targetPrice = risk.targetPrice;
-        if (risk.stopLoss) stopLoss = risk.stopLoss;
-      } catch (error) {
-        console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
+          const risk = calculateRisk({
+            entryPrice: finalEntryPrice,
+            currentUnderlyingPrice: finalEntryPrice,
+            currentOptionMid: finalEntryPrice,
+            keyLevels: {
+              preMarketHigh: 0,
+              preMarketLow: 0,
+              orbHigh: 0,
+              orbLow: 0,
+              priorDayHigh: 0,
+              priorDayLow: 0,
+              vwap: 0,
+              vwapUpperBand: 0,
+              vwapLowerBand: 0,
+              bollingerUpper: 0,
+              bollingerLower: 0,
+              weeklyHigh: 0,
+              weeklyLow: 0,
+              monthlyHigh: 0,
+              monthlyLow: 0,
+              quarterlyHigh: 0,
+              quarterlyLow: 0,
+              yearlyHigh: 0,
+              yearlyLow: 0,
+            },
+            expirationISO: currentTrade.contract.expiry,
+            tradeType,
+            delta: currentTrade.contract.delta ?? 0.5,
+            gamma: currentTrade.contract.gamma ?? 0,
+            defaults: getRiskDefaultsFromStore(),
+          });
+
+          // Only apply calculated values for fields not overridden by user
+          if (!priceOverrides?.targetPrice && risk.targetPrice) targetPrice = risk.targetPrice;
+          if (!priceOverrides?.stopLoss && risk.stopLoss) stopLoss = risk.stopLoss;
+        } catch (error) {
+          console.warn("[v0] TP/SL recalculation failed, using fallback:", error);
+        }
       }
 
       let enteredTrade: Trade = {

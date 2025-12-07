@@ -9,14 +9,32 @@ import { Edit2 } from "lucide-react";
 import { HDCalculatorModal } from "../forms/HDCalculatorModal";
 import { HDTradeShareCard } from "../cards/HDTradeShareCard";
 
+// Price overrides that can be passed from the alert composer to the alert handlers
+export interface PriceOverrides {
+  entryPrice?: number;
+  currentPrice?: number;
+  targetPrice?: number;
+  stopLoss?: number;
+}
+
 interface HDAlertComposerProps {
   trade: Trade;
   alertType: AlertType;
   alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
   availableChannels: DiscordChannel[];
   challenges: Challenge[];
-  onSend: (channels: string[], challengeIds: string[], comment?: string) => void;
-  onEnterAndAlert?: (channels: string[], challengeIds: string[], comment?: string) => void; // New callback for Enter and Alert
+  onSend: (
+    channels: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
+  onEnterAndAlert?: (
+    channels: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
   onCancel?: () => void; // Cancel without removing trade (mobile only)
   onUnload?: () => void; // Unload trade from loaded list
   className?: string;
@@ -77,12 +95,62 @@ export function HDAlertComposer({
   // Initialize channels and challenges when trade changes or alert opens
   useEffect(() => {
     // Ensure we always work with arrays to prevent .includes() crashes
-    const channels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
-    const challenges = Array.isArray(trade.challenges) ? trade.challenges : [];
+    const tradeChannels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
+    const tradeChallenges = Array.isArray(trade.challenges) ? trade.challenges : [];
 
-    setSelectedChannels(channels);
-    setSelectedChallenges(challenges);
-  }, [trade.id, trade.discordChannels, trade.challenges]); // Re-run when channels/challenges change
+    // Log warnings if arrays were malformed (helps debug data issues)
+    if (trade.id && !trade.id.startsWith("preview-")) {
+      if (trade.discordChannels && !Array.isArray(trade.discordChannels)) {
+        console.warn(
+          `[AlertComposer] Trade ${trade.id} has malformed discordChannels (expected array, got ${typeof trade.discordChannels})`
+        );
+      }
+      if (trade.challenges && !Array.isArray(trade.challenges)) {
+        console.warn(
+          `[AlertComposer] Trade ${trade.id} has malformed challenges (expected array, got ${typeof trade.challenges})`
+        );
+      }
+    }
+
+    // Channel selection priority:
+    // 1. Trade's saved channels (for existing trades)
+    // 2. Last used channels from localStorage
+    // 3. Global default channel
+    let channelsToUse: string[] = tradeChannels;
+
+    if (channelsToUse.length === 0) {
+      // Try to get last used channels from localStorage
+      try {
+        const lastUsedKey = `discord_last_channels_${alertType}`;
+        const lastUsed = localStorage.getItem(lastUsedKey);
+        if (lastUsed) {
+          const parsed = JSON.parse(lastUsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Validate that channels still exist
+            const validChannels = parsed.filter((id: string) =>
+              availableChannels.some((ch) => ch.id === id)
+            );
+            if (validChannels.length > 0) {
+              channelsToUse = validChannels;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[AlertComposer] Failed to load last used channels:", e);
+      }
+    }
+
+    if (channelsToUse.length === 0) {
+      // Fall back to global default channel
+      const defaultChannel = availableChannels.find((ch) => ch.isGlobalDefault);
+      if (defaultChannel) {
+        channelsToUse = [defaultChannel.id];
+      }
+    }
+
+    setSelectedChannels(channelsToUse);
+    setSelectedChallenges(tradeChallenges);
+  }, [trade.id, trade.discordChannels, trade.challenges, alertType, availableChannels]); // Re-run when channels/challenges change
 
   // Initialize defaults based on alertType
   useEffect(() => {
@@ -220,6 +288,18 @@ export function HDAlertComposer({
     setSelectedChallenges((prev) =>
       prev.includes(challengeId) ? prev.filter((c) => c !== challengeId) : [...prev, challengeId]
     );
+  };
+
+  // Persist selected channels to localStorage for future alerts
+  const persistChannelSelection = () => {
+    if (selectedChannels.length > 0) {
+      try {
+        const key = `discord_last_channels_${alertType}`;
+        localStorage.setItem(key, JSON.stringify(selectedChannels));
+      } catch (e) {
+        console.warn("[AlertComposer] Failed to persist channel selection:", e);
+      }
+    }
   };
 
   const getAlertTitle = () => {
@@ -1024,10 +1104,18 @@ export function HDAlertComposer({
                   console.log("📋 Selected channels:", selectedChannels);
                   console.log("📋 Selected challenges:", selectedChallenges);
                   console.log("📋 Comment:", comment);
+                  console.log("📋 Price overrides:", {
+                    entryPrice,
+                    currentPrice,
+                    targetPrice,
+                    stopLoss,
+                  });
+                  persistChannelSelection();
                   onEnterAndAlert(
                     selectedChannels,
                     selectedChallenges,
-                    comment.trim() || undefined
+                    comment.trim() || undefined,
+                    { entryPrice, currentPrice, targetPrice, stopLoss }
                   );
                 }}
                 disabled={selectedChannels.length === 0}
@@ -1059,9 +1147,22 @@ export function HDAlertComposer({
           <>
             {/* Default Send Alert button for other alert types */}
             <button
-              onClick={() =>
-                onSend(selectedChannels, selectedChallenges, comment.trim() || undefined)
-              }
+              onClick={() => {
+                console.log("📤 SEND ALERT BUTTON CLICKED!");
+                console.log("📋 Price overrides:", {
+                  entryPrice,
+                  currentPrice,
+                  targetPrice,
+                  stopLoss,
+                });
+                persistChannelSelection();
+                onSend(selectedChannels, selectedChallenges, comment.trim() || undefined, {
+                  entryPrice,
+                  currentPrice,
+                  targetPrice,
+                  stopLoss,
+                });
+              }}
               disabled={selectedChannels.length === 0}
               className="w-full py-3 rounded-[var(--radius)] bg-[var(--brand-primary)] text-[var(--bg-base)] hover:bg-[var(--brand-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
             >
@@ -1075,11 +1176,18 @@ export function HDAlertComposer({
                   console.log("📋 Selected channels:", selectedChannels);
                   console.log("📋 Selected challenges:", selectedChallenges);
                   console.log("📋 Comment:", comment);
-                  console.log("📋 onEnterAndAlert exists?", !!onEnterAndAlert);
+                  console.log("📋 Price overrides:", {
+                    entryPrice,
+                    currentPrice,
+                    targetPrice,
+                    stopLoss,
+                  });
+                  persistChannelSelection();
                   onEnterAndAlert(
                     selectedChannels,
                     selectedChallenges,
-                    comment.trim() || undefined
+                    comment.trim() || undefined,
+                    { entryPrice, currentPrice, targetPrice, stopLoss }
                   );
                   console.log("✅ onEnterAndAlert() called");
                 }}

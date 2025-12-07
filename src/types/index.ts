@@ -20,7 +20,9 @@ export interface DiscordChannel {
   name: string;
   webhookUrl: string;
   createdAt: Date;
+  description?: string;
   isActive?: boolean;
+  isGlobalDefault?: boolean;
   isDefaultLoad?: boolean;
   isDefaultEnter?: boolean;
   isDefaultExit?: boolean;
