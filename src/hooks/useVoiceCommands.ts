@@ -210,13 +210,23 @@ export function useVoiceCommands({
     const percentMatch = lowerText.match(/(\d+)\s*percent/i);
     const trimPercent = percentMatch ? parseInt(percentMatch[1]) : undefined;
 
-    // Add ticker to watchlist
-    if (lowerText.includes("add") && lowerText.includes("watchlist")) {
+    // Add ticker to watchlist - check FIRST before general "add" command
+    if (
+      lowerText.includes("add") &&
+      (lowerText.includes("watchlist") ||
+        lowerText.includes("to watchlist") ||
+        lowerText.includes("watch list"))
+    ) {
       return { type: "add-ticker", ticker };
     }
 
     // Remove ticker from watchlist
-    if (lowerText.includes("remove") && lowerText.includes("watchlist")) {
+    if (
+      lowerText.includes("remove") &&
+      (lowerText.includes("watchlist") ||
+        lowerText.includes("from watchlist") ||
+        lowerText.includes("watch list"))
+    ) {
       return { type: "remove-ticker", ticker };
     }
 
@@ -267,8 +277,15 @@ export function useVoiceCommands({
       return { type: "exit-trade", ticker };
     }
 
-    // Add to position
-    if (lowerText.includes("add") && !lowerText.includes("watchlist")) {
+    // Add to position - only if NOT adding to watchlist
+    if (
+      lowerText.includes("add") &&
+      !lowerText.includes("watchlist") &&
+      !lowerText.includes("watch list") &&
+      (lowerText.includes("position") ||
+        lowerText.includes("more") ||
+        lowerText.includes("contracts"))
+    ) {
       return { type: "add-position", ticker, price };
     }
 
