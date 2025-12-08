@@ -21,6 +21,7 @@ import {
 } from "../lib/services/brandingService";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { applyBrandingTheme, defaultBrandingTheme } from "../lib/config/branding";
 
 export function BrandingSettingsAdmin() {
   const toast = useAppToast();
@@ -35,6 +36,19 @@ export function BrandingSettingsAdmin() {
   const [supportEmail, setSupportEmail] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [faviconUrl, setFaviconUrl] = useState("");
+  const [themePreview, setThemePreview] = useState({
+    surface1: defaultBrandingTheme.surface1,
+    surface2: defaultBrandingTheme.surface2,
+    surface3: defaultBrandingTheme.surface3,
+    surface4: defaultBrandingTheme.surface4,
+    textHigh: defaultBrandingTheme.textHigh,
+    textMuted: defaultBrandingTheme.textMuted,
+    success: defaultBrandingTheme.success,
+    warning: defaultBrandingTheme.warning,
+    danger: defaultBrandingTheme.danger,
+    borderHairline: defaultBrandingTheme.borderHairline,
+    borderStrong: defaultBrandingTheme.borderStrong,
+  });
 
   // File inputs
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +74,47 @@ export function BrandingSettingsAdmin() {
         setSupportEmail(data.supportEmail || "");
         setLogoUrl(data.logoUrl || "");
         setFaviconUrl(data.faviconUrl || "");
+        setThemePreview((prev) => ({
+          ...prev,
+          surface1:
+            getComputedStyle(document.documentElement).getPropertyValue("--surface-1")?.trim() ||
+            prev.surface1,
+          surface2:
+            getComputedStyle(document.documentElement).getPropertyValue("--surface-2")?.trim() ||
+            prev.surface2,
+          surface3:
+            getComputedStyle(document.documentElement).getPropertyValue("--surface-3")?.trim() ||
+            prev.surface3,
+          surface4:
+            getComputedStyle(document.documentElement).getPropertyValue("--surface-4")?.trim() ||
+            prev.surface4,
+          textHigh:
+            getComputedStyle(document.documentElement).getPropertyValue("--text-high")?.trim() ||
+            prev.textHigh,
+          textMuted:
+            getComputedStyle(document.documentElement).getPropertyValue("--text-muted")?.trim() ||
+            prev.textMuted,
+          success:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--accent-positive")
+              ?.trim() || prev.success,
+          warning:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--accent-warning")
+              ?.trim() || prev.warning,
+          danger:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--accent-negative")
+              ?.trim() || prev.danger,
+          borderHairline:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--border-hairline")
+              ?.trim() || prev.borderHairline,
+          borderStrong:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--border-strong")
+              ?.trim() || prev.borderStrong,
+        }));
       }
     } catch (error) {
       console.error("[v0] Failed to load branding config:", error);
@@ -217,6 +272,162 @@ export function BrandingSettingsAdmin() {
 
         {/* Form */}
         <div className="space-y-6">
+          {/* Theme preview (advanced) */}
+          <div className="space-y-3 p-3 border border-[var(--border-hairline)] rounded-[var(--radius)] bg-[var(--surface-2)]/60">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-high)]">Theme Preview</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Adjust surfaces, text, and accents. Applies to this session (not persisted yet).
+                </p>
+              </div>
+              <HDButton
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  applyBrandingTheme({
+                    surface1: themePreview.surface1,
+                    surface2: themePreview.surface2,
+                    surface3: themePreview.surface3,
+                    surface4: themePreview.surface4,
+                    textHigh: themePreview.textHigh,
+                    textMuted: themePreview.textMuted,
+                    textSubtle: defaultBrandingTheme.textSubtle,
+                    success: themePreview.success,
+                    warning: themePreview.warning,
+                    danger: themePreview.danger,
+                    borderHairline: themePreview.borderHairline,
+                    borderStrong: themePreview.borderStrong,
+                    brandPrimary: brandPrimaryColor,
+                    brandPrimaryHover: brandPrimaryColor,
+                    brandPrimaryPressed: brandPrimaryColor,
+                  });
+                  toast.info("Theme applied to this session.");
+                }}
+              >
+                Apply Theme
+              </HDButton>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="space-y-1">
+                <Label>Surface 1</Label>
+                <Input
+                  type="color"
+                  value={themePreview.surface1}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, surface1: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Surface 2</Label>
+                <Input
+                  type="color"
+                  value={themePreview.surface2}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, surface2: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Surface 3</Label>
+                <Input
+                  type="color"
+                  value={themePreview.surface3}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, surface3: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Surface 4</Label>
+                <Input
+                  type="color"
+                  value={themePreview.surface4}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, surface4: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Text High</Label>
+                <Input
+                  type="color"
+                  value={themePreview.textHigh}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, textHigh: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Text Muted</Label>
+                <Input
+                  type="color"
+                  value={themePreview.textMuted}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, textMuted: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Success</Label>
+                <Input
+                  type="color"
+                  value={themePreview.success}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, success: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Warning</Label>
+                <Input
+                  type="color"
+                  value={themePreview.warning}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, warning: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Danger</Label>
+                <Input
+                  type="color"
+                  value={themePreview.danger}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, danger: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Border Hairline</Label>
+                <Input
+                  type="color"
+                  value={themePreview.borderHairline}
+                  onChange={(e) =>
+                    setThemePreview((p) => ({ ...p, borderHairline: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Border Strong</Label>
+                <Input
+                  type="color"
+                  value={themePreview.borderStrong}
+                  onChange={(e) => setThemePreview((p) => ({ ...p, borderStrong: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div className="p-3 rounded-[var(--radius)] border border-[var(--border-hairline)] bg-[var(--surface-1)]">
+                <p className="text-[var(--text-high)] font-semibold mb-2">Preview</p>
+                <div className="flex flex-col gap-2">
+                  <button className="px-3 py-2 rounded bg-[var(--brand-primary)] text-[var(--bg-base)] text-sm font-medium">
+                    Primary Button
+                  </button>
+                  <button className="px-3 py-2 rounded border border-[var(--border-strong)] text-[var(--text-high)] text-sm">
+                    Secondary Button
+                  </button>
+                  <span className="inline-flex h-[22px] items-center justify-center gap-1.5 px-2.5 rounded-full border border-[var(--border-strong)] text-[10px] text-[var(--text-high)] bg-[var(--surface-3)]">
+                    Pill Example
+                  </span>
+                </div>
+              </div>
+              <div className="p-3 rounded-[var(--radius)] border border-[var(--border-hairline)] bg-[var(--surface-2)]">
+                <p className="text-[var(--text-high)] font-semibold mb-2">Text & Borders</p>
+                <div className="text-[var(--text-high)]">High contrast text</div>
+                <div className="text-[var(--text-muted)]">Muted text</div>
+                <div className="mt-2 h-10 rounded border border-[var(--border-hairline)] bg-[var(--surface-1)] px-2 flex items-center text-[var(--text-muted)]">
+                  Input preview
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* App Name */}
           <div className="space-y-2">
             <Label htmlFor="appName" className="text-[var(--text-high)]">
