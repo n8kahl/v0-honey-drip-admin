@@ -12,7 +12,9 @@ const PageLoader = () => (
 const TradeDetailPage = lazy(() => import("./pages/TradeDetailPage"));
 const RadarPage = lazy(() => import("./pages/RadarPage"));
 const PlanPage = lazy(() => import("./pages/PlanPage"));
-const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
+const ProfilePage = lazy(() =>
+  import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage }))
+);
 
 /**
  * Router Configuration for Vite App
@@ -51,6 +53,10 @@ export const router = createBrowserRouter([
   },
   {
     path: "/monitoring",
+    element: <App />,
+  },
+  {
+    path: "/public",
     element: <App />,
   },
   {
