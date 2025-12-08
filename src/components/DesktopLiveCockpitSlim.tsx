@@ -139,12 +139,10 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     },
     onRemoveTicker,
     onLoadContract: (contract, ticker, reasoning) => {
-      // Set active ticker first
+      // Set active ticker for UI state
       actions.setActiveTicker(ticker);
-      // Wait for next tick to ensure state is updated
-      setTimeout(() => {
-        actions.handleContractSelect(contract, undefined, reasoning);
-      }, 0);
+      // Pass ticker explicitly to avoid race condition with state update
+      actions.handleContractSelect(contract, undefined, reasoning, ticker);
     },
     onEnterTrade: actions.handleEnterTrade,
     onTrimTrade: actions.handleTrim,

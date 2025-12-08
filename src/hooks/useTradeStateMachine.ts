@@ -75,7 +75,8 @@ interface TradeStateMachineActions {
   handleContractSelect: (
     contract: Contract,
     confluenceData?: { trend?: any; volatility?: any; liquidity?: any },
-    voiceReasoning?: string
+    voiceReasoning?: string,
+    explicitTicker?: Ticker
   ) => void;
   handleActiveTradeClick: (trade: Trade, watchlist: Ticker[]) => void;
   handleSendAlert: (
@@ -288,9 +289,13 @@ export function useTradeStateMachine({
         volatility?: any;
         liquidity?: any;
       },
-      voiceReasoning?: string
+      voiceReasoning?: string,
+      explicitTicker?: Ticker
     ) => {
-      if (!activeTicker) {
+      // Use explicit ticker (from voice command) or activeTicker from state
+      const ticker = explicitTicker || activeTicker;
+
+      if (!ticker) {
         toast.error("Unable to create trade: No ticker selected");
         return;
       }
@@ -302,7 +307,7 @@ export function useTradeStateMachine({
         let targetPrice = contract.mid * 1.5;
         let stopLoss = contract.mid * 0.5;
         // Underlying price context for Format C display
-        const underlyingPrice = activeTicker.last;
+        const underlyingPrice = ticker.last;
         let targetUnderlyingPrice: number | undefined;
         let stopUnderlyingPrice: number | undefined;
 
@@ -366,7 +371,7 @@ export function useTradeStateMachine({
         // Capture initial confluence data from context engines
         // This runs in background and may complete after UI update
         const direction: "LONG" | "SHORT" = contract.type === "C" ? "LONG" : "SHORT";
-        const initialConfluence = await getInitialConfluence(activeTicker.symbol, direction);
+        const initialConfluence = await getInitialConfluence(ticker.symbol, direction);
         console.log("[v0] Initial confluence captured:", initialConfluence?.score);
 
         // Create trade locally for UI display only
@@ -374,7 +379,7 @@ export function useTradeStateMachine({
         // The trade is NOT added to activeTrades and NOT persisted yet
         const localTrade: Trade = {
           id: crypto.randomUUID(),
-          ticker: activeTicker.symbol,
+          ticker: ticker.symbol,
           state: "WATCHING", // Temporary state for contract preview
           contract,
           tradeType: inferTradeTypeByDTE(
