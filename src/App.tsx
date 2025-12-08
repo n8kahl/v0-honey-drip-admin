@@ -9,6 +9,7 @@ import { MobileActive } from "./components/MobileActive";
 import { VoiceCommandDemo } from "./components/VoiceCommandDemo";
 import { TraderHeader } from "./components/Header/TraderHeader";
 import { MobileBottomNav } from "./components/MobileBottomNav";
+import { MobileApp } from "./components/mobile/MobileApp";
 import { HDDialogDiscordSettings } from "./components/hd/forms/HDDialogDiscordSettings";
 import { HDDialogAddTicker } from "./components/hd/forms/HDDialogAddTicker";
 import { HDDialogAddChallenge } from "./components/hd/forms/HDDialogAddChallenge";
@@ -26,6 +27,24 @@ import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcut
 import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
 import "./styles/globals.css";
 
+// Hook to detect mobile viewport
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < breakpoint);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 type AppTab = "live" | "active" | "history" | "settings" | "monitoring";
 
 /**
@@ -42,6 +61,7 @@ function getActiveTabFromPath(pathname: string): AppTab {
 export default function App() {
   const { user, loading } = useAuth();
   const isTestAuto = (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === "true";
+  const isMobile = useIsMobile();
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [headerVoiceState, setHeaderVoiceState] = useState<{
     isListening: boolean;
@@ -233,6 +253,52 @@ export default function App() {
 
   if (!user && !isTestAuto) {
     return <AuthPage />;
+  }
+
+  // Render mobile app on mobile devices
+  if (isMobile) {
+    return (
+      <>
+        <MobileApp />
+        {/* Dialogs still need to work on mobile */}
+        <HDDialogDiscordSettings
+          open={showDiscordDialog}
+          onOpenChange={(open) => useUIStore.getState().setShowDiscordDialog(open)}
+          channels={discordChannels}
+          onAddChannel={async (name, webhookUrl) => {
+            if (!user) return;
+            await useSettingsStore.getState().createDiscordChannel(user.id, name, webhookUrl);
+          }}
+          onRemoveChannel={async (id) => {
+            await useSettingsStore.getState().removeDiscordChannel(id);
+          }}
+          onTestWebhook={async (channel) => {
+            return await discord.testWebhook(channel);
+          }}
+          discordAlertsEnabled={discordAlertsEnabled}
+          onToggleAlertsEnabled={(enabled) =>
+            useSettingsStore.getState().setDiscordAlertsEnabled(enabled)
+          }
+        />
+        <HDDialogAddTicker
+          open={showAddTickerDialog}
+          onOpenChange={(open) => useUIStore.getState().setShowAddTickerDialog(open)}
+          onAddTicker={async (ticker) => {
+            if (!user) return;
+            await useMarketStore.getState().addTicker(user.id, ticker);
+          }}
+        />
+        <HDDialogAddChallenge
+          open={showAddChallengeDialog}
+          onOpenChange={(open) => useUIStore.getState().setShowAddChallengeDialog(open)}
+          onAddChallenge={async (challenge) => {
+            if (!user) return;
+            await useSettingsStore.getState().createChallenge(user.id, challenge);
+          }}
+        />
+        <Toaster />
+      </>
+    );
   }
 
   // Helper function to navigate to active tab with flash effect

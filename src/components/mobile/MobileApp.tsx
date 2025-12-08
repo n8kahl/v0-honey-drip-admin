@@ -124,10 +124,10 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       const selectedChannels = discordChannels.filter((c) => channels.includes(c.id));
 
       if (alertType === "update" && alertOptions.updateKind === "trim") {
-        await discord.sendTrimAlert(selectedChannels, alertTrade, comment);
+        await discord.sendUpdateAlert(selectedChannels, alertTrade, "trim", comment);
         toast.success("Trim alert sent");
       } else if (alertType === "update" && alertOptions.updateKind === "sl") {
-        await discord.sendUpdateSLAlert(selectedChannels, alertTrade, comment);
+        await discord.sendUpdateAlert(selectedChannels, alertTrade, "update-sl", comment);
         toast.success("Stop loss update sent");
       } else if (alertType === "exit") {
         await discord.sendExitAlert(selectedChannels, alertTrade, comment);

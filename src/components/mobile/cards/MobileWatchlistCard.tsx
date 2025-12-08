@@ -17,7 +17,7 @@ export function MobileWatchlistCard({ ticker, onLoad }: MobileWatchlistCardProps
       <div className="flex items-center gap-4">
         <div>
           <span className="text-[var(--text-high)] font-semibold block">{ticker.symbol}</span>
-          <span className="text-[var(--text-muted)] text-xs">{ticker.name || ticker.symbol}</span>
+          <span className="text-[var(--text-muted)] text-xs">{ticker.symbol}</span>
         </div>
       </div>
 
