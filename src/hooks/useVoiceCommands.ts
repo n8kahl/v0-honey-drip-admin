@@ -650,6 +650,24 @@ export function useVoiceCommands({
               onAddTicker(action.ticker);
               speak(`Added ${action.ticker} to watchlist`);
             }
+            // Advance compound action if present
+            if (
+              pendingCompoundActions.length > 0 &&
+              compoundActionIndex < pendingCompoundActions.length - 1
+            ) {
+              setTimeout(() => {
+                const nextIndex = compoundActionIndex + 1;
+                setCompoundActionIndex(nextIndex);
+                const nextAction = pendingCompoundActions[nextIndex];
+                speak(`Next: ${nextAction.type.replace("-", " ")} ${nextAction.ticker || ""}`);
+                setTimeout(() => executeAction(nextAction), 500);
+              }, 1000);
+            } else if (pendingCompoundActions.length > 0) {
+              speak("All actions completed");
+              setPendingCompoundActions([]);
+              setCompoundActionIndex(0);
+              setHudState(null);
+            }
             break;
 
           case "remove-ticker":
@@ -660,10 +678,46 @@ export function useVoiceCommands({
                 speak(`Removed ${action.ticker} from watchlist`);
               }
             }
+            // Advance compound action if present
+            if (
+              pendingCompoundActions.length > 0 &&
+              compoundActionIndex < pendingCompoundActions.length - 1
+            ) {
+              setTimeout(() => {
+                const nextIndex = compoundActionIndex + 1;
+                setCompoundActionIndex(nextIndex);
+                const nextAction = pendingCompoundActions[nextIndex];
+                speak(`Next: ${nextAction.type.replace("-", " ")} ${nextAction.ticker || ""}`);
+                setTimeout(() => executeAction(nextAction), 500);
+              }, 1000);
+            } else if (pendingCompoundActions.length > 0) {
+              speak("All actions completed");
+              setPendingCompoundActions([]);
+              setCompoundActionIndex(0);
+              setHudState(null);
+            }
             break;
 
           case "load-contract":
             console.warn("[v0] Load contract action:", action);
+            // Advance compound action if present
+            if (
+              pendingCompoundActions.length > 0 &&
+              compoundActionIndex < pendingCompoundActions.length - 1
+            ) {
+              setTimeout(() => {
+                const nextIndex = compoundActionIndex + 1;
+                setCompoundActionIndex(nextIndex);
+                const nextAction = pendingCompoundActions[nextIndex];
+                speak(`Next: ${nextAction.type.replace("-", " ")} ${nextAction.ticker || ""}`);
+                setTimeout(() => executeAction(nextAction), 500);
+              }, 1000);
+            } else if (pendingCompoundActions.length > 0) {
+              speak("All actions completed");
+              setPendingCompoundActions([]);
+              setCompoundActionIndex(0);
+              setHudState(null);
+            }
             break;
 
           case "enter-trade": {
@@ -843,6 +897,22 @@ export function useVoiceCommands({
                 setHudState(null);
                 setIsListening(false);
                 setWaitingForWakeWord(true);
+
+                // Advance compound action if present
+                if (
+                  pendingCompoundActions.length > 0 &&
+                  compoundActionIndex < pendingCompoundActions.length - 1
+                ) {
+                  const nextIndex = compoundActionIndex + 1;
+                  setCompoundActionIndex(nextIndex);
+                  const nextAction = pendingCompoundActions[nextIndex];
+                  speak(`Next: ${nextAction.type.replace("-", " ")} ${nextAction.ticker || ""}`);
+                  setTimeout(() => executeAction(nextAction), 500);
+                } else if (pendingCompoundActions.length > 0) {
+                  speak("All actions completed");
+                  setPendingCompoundActions([]);
+                  setCompoundActionIndex(0);
+                }
               }, 1000);
             }
             break;
