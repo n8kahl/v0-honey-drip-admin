@@ -101,6 +101,10 @@ export function useVoiceCommands({
   const [error, setError] = useState<string>("");
   const [pendingAction, setPendingAction] = useState<ParsedVoiceAction | null>(null);
   const [pendingAlert, setPendingAlert] = useState<SmartAlertResult | null>(null);
+  const [pendingTickerAdd, setPendingTickerAdd] = useState<{
+    symbol: string;
+    action: ParsedVoiceAction;
+  } | null>(null);
   const [waitingForWakeWord, setWaitingForWakeWord] = useState(true);
 
   const recognitionRef = useRef<SpeechRecognitionType | null>(null);
