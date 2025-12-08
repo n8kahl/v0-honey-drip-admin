@@ -421,6 +421,37 @@
     animation: flash-positive 2.5s ease-out forwards;
   }
 
+  /* Price flash animations - quick flash for price updates */
+  @keyframes flash-green {
+    0% {
+      color: #22c55e;
+      text-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+    }
+    100% {
+      color: inherit;
+      text-shadow: none;
+    }
+  }
+
+  @keyframes flash-red {
+    0% {
+      color: #ef4444;
+      text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+    }
+    100% {
+      color: inherit;
+      text-shadow: none;
+    }
+  }
+
+  .animate-flash-green {
+    animation: flash-green 0.4s ease-out forwards;
+  }
+
+  .animate-flash-red {
+    animation: flash-red 0.4s ease-out forwards;
+  }
+
   /* Glow ring for confluence disc updates */
   @keyframes disc-update-pulse {
     0% {

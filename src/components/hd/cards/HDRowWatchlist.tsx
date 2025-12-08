@@ -4,7 +4,7 @@ import { X, Wifi, Zap, Activity } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useUIStore } from "../../../stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 import { CompositeSignalBadge } from "../signals/CompositeSignalBadge";
 
@@ -36,10 +36,22 @@ export function HDRowWatchlist({
   const lastUpdateRef = useRef<number>(Date.now());
   const prevPriceRef = useRef<number>(ticker.last);
 
+  // Price flash animation state: 'up' | 'down' | null
+  const [priceFlash, setPriceFlash] = useState<"up" | "down" | null>(null);
+
   useEffect(() => {
     if (ticker.last !== prevPriceRef.current) {
       lastUpdateRef.current = Date.now();
+
+      // Determine flash direction
+      const direction = ticker.last > prevPriceRef.current ? "up" : "down";
+      setPriceFlash(direction);
+
+      // Clear flash after animation (400ms)
+      const timeout = setTimeout(() => setPriceFlash(null), 400);
+
       prevPriceRef.current = ticker.last;
+      return () => clearTimeout(timeout);
     }
   }, [ticker.last]);
 
@@ -210,8 +222,9 @@ export function HDRowWatchlist({
     );
   }
 
-  // No animation per request
-  const pulseClass = "";
+  // Price flash animation class
+  const priceFlashClass =
+    priceFlash === "up" ? "animate-flash-green" : priceFlash === "down" ? "animate-flash-red" : "";
 
   return (
     <div
@@ -219,8 +232,7 @@ export function HDRowWatchlist({
         "w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[48px]",
         "cursor-pointer hover:bg-zinc-800 transition-colors duration-150 ease-out touch-manipulation",
         active && "bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm",
-        isStale && "opacity-60",
-        pulseClass
+        isStale && "opacity-60"
       )}
       data-testid={`watchlist-item-${ticker.symbol}`}
       onClick={() => {
@@ -282,7 +294,15 @@ export function HDRowWatchlist({
 
         <div className="flex flex-col items-end gap-0.5">
           <div className="flex items-baseline gap-1.5">
-            <span className={cn("font-mono text-sm font-medium", priceColor)}>{priceDisplay}</span>
+            <span
+              className={cn(
+                "font-mono text-sm font-medium transition-colors duration-150",
+                priceColor,
+                priceFlashClass
+              )}
+            >
+              {priceDisplay}
+            </span>
             {changePercent !== 0 && (
               <span className={cn("text-[10px] font-mono font-medium", priceColor)}>
                 {changePercent > 0 ? "+" : ""}
