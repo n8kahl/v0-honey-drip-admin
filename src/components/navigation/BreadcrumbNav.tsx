@@ -1,7 +1,5 @@
-'use client';
-
-import React from 'react';
-import { useRouter } from 'next/navigation';
+import React from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -9,12 +7,12 @@ import {
   BreadcrumbLink,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '../ui/breadcrumb';
-import { cn } from '../../lib/utils';
-import { colorTransition } from '../../lib/animations';
-import { focusRing } from '../../lib/a11y';
+} from "../ui/breadcrumb";
+import { cn } from "../../lib/utils";
+import { colorTransition } from "../../lib/animations";
+import { focusRing } from "../../lib/a11y";
 
-export interface BreadcrumbItem {
+export interface BreadcrumbNavItem {
   /**
    * Display label for the breadcrumb
    */
@@ -35,7 +33,7 @@ export interface BreadcrumbNavProps {
   /**
    * Array of breadcrumb items
    */
-  items: BreadcrumbItem[];
+  items: BreadcrumbNavItem[];
 
   /**
    * Custom className for wrapper
@@ -59,12 +57,12 @@ export interface BreadcrumbNavProps {
  *   />
  */
 export function BreadcrumbNav({ items, className }: BreadcrumbNavProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   return (
     <nav
       className={cn(
-        'px-4 py-3 bg-[var(--surface-1)] border-b border-[var(--border-hairline)]',
+        "px-4 py-3 bg-[var(--surface-1)] border-b border-[var(--border-hairline)]",
         className
       )}
     >
@@ -78,14 +76,12 @@ export function BreadcrumbNav({ items, className }: BreadcrumbNavProps) {
               {/* Breadcrumb item */}
               <BreadcrumbItem>
                 {item.isActive || !item.href ? (
-                  <BreadcrumbPage className="text-[var(--text-muted)]">
-                    {item.label}
-                  </BreadcrumbPage>
+                  <BreadcrumbPage className="text-[var(--text-muted)]">{item.label}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink
-                    onClick={() => router.push(item.href!)}
+                    onClick={() => navigate(item.href!)}
                     className={cn(
-                      'cursor-pointer text-[var(--text-high)] hover:text-[var(--brand-primary)] rounded px-1 py-0.5',
+                      "cursor-pointer text-[var(--text-high)] hover:text-[var(--brand-primary)] rounded px-1 py-0.5",
                       colorTransition,
                       focusRing
                     )}
