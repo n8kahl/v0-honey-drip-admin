@@ -12,7 +12,7 @@ import React, { useMemo } from "react";
 import { HDLiveChart } from "./HDLiveChart";
 import { HDChartContainer } from "./HDChartContainer";
 import { TradeMetricsPanel } from "./TradeMetricsPanel";
-import { HDContractMetricsPanel } from "../panels/HDContractMetricsPanel";
+import { HDContractMetricsPanelCompact } from "../panels/HDContractMetricsPanelCompact";
 import type { Trade, TradeState, Ticker } from "../../../types";
 import type { ChartLevel } from "../../../types/tradeLevels";
 import type { KeyLevels } from "../../../lib/riskEngine/types";
@@ -121,40 +121,47 @@ export function HDLiveChartContextAware({
     return chartHeight;
   }, [mode, chartHeight]);
 
-  // Single chart mode: 1m chart with contract metrics panel
+  // Compact chart height for single chart mode (reduced by ~50%)
+  const compactChartHeight = 180;
+
+  // Single chart mode: Side-by-side chart + compact metrics panel
   if (singleChart) {
     return (
       <div className={className}>
-        {/* Single 1m underlying chart with TP/SL levels */}
         <HDChartContainer title="📊 Chart" defaultExpanded={true}>
-          <div className="w-full p-4">
-            <HDLiveChart
-              ticker={chartTicker}
-              initialTimeframe="1"
-              indicators={indicatorConfig}
-              events={[]}
-              levels={showKeyLevels ? levels : []}
-              height={finalChartHeight}
-              className="w-full"
-              showControls={false}
-              showHeader={true}
-              loadDelay={0}
-            />
+          <div className="flex flex-row gap-4 w-full p-4">
+            {/* Left: 1m chart (60% width, reduced height) */}
+            <div className="flex-[3] min-w-0">
+              <HDLiveChart
+                ticker={chartTicker}
+                initialTimeframe="1"
+                indicators={indicatorConfig}
+                events={[]}
+                levels={showKeyLevels ? levels : []}
+                height={compactChartHeight}
+                className="w-full"
+                showControls={false}
+                showHeader={true}
+                loadDelay={0}
+              />
+            </div>
+
+            {/* Right: Compact metrics panel (40% width) */}
+            {(mode === "LOADED" || mode === "BROWSE") && currentTrade?.contract && (
+              <div className="flex-[2] min-w-[180px] max-w-[240px]">
+                <HDContractMetricsPanelCompact
+                  contract={currentTrade.contract}
+                  trade={currentTrade}
+                  underlyingPrice={activeTicker?.last}
+                  keyLevels={keyLevels}
+                  className="h-full"
+                />
+              </div>
+            )}
           </div>
         </HDChartContainer>
 
-        {/* Contract Metrics Panel for LOADED/WATCHING state */}
-        {(mode === "LOADED" || mode === "BROWSE") && currentTrade?.contract && (
-          <HDContractMetricsPanel
-            contract={currentTrade.contract}
-            trade={currentTrade}
-            underlyingPrice={activeTicker?.last}
-            keyLevels={keyLevels}
-            className="mt-4"
-          />
-        )}
-
-        {/* Trade Metrics Panel for ENTERED state (P&L tracking) */}
+        {/* Trade Metrics Panel for ENTERED state (P&L tracking) - below chart */}
         {mode === "ENTERED" && currentTrade && currentTrade.contract && (
           <TradeMetricsPanel
             trade={currentTrade}

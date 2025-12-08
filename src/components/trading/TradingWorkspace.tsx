@@ -75,8 +75,6 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   currentTrade,
   tradeState,
   showAlert,
-  alertType,
-  alertOptions,
   onContractSelect,
   onEnterTrade,
   onDiscard,
@@ -87,13 +85,6 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onAdd,
   onExit,
   compositeSignals,
-  // Alert composer props for animated layout
-  channels,
-  challenges,
-  onSendAlert,
-  onEnterAndAlert,
-  onCancelAlert,
-  onUnload,
   useAnimatedLayout,
 }) => {
   const currentPrice = activeTicker
@@ -255,8 +246,8 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
       {/* Layout for WATCHING (symbol selected) and LOADED states */}
       {(tradeState === "WATCHING" || tradeState === "LOADED") && activeTicker && (
         <>
-          {/* Use animated three-column layout when enabled and alert props available */}
-          {useAnimatedLayout && channels && onSendAlert && onCancelAlert ? (
+          {/* Use animated two-column layout when enabled */}
+          {useAnimatedLayout ? (
             <HDAnimatedTradeLayout
               trade={
                 currentTrade || {
@@ -289,16 +280,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
               currentPrice={currentPrice}
               ticker={activeTicker.symbol}
               activeTicker={activeTicker}
-              showAlert={showAlert}
-              alertType={alertType}
-              alertOptions={alertOptions}
-              channels={channels}
-              challenges={challenges || []}
               onContractSelect={onContractSelect}
-              onSendAlert={onSendAlert}
-              onEnterAndAlert={onEnterAndAlert}
-              onCancelAlert={onCancelAlert}
-              onUnload={onUnload}
               onEnter={onEnterTrade}
               onDiscard={onDiscard}
               recommendation={recommendation}

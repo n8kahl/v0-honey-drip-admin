@@ -48,15 +48,6 @@ export function HDAnimatedTradeLayout({
   onDiscard,
   recommendation,
   kcuSetup,
-  showAlert,
-  alertType,
-  alertOptions,
-  channels,
-  challenges,
-  onSendAlert,
-  onEnterAndAlert,
-  onCancelAlert,
-  onUnload,
 }: HDAnimatedTradeLayoutProps) {
   // Determine if this is a KCU trade
   const isKCUTrade = isKCUSetupType(trade.setupType) && kcuSetup !== undefined;
@@ -70,35 +61,62 @@ export function HDAnimatedTradeLayout({
   // Determine if we have a contract selected (for layout transition)
   const hasContractSelected = Boolean(trade?.contract?.id);
 
-  // Desktop: Three-column when alert is shown
-  // Mobile: Stacked layout with sheet/modal for alert
-  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
+  // Local state for manual toggle of options chain collapse
+  // Auto-collapses when contract selected, but user can toggle back
+  const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
+
+  // Options chain is collapsed when contract selected AND not manually expanded
+  const isOptionsCollapsed = hasContractSelected && !isManuallyExpanded;
+
+  // Toggle handler for clicking the header
+  const handleHeaderClick = () => {
+    if (hasContractSelected) {
+      setIsManuallyExpanded(!isManuallyExpanded);
+    }
+  };
 
   return (
     <div className="flex flex-col lg:flex-row gap-0 px-4 lg:px-6 py-4 lg:py-6 pointer-events-auto relative z-10 h-full">
-      {/* Left Column: Options Chain Grid - Collapses when alert is shown */}
+      {/* Left Column: Options Chain Grid - Collapses when contract selected */}
       <div
         className={cn(
           "border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden flex flex-col transition-all duration-300 ease-in-out flex-shrink-0",
           // Mobile: Full width always
           "w-full",
-          // Desktop: Width based on alert state
-          showAlert && hasContractSelected
-            ? "lg:w-[140px]" // Collapsed width when alert shown
+          // Desktop: Width based on collapse state
+          isOptionsCollapsed
+            ? "lg:w-[140px]" // Collapsed width
             : "lg:w-1/2", // Normal 50% width
           // Height constraints
           "min-h-[300px] lg:min-h-0"
         )}
       >
-        <div className="px-3 py-2 border-b border-gray-700 bg-gray-900/50 flex-shrink-0">
-          <h3
-            className={cn(
-              "text-sm font-semibold text-gray-300 truncate transition-all duration-300",
-              showAlert && hasContractSelected && "lg:text-xs"
+        {/* Clickable header - toggles collapse when contract selected */}
+        <div
+          className={cn(
+            "px-3 py-2 border-b border-gray-700 bg-gray-900/50 flex-shrink-0",
+            hasContractSelected && "cursor-pointer hover:bg-gray-800/50"
+          )}
+          onClick={handleHeaderClick}
+        >
+          <div className="flex items-center justify-between">
+            <h3
+              className={cn(
+                "text-sm font-semibold text-gray-300 truncate transition-all duration-300",
+                isOptionsCollapsed && "lg:text-xs"
+              )}
+            >
+              {isOptionsCollapsed ? "Strikes" : "Options Chain"}
+            </h3>
+            {hasContractSelected && (
+              <ChevronLeft
+                className={cn(
+                  "w-4 h-4 text-gray-400 transition-transform duration-300 hidden lg:block",
+                  !isOptionsCollapsed && "rotate-180"
+                )}
+              />
             )}
-          >
-            {showAlert && hasContractSelected ? "Strikes" : "Options Chain"}
-          </h3>
+          </div>
         </div>
         <div className="overflow-y-auto flex-1">
           {contracts.length > 0 ? (
@@ -109,7 +127,7 @@ export function HDAnimatedTradeLayout({
               onContractSelect={onContractSelect}
               recommendation={recommendation}
               className="text-sm"
-              collapsed={showAlert && hasContractSelected}
+              collapsed={isOptionsCollapsed}
             />
           ) : (
             <div className="flex items-center justify-center p-4 text-gray-400 text-xs h-full">
@@ -119,12 +137,12 @@ export function HDAnimatedTradeLayout({
         </div>
       </div>
 
-      {/* Middle Column: Contract Details + Market Analysis */}
+      {/* Right Column: Contract Details + Market Analysis */}
       <div
         className={cn(
           "overflow-y-auto flex-1 space-y-4 transition-all duration-300 ease-in-out",
           // Padding adjustments
-          showAlert && hasContractSelected ? "lg:px-4" : "lg:pl-6",
+          "lg:pl-6",
           // Mobile: margin top when stacked
           "mt-4 lg:mt-0"
         )}
@@ -147,7 +165,7 @@ export function HDAnimatedTradeLayout({
               onDiscard={onDiscard}
               underlyingPrice={activeTicker?.last}
               underlyingChange={activeTicker?.changePercent}
-              showActions={!showAlert}
+              showActions={true}
             />
           )
         ) : (
@@ -157,43 +175,6 @@ export function HDAnimatedTradeLayout({
             ticker={ticker}
             currentPrice={currentPrice}
             onSelectContract={onContractSelect}
-          />
-        )}
-      </div>
-
-      {/* Right Column: Alert Composer - Slides in from right */}
-      <div
-        className={cn(
-          "border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden flex-shrink-0 transition-all duration-300 ease-in-out",
-          // Desktop: Fixed width, slide from right
-          "lg:w-[400px]",
-          // Transform and opacity for slide animation
-          showAlert && hasContractSelected
-            ? "lg:opacity-100 lg:translate-x-0 lg:ml-4"
-            : "lg:opacity-0 lg:translate-x-full lg:w-0 lg:ml-0 lg:border-0",
-          // Mobile: Full width, show/hide with height
-          "w-full mt-4 lg:mt-0",
-          !showAlert && "hidden lg:block"
-        )}
-        style={{
-          // Ensure smooth transition even when width changes
-          maxWidth: showAlert && hasContractSelected ? "400px" : "0px",
-        }}
-      >
-        {showAlert && trade?.contract && (
-          <HDAlertComposer
-            trade={trade}
-            alertType={alertType}
-            alertOptions={alertOptions}
-            availableChannels={channels}
-            challenges={challenges}
-            onSend={onSendAlert}
-            onEnterAndAlert={onEnterAndAlert}
-            onCancel={onCancelAlert}
-            onUnload={onUnload}
-            underlyingPrice={activeTicker?.last}
-            underlyingChange={activeTicker?.changePercent}
-            className="h-full"
           />
         )}
       </div>
