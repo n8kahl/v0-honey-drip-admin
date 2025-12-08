@@ -42,9 +42,18 @@ export function HDDialogDiscordSettings({
   const [testingChannelId, setTestingChannelId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, "success" | "error">>({});
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ name: string; description: string }>({
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    description: string;
+    isDefaultEnter: boolean;
+    isDefaultExit: boolean;
+    isDefaultUpdate: boolean;
+  }>({
     name: "",
     description: "",
+    isDefaultEnter: true,
+    isDefaultExit: true,
+    isDefaultUpdate: true,
   });
 
   const handleAddChannel = () => {
@@ -102,6 +111,9 @@ export function HDDialogDiscordSettings({
     setEditForm({
       name: channel.name,
       description: channel.description || "",
+      isDefaultEnter: channel.isDefaultEnter ?? true,
+      isDefaultExit: channel.isDefaultExit ?? true,
+      isDefaultUpdate: channel.isDefaultUpdate ?? true,
     });
   };
 
@@ -110,16 +122,31 @@ export function HDDialogDiscordSettings({
       onUpdateChannel(channelId, {
         name: editForm.name.trim(),
         description: editForm.description.trim() || undefined,
+        isDefaultEnter: editForm.isDefaultEnter,
+        isDefaultExit: editForm.isDefaultExit,
+        isDefaultUpdate: editForm.isDefaultUpdate,
       });
       toast.success("Channel updated");
     }
     setEditingChannelId(null);
-    setEditForm({ name: "", description: "" });
+    setEditForm({
+      name: "",
+      description: "",
+      isDefaultEnter: true,
+      isDefaultExit: true,
+      isDefaultUpdate: true,
+    });
   };
 
   const handleCancelEdit = () => {
     setEditingChannelId(null);
-    setEditForm({ name: "", description: "" });
+    setEditForm({
+      name: "",
+      description: "",
+      isDefaultEnter: true,
+      isDefaultExit: true,
+      isDefaultUpdate: true,
+    });
   };
 
   // Get the default channel
@@ -425,6 +452,49 @@ export function HDDialogDiscordSettings({
                           placeholder="Add a description..."
                         />
                       </div>
+
+                      {/* Voice Alert Routing in Edit Mode */}
+                      <div className="space-y-2">
+                        <Label className="text-[var(--text-med)] text-xs">
+                          Voice Alert Routing
+                        </Label>
+                        <div className="flex flex-wrap gap-3 p-3 bg-[var(--surface-3)] rounded border border-[var(--border-hairline)]">
+                          <label className="flex items-center gap-2 text-sm text-[var(--text-high)] cursor-pointer hover:opacity-80 transition-opacity select-none">
+                            <input
+                              type="checkbox"
+                              checked={editForm.isDefaultEnter}
+                              onChange={(e) =>
+                                setEditForm((f) => ({ ...f, isDefaultEnter: e.target.checked }))
+                              }
+                              className="w-4 h-4 rounded accent-[var(--brand-primary)] cursor-pointer"
+                            />
+                            <span>Entry</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-[var(--text-high)] cursor-pointer hover:opacity-80 transition-opacity select-none">
+                            <input
+                              type="checkbox"
+                              checked={editForm.isDefaultExit}
+                              onChange={(e) =>
+                                setEditForm((f) => ({ ...f, isDefaultExit: e.target.checked }))
+                              }
+                              className="w-4 h-4 rounded accent-[var(--brand-primary)] cursor-pointer"
+                            />
+                            <span>Exit</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-[var(--text-high)] cursor-pointer hover:opacity-80 transition-opacity select-none">
+                            <input
+                              type="checkbox"
+                              checked={editForm.isDefaultUpdate}
+                              onChange={(e) =>
+                                setEditForm((f) => ({ ...f, isDefaultUpdate: e.target.checked }))
+                              }
+                              className="w-4 h-4 rounded accent-[var(--brand-primary)] cursor-pointer"
+                            />
+                            <span>Update</span>
+                          </label>
+                        </div>
+                      </div>
+
                       <div className="flex gap-2">
                         <HDButton
                           variant="primary"
@@ -467,6 +537,79 @@ export function HDDialogDiscordSettings({
                             {channel.description}
                           </p>
                         )}
+
+                        {/* Voice Alert Routing */}
+                        <div className="flex flex-wrap gap-3 mb-2 relative z-10">
+                          <label
+                            className="flex items-center gap-1.5 text-[11px] text-[var(--text-high)] cursor-pointer hover:opacity-80 transition-opacity select-none"
+                            style={{ pointerEvents: "auto" }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={channel.isDefaultEnter ?? true}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                if (onUpdateChannel) {
+                                  onUpdateChannel(channel.id, { isDefaultEnter: e.target.checked });
+                                  toast.success(
+                                    `${e.target.checked ? "Enabled" : "Disabled"} entry alerts for #${channel.name}`
+                                  );
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-3.5 h-3.5 rounded accent-[var(--brand-primary)] cursor-pointer"
+                              style={{ pointerEvents: "auto" }}
+                            />
+                            <span>Entry</span>
+                          </label>
+                          <label
+                            className="flex items-center gap-1.5 text-[11px] text-[var(--text-high)] cursor-pointer hover:opacity-80 transition-opacity select-none"
+                            style={{ pointerEvents: "auto" }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={channel.isDefaultExit ?? true}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                if (onUpdateChannel) {
+                                  onUpdateChannel(channel.id, { isDefaultExit: e.target.checked });
+                                  toast.success(
+                                    `${e.target.checked ? "Enabled" : "Disabled"} exit alerts for #${channel.name}`
+                                  );
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-3.5 h-3.5 rounded accent-[var(--brand-primary)] cursor-pointer"
+                              style={{ pointerEvents: "auto" }}
+                            />
+                            <span>Exit</span>
+                          </label>
+                          <label
+                            className="flex items-center gap-1.5 text-[11px] text-[var(--text-high)] cursor-pointer hover:opacity-80 transition-opacity select-none"
+                            style={{ pointerEvents: "auto" }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={channel.isDefaultUpdate ?? true}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                if (onUpdateChannel) {
+                                  onUpdateChannel(channel.id, {
+                                    isDefaultUpdate: e.target.checked,
+                                  });
+                                  toast.success(
+                                    `${e.target.checked ? "Enabled" : "Disabled"} update alerts for #${channel.name}`
+                                  );
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-3.5 h-3.5 rounded accent-[var(--brand-primary)] cursor-pointer"
+                              style={{ pointerEvents: "auto" }}
+                            />
+                            <span>Update</span>
+                          </label>
+                        </div>
+
                         <div className="text-xs text-[var(--text-muted)] font-mono break-all">
                           {channel.webhookUrl.slice(0, 50)}...
                         </div>
