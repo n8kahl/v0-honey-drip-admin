@@ -90,7 +90,7 @@ let pendingMacroFetch: Promise<MacroContext> | null = null;
 const MACRO_CACHE_TTL = 30_000; // 30 seconds
 
 // Global refresh interval - shared across ALL hook instances
-let globalRefreshInterval: ReturnType<typeof setInterval> | null = null;
+const globalRefreshInterval: ReturnType<typeof setInterval> | null = null;
 let subscriberCount = 0;
 
 async function refreshMacroContext() {
@@ -163,7 +163,7 @@ export function useMacroContext(refreshInterval: number = 30000): {
       subscriberCount--;
       console.log(`[useMacroContext] Subscriber count: ${subscriberCount}`);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []); // Only run on mount/unmount
 
   const manualRefresh = useCallback(async () => {

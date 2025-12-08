@@ -106,6 +106,12 @@ interface OpenAIResponse {
 export async function parseVoiceWithOpenAI(transcript: string): Promise<ParsedVoiceAction | null> {
   try {
     console.warn("[v0] OpenAI: Parsing transcript:", transcript);
+    
+    // Skip if transcript is too short or empty
+    if (!transcript || transcript.trim().length < 3) {
+      console.warn("[v0] OpenAI: Transcript too short, skipping");
+      return { type: "unknown", ticker: "", price: 0 };
+    }
 
     const response = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
@@ -147,6 +153,9 @@ export async function parseVoiceWithOpenAI(transcript: string): Promise<ParsedVo
     };
   } catch (error) {
     console.error("[v0] OpenAI parsing failed:", error);
+    if (error instanceof Error) {
+      console.error("[v0] OpenAI error message:", error.message);
+    }
     return null;
   }
 }

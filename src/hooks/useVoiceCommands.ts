@@ -1026,11 +1026,19 @@ export function useVoiceCommands({
 
       // Try OpenAI first if available, fall back to regex parsing
       let action: ParsedVoiceAction;
-      if (isOpenAIAvailable()) {
-        console.warn("[v0] Using OpenAI for parsing...");
+      const hasOpenAI = isOpenAIAvailable();
+      console.warn("[v0] OpenAI available:", hasOpenAI);
+      
+      if (hasOpenAI) {
+        console.warn("[v0] Using OpenAI for parsing transcript:", text);
         const openAIAction = await parseVoiceWithOpenAI(text);
-        action = openAIAction || parseVoiceCommand(text);
-        console.warn("[v0] OpenAI parsed action:", action);
+        if (openAIAction) {
+          console.warn("[v0] OpenAI successfully parsed:", openAIAction);
+          action = openAIAction;
+        } else {
+          console.warn("[v0] OpenAI parsing failed, falling back to regex");
+          action = parseVoiceCommand(text);
+        }
       } else {
         console.warn("[v0] Using regex parsing (OpenAI not available)");
         action = parseVoiceCommand(text);
@@ -1061,9 +1069,13 @@ export function useVoiceCommands({
         // Continue to process the command below
       }
       if (action.type === "unknown") {
-        console.warn("[v0] Unknown command");
+        console.warn("[v0] Unknown command. Transcript:", text);
+        console.warn("[v0] Parsed action:", action);
         setHudState("error");
-        setError("Try: 'Enter SPY' or 'Trim current trade'");
+        const errorMsg = text.length < 3 
+          ? "I didn't hear anything. Please try again."
+          : `Didn't understand: '${text}'. Try 'Enter SPY' or 'Add GOOGL'`;
+        setError(errorMsg);
         speak("Command not recognized");
         return;
       }

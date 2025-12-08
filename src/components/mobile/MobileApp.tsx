@@ -13,8 +13,7 @@ import { useTradeStore, useMarketStore, useSettingsStore } from "../../stores";
 import { useVoiceCommands } from "../../hooks/useVoiceCommands";
 import { useDiscord } from "../../hooks/useDiscord";
 import { useAuth } from "../../contexts/AuthContext";
-import { Trade, AlertType, Contract, Ticker } from "../../types";
-import { inferTradeTypeByDTE } from "../../lib/riskEngine";
+import { Trade, AlertType, Contract, Ticker, TradeType } from "../../types";
 import { toast } from "sonner";
 
 interface MobileAppProps {
@@ -144,12 +143,20 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     }
   };
 
+  // Helper to infer trade type from DTE
+  const getTradeType = (daysToExpiry: number): TradeType => {
+    if (daysToExpiry <= 1) return "Scalp";
+    if (daysToExpiry <= 7) return "Day";
+    if (daysToExpiry <= 30) return "Swing";
+    return "LEAP";
+  };
+
   // Handle contract selection - create LOADED trade and open alert sheet
   const handleContractSelect = (contract: Contract) => {
     if (!contractSheetTicker || !user) return;
 
     // Calculate TP/SL based on trade type
-    const tradeType = inferTradeTypeByDTE(contract.expiry);
+    const tradeType = getTradeType(contract.daysToExpiry || 0);
     const tpMultiplier = tradeType === "Scalp" ? 1.3 : tradeType === "Day" ? 1.5 : 2.0;
     const slMultiplier = tradeType === "Scalp" ? 0.7 : tradeType === "Day" ? 0.5 : 0.3;
 
@@ -168,8 +175,9 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       updates: [],
     };
 
-    // Add to active trades
-    useTradeStore.getState().addTrade(newTrade);
+    // Add to active trades (in-memory, will persist on entry)
+    const currentTrades = useTradeStore.getState().activeTrades;
+    useTradeStore.getState().setActiveTrades([...currentTrades, newTrade]);
 
     // Close contract sheet and open alert sheet
     setContractSheetOpen(false);

@@ -185,7 +185,11 @@ export class GammaExposureEngine {
         .single();
 
       if (error || !data) {
-        console.warn(`[GammaExposureEngine] No gamma data for ${symbol}:`, error?.message);
+        // Silently return null for missing table (406) or no data
+        // Only warn for unexpected errors
+        if (error?.code !== "PGRST116" && error?.message?.includes("does not exist") === false) {
+          console.warn(`[GammaExposureEngine] No gamma data for ${symbol}:`, error?.message);
+        }
         return null;
       }
 

@@ -152,8 +152,7 @@ export const useTradeStore = create<TradeStore>()(
       updateTrade: async (tradeId, updates) => {
         set({ isLoading: true, error: null });
         try {
-          await dbUpdateTrade(tradeId, updates as any);
-
+          // First update local state
           set((state) => ({
             activeTrades: state.activeTrades.map((t) =>
               t.id === tradeId ? { ...t, ...updates } : t
@@ -167,6 +166,17 @@ export const useTradeStore = create<TradeStore>()(
                 : state.currentTrade,
             isLoading: false,
           }));
+
+          // Try to update database (may fail for in-memory trades)
+          // This is a best-effort update - don't fail if trade not in DB
+          try {
+            await dbUpdateTrade(tradeId, updates as any);
+          } catch (dbError: any) {
+            // Only log if not a "not found" error (trade may be in-memory only)
+            if (!dbError?.message?.includes("No rows") && !dbError?.code?.includes("PGRST116")) {
+              console.warn("[TradeStore] DB update failed (trade may be in-memory only):", dbError);
+            }
+          }
         } catch (error) {
           console.error("[TradeStore] Failed to update trade:", error);
           set({ error: "Failed to update trade", isLoading: false });
@@ -176,14 +186,23 @@ export const useTradeStore = create<TradeStore>()(
       deleteTrade: async (tradeId) => {
         set({ isLoading: true, error: null });
         try {
-          await dbDeleteTrade(tradeId);
-
+          // First remove from local state
           set((state) => ({
             activeTrades: state.activeTrades.filter((t) => t.id !== tradeId),
             historyTrades: state.historyTrades.filter((t) => t.id !== tradeId),
             currentTrade: state.currentTrade?.id === tradeId ? null : state.currentTrade,
             isLoading: false,
           }));
+
+          // Try to delete from database (may fail for in-memory trades)
+          try {
+            await dbDeleteTrade(tradeId);
+          } catch (dbError: any) {
+            // Only log if not a "not found" error (trade may be in-memory only)
+            if (!dbError?.message?.includes("No rows") && !dbError?.code?.includes("PGRST116")) {
+              console.warn("[TradeStore] DB delete failed (trade may be in-memory only):", dbError);
+            }
+          }
         } catch (error) {
           console.error("[TradeStore] Failed to delete trade:", error);
           set({ error: "Failed to delete trade", isLoading: false });
@@ -384,9 +403,9 @@ export const useTradeStore = create<TradeStore>()(
               "x-user-id": userId,
             },
             body: JSON.stringify({
-              action: update.type,
+              type: update.type,
               price: update.price,
-              notes: update.message || "",
+              message: update.message || "",
             }),
           });
 

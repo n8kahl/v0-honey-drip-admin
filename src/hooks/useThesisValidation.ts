@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Trade, SetupConditions } from "../types";
 import { useMacroContext } from "./useIndicesAdvanced";
 import { useKeyLevels } from "./useKeyLevels";
+import { normalizeSymbolForAPI } from "../lib/symbolUtils";
 
 interface ThesisValidationResult {
   isValid: boolean;
@@ -74,12 +75,8 @@ export function useThesisValidation(trade: Trade | null): ThesisValidationResult
   // Get current macro context
   const { macro } = useMacroContext(30000);
 
-  // Get current key levels for the underlying
-  const underlyingTicker = trade?.ticker?.startsWith("I:")
-    ? trade.ticker
-    : trade?.ticker
-      ? `I:${trade.ticker}`
-      : "";
+  // Get current key levels for the underlying (properly normalize for API)
+  const underlyingTicker = trade?.ticker ? normalizeSymbolForAPI(trade.ticker) : "";
   const { keyLevels } = useKeyLevels(underlyingTicker, {
     timeframe: "5",
     lookbackDays: 5,

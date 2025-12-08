@@ -388,7 +388,7 @@ class OptionsAdvancedManager {
 
           if (!Array.isArray(results) || results.length === 0) return;
 
-          let lastTs = this.lastRestTradeTimestamp.get(pollKey) ?? 0;
+          const lastTs = this.lastRestTradeTimestamp.get(pollKey) ?? 0;
           let maxTs = lastTs;
 
           for (const r of results as any[]) {

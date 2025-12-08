@@ -66,24 +66,31 @@ export async function ingestHistoricalGreeks(
     }
 
     // Extract underlying price from first contract's underlying_asset (Massive.com API format)
-    // The underlying_price is NOT at the top level, it's in each contract's underlying_asset.price
+    // Per Massive docs: underlying_asset object contains market data for the underlying
     const firstContract = chain.contracts[0];
+    
+    // Try multiple fields based on Massive API response structure
     const underlyingPrice =
-      chain.underlying_price ??
       firstContract?.underlying_asset?.price ??
       firstContract?.underlying_asset?.last_updated_price ??
+      firstContract?.underlying_asset?.last?.price ??
+      firstContract?.underlying_asset?.prevDay?.c ??
       null;
 
     if (underlyingPrice === null) {
+      console.warn(`[v0] Could not extract underlying price for ${symbol}. First contract underlying_asset:`, 
+        JSON.stringify(firstContract?.underlying_asset, null, 2));
       return {
         success: false,
         symbol,
         contractsProcessed: 0,
         contractsStored: 0,
         timestamp,
-        error: "Could not determine underlying price from options chain",
+        error: `Could not determine underlying price from options chain. Checked fields: underlying_asset.price, .last_updated_price, .last.price, .prevDay.c`,
       };
     }
+    
+    console.log(`[v0] ✅ Extracted underlying price for ${symbol}: $${underlyingPrice}`);
 
     // Map contracts to Greeks records (filter out invalid contracts)
     // Massive.com API structure: contract.details contains ticker, strike_price, expiration_date, contract_type

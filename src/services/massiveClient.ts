@@ -1,4 +1,5 @@
 import { massiveFetch } from '../lib/massive/proxy';
+import { isIndex } from '../lib/symbolUtils';
 
 // Massive.com API client for market data
 // Read-only market data service - no trading/order routing
@@ -8,6 +9,7 @@ const MASSIVE_API_BASE = '/api/massive';
 // Massive options APIs already expect the contract identifier (`O:...`).
 
 // Helper to map ticker to Massive index symbol
+// Only adds I: prefix for known index symbols, not stocks
 function mapToIndexSymbol(ticker: string): string {
   const t = ticker.toUpperCase();
   const indexMap: Record<string, string> = {
@@ -15,10 +17,19 @@ function mapToIndexSymbol(ticker: string): string {
     'SPY': 'I:SPX', // route SPY to underlying index
     'QQQ': 'I:NDX', // route QQQ to underlying index
     'NDX': 'I:NDX',
+    'VIX': 'I:VIX',
     'IWM': 'I:RUT', // Russell 2000 index
+    'RUT': 'I:RUT',
     'DIA': 'I:DJI', // Dow Jones Industrial Average
+    'DJI': 'I:DJI',
   };
-  return indexMap[t] || `I:${t}`;
+  // Return from explicit map first
+  if (indexMap[t]) {
+    return indexMap[t];
+  }
+  // For unknown symbols, only add I: if it's a known index, otherwise return as-is
+  // This prevents treating stock tickers like SOFI as indices
+  return isIndex(t) ? `I:${t}` : t;
 }
 
 // Helper to construct option symbol in O:TICKER format

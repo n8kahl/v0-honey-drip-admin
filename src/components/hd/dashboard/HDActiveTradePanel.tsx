@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Trade, TradeType } from "../../../types";
 import { cn, formatPrice, formatPercent } from "../../../lib/utils";
+import { normalizeSymbolForAPI, isIndex } from "../../../lib/symbolUtils";
 import {
   TrendingUp,
   TrendingDown,
@@ -236,8 +237,8 @@ export function HDActiveTradePanel({
     trade.entryPrice || trade.contract.mid
   );
 
-  // Get key levels for underlying
-  const underlyingTicker = trade.ticker.startsWith("I:") ? trade.ticker : `I:${trade.ticker}`;
+  // Get key levels for underlying (only for indices, not stocks)
+  const underlyingTicker = normalizeSymbolForAPI(trade.ticker);
   const { keyLevels } = useKeyLevels(underlyingTicker, {
     timeframe: "5",
     lookbackDays: 5,

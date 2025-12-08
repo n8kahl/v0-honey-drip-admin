@@ -59,7 +59,14 @@ export class MassiveHub {
 
     this.upstream.once('open', () => {
       this.upstreamOpen = true;
-      this.sendUpstream({ action: 'auth', params: apiKey });
+      console.log(`${logPrefix} Upstream connected, sending auth...`);
+      
+      // Per Massive WebSocket Quickstart: {"action":"auth","params":"<apikey>"}
+      const authMsg = { action: 'auth', params: apiKey };
+      console.log(`${logPrefix} Auth message structure:`, JSON.stringify({ action: 'auth', params: apiKey ? `${apiKey.slice(0, 8)}...` : 'MISSING' }));
+      
+      this.sendUpstream(authMsg);
+      
       this.heartbeat = setInterval(() => {
         try {
           this.upstream?.ping();
@@ -79,15 +86,18 @@ export class MassiveHub {
 
       try {
         const arr = JSON.parse(textData);
+        console.log(`${logPrefix} Received upstream message:`, JSON.stringify(arr).slice(0, 200));
+        
         const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === 'status') : undefined;
         if (statusMsg?.status === 'auth_success') {
+          console.log(`${logPrefix} ✅ Authentication successful!`);
           this.upstreamAuthd = true;
           this.flushQueuedTopics();
         }
       } catch {}
     });
 
-    this.upstream.on('close', (code) => {
+    this.upstream.on('close', (code, reason) => {
       if (this.heartbeat) {
         clearInterval(this.heartbeat);
         this.heartbeat = undefined;
@@ -97,9 +107,26 @@ export class MassiveHub {
       for (const client of this.clients) {
         try {
           client.ws.close(code);
-        } catch {}
+        } catch {
+          // Ignore send errors
+        }
       }
-      console.warn(`${logPrefix} upstream closed`, code);
+      
+      const reasonText = reason ? reason.toString('utf-8') : 'No reason provided';
+      console.warn(`${logPrefix} upstream closed with code ${code}: ${reasonText}`);
+      
+      if (code === 1008) {
+        console.error(`${logPrefix} ❌ Code 1008 = Policy Violation. Possible causes:
+  1. Invalid API key format or expired key
+  2. Insufficient permissions (need OPTIONS ADVANCED or INDICES ADVANCED tier)
+  3. WebSocket endpoint mismatch (check ${upstreamUrl})
+  4. Authentication message rejected
+  
+  Current API key: ${apiKey ? apiKey.slice(0, 12) + '...' : 'MISSING'}
+  Authenticated before close: ${this.upstreamAuthd}
+  
+  Check Massive dashboard: https://massive.com/dashboard/keys`);
+      }
     });
 
     this.upstream.on('error', (err) => {

@@ -256,7 +256,7 @@ export async function gatherMacroContext(): Promise<MacroContext> {
   // Correlation analysis skipped since we don't fetch individual stock snapshots
   // from Massive (no stocks endpoint subscription). Stock data flows via /api/quotes
   // but correlation analysis requires historical change data not available there yet.
-  let correlation: MacroContext['correlation'] | undefined = undefined;
+  const correlation: MacroContext['correlation'] | undefined = undefined;
 
   // Sector Rotation Analysis (heuristic based on SPY vs QQQ)
   let sectorRotation: MacroContext['sectorRotation'] | undefined = undefined;
