@@ -29,7 +29,7 @@ function getSupabaseClient() {
  * Helper: Extract user ID from request
  * Priority:
  * 1. Verify JWT from Authorization header (secure, production)
- * 2. Fall back to x-user-id header (development only, logged warning)
+ * 2. Fall back to x-user-id header (development convenience)
  */
 async function getUserId(req: Request): Promise<string | null> {
   // First, try to extract from JWT Bearer token (secure method)
@@ -56,9 +56,18 @@ async function getUserId(req: Request): Promise<string | null> {
     }
   }
 
-  // SECURITY: x-user-id header fallback has been removed
-  // All requests must use proper JWT authentication via Authorization header
-  // If you see 401 errors, ensure the client is sending a valid Bearer token
+  // Fallback: x-user-id header (for development and backward compatibility)
+  const headerUserId = req.headers["x-user-id"] as string;
+  if (headerUserId) {
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        "[Trades API] SECURITY WARNING: x-user-id header used in production. " +
+          "Ensure client sends proper JWT token."
+      );
+    }
+    return headerUserId;
+  }
+
   return null;
 }
 

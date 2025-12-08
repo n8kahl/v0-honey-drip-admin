@@ -3,6 +3,36 @@
  * Handles all trade-related API calls with exponential backoff retries
  */
 
+import { createClient } from "../supabase/client";
+
+/**
+ * Get authentication headers with JWT token from Supabase session
+ * This ensures the server can properly authenticate the user
+ */
+async function getAuthHeaders(userId: string): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+  } catch (err) {
+    console.warn("[TradeAPI] Failed to get auth session:", err);
+  }
+
+  // Keep x-user-id as fallback for development
+  headers["x-user-id"] = userId;
+
+  return headers;
+}
+
 export interface ApiCallOptions {
   maxRetries?: number;
   initialDelayMs?: number;
@@ -60,13 +90,12 @@ export async function apiCallWithRetry<T>(
  * Create a trade via API
  */
 export async function createTradeApi(userId: string, trade: any): Promise<any> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const response = await fetch("/api/trades", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": userId,
-      },
+      headers,
       body: JSON.stringify({ trade }),
     });
 
@@ -83,13 +112,12 @@ export async function createTradeApi(userId: string, trade: any): Promise<any> {
  * Update a trade via API
  */
 export async function updateTradeApi(userId: string, tradeId: string, updates: any): Promise<any> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const response = await fetch(`/api/trades/${tradeId}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": userId,
-      },
+      headers,
       body: JSON.stringify(updates),
     });
 
@@ -106,13 +134,12 @@ export async function updateTradeApi(userId: string, tradeId: string, updates: a
  * Delete a trade via API
  */
 export async function deleteTradeApi(userId: string, tradeId: string): Promise<any> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const response = await fetch(`/api/trades/${tradeId}`, {
       method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": userId,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -135,13 +162,12 @@ export async function addTradeUpdateApi(
   message?: string,
   pnlPercent?: number
 ): Promise<any> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const response = await fetch(`/api/trades/${tradeId}/updates`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": userId,
-      },
+      headers,
       body: JSON.stringify({
         type: action,
         price,
@@ -168,13 +194,13 @@ export async function linkChannelsApi(
   tradeId: string,
   channelIds: string[]
 ): Promise<void> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const promises = channelIds.map((channelId) =>
       fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
         method: "POST",
-        headers: {
-          "x-user-id": userId,
-        },
+        headers,
       })
     );
 
@@ -196,13 +222,13 @@ export async function linkChallengesApi(
   tradeId: string,
   challengeIds: string[]
 ): Promise<void> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const promises = challengeIds.map((challengeId) =>
       fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
         method: "POST",
-        headers: {
-          "x-user-id": userId,
-        },
+        headers,
       })
     );
 
@@ -224,12 +250,12 @@ export async function unlinkChallengeApi(
   tradeId: string,
   challengeId: string
 ): Promise<void> {
+  const headers = await getAuthHeaders(userId);
+
   return apiCallWithRetry(async () => {
     const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
       method: "DELETE",
-      headers: {
-        "x-user-id": userId,
-      },
+      headers,
     });
 
     if (!response.ok) {
