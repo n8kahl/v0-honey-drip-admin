@@ -29,7 +29,7 @@ import {
   linkChannelsApi,
   linkChallengesApi,
 } from "../lib/api/tradeApi";
-import { recordAlertHistory } from "../lib/supabase/database";
+import { getTrades, recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
 
