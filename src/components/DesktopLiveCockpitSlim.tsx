@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { Trade, Ticker, Challenge, DiscordChannel } from "../types";
 import { HDPanelWatchlist } from "./hd/dashboard/HDPanelWatchlist";
 import { HDVoiceHUD } from "./hd/voice/HDVoiceHUD";
+import { FloatingVoiceButton } from "./hd/voice/FloatingVoiceButton";
 import { HDDialogChallengeDetail } from "./hd/forms/HDDialogChallengeDetail";
 import { HDMacroPanel } from "./hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "./hd/layout/HDWatchlistRail";
@@ -376,6 +377,20 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
       <div className="lg:hidden">
         <MobileWatermark />
       </div>
+
+      {/* Floating Voice Button - Always Visible */}
+      <FloatingVoiceButton
+        isListening={voice.isListening}
+        isProcessing={voice.hudState === "processing"}
+        waitingForWakeWord={voice.waitingForWakeWord}
+        onToggle={() => {
+          if (voice.isListening) {
+            voice.stopListening();
+          } else {
+            voice.startListening();
+          }
+        }}
+      />
     </>
   );
 }
