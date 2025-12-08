@@ -56,17 +56,9 @@ async function getUserId(req: Request): Promise<string | null> {
     }
   }
 
-  // Fallback: Accept x-user-id header (for backwards compatibility)
-  // In production, this should be disabled or heavily rate-limited
-  const userId = req.headers["x-user-id"] as string;
-  if (userId) {
-    console.warn(
-      `[Trades API] Using unverified x-user-id header for user ${userId.slice(0, 8)}... ` +
-        "Consider migrating to JWT authentication"
-    );
-    return userId;
-  }
-
+  // SECURITY: x-user-id header fallback has been removed
+  // All requests must use proper JWT authentication via Authorization header
+  // If you see 401 errors, ensure the client is sending a valid Bearer token
   return null;
 }
 

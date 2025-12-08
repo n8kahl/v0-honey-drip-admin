@@ -327,7 +327,7 @@ router.post("/discord/webhook", async (req, res) => {
     }
   } catch (error: any) {
     console.error("[API] Discord webhook proxy error:", error);
-    return res.status(500).json({ error: "Internal server error", message: error.message });
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -440,7 +440,7 @@ router.get("/massive/tradier/stocks/bars", requireProxyToken, async (req, res) =
     });
   } catch (error: any) {
     console.error("[Tradier] ❌ Stock bars error for", symbol, ":", error.message || error);
-    res.status(502).json({ error: error?.message || "Tradier API error" });
+    res.status(502).json({ error: "External API error" });
   }
 });
 
@@ -637,19 +637,23 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
       oi?: number;
     };
 
-    // 3) Fetch contract pages per expiration and normalize
+    // 3) Fetch contract pages per expiration and normalize (parallel to avoid N+1)
     let normalized: Norm[] = [];
     if (useTradier) {
-      for (const date of expirations) {
-        const norms = await tradierGetNormalizedForExpiration(symbol, date, today);
+      const normsArrays = await Promise.all(
+        expirations.map((date) => tradierGetNormalizedForExpiration(symbol, date, today))
+      );
+      for (const norms of normsArrays) {
         normalized.push(...(norms as any as Norm[]));
       }
     } else {
+      const snapshots = await Promise.all(
+        expirations.map((date) =>
+          getOptionChain(symbol.replace(/^I:/, ""), 250, { expiration_date: date })
+        )
+      );
       const pages: any[] = [];
-      for (const date of expirations) {
-        const snap = await getOptionChain(symbol.replace(/^I:/, ""), 250, {
-          expiration_date: date,
-        });
+      for (const snap of snapshots) {
         const arr = Array.isArray(snap?.results) ? snap.results : [];
         pages.push(...arr);
       }
@@ -1453,10 +1457,7 @@ router.post("/backfill/trigger", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("[Backfill] Trigger failed:", error);
-    res.status(500).json({
-      error: "Failed to trigger backfill",
-      message: error.message,
-    });
+    res.status(500).json({ error: "Failed to trigger backfill" });
   }
 });
 
@@ -1514,7 +1515,7 @@ router.get("/backfill/status", async (req: Request, res: Response) => {
     res.json({ status });
   } catch (error: any) {
     console.error("[Backfill] Status check failed:", error);
-    res.status(500).json({ error: "Failed to check status", message: error.message });
+    res.status(500).json({ error: "Failed to check status" });
   }
 });
 

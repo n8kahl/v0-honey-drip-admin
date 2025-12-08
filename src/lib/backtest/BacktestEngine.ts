@@ -9,7 +9,19 @@
  * - Profit factor
  * - Regime-specific performance
  * - Time-of-day performance
+ *
+ * IMPORTANT: This module is SERVER-SIDE ONLY and uses SUPABASE_SERVICE_ROLE_KEY.
+ * It should NEVER be imported in browser/frontend code bundled by Vite.
+ * The service role key bypasses Row Level Security (RLS) and must be kept secret.
  */
+
+// Runtime check to prevent accidental browser usage
+if (typeof window !== "undefined") {
+  throw new Error(
+    "BacktestEngine is server-only and cannot be used in browser. " +
+      "Do not import this module in frontend code."
+  );
+}
 
 import type { OpportunityDetector } from "../composite/OpportunityDetector";
 import type { SymbolFeatures } from "../strategy/engine";

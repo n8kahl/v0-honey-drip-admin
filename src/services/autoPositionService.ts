@@ -93,7 +93,7 @@ class AutoPositionManager {
   addRule(rule: Omit<AutoRule, 'id' | 'createdAt' | 'lastChecked' | 'triggeredCount'>): string {
     const newRule: AutoRule = {
       ...rule,
-      id: `rule-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `rule-${crypto.randomUUID()}`,
       createdAt: Date.now(),
       lastChecked: 0,
       triggeredCount: 0,
@@ -253,7 +253,7 @@ class AutoPositionManager {
     }
 
     const action: AutoAction = {
-      id: `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `action-${crypto.randomUUID()}`,
       ruleId: rule.id,
       tradeId: trade.id,
       ticker: trade.ticker,
