@@ -27,7 +27,6 @@ import { createClient } from "@supabase/supabase-js";
 import { CompositeScanner } from "../../src/lib/composite/CompositeScanner.js";
 import type { CompositeSignal } from "../../src/lib/composite/CompositeSignal.js";
 import { buildSymbolFeatures, type TimeframeKey } from "../../src/lib/strategy/featuresBuilder.js";
-import { getIndexAggregates } from "../massive/client.js";
 import {
   insertCompositeSignal,
   expireOldSignals,
@@ -38,6 +37,7 @@ import { OPTIMIZED_SCANNER_CONFIG } from "../../src/lib/composite/OptimizedScann
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
+import { fetchBarsForRange } from "./lib/barProvider.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -126,14 +126,6 @@ const stats: ScanStatistics = {
   signalsByType: {},
   signalsBySymbol: {},
 };
-
-/**
- * Helper to determine if a symbol is an index vs equity
- */
-function isIndexSymbol(symbol: string): boolean {
-  const normalized = symbol.toUpperCase().replace(/^I:/, "");
-  return /^(SPX|NDX|DJI|VIX|RUT|RVX)$/.test(normalized);
-}
 
 /**
  * Helper to normalize symbol for Massive API calls
@@ -249,30 +241,28 @@ async function fetchSymbolFeatures(
 ): Promise<ReturnType<typeof buildSymbolFeatures> | null> {
   try {
     const normalized = normalizeSymbol(symbol);
-    const isIndex = isIndexSymbol(symbol);
+
+    let rawBars: any[] = [];
+    let usedDatabase = false;
+    let provider = "unknown";
 
     // Fetch bars (last 200 5-minute bars = ~16 hours of trading)
     const to = new Date().toISOString().split("T")[0]; // Today
     const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]; // 7 days ago
 
-    let rawBars: any[] = [];
-    let usedDatabase = false;
-
-    // Try Massive.com API first
+    // Provider-aware fetch (Massive for indices, Tradier for equities)
     try {
-      if (isIndex) {
-        // Fetch index aggregates
-        const ticker = `I:${normalized}`;
-        rawBars = await getIndexAggregates(ticker, 5, "minute", from, to);
-      } else {
-        // For equities, use same endpoint (works for both)
-        rawBars = await getIndexAggregates(normalized, 5, "minute", from, to);
-      }
+      const result = await fetchBarsForRange(symbol, 5, "minute", 7);
+      rawBars = result.bars;
+      provider = result.source;
+      console.log(
+        `[Composite Scanner] Provider ${provider} returned ${rawBars.length} bars for ${symbol}`
+      );
     } catch (err: any) {
       // On 429 rate limit or any API error, try database fallback immediately
       const is429 = err?.message?.includes("429") || err?.status === 429;
       console.warn(
-        `[Composite Scanner] ${is429 ? "Rate limit hit" : "API error"} for ${symbol}, trying database fallback...`
+        `[Composite Scanner] ${is429 ? "Rate limit hit" : "API error"} for ${symbol} from provider ${provider}, trying database fallback...`
       );
       rawBars = []; // Trigger database fallback below
     }
@@ -280,7 +270,7 @@ async function fetchSymbolFeatures(
     // Database fallback: If Massive API failed or returned insufficient data
     if (rawBars.length < 20) {
       console.log(
-        `[Composite Scanner] Massive API returned ${rawBars.length} bars for ${symbol}, falling back to database...`
+        `[Composite Scanner] Provider ${provider} returned ${rawBars.length} bars for ${symbol}, falling back to database...`
       );
 
       const fromTimestamp = new Date(from).getTime();

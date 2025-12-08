@@ -13,47 +13,31 @@
  * - Graceful error handling with continued operation
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { scanStrategiesForUser } from '../../src/lib/strategy/scanner.js';
-import { buildSymbolFeatures, type TimeframeKey } from '../../src/lib/strategy/featuresBuilder.js';
-import { getIndexAggregates, getOptionChain, getIndicesSnapshot } from '../massive/client.js';
-import { sendStrategySignalToDiscord } from '../../src/lib/discord/strategyAlerts.js';
-import type { Bar } from '../../src/lib/strategy/patternDetection.js';
-import { fileURLToPath } from 'url';
+import { createClient } from "@supabase/supabase-js";
+import { scanStrategiesForUser } from "../../src/lib/strategy/scanner.js";
+import { buildSymbolFeatures, type TimeframeKey } from "../../src/lib/strategy/featuresBuilder.js";
+import { sendStrategySignalToDiscord } from "../../src/lib/discord/strategyAlerts.js";
+import type { Bar } from "../../src/lib/strategy/patternDetection.js";
+import { fileURLToPath } from "url";
+import { fetchBarsForRange } from "./lib/barProvider.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
 const BARS_TO_FETCH = 200; // Fetch last 200 bars for pattern detection
-const PRIMARY_TIMEFRAME: TimeframeKey = '5m';
+const PRIMARY_TIMEFRAME: TimeframeKey = "5m";
 
 // Supabase client with service role key for server-side operations
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('[Scanner Worker] Missing required environment variables:');
-  if (!SUPABASE_URL) console.error('  - VITE_SUPABASE_URL');
-  if (!SUPABASE_SERVICE_ROLE_KEY) console.error('  - SUPABASE_SERVICE_ROLE_KEY');
+  console.error("[Scanner Worker] Missing required environment variables:");
+  if (!SUPABASE_URL) console.error("  - VITE_SUPABASE_URL");
+  if (!SUPABASE_SERVICE_ROLE_KEY) console.error("  - SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-/**
- * Helper to determine if a symbol is an index vs equity
- */
-function isIndexSymbol(symbol: string): boolean {
-  const normalized = symbol.toUpperCase().replace(/^I:/, '');
-  return /^(SPX|NDX|DJI|VIX|RUT|RVX)$/.test(normalized);
-}
-
-/**
- * Helper to normalize symbol for Massive API calls
- */
-function normalizeSymbol(symbol: string): string {
-  // Remove I: prefix if present
-  return symbol.replace(/^I:/, '').toUpperCase();
-}
 
 /**
  * Calculate indicator values from bars (simplified version for server-side)
@@ -100,7 +84,7 @@ function calculateIndicators(bars: Bar[]) {
 
     if (avgLoss === 0) return 100;
     const rs = avgGain / avgLoss;
-    return 100 - (100 / (1 + rs));
+    return 100 - 100 / (1 + rs);
   }
 
   // Simple ATR calculation
@@ -112,28 +96,24 @@ function calculateIndicators(bars: Bar[]) {
       const high = bars[i].high;
       const low = bars[i].low;
       const prevClose = bars[i - 1].close;
-      const tr = Math.max(
-        high - low,
-        Math.abs(high - prevClose),
-        Math.abs(low - prevClose)
-      );
+      const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
       trueRanges.push(tr);
     }
 
     return trueRanges.slice(-period).reduce((sum, tr) => sum + tr, 0) / period;
   }
 
-  const closePrices = bars.map(b => b.close);
+  const closePrices = bars.map((b) => b.close);
 
   return {
     ema: {
-      '9': calculateEMA(closePrices, 9),
-      '20': calculateEMA(closePrices, 20),
-      '50': calculateEMA(closePrices, 50),
-      '200': calculateEMA(closePrices, 200),
+      "9": calculateEMA(closePrices, 9),
+      "20": calculateEMA(closePrices, 20),
+      "50": calculateEMA(closePrices, 50),
+      "200": calculateEMA(closePrices, 200),
     },
     rsi: {
-      '14': calculateRSI(closePrices, 14),
+      "14": calculateRSI(closePrices, 14),
     },
     atr: calculateATR(bars, 14),
   };
@@ -160,39 +140,21 @@ function calculateVWAP(bars: Bar[]): number {
 /**
  * Fetch market data and build features for a symbol
  */
-async function fetchSymbolFeatures(symbol: string): Promise<ReturnType<typeof buildSymbolFeatures> | null> {
+async function fetchSymbolFeatures(
+  symbol: string
+): Promise<ReturnType<typeof buildSymbolFeatures> | null> {
   try {
-    const normalized = normalizeSymbol(symbol);
-    const isIndex = isIndexSymbol(symbol);
-
-    // Fetch bars (last 200 5-minute bars = ~16 hours of trading)
-    const to = new Date().toISOString().split('T')[0]; // Today
-    const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 7 days ago
-
-    let rawBars: any[] = [];
-
-    if (isIndex) {
-      // Fetch index aggregates
-      const ticker = `I:${normalized}`;
-      rawBars = await getIndexAggregates(ticker, 5, 'minute', from, to);
-    } else {
-      // For equities, we need to fetch from options snapshot or use alternative method
-      // For now, try index aggregates with the symbol directly
-      try {
-        rawBars = await getIndexAggregates(normalized, 5, 'minute', from, to);
-      } catch (err) {
-        console.warn(`[Scanner Worker] Could not fetch bars for ${symbol}, skipping`);
-        return null;
-      }
-    }
+    const { bars: rawBars, source } = await fetchBarsForRange(symbol, 5, "minute", 7);
 
     if (rawBars.length < 20) {
-      console.warn(`[Scanner Worker] Insufficient data for ${symbol} (${rawBars.length} bars)`);
+      console.warn(
+        `[Scanner Worker] Insufficient data for ${symbol} (${rawBars.length} bars) from provider ${source}`
+      );
       return null;
     }
 
     // Convert to Bar format
-    const bars: Bar[] = rawBars.map(b => ({
+    const bars: Bar[] = rawBars.map((b) => ({
       time: Math.floor(b.t / 1000), // Convert ms to seconds
       open: b.o,
       high: b.h,
@@ -239,7 +201,7 @@ async function fetchSymbolFeatures(symbol: string): Promise<ReturnType<typeof bu
       primaryTf: PRIMARY_TIMEFRAME,
       mtf,
       bars,
-      timezone: 'America/New_York',
+      timezone: "America/New_York",
     });
 
     return features;
@@ -256,13 +218,16 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
   try {
     // Fetch user's Discord channels
     const { data: channels, error: channelsErr } = await supabase
-      .from('discord_channels')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('enabled', true);
+      .from("discord_channels")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("enabled", true);
 
     if (channelsErr) {
-      console.error(`[Scanner Worker] Error fetching Discord channels for user ${userId}:`, channelsErr);
+      console.error(
+        `[Scanner Worker] Error fetching Discord channels for user ${userId}:`,
+        channelsErr
+      );
       return;
     }
 
@@ -271,7 +236,7 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
       return;
     }
 
-    const webhookUrls = channels.map(ch => ch.webhook_url).filter(Boolean);
+    const webhookUrls = channels.map((ch) => ch.webhook_url).filter(Boolean);
 
     if (webhookUrls.length === 0) {
       console.log(`[Scanner Worker] No valid webhook URLs for user ${userId}`);
@@ -283,9 +248,9 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
       try {
         // Fetch strategy definition
         const { data: strategy, error: strategyErr } = await supabase
-          .from('strategy_definitions')
-          .select('*')
-          .eq('id', signal.strategy_id)
+          .from("strategy_definitions")
+          .select("*")
+          .eq("id", signal.strategy_id)
           .single();
 
         if (strategyErr || !strategy) {
@@ -294,15 +259,16 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
         }
 
         // Send to Discord
-        await sendStrategySignalToDiscord(
-          webhookUrls,
-          signal,
-          strategy
-        );
+        await sendStrategySignalToDiscord(webhookUrls, signal, strategy);
 
-        console.log(`[Scanner Worker] ✅ Discord alert sent for ${signal.symbol} (${strategy.name})`);
+        console.log(
+          `[Scanner Worker] ✅ Discord alert sent for ${signal.symbol} (${strategy.name})`
+        );
       } catch (alertError) {
-        console.error(`[Scanner Worker] Error sending Discord alert for signal ${signal.id}:`, alertError);
+        console.error(
+          `[Scanner Worker] Error sending Discord alert for signal ${signal.id}:`,
+          alertError
+        );
       }
     }
   } catch (error) {
@@ -322,20 +288,23 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     // Try 'symbol' column first
     {
       const { data, error } = await supabase
-        .from('watchlist')
-        .select('symbol')
-        .eq('user_id', userId);
+        .from("watchlist")
+        .select("symbol")
+        .eq("user_id", userId);
       watchlist = data;
       watchlistErr = error;
     }
 
     // Fallback to 'ticker' column if 'symbol' doesn't exist
-    if (watchlistErr && (watchlistErr.code === '42703' || /column.*symbol/i.test(watchlistErr.message || ''))) {
+    if (
+      watchlistErr &&
+      (watchlistErr.code === "42703" || /column.*symbol/i.test(watchlistErr.message || ""))
+    ) {
       console.warn(`[Scanner Worker] 'symbol' column not found, trying 'ticker' column...`);
       const { data, error } = await supabase
-        .from('watchlist')
-        .select('ticker')
-        .eq('user_id', userId);
+        .from("watchlist")
+        .select("ticker")
+        .eq("user_id", userId);
 
       if (!error && data) {
         console.log(`[Scanner Worker] ✅ Using 'ticker' column - DATABASE NEEDS MIGRATION!`);
@@ -356,8 +325,10 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    const symbols = watchlist.map(w => w.symbol);
-    console.log(`[Scanner Worker] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(', ')}`);
+    const symbols = watchlist.map((w) => w.symbol);
+    console.log(
+      `[Scanner Worker] Scanning ${symbols.length} symbols for user ${userId}: ${symbols.join(", ")}`
+    );
 
     // Fetch market data for each symbol
     const featuresBySymbol: Record<string, any> = {};
@@ -376,7 +347,9 @@ async function scanUserWatchlist(userId: string): Promise<number> {
       return 0;
     }
 
-    console.log(`[Scanner Worker] Fetched data for ${symbolsWithData.length}/${symbols.length} symbols`);
+    console.log(
+      `[Scanner Worker] Fetched data for ${symbolsWithData.length}/${symbols.length} symbols`
+    );
 
     // Scan strategies
     const signals = await scanStrategiesForUser({
@@ -409,17 +382,15 @@ async function scanAllUsers(): Promise<void> {
 
   try {
     // Fetch all user IDs
-    const { data: profiles, error: profilesErr } = await supabase
-      .from('profiles')
-      .select('id');
+    const { data: profiles, error: profilesErr } = await supabase.from("profiles").select("id");
 
     if (profilesErr) {
-      console.error('[Scanner Worker] Error fetching profiles:', profilesErr);
+      console.error("[Scanner Worker] Error fetching profiles:", profilesErr);
       return;
     }
 
     if (!profiles || profiles.length === 0) {
-      console.log('[Scanner Worker] No users found');
+      console.log("[Scanner Worker] No users found");
       return;
     }
 
@@ -434,12 +405,14 @@ async function scanAllUsers(): Promise<void> {
     }
 
     const duration = Date.now() - startTime;
-    console.log(`[Scanner Worker] ====== Scan complete in ${duration}ms - ${totalSignals} total signals ======\n`);
+    console.log(
+      `[Scanner Worker] ====== Scan complete in ${duration}ms - ${totalSignals} total signals ======\n`
+    );
 
     // Update heartbeat
     await updateHeartbeat(totalSignals);
   } catch (error) {
-    console.error('[Scanner Worker] Error in scanAllUsers:', error);
+    console.error("[Scanner Worker] Error in scanAllUsers:", error);
   }
 }
 
@@ -449,22 +422,23 @@ async function scanAllUsers(): Promise<void> {
 async function updateHeartbeat(signalsDetected: number): Promise<void> {
   try {
     // Upsert heartbeat record
-    const { error } = await supabase
-      .from('scanner_heartbeat')
-      .upsert({
-        id: 'main_scanner',
+    const { error } = await supabase.from("scanner_heartbeat").upsert(
+      {
+        id: "main_scanner",
         last_scan: new Date().toISOString(),
         signals_detected: signalsDetected,
-        status: 'healthy',
-      }, {
-        onConflict: 'id',
-      });
+        status: "healthy",
+      },
+      {
+        onConflict: "id",
+      }
+    );
 
     if (error) {
-      console.error('[Scanner Worker] Error updating heartbeat:', error);
+      console.error("[Scanner Worker] Error updating heartbeat:", error);
     }
   } catch (error) {
-    console.error('[Scanner Worker] Error in updateHeartbeat:', error);
+    console.error("[Scanner Worker] Error in updateHeartbeat:", error);
   }
 }
 
@@ -480,16 +454,16 @@ export class SignalScannerWorker {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.warn('[Scanner Worker] Already running');
+      console.warn("[Scanner Worker] Already running");
       return;
     }
 
     this.isRunning = true;
-    console.log('[Scanner Worker] ======================================');
-    console.log('[Scanner Worker] Starting 24/7 Signal Scanner Worker');
-    console.log('[Scanner Worker] Scan interval: 60 seconds');
-    console.log('[Scanner Worker] Primary timeframe: 5m');
-    console.log('[Scanner Worker] ======================================\n');
+    console.log("[Scanner Worker] ======================================");
+    console.log("[Scanner Worker] Starting 24/7 Signal Scanner Worker");
+    console.log("[Scanner Worker] Scan interval: 60 seconds");
+    console.log("[Scanner Worker] Primary timeframe: 5m");
+    console.log("[Scanner Worker] ======================================\n");
 
     // Run initial scan immediately
     await scanAllUsers();
@@ -499,7 +473,7 @@ export class SignalScannerWorker {
       await scanAllUsers();
     }, SCAN_INTERVAL);
 
-    console.log('[Scanner Worker] Worker started successfully\n');
+    console.log("[Scanner Worker] Worker started successfully\n");
   }
 
   /**
@@ -511,7 +485,7 @@ export class SignalScannerWorker {
       this.scanTimer = undefined;
     }
     this.isRunning = false;
-    console.log('[Scanner Worker] Stopped');
+    console.log("[Scanner Worker] Stopped");
   }
 
   /**
@@ -533,33 +507,33 @@ if (isMainModule) {
   const worker = new SignalScannerWorker();
 
   // Start worker
-  worker.start().catch(err => {
-    console.error('[Scanner Worker] Fatal error during startup:', err);
+  worker.start().catch((err) => {
+    console.error("[Scanner Worker] Fatal error during startup:", err);
     process.exit(1);
   });
 
   // Graceful shutdown handlers
-  process.on('SIGTERM', () => {
-    console.log('[Scanner Worker] Received SIGTERM, shutting down gracefully...');
+  process.on("SIGTERM", () => {
+    console.log("[Scanner Worker] Received SIGTERM, shutting down gracefully...");
     worker.stop();
     process.exit(0);
   });
 
-  process.on('SIGINT', () => {
-    console.log('[Scanner Worker] Received SIGINT, shutting down gracefully...');
+  process.on("SIGINT", () => {
+    console.log("[Scanner Worker] Received SIGINT, shutting down gracefully...");
     worker.stop();
     process.exit(0);
   });
 
   // Handle uncaught errors
-  process.on('uncaughtException', (error) => {
-    console.error('[Scanner Worker] Uncaught exception:', error);
+  process.on("uncaughtException", (error) => {
+    console.error("[Scanner Worker] Uncaught exception:", error);
     worker.stop();
     process.exit(1);
   });
 
-  process.on('unhandledRejection', (reason, promise) => {
-    console.error('[Scanner Worker] Unhandled rejection at:', promise, 'reason:', reason);
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("[Scanner Worker] Unhandled rejection at:", promise, "reason:", reason);
     // Don't exit on unhandled rejection, just log it
   });
 }

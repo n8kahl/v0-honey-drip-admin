@@ -1,4 +1,4 @@
-import { Contract } from '../types';
+import { Contract } from "../types";
 
 export type NormalizedChain = {
   symbol: string;
@@ -16,7 +16,7 @@ export type NormalizedChain = {
 export type Norm = {
   id: string;
   ticker: string;
-  type: 'C' | 'P';
+  type: "C" | "P";
   strike: number;
   expiration: string;
   dte: number;
@@ -58,7 +58,7 @@ type ChainQueryOptions = {
   window?: number;
   endDate?: string;
   strikeWindow?: number;
-  provider?: 'massive' | 'tradier';
+  provider?: "massive" | "tradier";
   tokenManager?: { getToken: () => Promise<string> };
 };
 
@@ -70,23 +70,26 @@ export async function fetchNormalizedChain(
   windowOrOpts?: number | ChainQueryOptions
 ): Promise<Contract[]> {
   const opts: ChainQueryOptions =
-    typeof windowOrOpts === 'number' ? { window: windowOrOpts } : (windowOrOpts ?? {});
+    typeof windowOrOpts === "number" ? { window: windowOrOpts } : (windowOrOpts ?? {});
   const qs = new URLSearchParams({ symbol });
-  if (opts.window && Number.isFinite(opts.window)) qs.set('window', String(opts.window));
-  if (opts.strikeWindow && Number.isFinite(opts.strikeWindow)) qs.set('strikeWindow', String(opts.strikeWindow));
-  if (opts.endDate) qs.set('endDate', opts.endDate);
-  if (opts.provider) qs.set('provider', opts.provider);
+  if (typeof opts.window === "number" && Number.isFinite(opts.window) && opts.window > 0) {
+    qs.set("window", String(opts.window));
+  }
+  if (opts.strikeWindow && Number.isFinite(opts.strikeWindow))
+    qs.set("strikeWindow", String(opts.strikeWindow));
+  if (opts.endDate) qs.set("endDate", opts.endDate);
+  if (opts.provider) qs.set("provider", opts.provider);
   const headers: Record<string, string> = {};
 
   // Get ephemeral token if tokenManager provided
   if (opts.tokenManager) {
     const token = await opts.tokenManager.getToken();
-    headers['x-massive-proxy-token'] = token;
+    headers["x-massive-proxy-token"] = token;
   }
 
   const resp = await fetch(`/api/options/chain?${qs.toString()}`, { headers });
   if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
+    const text = await resp.text().catch(() => "");
     throw new Error(`[v0] /api/options/chain failed ${resp.status}: ${text}`);
   }
   const data = (await resp.json()) as NormalizedChain;

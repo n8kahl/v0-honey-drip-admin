@@ -47,7 +47,7 @@ const optionsChainCache = new Map<
 >();
 const CACHE_TTL_MS = 10000; // 10 seconds
 
-export function useOptionsChain(symbol: string | null, window: number = 8) {
+export function useOptionsChain(symbol: string | null, window: number = 0) {
   const [optionsChain, setOptionsChain] = useState<MassiveOptionsChain | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,7 +63,7 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
     }
 
     // Check cache first
-    const cacheKey = `${symbol}-${window}`;
+    const cacheKey = `${symbol}-${window || "all"}`;
     const cached = optionsChainCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       console.log(
@@ -102,7 +102,7 @@ export function useOptionsChain(symbol: string | null, window: number = 8) {
         const now = Date.now();
 
         // Store in cache
-        const cacheKey = `${symbol}-${window}`;
+        const cacheKey = `${symbol}-${window || "all"}`;
         optionsChainCache.set(cacheKey, {
           data: { contracts, chain },
           timestamp: now,

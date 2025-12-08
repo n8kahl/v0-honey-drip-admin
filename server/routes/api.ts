@@ -523,10 +523,9 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
       : req.query.window
         ? String(req.query.window)
         : undefined;
+    const parsedWindow = typeof windowParam !== "undefined" ? Number(windowParam) : Number.NaN;
     const expWindow =
-      typeof windowParam !== "undefined"
-        ? Math.max(1, Math.min(250, Number(windowParam) || 0))
-        : undefined;
+      Number.isFinite(parsedWindow) && parsedWindow > 0 ? Math.min(250, parsedWindow) : undefined;
     // strikeWindow controls strikes per side around ATM
     const strikeWindowParam = Array.isArray((req.query as any).strikeWindow)
       ? (req.query as any).strikeWindow[0]
@@ -877,21 +876,26 @@ router.get("/bars", requireProxyToken, async (req, res) => {
         const isForbidden = errorMsg.includes("403") || errorMsg.includes("forbidden");
 
         if (!isIndexSymbol && process.env.TRADIER_ACCESS_TOKEN) {
-          console.log(`[API] Massive failed for ${symbol} (${isForbidden ? "403 Forbidden" : "error"}), trying Tradier fallback...`);
+          console.log(
+            `[API] Massive failed for ${symbol} (${isForbidden ? "403 Forbidden" : "error"}), trying Tradier fallback...`
+          );
 
           try {
             // Map timespan to Tradier intervals
             const intervalMap: Record<string, string> = {
-              "minute": "1min",
+              minute: "1min",
               "5minute": "5min",
               "15minute": "15min",
-              "hour": "daily",
-              "day": "daily",
+              hour: "daily",
+              day: "daily",
             };
-            const tradierInterval = intervalMap[`${multiplier}${timespan}`] || intervalMap[timespan] || "5min";
+            const tradierInterval =
+              intervalMap[`${multiplier}${timespan}`] || intervalMap[timespan] || "5min";
 
             const tradierBars = await tradierGetHistory(symbol, tradierInterval as any, from, to);
-            console.log(`[API] ✅ Tradier fallback succeeded: ${tradierBars.length} bars for ${symbol}`);
+            console.log(
+              `[API] ✅ Tradier fallback succeeded: ${tradierBars.length} bars for ${symbol}`
+            );
 
             // Normalize Tradier response to match our format
             normalized = tradierBars.map((bar: any) => ({
