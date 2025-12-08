@@ -261,10 +261,12 @@ async function fetchSymbolFeatures(
     } catch (err: any) {
       // On 429 rate limit or any API error, try database fallback immediately
       const is429 = err?.message?.includes("429") || err?.status === 429;
+      const errProvider = err?.provider || provider || "unknown";
       console.warn(
-        `[Composite Scanner] ${is429 ? "Rate limit hit" : "API error"} for ${symbol} from provider ${provider}, trying database fallback...`
+        `[Composite Scanner] ${is429 ? "Rate limit hit" : "API error"} for ${symbol} from provider ${errProvider}, trying database fallback...`
       );
       rawBars = []; // Trigger database fallback below
+      provider = errProvider;
     }
 
     // Database fallback: If Massive API failed or returned insufficient data

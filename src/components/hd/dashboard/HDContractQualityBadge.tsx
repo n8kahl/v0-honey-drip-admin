@@ -150,7 +150,7 @@ export function HDContractQualityBadge({
                     />
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)] tabular-nums w-6">
-                    {score}
+                    {Math.round(score)}
                   </span>
                 </div>
               </div>

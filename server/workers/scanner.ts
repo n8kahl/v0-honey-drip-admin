@@ -205,8 +205,12 @@ async function fetchSymbolFeatures(
     });
 
     return features;
-  } catch (error) {
-    console.error(`[Scanner Worker] Error fetching features for ${symbol}:`, error);
+  } catch (error: any) {
+    const provider = error?.provider || "unknown";
+    console.error(
+      `[Scanner Worker] Error fetching features for ${symbol} (provider ${provider}):`,
+      error
+    );
     return null;
   }
 }
