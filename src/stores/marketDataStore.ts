@@ -1,72 +1,72 @@
 /**
  * marketDataStore.ts - Single Source of Truth for Market Data
- * 
+ *
  * Consolidates all market data streams (candles, indicators, signals, confluence)
  * into one Zustand store powered by Massive.com WebSocket (Options + Indices Advanced).
- * 
+ *
  * Features:
  * - WebSocket streams for indices (AM/A) and options elsewhere
  * - Multi-timeframe candles with automatic aggregation
  * - Lazy indicator calculation (computed once per update)
  * - Strategy signal integration
  * - Confluence scoring from multiple sources
- * 
+ *
  * All components should read from this store instead of calculating locally.
  */
 
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { immer } from 'zustand/middleware/immer';
-import { produce } from 'immer';
-import { Bar } from '../types/shared';
-import { massive } from '../lib/massive';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { immer } from "zustand/middleware/immer";
+import { produce } from "immer";
+import { Bar } from "../types/shared";
+import { massive } from "../lib/massive";
 import {
   calculateEMA,
   calculateVWAP,
   rsiWilder,
   atrWilder,
   calculateBollingerBands,
-} from '../lib/indicators';
+} from "../lib/indicators";
 import {
   rollupBars,
   parseAggregateBar,
   detectTimeframe,
-  type MassiveAggregateMessage
-} from '../lib/market/candleAggregation';
+  type MassiveAggregateMessage,
+} from "../lib/market/candleAggregation";
 import {
   computeIndicatorsFromCandles,
   calculateComprehensiveIndicators,
   calculateMTFTrends,
   determineTrend,
-} from '../lib/market/indicatorCalculations';
+} from "../lib/market/indicatorCalculations";
 import {
   calculateConfluence,
   calculateAdvancedConfluence,
-} from '../lib/market/confluenceCalculations';
+} from "../lib/market/confluenceCalculations";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type Timeframe = '1m' | '5m' | '15m' | '60m' | '1D';
-export type MTFTrend = 'bull' | 'bear' | 'neutral';
-export type MarketStatus = 'premarket' | 'open' | 'afterhours' | 'closed';
+export type Timeframe = "1m" | "5m" | "15m" | "60m" | "1D";
+export type MTFTrend = "bull" | "bear" | "neutral";
+export type MarketStatus = "premarket" | "open" | "afterhours" | "closed";
 
 // Enriched market session with timing data (for TraderHeader, etc.)
 export interface EnrichedMarketSession {
-  session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
+  session: "PRE" | "OPEN" | "POST" | "CLOSED";
   isOpen: boolean;
   isWeekend: boolean;
-  nextOpen: number;    // Unix timestamp ms
-  nextClose: number;   // Unix timestamp ms
-  serverTime: string;  // ISO timestamp
-  label: string;       // Display label
-  asOf: string;        // ISO timestamp of last update
+  nextOpen: number; // Unix timestamp ms
+  nextClose: number; // Unix timestamp ms
+  serverTime: string; // ISO timestamp
+  label: string; // Display label
+  asOf: string; // ISO timestamp of last update
 }
 
 export interface Candle {
-  time: number;        // Epoch ms - matches Bar interface from indicators.ts
-  timestamp?: number;  // Alias for compatibility
+  time: number; // Epoch ms - matches Bar interface from indicators.ts
+  timestamp?: number; // Alias for compatibility
   open: number;
   high: number;
   low: number;
@@ -82,23 +82,23 @@ export interface Indicators {
   ema20?: number;
   ema50?: number;
   ema200?: number;
-  
+
   // Momentum
   rsi14?: number;
   macd?: { value: number; signal: number; histogram: number };
-  
+
   // Volatility
   atr14?: number;
   bollingerBands?: { upper: number; middle: number; lower: number };
-  
+
   // Volume
   vwap?: number;
   vwapUpperBand?: number;
   vwapLowerBand?: number;
-  
+
   // Trend
   adx?: number;
-  
+
   // Price action
   pivots?: {
     r3: number;
@@ -141,11 +141,11 @@ export interface Greeks {
   contractTicker?: string; // e.g., "SPX250117C05200000"
   strike?: number;
   expiry?: string;
-  type?: 'C' | 'P';
+  type?: "C" | "P";
 
   // Quality indicators
   isFresh: boolean; // Updated in last 30s
-  source: 'massive' | 'cached' | 'fallback';
+  source: "massive" | "cached" | "fallback";
 }
 
 export interface SymbolData {
@@ -174,7 +174,7 @@ export interface SymbolData {
 
 export interface WebSocketConnection {
   socket: WebSocket | null;
-  status: 'disconnected' | 'connecting' | 'connected' | 'authenticated' | 'error';
+  status: "disconnected" | "connecting" | "connected" | "authenticated" | "error";
   reconnectAttempts: number;
   lastError?: string;
   lastMessageTime: number;
@@ -184,35 +184,35 @@ interface MarketDataStore {
   // ========================================================================
   // State
   // ========================================================================
-  
+
   /** Map of symbol → data (SPY, QQQ, SPX, etc.) */
   symbols: Record<string, SymbolData>;
 
   /** WebSocket connection (single for stocks) */
   wsConnection: WebSocketConnection;
-  
+
   /** Global connection state */
   isConnected: boolean;
   lastServerTimestamp: number;
-  
+
   /** Market status (legacy simple enum) */
   marketStatus: MarketStatus;
-  
+
   /** Enriched market session with timing data */
   enrichedSession: EnrichedMarketSession | null;
-  
+
   /** Subscribed symbols */
   subscribedSymbols: Set<string>;
-  
+
   /** Macro indices to always subscribe */
   macroSymbols: string[];
-  
+
   /** Loading state */
   isInitializing: boolean;
-  
+
   /** Last error */
   error: string | null;
-  
+
   /** Heartbeat interval */
   heartbeatInterval: ReturnType<typeof setInterval> | null;
 
@@ -221,26 +221,29 @@ interface MarketDataStore {
 
   /** Pending subscription changes (for batching) */
   pendingWatchlistUpdate: ReturnType<typeof setTimeout> | null;
-  
+
+  /** REST polling interval for stale data fallback (when WebSocket fails) */
+  pollingInterval: ReturnType<typeof setInterval> | null;
+
   // ========================================================================
   // Actions
   // ========================================================================
-  
+
   /** Initialize WebSocket connections and subscribe to watchlist */
   initialize: (watchlistSymbols: string[]) => void;
-  
+
   /** Fetch historical bars for symbols */
   fetchHistoricalBars: (symbols: string[]) => Promise<void>;
-  
+
   /** Connect to WebSocket */
   connectWebSocket: () => void;
-  
+
   /** Schedule reconnection with backoff */
   scheduleReconnect: () => void;
-  
+
   /** Subscribe to all symbols after authentication */
   subscribeToSymbols: () => void;
-  
+
   /** Handle aggregate bar message */
   handleAggregateBar: (msg: MassiveAggregateMessage) => void;
 
@@ -249,25 +252,34 @@ interface MarketDataStore {
 
   /** Subscribe to additional symbol */
   subscribe: (symbol: string) => void;
-  
+
   /** Unsubscribe from symbol */
   unsubscribe: (symbol: string) => void;
 
   /** Flush pending watchlist updates (debounced batch update) */
   flushWatchlistUpdate: () => void;
 
+  /** Start REST polling fallback for stale data detection */
+  startPolling: () => void;
+
+  /** Stop REST polling */
+  stopPolling: () => void;
+
+  /** Refresh stale symbols via REST (called by polling) */
+  refreshStaleSymbols: () => Promise<void>;
+
   /** Update candles for a symbol/timeframe */
   updateCandles: (symbol: string, timeframe: Timeframe, candles: Candle[]) => void;
-  
+
   /** Merge new bar into existing candles (snapshot + delta pattern) */
   mergeBar: (symbol: string, timeframe: Timeframe, bar: Candle) => void;
-  
+
   /** Recompute indicators for a symbol */
   recomputeIndicators: (symbol: string) => void;
-  
+
   /** Comprehensive recompute: indicators + MTF trends + confluence + strategies */
   recomputeSymbol: (symbol: string) => void;
-  
+
   /** Update confluence score */
   updateConfluence: (symbol: string, confluence: Partial<ConfluenceScore>) => void;
 
@@ -279,29 +291,29 @@ interface MarketDataStore {
 
   /** Update market status (legacy) */
   setMarketStatus: (status: MarketStatus) => void;
-  
+
   /** Update enriched market session */
   updateMarketSession: (session: EnrichedMarketSession) => void;
-  
+
   /** Fetch and update market session from Massive API */
   fetchMarketSession: () => Promise<void>;
-  
+
   /** Cleanup connections */
   cleanup: () => void;
-  
+
   // ========================================================================
   // Selectors (for React components)
   // ========================================================================
-  
+
   /** Get all data for a symbol */
   getSymbolData: (symbol: string) => SymbolData | undefined;
-  
+
   /** Get candles for specific timeframe */
   getCandles: (symbol: string, timeframe: Timeframe) => Candle[];
-  
+
   /** Get latest indicators */
   getIndicators: (symbol: string) => Indicators;
-  
+
   /** Get confluence score */
   getConfluence: (symbol: string) => ConfluenceScore | undefined;
 
@@ -323,8 +335,8 @@ interface MarketDataStore {
 // ============================================================================
 
 // Pure indices mode for macro; equities removed
-const MACRO_SYMBOLS = ['SPX', 'NDX', 'VIX'];
-const DEFAULT_PRIMARY_TIMEFRAME: Timeframe = '1m';
+const MACRO_SYMBOLS = ["SPX", "NDX", "VIX"];
+const DEFAULT_PRIMARY_TIMEFRAME: Timeframe = "1m";
 const MAX_CANDLES_PER_TIMEFRAME = 500; // Memory limit
 const STALE_THRESHOLD_MS = 30000; // 30 seconds
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -339,19 +351,19 @@ function createEmptySymbolData(symbol: string): SymbolData {
   return {
     symbol,
     candles: {
-      '1m': [],
-      '5m': [],
-      '15m': [],
-      '60m': [],
-      '1D': [],
+      "1m": [],
+      "5m": [],
+      "15m": [],
+      "60m": [],
+      "1D": [],
     },
     indicators: {},
     mtfTrend: {
-      '1m': 'neutral',
-      '5m': 'neutral',
-      '15m': 'neutral',
-      '60m': 'neutral',
-      '1D': 'neutral',
+      "1m": "neutral",
+      "5m": "neutral",
+      "15m": "neutral",
+      "60m": "neutral",
+      "1D": "neutral",
     },
     confluence: {
       overall: 0,
@@ -379,7 +391,7 @@ function createEmptySymbolData(symbol: string): SymbolData {
 function getMassiveApiKey(): string {
   // In production, this would come from a secure token endpoint
   // For now, we'll use the proxy token pattern
-  return import.meta.env.VITE_MASSIVE_PROXY_TOKEN || '';
+  return import.meta.env.VITE_MASSIVE_PROXY_TOKEN || "";
 }
 
 // ============================================================================
@@ -393,13 +405,13 @@ export const useMarketDataStore = create<MarketDataStore>()(
       symbols: {},
       wsConnection: {
         socket: null,
-        status: 'disconnected',
+        status: "disconnected",
         reconnectAttempts: 0,
         lastMessageTime: 0,
       },
       isConnected: false,
       lastServerTimestamp: 0,
-      marketStatus: 'closed',
+      marketStatus: "closed",
       enrichedSession: null,
       subscribedSymbols: new Set(),
       macroSymbols: MACRO_SYMBOLS,
@@ -408,117 +420,174 @@ export const useMarketDataStore = create<MarketDataStore>()(
       heartbeatInterval: null,
       unsubscribers: [],
       pendingWatchlistUpdate: null,
+      pollingInterval: null,
 
       // ======================================================================
       // Actions
       // ======================================================================
-      
+
       initialize: (watchlistSymbols: string[]) => {
         set({ isInitializing: true, error: null });
-        
+
         const { macroSymbols } = get();
         // Deduplicate symbols without Set spread
         const allSymbolsSet = new Set<string>();
-        watchlistSymbols.forEach(s => allSymbolsSet.add(s));
-        macroSymbols.forEach(s => allSymbolsSet.add(s));
+        watchlistSymbols.forEach((s) => allSymbolsSet.add(s));
+        macroSymbols.forEach((s) => allSymbolsSet.add(s));
         const allSymbols = Array.from(allSymbolsSet);
-        
+
         // Create empty data for all symbols
         const symbols: Record<string, SymbolData> = {};
-        allSymbols.forEach(symbol => {
+        allSymbols.forEach((symbol) => {
           const normalized = symbol.toUpperCase();
           symbols[normalized] = createEmptySymbolData(normalized);
         });
-        
+
         // Convert to Set using Array.from for compatibility
         const subscribedSet = new Set<string>();
-        allSymbols.forEach(s => subscribedSet.add(s));
-        
+        allSymbols.forEach((s) => subscribedSet.add(s));
+
         set({ symbols, subscribedSymbols: subscribedSet });
-        
+
         // Initialize WebSocket connection
         get().connectWebSocket();
-        
+
         // Fetch historical bars for all symbols (async, don't wait)
-        get().fetchHistoricalBars(allSymbols);
+        get()
+          .fetchHistoricalBars(allSymbols)
+          .then(() => {
+            // Start REST polling as fallback for WebSocket failures
+            // This ensures data stays fresh even if WebSocket has 1008 errors
+            get().startPolling();
+          });
 
         set({ isInitializing: false });
       },
-      
+
       /** Fetch historical bars for symbols to populate initial candles */
       fetchHistoricalBars: async (symbols: string[]) => {
-        console.log('[v0] 📥 Fetching historical bars for', symbols.length, 'symbols');
+        console.log("[v0] 📥 Fetching historical bars for", symbols.length, "symbols");
+
+        // Helper: fetch with retry and exponential backoff
+        const fetchWithRetry = async <T>(
+          fn: () => Promise<T>,
+          label: string,
+          maxRetries = 3
+        ): Promise<T | null> => {
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              return await fn();
+            } catch (error) {
+              const isLastAttempt = attempt === maxRetries;
+              const delay = Math.pow(2, attempt) * 500; // 1s, 2s, 4s
+
+              if (isLastAttempt) {
+                console.error(`[v0] ❌ ${label} failed after ${maxRetries} attempts:`, error);
+                return null;
+              }
+
+              console.warn(
+                `[v0] ⚠️ ${label} failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+          }
+          return null;
+        };
+
+        let successCount = 0;
+        let failCount = 0;
 
         for (const symbol of symbols) {
-          try {
-            const normalized = symbol.toUpperCase();
+          const normalized = symbol.toUpperCase();
+          let gotData = false;
 
-            // Fetch 1m bars (last 200 bars = ~3 hours of data)
-            const bars1m = await massive.getAggregates(normalized, '1', 200);
+          // Fetch 1m bars with retry (last 200 bars = ~3 hours of data)
+          const bars1m = await fetchWithRetry(
+            () => massive.getAggregates(normalized, "1", 200),
+            `Fetch 1m bars for ${normalized}`
+          );
 
-            if (bars1m && bars1m.length > 0) {
-              // Convert to Candle format and update store
-              const candles1m: Candle[] = bars1m.map(bar => ({
-                time: bar.t,
-                timestamp: bar.t,
-                open: bar.o,
-                high: bar.h,
-                low: bar.l,
-                close: bar.c,
-                volume: bar.v,
-                vwap: bar.vw,
-              }));
+          if (bars1m && bars1m.length > 0) {
+            // Convert to Candle format and update store
+            const candles1m: Candle[] = bars1m.map((bar) => ({
+              time: bar.t,
+              timestamp: bar.t,
+              open: bar.o,
+              high: bar.h,
+              low: bar.l,
+              close: bar.c,
+              volume: bar.v,
+              vwap: bar.vw,
+            }));
 
-              // Update candles for 1m timeframe (rollup to 5m, 15m, 60m happens in mergeBar)
-              get().updateCandles(normalized, '1m', candles1m);
-            }
+            // Update candles for 1m timeframe (rollup to 5m, 15m, 60m happens in mergeBar)
+            get().updateCandles(normalized, "1m", candles1m);
+            gotData = true;
+          }
 
-            // Fetch Daily bars (last 200 days = ~6 months of data)
-            const barsDaily = await massive.getAggregates(normalized, '1D', 200);
+          // Fetch Daily bars with retry (last 200 days = ~6 months of data)
+          const barsDaily = await fetchWithRetry(
+            () => massive.getAggregates(normalized, "1D", 200),
+            `Fetch daily bars for ${normalized}`
+          );
 
-            if (barsDaily && barsDaily.length > 0) {
-              // Convert to Candle format and update store
-              const candlesDaily: Candle[] = barsDaily.map(bar => ({
-                time: bar.t,
-                timestamp: bar.t,
-                open: bar.o,
-                high: bar.h,
-                low: bar.l,
-                close: bar.c,
-                volume: bar.v,
-                vwap: bar.vw,
-              }));
+          if (barsDaily && barsDaily.length > 0) {
+            // Convert to Candle format and update store
+            const candlesDaily: Candle[] = barsDaily.map((bar) => ({
+              time: bar.t,
+              timestamp: bar.t,
+              open: bar.o,
+              high: bar.h,
+              low: bar.l,
+              close: bar.c,
+              volume: bar.v,
+              vwap: bar.vw,
+            }));
 
-              // Update candles for Daily timeframe
-              get().updateCandles(normalized, '1D', candlesDaily);
-            }
+            // Update candles for Daily timeframe
+            get().updateCandles(normalized, "1D", candlesDaily);
+            gotData = true;
+          }
 
-            // Trigger recompute to calculate indicators and signals
+          // Trigger recompute to calculate indicators and signals
+          // Even if only partial data loaded, recompute what we have
+          if (gotData) {
             get().recomputeSymbol(normalized);
-          } catch (error) {
-            console.error(`[v0] ❌ Failed to fetch bars for ${symbol}:`, error);
+            successCount++;
+          } else {
+            failCount++;
           }
         }
+
+        console.log(
+          `[v0] 📊 Historical bars fetch complete: ${successCount} success, ${failCount} failed`
+        );
+
+        // Set error state if significant failures
+        if (failCount > 0 && failCount >= symbols.length / 2) {
+          set({ error: `Failed to load data for ${failCount}/${symbols.length} symbols` });
+        }
       },
-      
+
       connectWebSocket: () => {
         const token = import.meta.env.VITE_MASSIVE_PROXY_TOKEN;
         if (!token) {
-          console.error('[v0] marketDataStore: No VITE_MASSIVE_PROXY_TOKEN');
-          set({ error: 'Missing VITE_MASSIVE_PROXY_TOKEN' });
+          console.error("[v0] marketDataStore: No VITE_MASSIVE_PROXY_TOKEN");
+          set({ error: "Missing VITE_MASSIVE_PROXY_TOKEN" });
           return;
         }
 
         // Note: With unified massive API, subscriptions are now handled
         // via massive.subscribeQuotes() and massive.subscribeAggregates()
         // This legacy code path is deprecated but kept for backwards compatibility
-        console.log('[v0] marketDataStore: connectWebSocket - using unified massive API');
+        console.log("[v0] marketDataStore: connectWebSocket - using unified massive API");
 
         // Mark as connected since massive handles connection automatically
         set({
           wsConnection: {
             ...get().wsConnection,
-            status: 'authenticated'
+            status: "authenticated",
           },
           isConnected: true,
         });
@@ -526,7 +595,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Subscribe to symbols
         get().subscribeToSymbols();
       },
-      
+
       scheduleReconnect: () => {
         // No-op: massiveWS handles its own reconnection
         return;
@@ -548,7 +617,11 @@ export const useMarketDataStore = create<MarketDataStore>()(
         const timer = setTimeout(() => {
           const symbols = Array.from(subscribedSymbols);
           if (symbols.length > 0) {
-            console.log('[v0] marketDataStore: Flushing watchlist update:', symbols.length, 'symbols');
+            console.log(
+              "[v0] marketDataStore: Flushing watchlist update:",
+              symbols.length,
+              "symbols"
+            );
             massive.updateWatchlist(symbols);
           }
           set({ pendingWatchlistUpdate: null });
@@ -557,11 +630,114 @@ export const useMarketDataStore = create<MarketDataStore>()(
         set({ pendingWatchlistUpdate: timer });
       },
 
+      /**
+       * Start REST polling fallback for stale data detection
+       * Polls every 30 seconds and refreshes symbols that haven't been updated
+       * This provides resilience when WebSocket connections fail (1008 errors, etc.)
+       */
+      startPolling: () => {
+        const { pollingInterval } = get();
+
+        // Don't start if already running
+        if (pollingInterval) {
+          return;
+        }
+
+        console.log("[v0] marketDataStore: Starting REST polling fallback (30s interval)");
+
+        const interval = setInterval(() => {
+          get().refreshStaleSymbols();
+        }, 30000); // Poll every 30 seconds
+
+        set({ pollingInterval: interval });
+      },
+
+      /**
+       * Stop REST polling
+       */
+      stopPolling: () => {
+        const { pollingInterval } = get();
+
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          set({ pollingInterval: null });
+          console.log("[v0] marketDataStore: Stopped REST polling");
+        }
+      },
+
+      /**
+       * Refresh symbols that have stale data (>30 seconds since last update)
+       * Called periodically by polling interval
+       */
+      refreshStaleSymbols: async () => {
+        const { symbols, subscribedSymbols } = get();
+        const now = Date.now();
+        const STALE_THRESHOLD = 30000; // 30 seconds
+
+        // Find symbols with stale data
+        const staleSymbols: string[] = [];
+        for (const symbol of subscribedSymbols) {
+          const normalized = symbol.toUpperCase();
+          const symbolData = symbols[normalized];
+          if (symbolData && now - symbolData.lastUpdated > STALE_THRESHOLD) {
+            staleSymbols.push(normalized);
+          }
+        }
+
+        if (staleSymbols.length === 0) {
+          return; // All data is fresh
+        }
+
+        console.log(
+          `[v0] marketDataStore: Refreshing ${staleSymbols.length} stale symbols via REST`
+        );
+
+        // Fetch fresh bars for stale symbols (limit to 5 concurrent to avoid rate limits)
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < staleSymbols.length; i += BATCH_SIZE) {
+          const batch = staleSymbols.slice(i, i + BATCH_SIZE);
+
+          await Promise.all(
+            batch.map(async (symbol) => {
+              try {
+                // Fetch last 5 bars (recent data only for refresh)
+                const bars = await massive.getAggregates(symbol, "1", 5);
+
+                if (bars && bars.length > 0) {
+                  const latestBar = bars[bars.length - 1];
+
+                  // Create candle and merge
+                  const candle: Candle = {
+                    time: latestBar.t,
+                    timestamp: latestBar.t,
+                    open: latestBar.o,
+                    high: latestBar.h,
+                    low: latestBar.l,
+                    close: latestBar.c,
+                    volume: latestBar.v,
+                    vwap: latestBar.vw,
+                  };
+
+                  get().mergeBar(symbol, "1m", candle);
+                }
+              } catch (error) {
+                console.warn(`[v0] Failed to refresh ${symbol}:`, error);
+              }
+            })
+          );
+
+          // Small delay between batches to avoid rate limits
+          if (i + BATCH_SIZE < staleSymbols.length) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        }
+      },
+
       subscribeToSymbols: () => {
         const { subscribedSymbols } = get();
 
         if (subscribedSymbols.size === 0) {
-          console.warn('[v0] marketDataStore: No symbols to subscribe to');
+          console.warn("[v0] marketDataStore: No symbols to subscribe to");
           return;
         }
 
@@ -569,10 +745,10 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Update watchlist using unified massive API
         massive.updateWatchlist(symbols);
       },
-      
+
       handleAggregateBar: (msg: MassiveAggregateMessage) => {
         // Extract symbol (remove I: prefix for indices)
-        const symbol = msg.sym.replace(/^I:/, '').toUpperCase();
+        const symbol = msg.sym.replace(/^I:/, "").toUpperCase();
 
         // Detect timeframe from start/end timestamps
         const timeframe = detectTimeframe(msg.s, msg.e);
@@ -656,20 +832,20 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Debounced watchlist update (batches rapid unsubscriptions)
         get().flushWatchlistUpdate();
       },
-      
+
       updateCandles: (symbol: string, timeframe: Timeframe, candles: Candle[]) => {
         const normalized = symbol.toUpperCase();
         const { symbols } = get();
         const symbolData = symbols[normalized];
-        
+
         if (!symbolData) {
-          console.warn('[v0] marketDataStore: Symbol not found:', normalized);
+          console.warn("[v0] marketDataStore: Symbol not found:", normalized);
           return;
         }
-        
+
         // Trim to max candles
         const trimmedCandles = candles.slice(-MAX_CANDLES_PER_TIMEFRAME);
-        
+
         set({
           symbols: {
             ...symbols,
@@ -683,108 +859,123 @@ export const useMarketDataStore = create<MarketDataStore>()(
             },
           },
         });
-        
+
         // Recompute indicators if this is the primary timeframe
         if (timeframe === symbolData.primaryTimeframe) {
           get().recomputeIndicators(normalized);
         }
       },
-      
+
       mergeBar: (symbol: string, timeframe: Timeframe, bar: Candle) => {
         const normalized = symbol.toUpperCase();
         const { symbols } = get();
         const symbolData = symbols[normalized];
-        
+
         if (!symbolData) {
-          console.warn('[v0] marketDataStore: Symbol not found:', normalized);
+          console.warn("[v0] marketDataStore: Symbol not found:", normalized);
           return;
         }
-        
+
         const existingCandles = symbolData.candles[timeframe] || [];
         let updatedCandles = [...existingCandles];
-        
+
         // Check if this bar updates the last candle (same time/timestamp) or adds new
         const lastCandle = existingCandles[existingCandles.length - 1];
         const barTime = bar.time || bar.timestamp || 0;
-        const lastTime = lastCandle ? (lastCandle.time || lastCandle.timestamp || 0) : 0;
-        
+        const lastTime = lastCandle ? lastCandle.time || lastCandle.timestamp || 0 : 0;
+
         if (lastCandle && lastTime === barTime) {
           // Update existing candle (snapshot + delta pattern)
           updatedCandles[updatedCandles.length - 1] = bar;
         } else {
           // New candle
           updatedCandles.push(bar);
-          
+
           // Trim to max length
           if (updatedCandles.length > MAX_CANDLES_PER_TIMEFRAME) {
             updatedCandles = updatedCandles.slice(-MAX_CANDLES_PER_TIMEFRAME);
           }
         }
-        
+
         // Auto-rollup higher timeframes from 1m bars
-        let candles5m = symbolData.candles['5m'];
-        let candles15m = symbolData.candles['15m'];
-        let candles60m = symbolData.candles['60m'];
-        
-        if (timeframe === '1m') {
+        let candles5m = symbolData.candles["5m"];
+        let candles15m = symbolData.candles["15m"];
+        let candles60m = symbolData.candles["60m"];
+
+        if (timeframe === "1m") {
           // Roll up to 5m, 15m, 60m automatically
-          candles5m = rollupBars(updatedCandles, '5m');
-          candles15m = rollupBars(updatedCandles, '15m');
-          candles60m = rollupBars(updatedCandles, '60m');
+          candles5m = rollupBars(updatedCandles, "5m");
+          candles15m = rollupBars(updatedCandles, "15m");
+          candles60m = rollupBars(updatedCandles, "60m");
         }
-        
+
         set({
           symbols: {
             ...symbols,
             [normalized]: {
               ...symbolData,
               candles: {
-                '1m': timeframe === '1m' ? updatedCandles : symbolData.candles['1m'],
-                '5m': timeframe === '1m' ? candles5m : timeframe === '5m' ? updatedCandles : symbolData.candles['5m'],
-                '15m': timeframe === '1m' ? candles15m : timeframe === '15m' ? updatedCandles : symbolData.candles['15m'],
-                '60m': timeframe === '1m' ? candles60m : timeframe === '60m' ? updatedCandles : symbolData.candles['60m'],
-                '1D': symbolData.candles['1D'],
+                "1m": timeframe === "1m" ? updatedCandles : symbolData.candles["1m"],
+                "5m":
+                  timeframe === "1m"
+                    ? candles5m
+                    : timeframe === "5m"
+                      ? updatedCandles
+                      : symbolData.candles["5m"],
+                "15m":
+                  timeframe === "1m"
+                    ? candles15m
+                    : timeframe === "15m"
+                      ? updatedCandles
+                      : symbolData.candles["15m"],
+                "60m":
+                  timeframe === "1m"
+                    ? candles60m
+                    : timeframe === "60m"
+                      ? updatedCandles
+                      : symbolData.candles["60m"],
+                "1D": symbolData.candles["1D"],
               },
               lastUpdated: Date.now(),
             },
           },
         });
-        
+
         // Recompute comprehensive indicators/signals if this is the primary timeframe
         // Note: recomputeSymbol has built-in conditional logic (only runs on bar close or significant move)
-        if (timeframe === symbolData.primaryTimeframe || timeframe === '1m') {
+        if (timeframe === symbolData.primaryTimeframe || timeframe === "1m") {
           get().recomputeSymbol(normalized);
         }
       },
-      
+
       recomputeIndicators: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const { symbols } = get();
         const symbolData = symbols[normalized];
-        
+
         if (!symbolData) return;
-        
+
         const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
         if (primaryCandles.length === 0) return;
-        
+
         // Compute indicators
         const indicators = computeIndicatorsFromCandles(primaryCandles);
-        
+
         // Compute MTF trends
         const mtfTrend: Record<Timeframe, MTFTrend> = {} as Record<Timeframe, MTFTrend>;
-        (['1m', '5m', '15m', '60m', '1D'] as Timeframe[]).forEach(tf => {
+        (["1m", "5m", "15m", "60m", "1D"] as Timeframe[]).forEach((tf) => {
           const tfCandles = symbolData.candles[tf];
           if (tfCandles.length > 0) {
             const tfIndicators = computeIndicatorsFromCandles(tfCandles);
             mtfTrend[tf] = determineTrend(tfCandles, tfIndicators);
           } else {
-            mtfTrend[tf] = 'neutral';
+            mtfTrend[tf] = "neutral";
           }
         });
-        
+
         // Compute confluence
         const confluence = calculateConfluence(normalized, primaryCandles, indicators, mtfTrend);
-        
+
         set({
           symbols: {
             ...symbols,
@@ -798,7 +989,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
           },
         });
       },
-      
+
       /**
        * Recompute all indicators, MTF trends, confluence, and strategies for a symbol
        * Only runs on bar close OR significant price move
@@ -857,25 +1048,30 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
         // ===== Step 1: Calculate comprehensive indicators from all timeframes =====
         const indicators = calculateComprehensiveIndicators(symbolData);
-        
+
         // ===== Step 2: Calculate MTF trends for each timeframe =====
         const mtfTrend = calculateMTFTrends(symbolData);
-        
+
         // ===== Step 3: Calculate enhanced confluence score =====
-        const confluence = calculateAdvancedConfluence(normalized, symbolData, indicators, mtfTrend);
+        const confluence = calculateAdvancedConfluence(
+          normalized,
+          symbolData,
+          indicators,
+          mtfTrend
+        );
 
         // ===== Step 4: Update state immutably using immer =====
         set(
           produce((draft) => {
             const sym = draft.symbols[normalized];
             if (!sym) return;
-            
+
             // Update indicators
             sym.indicators = indicators;
-            
+
             // Update MTF trends
             sym.mtfTrend = mtfTrend;
-            
+
             // Update confluence
             sym.confluence = confluence;
 
@@ -884,14 +1080,14 @@ export const useMarketDataStore = create<MarketDataStore>()(
           })
         );
       },
-      
+
       updateConfluence: (symbol: string, confluenceUpdate: Partial<ConfluenceScore>) => {
         const normalized = symbol.toUpperCase();
         const { symbols } = get();
         const symbolData = symbols[normalized];
-        
+
         if (!symbolData) return;
-        
+
         set({
           symbols: {
             ...symbols,
@@ -913,7 +1109,9 @@ export const useMarketDataStore = create<MarketDataStore>()(
         const symbolData = symbols[normalized];
 
         if (!symbolData) {
-          console.warn(`[v0] marketDataStore: Cannot update Greeks for unknown symbol ${normalized}`);
+          console.warn(
+            `[v0] marketDataStore: Cannot update Greeks for unknown symbol ${normalized}`
+          );
           return;
         }
 
@@ -960,27 +1158,30 @@ export const useMarketDataStore = create<MarketDataStore>()(
       setMarketStatus: (status: MarketStatus) => {
         set({ marketStatus: status });
       },
-      
+
       updateMarketSession: (session: EnrichedMarketSession) => {
         set({ enrichedSession: session });
-        
+
         // Also update legacy marketStatus for backward compatibility
-        const legacyStatus: MarketStatus = 
-          session.session === 'PRE' ? 'premarket' :
-          session.session === 'OPEN' ? 'open' :
-          session.session === 'POST' ? 'afterhours' :
-          'closed';
-        
+        const legacyStatus: MarketStatus =
+          session.session === "PRE"
+            ? "premarket"
+            : session.session === "OPEN"
+              ? "open"
+              : session.session === "POST"
+                ? "afterhours"
+                : "closed";
+
         set({ marketStatus: legacyStatus });
       },
-      
+
       fetchMarketSession: async () => {
         try {
-          const { enrichMarketStatus } = await import('../lib/marketSession');
-          
+          const { enrichMarketStatus } = await import("../lib/marketSession");
+
           const data = await massive.getMarketStatus();
           const enriched = enrichMarketStatus(data as any);
-          
+
           const session: EnrichedMarketSession = {
             session: enriched.session,
             isOpen: enriched.isLive,
@@ -991,18 +1192,18 @@ export const useMarketDataStore = create<MarketDataStore>()(
             label: enriched.label,
             asOf: enriched.asOf,
           };
-          
+
           get().updateMarketSession(session);
         } catch (error) {
-          console.error('[v0] Failed to fetch market session:', error);
+          console.error("[v0] Failed to fetch market session:", error);
 
           // Use fallback session based on current time
-          const { getFallbackSession, getNextMarketTimes } = await import('../lib/marketSession');
+          const { getFallbackSession, getNextMarketTimes } = await import("../lib/marketSession");
           const fallback = getFallbackSession();
           const { nextOpen, nextClose } = getNextMarketTimes(fallback.session);
 
           const now = new Date();
-          const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const etTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
           const isWeekend = etTime.getDay() === 0 || etTime.getDay() === 6;
 
           const session: EnrichedMarketSession = {
@@ -1019,9 +1220,9 @@ export const useMarketDataStore = create<MarketDataStore>()(
           get().updateMarketSession(session);
         }
       },
-      
+
       cleanup: () => {
-        const { heartbeatInterval, pendingWatchlistUpdate } = get();
+        const { heartbeatInterval, pendingWatchlistUpdate, pollingInterval } = get();
 
         // Note: massive singleton handles its own connection lifecycle
         // We don't call massive.disconnect() here as it's globally managed
@@ -1036,42 +1237,48 @@ export const useMarketDataStore = create<MarketDataStore>()(
           clearTimeout(pendingWatchlistUpdate);
         }
 
+        // Stop REST polling
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+        }
+
         set({
           wsConnection: {
             socket: null,
-            status: 'disconnected',
+            status: "disconnected",
             reconnectAttempts: 0,
             lastMessageTime: 0,
           },
           isConnected: false,
           heartbeatInterval: null,
           pendingWatchlistUpdate: null,
+          pollingInterval: null,
           subscribedSymbols: new Set(),
           unsubscribers: [],
         });
       },
-      
+
       // ======================================================================
       // Selectors
       // ======================================================================
-      
+
       getSymbolData: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         return get().symbols[normalized];
       },
-      
+
       getCandles: (symbol: string, timeframe: Timeframe) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
         return symbolData?.candles[timeframe] || [];
       },
-      
+
       getIndicators: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
         return symbolData?.indicators || {};
       },
-      
+
       getConfluence: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
@@ -1081,13 +1288,15 @@ export const useMarketDataStore = create<MarketDataStore>()(
       getMTFTrend: (symbol: string) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
-        return symbolData?.mtfTrend || {
-          '1m': 'neutral',
-          '5m': 'neutral',
-          '15m': 'neutral',
-          '60m': 'neutral',
-          '1D': 'neutral',
-        };
+        return (
+          symbolData?.mtfTrend || {
+            "1m": "neutral",
+            "5m": "neutral",
+            "15m": "neutral",
+            "60m": "neutral",
+            "1D": "neutral",
+          }
+        );
       },
 
       getGreeks: (symbol: string) => {
@@ -1114,7 +1323,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
         return age > maxAgeMs;
       },
     }),
-    { name: 'MarketDataStore' }
+    { name: "MarketDataStore" }
   )
 );
 
@@ -1124,42 +1333,42 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
 /** Get all data for a symbol */
 export function useSymbolData(symbol: string) {
-  return useMarketDataStore(state => state.getSymbolData(symbol));
+  return useMarketDataStore((state) => state.getSymbolData(symbol));
 }
 
 /** Get candles for a specific timeframe */
 export function useCandles(symbol: string, timeframe: Timeframe) {
-  return useMarketDataStore(state => state.getCandles(symbol, timeframe));
+  return useMarketDataStore((state) => state.getCandles(symbol, timeframe));
 }
 
 /** Get latest indicators */
 export function useIndicators(symbol: string) {
-  return useMarketDataStore(state => state.getIndicators(symbol));
+  return useMarketDataStore((state) => state.getIndicators(symbol));
 }
 
 /** Get confluence score */
 export function useConfluence(symbol: string) {
-  return useMarketDataStore(state => state.getConfluence(symbol));
+  return useMarketDataStore((state) => state.getConfluence(symbol));
 }
 
 /** Get MTF trend analysis */
 export function useMTFTrend(symbol: string) {
-  return useMarketDataStore(state => state.getMTFTrend(symbol));
+  return useMarketDataStore((state) => state.getMTFTrend(symbol));
 }
 
 /** Get market status (legacy) */
 export function useMarketStatus() {
-  return useMarketDataStore(state => state.marketStatus);
+  return useMarketDataStore((state) => state.marketStatus);
 }
 
 /** Get enriched market session with timing data */
 export function useEnrichedMarketSession() {
-  return useMarketDataStore(state => state.enrichedSession);
+  return useMarketDataStore((state) => state.enrichedSession);
 }
 
 /** Get market session actions */
 export function useMarketSessionActions() {
-  return useMarketDataStore(state => ({
+  return useMarketDataStore((state) => ({
     fetchMarketSession: state.fetchMarketSession,
     updateMarketSession: state.updateMarketSession,
   }));
@@ -1167,15 +1376,15 @@ export function useMarketSessionActions() {
 
 /** Get Greeks for a symbol */
 export function useGreeks(symbol: string) {
-  return useMarketDataStore(state => state.getGreeks(symbol));
+  return useMarketDataStore((state) => state.getGreeks(symbol));
 }
 
 /** Check if Greeks are stale */
 export function useAreGreeksStale(symbol: string, maxAgeMs?: number) {
-  return useMarketDataStore(state => state.areGreeksStale(symbol, maxAgeMs));
+  return useMarketDataStore((state) => state.areGreeksStale(symbol, maxAgeMs));
 }
 
 /** Check if symbol data is stale */
 export function useIsStale(symbol: string, maxAgeMs?: number) {
-  return useMarketDataStore(state => state.isStale(symbol, maxAgeMs));
+  return useMarketDataStore((state) => state.isStale(symbol, maxAgeMs));
 }
