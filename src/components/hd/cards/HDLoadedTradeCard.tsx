@@ -38,8 +38,8 @@ export function HDLoadedTradeCard({
   };
 
   return (
-    <div className="space-y-3">
-      {/* Header - Contract Details */}
+    <div className="space-y-4">
+      {/* Row 1: Contract Header (full width) */}
       <HDCard>
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -95,26 +95,29 @@ export function HDLoadedTradeCard({
         </div>
       </HDCard>
 
-      {/* Trade Plan with Dynamic Profit Targets */}
-      <HDCard>
-        <HDDynamicProfitTargets
-          contract={trade.contract}
-          entryPrice={trade.contract.mid}
-          stopLoss={trade.stopLoss}
-          tradeType={trade.tradeType}
-        />
-      </HDCard>
+      {/* Row 2: Quality + Targets (2-column grid) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Contract Quality Analysis */}
+        <HDCard className="h-fit">
+          <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <span>⭐</span>
+            <span>Contract Quality</span>
+          </div>
+          <HDContractQualityBadge contract={trade.contract} config={qualityConfig} showDetails />
+        </HDCard>
 
-      {/* Contract Quality Analysis */}
-      <HDCard>
-        <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <span>⭐</span>
-          <span>Contract Quality</span>
-        </div>
-        <HDContractQualityBadge contract={trade.contract} config={qualityConfig} showDetails />
-      </HDCard>
+        {/* Dynamic Profit Targets */}
+        <HDCard className="h-fit">
+          <HDDynamicProfitTargets
+            contract={trade.contract}
+            entryPrice={trade.contract.mid}
+            stopLoss={trade.stopLoss}
+            tradeType={trade.tradeType}
+          />
+        </HDCard>
+      </div>
 
-      {/* Entry Checklist - Critical pre-entry confirmation */}
+      {/* Row 3: Entry Checklist (full width) */}
       <HDCard>
         <HDEntryChecklist
           ticker={trade.ticker}
@@ -123,23 +126,24 @@ export function HDLoadedTradeCard({
         />
       </HDCard>
 
-      {/* Time Decay Warning - DTE urgency and session timing */}
-      <HDCard>
-        <HDTimeDecayWarning contract={trade.contract} />
-      </HDCard>
+      {/* Row 4: Session + Time (2-column grid) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Session Guidance + Economic Events */}
+        <HDCard className="h-fit space-y-3">
+          <HDSessionGuidance
+            ticker={trade.ticker}
+            direction={trade.contract.type === "C" ? "call" : "put"}
+            contract={trade.contract}
+            tradeType={trade.tradeType}
+          />
+          <HDEconomicEventWarning ticker={trade.ticker} />
+        </HDCard>
 
-      {/* Session Guidance - Smart contextual trading advice */}
-      <HDCard>
-        <HDSessionGuidance
-          ticker={trade.ticker}
-          direction={trade.contract.type === "C" ? "call" : "put"}
-          contract={trade.contract}
-          tradeType={trade.tradeType}
-        />
-      </HDCard>
-
-      {/* Economic Event Warning */}
-      <HDEconomicEventWarning ticker={trade.ticker} />
+        {/* Time Decay Warning */}
+        <HDCard className="h-fit">
+          <HDTimeDecayWarning contract={trade.contract} />
+        </HDCard>
+      </div>
 
       {/* Action Buttons - Only show when showActions is true */}
       {showActions && (
