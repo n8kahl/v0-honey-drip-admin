@@ -115,7 +115,6 @@ export default function App() {
   // Subscribe watchlist symbols to marketDataStore for confluence metrics
   useEffect(() => {
     if (watchlistSymbols.length > 0) {
-      console.log("[v0] 📊 Subscribing watchlist to marketDataStore:", watchlistSymbols);
       watchlistSymbols.forEach((symbol) => {
         subscribeToMarketData(symbol);
       });
@@ -249,13 +248,11 @@ export default function App() {
   // Initialize market data WebSocket when watchlist is loaded
   useEffect(() => {
     if (watchlistSymbols.length > 0) {
-      console.log("[v0] App: Initializing marketDataStore with watchlist:", watchlistSymbols);
       initializeMarketData(watchlistSymbols);
     }
 
     // Cleanup on unmount
     return () => {
-      console.log("[v0] App: Cleaning up marketDataStore");
       marketDataCleanup();
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes

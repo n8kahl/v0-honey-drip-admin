@@ -80,7 +80,6 @@ export async function fetchIndicators(
   // Check cache first
   const cached = indicatorCache.get(cacheKey);
   if (cached && !isCacheExpired(cached.timestamp)) {
-    console.log(`[IndicatorsAPI] ✅ Cache hit for ${cacheKey}`);
     return cached.data;
   }
 
@@ -91,9 +90,7 @@ export async function fetchIndicators(
     return cached?.data || { timestamp: Date.now() };
   }
 
-  console.log(
-    `[IndicatorsAPI] 🔄 Fetching indicators for ${symbol}: ${JSON.stringify(indicators)}`
-  );
+  // Fetching fresh indicator data
 
   const response: IndicatorResponse = {
     timestamp: Date.now(),
@@ -171,7 +168,6 @@ export async function fetchIndicators(
     // Clear any failure tracking
     failedFetches.delete(cacheKey);
 
-    console.log(`[IndicatorsAPI] ✅ Successfully fetched and cached indicators for ${symbol}`);
     return response;
   } catch (error) {
     console.error(`[IndicatorsAPI] ❌ Failed to fetch indicators for ${symbol}:`, error);

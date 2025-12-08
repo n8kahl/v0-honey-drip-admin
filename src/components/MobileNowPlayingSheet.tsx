@@ -37,21 +37,9 @@ export function MobileNowPlayingSheet({
   onAction,
 }: MobileNowPlayingSheetProps) {
   // Only emit noisy logs in development
-  const __DEV__ = typeof window !== "undefined" && (import.meta as any)?.env?.DEV;
+  const __DEV__ = typeof window !== "undefined" && import.meta.env?.DEV;
 
   const [expanded, setExpanded] = useState(state === "LOADED" || state === "ENTERED");
-
-  if (__DEV__) {
-    console.debug("MobileNowPlayingSheet init", {
-      state,
-      expanded,
-      hasTrade: !!trade,
-      ticker,
-      hideWhenAlert,
-      onActionExists: !!onAction,
-      tradeState: trade?.state,
-    });
-  }
 
   // Auto-expand when trade or state changes (e.g., clicking a loaded trade from the list)
   // This ensures clicking a trade always opens the modal, even if it's the same trade
@@ -63,17 +51,13 @@ export function MobileNowPlayingSheet({
 
   // Don't show if no trade and no ticker
   if (!trade && !ticker) {
-    if (__DEV__) console.debug("MobileNowPlayingSheet: no trade and no ticker - skipping render");
     return null;
   }
 
   // Hide when alert composer is showing
   if (hideWhenAlert) {
-    if (__DEV__) console.debug("MobileNowPlayingSheet: hideWhenAlert is true - skipping render");
     return null;
   }
-
-  if (__DEV__) console.debug("MobileNowPlayingSheet will render UI");
 
   const isPositive = (trade?.movePercent || 0) >= 0;
   const borderColor =
@@ -432,23 +416,11 @@ export function MobileNowPlayingSheet({
 
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onMouseDown={() => {
-                    if (__DEV__) console.debug("TRIM mouseDown");
-                  }}
-                  onTouchStart={() => {
-                    if (__DEV__) console.debug("TRIM touchStart");
-                  }}
+                  onMouseDown={() => {}}
+                  onTouchStart={() => {}}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__)
-                      console.debug(
-                        "TRIM clicked, onAction exists?",
-                        !!onAction,
-                        "type:",
-                        typeof onAction
-                      );
                     onAction?.("trim");
-                    if (__DEV__) console.debug('onAction("trim") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -457,17 +429,11 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => {
-                    if (__DEV__) console.debug("UPDATE SL mouseDown");
-                  }}
-                  onTouchStart={() => {
-                    if (__DEV__) console.debug("UPDATE SL touchStart");
-                  }}
+                  onMouseDown={() => {}}
+                  onTouchStart={() => {}}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug("UPDATE SL clicked, onAction exists?", !!onAction);
                     onAction?.("update-sl");
-                    if (__DEV__) console.debug('onAction("update-sl") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -476,17 +442,11 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => {
-                    if (__DEV__) console.debug("UPDATE mouseDown");
-                  }}
-                  onTouchStart={() => {
-                    if (__DEV__) console.debug("UPDATE touchStart");
-                  }}
+                  onMouseDown={() => {}}
+                  onTouchStart={() => {}}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug("UPDATE clicked, onAction exists?", !!onAction);
                     onAction?.("update");
-                    if (__DEV__) console.debug('onAction("update") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -495,17 +455,11 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => {
-                    if (__DEV__) console.debug("ADD mouseDown");
-                  }}
-                  onTouchStart={() => {
-                    if (__DEV__) console.debug("ADD touchStart");
-                  }}
+                  onMouseDown={() => {}}
+                  onTouchStart={() => {}}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug("ADD clicked, onAction exists?", !!onAction);
                     onAction?.("add");
-                    if (__DEV__) console.debug('onAction("add") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
                 >
@@ -515,17 +469,11 @@ export function MobileNowPlayingSheet({
               </div>
 
               <button
-                onMouseDown={() => {
-                  if (__DEV__) console.debug("EXIT mouseDown");
-                }}
-                onTouchStart={() => {
-                  if (__DEV__) console.debug("EXIT touchStart");
-                }}
+                onMouseDown={() => {}}
+                onTouchStart={() => {}}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (__DEV__) console.debug("EXIT clicked, onAction exists?", !!onAction);
                   onAction?.("exit");
-                  if (__DEV__) console.debug('onAction("exit") called');
                 }}
                 className="w-full p-3 bg-[var(--accent-negative)]/10 hover:bg-[var(--accent-negative)]/20 border border-[var(--accent-negative)]/30 rounded-lg transition-colors text-[var(--accent-negative)] font-medium text-center"
               >
