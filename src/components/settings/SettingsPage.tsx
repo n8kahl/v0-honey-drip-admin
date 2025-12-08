@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { MobileWatermark } from "../MobileWatermark";
 import { HDButton } from "../hd/common/HDButton";
+import { ProfileSettings } from "./ProfileSettings";
 import { TakeProfitSettings } from "./TakeProfitSettings";
 import { VoiceCommandsSettings } from "./VoiceCommandsSettings";
 import { LiveDataBehaviorSettings } from "./LiveDataBehaviorSettings";
@@ -41,6 +42,9 @@ export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPagePro
         </div>
 
         <div className="space-y-6 lg:space-y-8">
+          {/* Profile */}
+          <ProfileSettings />
+
           {/* Core Trading Settings */}
           <TakeProfitSettings />
           <LiveDataBehaviorSettings />
