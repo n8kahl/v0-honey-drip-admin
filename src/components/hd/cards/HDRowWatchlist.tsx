@@ -113,6 +113,18 @@ export function HDRowWatchlist({
     return { label: "Monitoring", tone: "muted" as const, score };
   })();
 
+  // Helper to format last updated text - must be defined before confluencePill
+  const getLastUpdatedText = () => {
+    if (!lastUpdated) return null;
+    const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
+    if (secondsAgo < 5) return "Live";
+    if (secondsAgo < 60) return `${secondsAgo}s ago`;
+    const minutesAgo = Math.floor(secondsAgo / 60);
+    return `${minutesAgo}m ago`;
+  };
+
+  const lastUpdatedText = getLastUpdatedText();
+
   const confluencePill = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -177,17 +189,6 @@ export function HDRowWatchlist({
       </div>
     );
   }
-
-  const getLastUpdatedText = () => {
-    if (!lastUpdated) return null;
-    const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
-    if (secondsAgo < 5) return "Live";
-    if (secondsAgo < 60) return `${secondsAgo}s ago`;
-    const minutesAgo = Math.floor(secondsAgo / 60);
-    return `${minutesAgo}m ago`;
-  };
-
-  const lastUpdatedText = getLastUpdatedText();
 
   // No animation per request
   const pulseClass = "";
