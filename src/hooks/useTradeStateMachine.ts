@@ -464,16 +464,31 @@ export function useTradeStateMachine({
         },
       });
 
-      // LOAD alert: Keep trade in memory only (don't persist to database yet)
-      // We'll persist when user enters the trade (LOADED → ENTERED transition)
+      // LOAD alert: Persist trade to database immediately so subsequent actions work
       if (alertType === "load") {
         try {
-          console.warn("[v0] Loading trade (memory only, will persist on ENTER)");
+          console.warn("[v0] Loading trade (persisting to database)");
 
-          // Create trade object with temporary ID (no database persistence yet)
-          // Apply price overrides so they're reflected in the loaded trade
+          // Create trade in database FIRST to get a real ID
+          const dbTrade = await createTradeApi(userId, {
+            ticker: currentTrade.ticker,
+            contract: currentTrade.contract,
+            targetPrice: effectiveTargetPrice,
+            stopLoss: effectiveStopLoss,
+            status: "loaded", // DB status for LOADED state
+            discordChannelIds: channelIds,
+            challengeIds: challengeIds,
+            setupType: currentTrade.setupType,
+            confluence: currentTrade.confluence,
+            confluenceUpdatedAt: currentTrade.confluenceUpdatedAt?.toISOString(),
+          });
+
+          console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
+
+          // Create trade object with REAL database ID
           const loadedTrade: Trade = {
             ...currentTrade,
+            id: dbTrade.id, // Use real DB ID, not temp ID
             state: "LOADED",
             targetPrice: effectiveTargetPrice,
             stopLoss: effectiveStopLoss,
@@ -585,16 +600,22 @@ export function useTradeStateMachine({
           const kind =
             alertOptions.updateKind === "trim"
               ? "trim"
-              : alertOptions.updateKind === "sl"
-                ? "update-sl"
-                : "update";
+              : alertOptions.updateKind === "take-profit"
+                ? "trim" // Take profit uses "trim" update type (partial exit at target)
+                : alertOptions.updateKind === "sl"
+                  ? "update-sl"
+                  : "update";
+          const updateMessage =
+            alertOptions.updateKind === "take-profit"
+              ? message || "Taking profit at target"
+              : message;
           newTrade = {
             ...newTrade,
             discordChannels: channelIds,
             challenges: challengeIds,
             updates: [
               ...currentUpdates,
-              makeUpdate(kind as TradeUpdate["type"], basePrice, message),
+              makeUpdate(kind as TradeUpdate["type"], basePrice, updateMessage),
             ],
           };
           updateType = kind as TradeUpdate["type"];
@@ -682,32 +703,24 @@ export function useTradeStateMachine({
       try {
         const persistencePromises = [];
 
-        // Special case: LOADED → ENTERED means we need to CREATE the trade in DB for the first time
+        // LOADED → ENTERED: Trade already exists in DB (created on LOAD), just update status
         if (currentTrade.state === "LOADED" && newTrade.state === "ENTERED") {
-          console.warn(`[v0] Creating trade in database (LOADED → ENTERED transition)`);
+          console.warn(`[v0] Updating trade in database (LOADED → ENTERED transition)`);
 
-          const dbTrade = await createTradeApi(userId, {
-            ticker: newTrade.ticker,
-            contract: newTrade.contract,
-            targetPrice: newTrade.targetPrice,
-            stopLoss: newTrade.stopLoss,
-            entryPrice: newTrade.entryPrice,
-            entryTime: newTrade.entryTime,
-            status: "entered",
-            discordChannelIds: channelIds,
-            challengeIds: challengeIds,
-            // Include confluence and setup type from the trade
-            setupType: newTrade.setupType,
-            confluence: newTrade.confluence,
-            confluenceUpdatedAt: newTrade.confluenceUpdatedAt?.toISOString(),
-          });
+          persistencePromises.push(
+            updateTradeApi(userId, newTrade.id, {
+              status: "entered",
+              entry_price: newTrade.entryPrice,
+              entry_time: newTrade.entryTime?.toISOString?.() || new Date().toISOString(),
+              target_price: newTrade.targetPrice,
+              stop_loss: newTrade.stopLoss,
+            }).catch((error) => {
+              console.error("[v0] Failed to update trade to entered:", error);
+              throw error;
+            })
+          );
 
-          // Update the trade with the real database ID
-          newTrade = { ...newTrade, id: dbTrade.id };
-          setCurrentTrade(newTrade);
-          setActiveTrades((prev) => prev.map((t) => (t.id === currentTrade.id ? newTrade : t)));
-
-          console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
+          console.warn(`[v0] Trade ${newTrade.id} transitioning to ENTERED`);
         }
         // Normal case: Update existing trade in database
         else if (newTrade.state !== currentTrade.state) {
@@ -1170,10 +1183,11 @@ export function useTradeStateMachine({
       setTradeState("ENTERED");
       setShowAlert(false);
 
-      // Persist to database - create trade if WATCHING/LOADED → ENTERED
+      // Persist to database - handle WATCHING vs LOADED differently
       try {
-        if (currentTrade.state === "WATCHING" || currentTrade.state === "LOADED") {
-          console.warn("[v0] Creating trade in database (Enter and Alert)");
+        if (currentTrade.state === "WATCHING") {
+          // WATCHING → ENTERED: Create new trade in database
+          console.warn("[v0] Creating trade in database (Enter and Alert from WATCHING)");
 
           const dbTrade = await createTradeApi(userId, {
             ticker: enteredTrade.ticker,
@@ -1196,6 +1210,19 @@ export function useTradeStateMachine({
           setActiveTrades((prev) => prev.map((t) => (t.id === currentTrade.id ? enteredTrade : t)));
 
           console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
+        } else if (currentTrade.state === "LOADED") {
+          // LOADED → ENTERED: Trade already in DB, just update status
+          console.warn("[v0] Updating trade in database (Enter and Alert from LOADED)");
+
+          await updateTradeApi(userId, currentTrade.id, {
+            status: "entered",
+            entry_price: enteredTrade.entryPrice,
+            entry_time: enteredTrade.entryTime?.toISOString?.() || new Date().toISOString(),
+            target_price: enteredTrade.targetPrice,
+            stop_loss: enteredTrade.stopLoss,
+          });
+
+          console.warn(`[v0] Trade ${currentTrade.id} updated to ENTERED`);
         }
       } catch (error) {
         console.error("[v0] Failed to persist trade to database:", error);
@@ -1350,8 +1377,9 @@ export function useTradeStateMachine({
 
   const handleTakeProfit = useCallback(() => {
     if (!currentTrade) return;
-    // Take profit is just an exit with "Taking profit at target" default comment
-    openAlertComposer("exit");
+    // Take profit is a PARTIAL exit at target level (like Trim but specifically at TP)
+    setAlertOptions({ updateKind: "take-profit" });
+    openAlertComposer("update");
   }, [currentTrade, openAlertComposer]);
 
   const handleExit = useCallback(() => {
