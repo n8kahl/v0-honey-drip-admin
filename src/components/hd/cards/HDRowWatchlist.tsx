@@ -130,7 +130,9 @@ export function HDRowWatchlist({
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex h-[22px] items-center justify-center gap-1.5 px-2.5 text-[10px] leading-none font-medium rounded-full border",
+            "inline-flex h-[22px] items-center justify-center gap-1.5 px-2.5 self-center",
+            "text-[10px] leading-none font-medium rounded-full border border-[var(--border-strong)]",
+            "bg-[var(--surface-3)] text-[var(--text-high)]",
             confluenceStatus.tone === "success" &&
               "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
             confluenceStatus.tone === "warn" &&
@@ -139,10 +141,10 @@ export function HDRowWatchlist({
             confluenceStatus.tone === "muted" && "bg-zinc-700/40 text-zinc-200 border-zinc-600/80"
           )}
         >
-          {confluenceStatus.label === "Monitoring" && <Activity className="w-3 h-3" />}
-          {confluenceStatus.label === "Setup" && <Zap className="w-3 h-3" />}
-          {confluenceStatus.label === "Confluence" && <Zap className="w-3 h-3" />}
-          {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3" />}
+          {confluenceStatus.label === "Monitoring" && <Activity className="w-3 h-3 text-current" />}
+          {confluenceStatus.label === "Setup" && <Zap className="w-3 h-3 text-current" />}
+          {confluenceStatus.label === "Confluence" && <Zap className="w-3 h-3 text-current" />}
+          {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3 text-current" />}
           <span className="leading-none">{confluenceStatus.label}</span>
           {typeof confluenceStatus.score === "number" && (
             <span className="font-mono text-[10px] leading-none opacity-80">
@@ -151,8 +153,11 @@ export function HDRowWatchlist({
           )}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="bg-[var(--surface-4)] text-[var(--text-high)] border border-[var(--border-strong)] max-w-xs px-3 py-2.5 shadow-lg rounded-[10px]">
-        <div className="flex items-center justify-between text-[11px] font-semibold leading-tight">
+      <TooltipContent
+        sideOffset={8}
+        className="z-50 w-[220px] rounded-[12px] border border-[var(--border-strong)] bg-[var(--surface-4)] px-3 py-2.5 shadow-lg text-[11px] leading-tight text-[var(--text-high)]"
+      >
+        <div className="flex items-center justify-between font-semibold">
           <span>
             {ticker.symbol} · {confluenceStatus.label}
           </span>
@@ -162,11 +167,11 @@ export function HDRowWatchlist({
             </span>
           )}
         </div>
-        <div className="mt-1 text-[10.5px] text-[var(--text-muted)] leading-tight">
+        <div className="mt-1 text-[10.5px] text-[var(--text-muted)]">
           {lastUpdatedText ? `Updated ${lastUpdatedText}` : "No recent updates"}
         </div>
         {symbolData?.confluence && (
-          <div className="mt-2 grid grid-cols-2 gap-y-1 text-[11px] text-[var(--text-high)] leading-tight">
+          <div className="mt-2 grid grid-cols-2 gap-y-1">
             <span className="text-[var(--text-muted)]">Trend</span>
             <span className="font-mono text-right">
               {Math.round(symbolData.confluence.trend ?? 0)}
