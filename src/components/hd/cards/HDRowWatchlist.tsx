@@ -1,12 +1,26 @@
+/**
+ * HDRowWatchlist - Watchlist row with sparkline and confluence
+ *
+ * Layout:
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │ [Signal] SPY                    ▲ 605.23 +0.45%            │
+ * │          ████████░░ sparkline   Live • Conf 78             │
+ * └─────────────────────────────────────────────────────────────┘
+ */
+
 import { Ticker } from "../../../types";
 import { formatPrice, cn } from "../../../lib/utils";
-import { X, Wifi, Zap, Activity } from "lucide-react";
+import { X, ChevronDown, ChevronUp } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useUIStore } from "../../../stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
 import { useRef, useEffect, useState } from "react";
 import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 import { CompositeSignalBadge } from "../signals/CompositeSignalBadge";
+import { HDMiniSparkline, HDMiniSparklineSkeleton } from "../charts/HDMiniSparkline";
+import { HDLiveIndicator, HDConfluenceBadge, type DataStatus } from "../common/HDLiveIndicator";
+import { HDWatchlistMetrics } from "../watchlist/HDWatchlistMetrics";
+import { useWarehouseData } from "../../../hooks/useWarehouseData";
 
 interface HDRowWatchlistProps {
   ticker: Ticker;
@@ -15,6 +29,8 @@ interface HDRowWatchlistProps {
   onRemove?: () => void;
   /** Composite signals for this symbol (from useCompositeSignals) */
   compositeSignals?: CompositeSignal[];
+  /** Animation delay for stagger effect */
+  animationDelay?: number;
 }
 
 export function HDRowWatchlist({
@@ -23,18 +39,23 @@ export function HDRowWatchlist({
   onClick,
   onRemove,
   compositeSignals,
+  animationDelay,
 }: HDRowWatchlistProps) {
   // Get all data from marketDataStore (single source of truth)
   const symbolData = useSymbolData(ticker.symbol);
   const setActiveTab = useUIStore((state) => state.setActiveTab);
   const scrollChartToBar = useUIStore((state) => state.scrollChartToBar);
-  const setMainCockpitSymbol = useUIStore((state) => state.setMainCockpitSymbol);
-  // Explicit store instance for row click, per request
   const uiStore = useUIStore();
 
-  // Local timestamp tracking based on price changes since marketDataStore isn't updating quotes
+  // Local timestamp tracking based on price changes
   const lastUpdateRef = useRef<number>(Date.now());
   const prevPriceRef = useRef<number>(ticker.last);
+
+  // Expandable metrics panel state
+  const [metricsExpanded, setMetricsExpanded] = useState(false);
+
+  // Warehouse data integration
+  const { flowSummary, gammaData, ivData } = useWarehouseData(ticker.symbol);
 
   // Price flash animation state: 'up' | 'down' | null
   const [priceFlash, setPriceFlash] = useState<"up" | "down" | null>(null);
@@ -57,7 +78,6 @@ export function HDRowWatchlist({
 
   const currentPrice = ticker.last;
   const changePercent = ticker.changePercent || 0;
-  const change = ticker.change || 0;
 
   // Determine price direction color
   const priceColor =
@@ -67,157 +87,57 @@ export function HDRowWatchlist({
         ? "text-red-500"
         : "text-[var(--text-high)]";
 
-  // Prefer symbolData timestamp if present, else fallback to local ref
+  // Data freshness and status
   const lastUpdated = symbolData?.lastUpdated || lastUpdateRef.current;
-  const strategySignals = symbolData?.strategySignals || [];
-  const activeCount = Array.isArray(strategySignals)
-    ? strategySignals.filter((s: any) => s?.active === true || s?.status === "ACTIVE").length
-    : 0;
-  const indicators = symbolData?.indicators;
-  const confluence = symbolData?.confluence;
-
-  // Filter active signals
-  const activeSignals = strategySignals.filter((s) => s.status === "ACTIVE");
-  const activeSignalCount = activeSignals.length;
-
-  // Prepare tooltip lines with strategy IDs and confluence score
   const confluenceScore = symbolData?.confluence?.overall;
-  const tooltipText = activeSignals.length
-    ? `${ticker.symbol}: ${activeSignals.map((s) => s.strategyId).join(", ")} · conf ${
-        typeof confluenceScore === "number" ? Math.round(confluenceScore) : "-"
-      }`
-    : undefined;
+
+  // Determine data status
+  const getDataStatus = (): DataStatus => {
+    if (!lastUpdated) return "stale";
+    const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
+    if (secondsAgo < 5) return "live";
+    if (secondsAgo < 30) return "polling";
+    return "stale";
+  };
+
+  const dataStatus = getDataStatus();
+  const isStale = dataStatus === "stale";
+
+  // Check if we have candle data for sparkline
+  const hasCandles =
+    symbolData?.candles?.["1m"]?.length > 0 || symbolData?.candles?.["5m"]?.length > 0;
 
   // Handle badge click - navigate to chart at signal bar
   const handleBadgeClick = (signal: any) => {
-    console.log("[v0] Strategy badge clicked:", signal);
-
-    // First, select this ticker if not already active
     if (!active) {
       onClick?.();
     }
-
-    // Switch to live tab to show chart
     setActiveTab("live");
-
-    // Scroll chart to the bar where signal triggered
     if (signal.barTimeKey) {
-      // Small delay to ensure chart is rendered
-      setTimeout(() => {
-        scrollChartToBar(signal.barTimeKey);
-      }, 100);
-    } else {
-      console.warn("[v0] Signal missing barTimeKey, cannot scroll chart");
+      setTimeout(() => scrollChartToBar(signal.barTimeKey), 100);
     }
   };
-
-  // Staleness check: stale if lastUpdated > 30s ago (aligned with marketDataStore)
-  const isStale = lastUpdated ? Date.now() - lastUpdated > 30000 : true;
-
-  // Confluence / monitoring status
-  const confluenceStatus = (() => {
-    if (!symbolData?.confluence || !lastUpdated)
-      return { label: "Monitoring", tone: "muted" as const };
-    if (isStale) return { label: "Stale", tone: "danger" as const };
-    const score = symbolData.confluence.overall ?? 0;
-    if (score >= 80) return { label: "Confluence", tone: "success" as const, score };
-    if (score >= 60) return { label: "Setup", tone: "warn" as const, score };
-    return { label: "Monitoring", tone: "muted" as const, score };
-  })();
-
-  // Helper to format last updated text - must be defined before confluencePill
-  const getLastUpdatedText = () => {
-    if (!lastUpdated) return null;
-    const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
-    if (secondsAgo < 5) return "Live";
-    if (secondsAgo < 60) return `${secondsAgo}s ago`;
-    const minutesAgo = Math.floor(secondsAgo / 60);
-    return `${minutesAgo}m ago`;
-  };
-
-  const lastUpdatedText = getLastUpdatedText();
-
-  const confluencePill = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            "inline-flex h-[22px] items-center justify-center gap-1.5 px-2.5 self-center",
-            "text-[10px] leading-[1] font-medium rounded-full border border-[var(--border-strong)]",
-            "bg-[var(--surface-3)] text-[var(--text-high)]",
-            confluenceStatus.tone === "success" &&
-              "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
-            confluenceStatus.tone === "warn" &&
-              "bg-amber-500/15 text-amber-200 border-amber-500/60",
-            confluenceStatus.tone === "danger" && "bg-red-500/15 text-red-200 border-red-500/60",
-            confluenceStatus.tone === "muted" && "bg-zinc-700/40 text-zinc-200 border-zinc-600/80"
-          )}
-        >
-          {confluenceStatus.label === "Monitoring" && <Activity className="w-3 h-3 text-current" />}
-          {confluenceStatus.label === "Setup" && <Zap className="w-3 h-3 text-current" />}
-          {confluenceStatus.label === "Confluence" && <Zap className="w-3 h-3 text-current" />}
-          {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3 text-current" />}
-          <span className="leading-[1]">{confluenceStatus.label}</span>
-          {typeof confluenceStatus.score === "number" && (
-            <span className="font-mono text-[10px] leading-[1] opacity-80">
-              {Math.round(confluenceStatus.score)}
-            </span>
-          )}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent
-        side="bottom"
-        align="start"
-        sideOffset={10}
-        className="z-50 w-[220px] rounded-[12px] border border-[var(--border-strong)] bg-[#0f1115] text-[#f5f5f7] px-3 py-2.5 shadow-2xl text-[11px] leading-tight"
-      >
-        <div className="flex items-center justify-between font-semibold">
-          <span>
-            {ticker.symbol} · {confluenceStatus.label}
-          </span>
-          {typeof confluenceStatus.score === "number" && (
-            <span className="font-mono text-[11px] text-emerald-200">
-              {Math.round(confluenceStatus.score)}
-            </span>
-          )}
-        </div>
-        <div className="mt-1 text-[10.5px] text-[#a0a3ad]">
-          {lastUpdatedText ? `Updated ${lastUpdatedText}` : "No recent updates"}
-        </div>
-        {symbolData?.confluence && (
-          <div className="mt-2 grid grid-cols-2 gap-y-1 text-[11px]">
-            <span className="text-[#a0a3ad]">Trend</span>
-            <span className="font-mono text-right">
-              {Math.round(symbolData.confluence.trend ?? 0)}
-            </span>
-            <span className="text-[#a0a3ad]">Momentum</span>
-            <span className="font-mono text-right">
-              {Math.round(symbolData.confluence.momentum ?? 0)}
-            </span>
-            <span className="text-[#a0a3ad]">Volume</span>
-            <span className="font-mono text-right">
-              {Math.round(symbolData.confluence.volume ?? 0)}
-            </span>
-          </div>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  );
 
   // Defensive: fallback for missing price
   const priceDisplay =
     typeof currentPrice === "number" && !isNaN(currentPrice) ? (
       formatPrice(currentPrice)
     ) : (
-      <span className="text-[var(--text-muted)] italic">N/A</span>
+      <span className="text-[var(--text-muted)] italic">--</span>
     );
 
   // Loading skeleton
   if (!ticker || !ticker.symbol) {
     return (
-      <div className="w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] animate-pulse">
-        <div className="h-4 w-16 bg-[var(--surface-2)] rounded" />
-        <div className="h-4 w-10 bg-[var(--surface-2)] rounded" />
+      <div className="w-full flex flex-col gap-1 p-3 border-b border-[var(--border-hairline)] animate-pulse">
+        <div className="flex items-center justify-between">
+          <div className="h-4 w-16 bg-[var(--surface-2)] rounded" />
+          <div className="h-4 w-20 bg-[var(--surface-2)] rounded" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-7 flex-1 bg-[var(--surface-2)] rounded" />
+          <div className="h-4 w-8 bg-[var(--surface-2)] rounded" />
+        </div>
       </div>
     );
   }
@@ -226,77 +146,67 @@ export function HDRowWatchlist({
   const priceFlashClass =
     priceFlash === "up" ? "animate-flash-green" : priceFlash === "down" ? "animate-flash-red" : "";
 
+  // Legacy signals fallback
+  const strategySignals = (symbolData as any)?.strategySignals || [];
+  const activeSignals = strategySignals.filter((s: any) => s.status === "ACTIVE");
+  const activeSignalCount = activeSignals.length;
+
   return (
-    <div
-      className={cn(
-        "w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[48px]",
-        "cursor-pointer hover:bg-zinc-800 transition-colors duration-150 ease-out touch-manipulation",
-        active && "bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm",
-        isStale && "opacity-60"
-      )}
-      data-testid={`watchlist-item-${ticker.symbol}`}
-      onClick={() => {
-        onClick?.();
-        uiStore.setMainCockpitSymbol(ticker.symbol);
-      }}
-    >
+    <>
       <div
-        className="flex-1 flex items-center justify-between text-left"
-        title={isStale ? "Data is stale" : undefined}
+        className={cn(
+          "w-full flex flex-col gap-1.5 px-3 py-2.5 border-b border-[var(--border-hairline)] group",
+          "cursor-pointer transition-all duration-150 ease-out touch-manipulation",
+          "hover:bg-[var(--surface-3)] hover:shadow-sm",
+          active && "bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm",
+          isStale && "opacity-60"
+        )}
+        style={animationDelay ? { animationDelay: `${animationDelay}ms` } : undefined}
+        data-testid={`watchlist-item-${ticker.symbol}`}
+        onClick={() => {
+          onClick?.();
+          uiStore.setMainCockpitSymbol(ticker.symbol);
+        }}
       >
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <div className="flex items-center gap-1.5">
-            {/* Composite signals - primary signal display */}
+        {/* Row 1: Signal + Symbol + Price */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Composite signals badge */}
             {compositeSignals && compositeSignals.length > 0 && (
               <CompositeSignalBadge
                 symbol={ticker.symbol}
                 signals={compositeSignals}
                 compact
-                className="mr-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBadgeClick(compositeSignals[0]);
+                }}
               />
             )}
-            {/* Fallback to legacy signals if no composite signals */}
+
+            {/* Legacy signal count fallback */}
             {(!compositeSignals || compositeSignals.length === 0) && activeSignalCount > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "px-1.5 py-0.5 text-xs font-medium rounded mr-1",
-                      "bg-zinc-700 text-zinc-300"
-                    )}
-                    aria-label={`${activeSignalCount} active setups`}
-                  >
-                    {activeSignalCount}
-                  </span>
-                </TooltipTrigger>
-                {tooltipText && (
-                  <TooltipContent
-                    side="bottom"
-                    className="bg-zinc-800 text-zinc-200 border border-zinc-700"
-                  >
-                    <div className="max-w-xs whitespace-pre-wrap text-xs">{tooltipText}</div>
-                  </TooltipContent>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 text-[10px] font-medium rounded",
+                  "bg-zinc-700 text-zinc-300"
                 )}
-              </Tooltip>
+              >
+                {activeSignalCount}
+              </span>
             )}
-            <span className="text-[var(--text-high)] font-medium leading-tight">
+
+            {/* Symbol */}
+            <span className="text-[var(--text-high)] font-semibold text-sm leading-tight truncate">
               {ticker.symbol}
             </span>
           </div>
-          <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-            <Wifi className="w-2.5 h-2.5 text-green-500" />
-            {lastUpdatedText}
-            {isStale && <span className="ml-1 text-red-500">stale</span>}
-          </div>
-        </div>
 
-        <div className="px-2 flex-shrink-0">{confluencePill}</div>
-
-        <div className="flex flex-col items-end gap-0.5">
-          <div className="flex items-baseline gap-1.5">
+          {/* Price + Change */}
+          <div className="flex items-baseline gap-1.5 flex-shrink-0">
             <span
               className={cn(
-                "font-mono text-sm font-medium transition-colors duration-150",
+                "font-mono text-sm font-medium tabular-nums transition-colors duration-150",
                 priceColor,
                 priceFlashClass
               )}
@@ -304,37 +214,101 @@ export function HDRowWatchlist({
               {priceDisplay}
             </span>
             {changePercent !== 0 && (
-              <span className={cn("text-[10px] font-mono font-medium", priceColor)}>
+              <span className={cn("text-[10px] font-mono font-medium tabular-nums", priceColor)}>
                 {changePercent > 0 ? "+" : ""}
                 {changePercent.toFixed(2)}%
               </span>
             )}
           </div>
-          {indicators?.ema9 && (
-            <span
-              className={cn(
-                "text-[10px] font-mono",
-                currentPrice > indicators.ema9 ? "text-green-500" : "text-red-500"
-              )}
+        </div>
+
+        {/* Row 2: Sparkline + Status */}
+        <div className="flex items-center gap-2">
+          {/* Sparkline - takes most of the space */}
+          <div className="flex-1 min-w-0">
+            {hasCandles ? (
+              <HDMiniSparkline symbol={ticker.symbol} height={28} />
+            ) : (
+              <HDMiniSparklineSkeleton height={28} />
+            )}
+          </div>
+
+          {/* Status indicators - compact right side */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Live indicator */}
+            <HDLiveIndicator status={dataStatus} lastUpdate={lastUpdated} showLabel={false} />
+
+            {/* Confluence score */}
+            <HDConfluenceBadge score={confluenceScore} />
+
+            {/* Metrics expand toggle */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setMetricsExpanded(!metricsExpanded);
+              }}
+              className="min-w-[24px] min-h-[24px] flex items-center justify-center rounded-[var(--radius)] text-zinc-400 hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
+              title="View detailed metrics"
             >
-              EMA9: {indicators.ema9.toFixed(2)}
-            </span>
+              {metricsExpanded ? (
+                <ChevronUp className="w-3 h-3" />
+              ) : (
+                <ChevronDown className="w-3 h-3" />
+              )}
+            </button>
+          </div>
+
+          {/* Remove button */}
+          {onRemove && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+              className="min-w-[24px] min-h-[24px] flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
+              title="Remove from watchlist"
+            >
+              <X className="w-3 h-3" />
+            </button>
           )}
         </div>
       </div>
 
-      {onRemove && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
+      {/* Expandable metrics panel */}
+      {metricsExpanded && (
+        <HDWatchlistMetrics
+          symbol={ticker.symbol}
+          lastBarTimestamp={lastUpdated}
+          dataAvailability={{
+            hasGreeks: !!ivData,
+            hasFlow: !!flowSummary,
+            hasGamma: !!gammaData,
+            dataAge: null,
           }}
-          className="ml-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
-          title="Remove from watchlist"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+          wsStatus={
+            dataStatus === "live"
+              ? "connected"
+              : dataStatus === "stale"
+                ? "fallback"
+                : "disconnected"
+          }
+          confluence={{
+            overall: confluenceScore,
+            trend: 0,
+            momentum: 0,
+            technical: 0,
+            volume: 0,
+            volatility: 0,
+            trendConfirmed: false,
+            momentumConfirmed: false,
+            vwapAligned: false,
+            emaAligned: false,
+            volumeAboveAvg: false,
+          }}
+          flowSummary={flowSummary}
+          gammaContext={gammaData}
+        />
       )}
-    </div>
+    </>
   );
 }

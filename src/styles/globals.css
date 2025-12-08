@@ -532,4 +532,80 @@
   .animate-expand-left {
     animation: expand-left 0.3s ease-in-out forwards;
   }
+
+  /* P&L bump animation - scale pulse on value change */
+  @keyframes pnl-bump {
+    0% { transform: scale(1); }
+    15% { transform: scale(1.12); }
+    100% { transform: scale(1); }
+  }
+
+  .animate-pnl-bump {
+    animation: pnl-bump 0.3s ease-out;
+  }
+
+  /* Checkmark draw animation for entry celebration */
+  @keyframes checkmark-draw {
+    0% { stroke-dashoffset: 50; }
+    100% { stroke-dashoffset: 0; }
+  }
+
+  @keyframes checkmark-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.15); opacity: 0.8; }
+  }
+
+  .animate-checkmark-draw {
+    stroke-dasharray: 50;
+    animation: checkmark-draw 0.4s ease-out forwards;
+  }
+
+  .animate-checkmark-pulse {
+    animation: checkmark-pulse 0.4s ease-out;
+  }
+
+  /* Chart timeframe transition */
+  @keyframes chart-fade-zoom {
+    0% { opacity: 0.5; transform: scale(0.98); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  .animate-chart-transition {
+    animation: chart-fade-zoom 0.25s ease-out forwards;
+  }
+
+  /* Row hover lift animation */
+  @keyframes row-hover-lift {
+    from { transform: translateY(0); box-shadow: none; }
+    to { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  }
+
+  /* Sparkline path draw animation */
+  @keyframes sparkline-draw {
+    0% { stroke-dashoffset: 1000; }
+    100% { stroke-dashoffset: 0; }
+  }
+
+  .animate-sparkline-draw {
+    stroke-dasharray: 1000;
+    animation: sparkline-draw 0.6s ease-out forwards;
+  }
+
+  /* Stagger animation for list items */
+  .animate-stagger-in {
+    opacity: 0;
+    transform: translateX(-8px);
+    animation: stagger-fade-in 0.3s ease-out forwards;
+  }
+
+  @keyframes stagger-fade-in {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
 }

@@ -184,13 +184,14 @@ export function HDWatchlistRail({
                 </button>
               </div>
             ) : (
-              watchlist.map((ticker) => (
+              watchlist.map((ticker, index) => (
                 <HDRowWatchlist
                   key={ticker.id}
                   ticker={ticker}
                   active={activeTicker === ticker.symbol}
                   onClick={() => onTickerClick?.(ticker)}
                   onRemove={() => onRemoveTicker?.(ticker)}
+                  animationDelay={index * 40}
                 />
               ))
             )}

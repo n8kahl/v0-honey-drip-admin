@@ -3,6 +3,7 @@ import { HDTagTradeType } from "../common/HDTagTradeType";
 import { cn } from "../../../lib/utils";
 import { useTradeStore } from "../../../stores";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { useRef, useEffect, useState } from "react";
 
 interface HDActiveTradeRowProps {
   trade: Trade;
@@ -13,6 +14,7 @@ interface HDActiveTradeRowProps {
 /**
  * Active trade row with live P&L tracking via WebSocket/REST polling.
  * Uses useActiveTradePnL hook for real-time price updates.
+ * Features P&L bump animation on value changes.
  */
 export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowProps) {
   // Get live P&L from contract price updates
@@ -25,6 +27,22 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
   // Use live P&L if available, fallback to stored movePercent
   const displayPnl = entryPrice > 0 && currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
   const isProfit = displayPnl >= 0;
+
+  // P&L bump animation state
+  const [pnlBump, setPnlBump] = useState(false);
+  const prevPnlRef = useRef<number>(displayPnl);
+
+  useEffect(() => {
+    // Trigger bump animation when P&L changes significantly (>0.5%)
+    const diff = Math.abs(displayPnl - prevPnlRef.current);
+    if (diff > 0.5) {
+      setPnlBump(true);
+      const timeout = setTimeout(() => setPnlBump(false), 300);
+      prevPnlRef.current = displayPnl;
+      return () => clearTimeout(timeout);
+    }
+    prevPnlRef.current = displayPnl;
+  }, [displayPnl]);
 
   const handleClick = () => {
     if (onClick) {
@@ -62,8 +80,9 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
         <div className="flex flex-col items-end gap-1">
           <span
             className={cn(
-              "text-[var(--text-high)] font-mono text-sm font-medium",
-              isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+              "text-[var(--text-high)] font-mono text-sm font-medium tabular-nums",
+              isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]",
+              pnlBump && "animate-pnl-bump"
             )}
           >
             {isProfit ? "+" : ""}

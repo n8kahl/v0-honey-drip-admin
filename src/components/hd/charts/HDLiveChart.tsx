@@ -241,11 +241,22 @@ export function HDLiveChart({
     setHolidayDates([]);
   }, []);
 
-  // Subtle fade transition on ticker/timeframe changes
+  // Smooth transition on ticker/timeframe changes with scale + fade
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
   useEffect(() => {
     setOpacity(0);
-    const id = setTimeout(() => setOpacity(1), 160);
-    return () => clearTimeout(id);
+    setIsTransitioning(true);
+    const fadeIn = setTimeout(() => {
+      setOpacity(1);
+    }, 100);
+    const transitionEnd = setTimeout(() => {
+      setIsTransitioning(false);
+    }, 350);
+    return () => {
+      clearTimeout(fadeIn);
+      clearTimeout(transitionEnd);
+    };
   }, [ticker, currentTf]);
 
   // Reset auto-fit flag when ticker/timeframe changes
@@ -1324,8 +1335,11 @@ export function HDLiveChart({
 
   return (
     <div
-      className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className}`}
-      style={{ opacity, transition: "opacity 160ms ease" }}
+      className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className} ${isTransitioning ? "animate-chart-transition" : ""}`}
+      style={{
+        opacity,
+        transition: "opacity 200ms ease-out",
+      }}
     >
       {/* Header - only show if showHeader is true */}
       {showHeader && (
