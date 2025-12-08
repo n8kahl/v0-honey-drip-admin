@@ -650,10 +650,10 @@ export function useTradeStateMachine({
       setCurrentTrade(newTrade);
       setShowAlert(false);
 
-      // Mobile UX: move to active tab on enter; move to history on exit
+      // Mobile UX: move to active tab on enter; go back to live on exit
       if (isMobile && onMobileTabChange) {
         if (newTrade.state === "ENTERED") onMobileTabChange("active");
-        if (newTrade.state === "EXITED") onMobileTabChange("history");
+        if (newTrade.state === "EXITED") onMobileTabChange("live");
       }
 
       // Callback for exited trades

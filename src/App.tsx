@@ -246,7 +246,8 @@ export default function App() {
 
   const handleExitedTrade = (trade: any) => {
     console.log("Trade exited:", trade);
-    setTimeout(() => navigate("/history"), 100);
+    // Navigate back to main page so user can select another ticker
+    setTimeout(() => navigate("/"), 100);
   };
 
   return (
