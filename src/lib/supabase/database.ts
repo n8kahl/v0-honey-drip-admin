@@ -360,10 +360,17 @@ export async function removeFromWatchlist(id: string) {
 // TRADES
 // ============================================================================
 
-export async function getTrades(userId: string, status?: string) {
-  const supabase = createClient();
+export interface GetTradesOptions {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
 
-  // Fetch trades with related data from junction tables
+export async function getTrades(userId: string, options: GetTradesOptions = {}) {
+  const supabase = createClient();
+  const { status, limit = 100, offset = 0 } = options;
+
+  // Fetch trades with related data from junction tables (with pagination)
   let query = supabase
     .from("trades")
     .select(
@@ -375,10 +382,31 @@ export async function getTrades(userId: string, status?: string) {
     query = query.eq("status", status);
   }
 
-  const { data, error } = await query.order("created_at", { ascending: false });
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (error) throw error;
   return data || [];
+}
+
+/** Get total count of trades for pagination */
+export async function getTradesCount(userId: string, status?: string): Promise<number> {
+  const supabase = createClient();
+
+  let query = supabase
+    .from("trades")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { count, error } = await query;
+
+  if (error) throw error;
+  return count || 0;
 }
 
 export async function createTrade(

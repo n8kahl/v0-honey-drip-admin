@@ -31,9 +31,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run TypeScript type checking
+        # TODO: Remove continue-on-error once pre-existing TS errors are fixed
+        # See audit/FINDINGS_DETAILED.md for list of TypeScript issues to resolve
         run: |
-          pnpm exec tsc --noEmit || echo "⚠️  TypeScript errors found (not blocking)"
-          pnpm exec tsc -p tsconfig.server.json --noEmit || echo "⚠️  Server TypeScript errors found (not blocking)"
+          echo "🔍 Checking frontend TypeScript..."
+          pnpm exec tsc --noEmit || echo "⚠️  Frontend TypeScript errors found"
+          echo "🔍 Checking server TypeScript..."
+          pnpm exec tsc -p tsconfig.server.json --noEmit || echo "⚠️  Server TypeScript errors found"
         continue-on-error: true
 
       - name: Run unit tests

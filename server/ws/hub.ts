@@ -70,7 +70,9 @@ export class MassiveHub {
       this.heartbeat = setInterval(() => {
         try {
           this.upstream?.ping();
-        } catch {}
+        } catch (err) {
+          console.warn(`${logPrefix} Heartbeat ping failed:`, err);
+        }
       }, 30_000);
     });
 
@@ -81,20 +83,27 @@ export class MassiveHub {
       for (const client of this.clients) {
         try {
           client.ws.send(textData);
-        } catch {}
+        } catch (err) {
+          console.warn(`${logPrefix} Failed to send to client:`, err);
+        }
       }
 
       try {
         const arr = JSON.parse(textData);
         console.log(`${logPrefix} Received upstream message:`, JSON.stringify(arr).slice(0, 200));
-        
+
         const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === 'status') : undefined;
         if (statusMsg?.status === 'auth_success') {
           console.log(`${logPrefix} ✅ Authentication successful!`);
           this.upstreamAuthd = true;
           this.flushQueuedTopics();
         }
-      } catch {}
+      } catch (err) {
+        // Non-JSON messages are expected, only warn in debug mode
+        if (process.env.DEBUG_WS) {
+          console.warn(`${logPrefix} Failed to parse message:`, err);
+        }
+      }
     });
 
     this.upstream.on('close', (code, reason) => {

@@ -391,7 +391,7 @@ export const useAlertEscalationStore = create<AlertEscalationStore>()(
       addAlert: (alertData) => {
         const newAlert: Alert = {
           ...alertData,
-          id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: `alert-${crypto.randomUUID()}`,
           timestamp: Date.now(),
           isRead: false,
           isDismissed: false,

@@ -4,7 +4,18 @@
  *
  * Uses options_quotes table populated from Massive.com flat files
  * Falls back to estimated spreads when data unavailable
+ *
+ * IMPORTANT: This module is SERVER-SIDE ONLY and uses SUPABASE_SERVICE_ROLE_KEY.
+ * It should NEVER be imported in browser/frontend code bundled by Vite.
  */
+
+// Runtime check to prevent accidental browser usage
+if (typeof window !== "undefined") {
+  throw new Error(
+    "optionsQuotesHelper is server-only and cannot be used in browser. " +
+      "Do not import this module in frontend code."
+  );
+}
 
 import { createClient } from "@supabase/supabase-js";
 
