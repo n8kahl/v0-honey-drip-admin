@@ -140,9 +140,9 @@ export default function PlanPage() {
   return (
     <AppLayout>
       <Suspense fallback={<PlanLoading />}>
-        <div className="relative p-4 max-w-7xl mx-auto space-y-4">
+        <div className="relative p-4 max-w-7xl mx-auto space-y-4 min-h-screen">
           {/* Blurred Content */}
-          <div className="filter blur-md pointer-events-none select-none">
+          <div className="filter blur-md pointer-events-none select-none absolute inset-0 p-4 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -190,8 +190,8 @@ export default function PlanPage() {
           </div>
 
           {/* Coming Soon Overlay */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
-            <div className="text-center px-8 py-12 bg-[var(--surface-1)] rounded-xl border-2 border-[var(--brand-primary)] shadow-2xl max-w-md mx-4">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50 pointer-events-none">
+            <div className="text-center px-8 py-12 bg-[var(--surface-1)] rounded-xl border-2 border-[var(--brand-primary)] shadow-2xl max-w-md mx-4 pointer-events-auto">
               <div className="mb-4">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--brand-primary)]/20 mb-4">
                   <ClipboardList className="w-8 h-8 text-[var(--brand-primary)]" />
