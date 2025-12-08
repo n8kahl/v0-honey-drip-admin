@@ -47,6 +47,9 @@ interface DesktopLiveCockpitSlimProps {
   channels: DiscordChannel[];
   focusedTrade?: Trade | null;
   onMobileTabChange?: (tab: "live" | "active" | "history" | "settings") => void;
+  onVoiceNavigate?: (
+    destination: "live" | "active" | "history" | "settings" | "monitoring"
+  ) => void;
   updatedTradeIds?: Set<string>;
   onOpenActiveTrade?: (tradeId: string) => void;
   onOpenReviewTrade?: (tradeId: string) => void;
@@ -76,6 +79,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     channels,
     focusedTrade,
     onMobileTabChange,
+    onVoiceNavigate,
     onOpenActiveTrade,
     onOpenReviewTrade,
     onVoiceStateChange,
@@ -223,6 +227,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
         });
       }
     },
+    onNavigate: onVoiceNavigate,
   });
 
   // Report voice state to parent (for header mic button)

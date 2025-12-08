@@ -318,6 +318,29 @@ export default function App() {
     setTimeout(() => setFlashTradeTab(false), 2000);
   };
 
+  // Voice navigation handler
+  const handleVoiceNavigate = (
+    destination: "live" | "active" | "history" | "settings" | "monitoring"
+  ) => {
+    switch (destination) {
+      case "live":
+        navigate("/");
+        break;
+      case "active":
+        navigateToActive();
+        break;
+      case "history":
+        navigate("/history");
+        break;
+      case "settings":
+        navigate("/settings");
+        break;
+      case "monitoring":
+        navigate("/monitoring");
+        break;
+    }
+  };
+
   // Helper function to focus a trade in the live view
   const focusTradeInLive = (trade: any) => {
     navigate("/");
@@ -362,6 +385,7 @@ export default function App() {
             onTradesChange={() => {}} // Not needed anymore, store handles it
             channels={discordChannels}
             focusedTrade={focusedTrade}
+            onVoiceNavigate={handleVoiceNavigate}
             onMobileTabChange={(tab) => {
               // Map tab names to routes
               if (tab === "live") navigate("/");

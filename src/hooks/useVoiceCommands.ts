@@ -5,6 +5,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { generateEntryAlert, SmartAlertResult } from "../lib/services/smartAlertService";
 import { useWhisperVoice } from "./useWhisperVoice";
 import { useUserSettings } from "./useUserSettings";
+import { trackCommand } from "../lib/services/commandTracking";
 
 // Web Speech API types
 interface SpeechRecognitionType {
@@ -39,6 +40,8 @@ export type VoiceActionType =
   | "update-sl"
   | "exit-trade"
   | "add-position"
+  | "compound" // Multiple actions in sequence
+  | "navigate" // Tab navigation
   | "unknown";
 
 export interface ParsedVoiceAction {
@@ -50,6 +53,10 @@ export interface ParsedVoiceAction {
   tradeId?: string;
   price?: number;
   trimPercent?: number;
+  subActions?: ParsedVoiceAction[]; // For compound commands
+  breakEvenStop?: boolean; // For "move to BE"
+  destination?: "live" | "active" | "history" | "settings" | "monitoring"; // For navigate
+  extractedContext?: string; // Natural language comment
 }
 
 interface UseVoiceCommandsProps {
@@ -65,6 +72,7 @@ interface UseVoiceCommandsProps {
   onExitTrade?: () => void;
   onAddPosition?: () => void;
   onSendAlert?: (alert: SmartAlertResult) => Promise<void>;
+  onNavigate?: (destination: "live" | "active" | "history" | "settings" | "monitoring") => void;
 }
 
 export function useVoiceCommands({
@@ -80,6 +88,7 @@ export function useVoiceCommands({
   onExitTrade,
   onAddPosition,
   onSendAlert,
+  onNavigate,
 }: UseVoiceCommandsProps) {
   // Get user settings for voice engine preference
   const { profile } = useUserSettings();
@@ -100,9 +109,46 @@ export function useVoiceCommands({
     action: ParsedVoiceAction;
   } | null>(null);
   const [waitingForWakeWord, setWaitingForWakeWord] = useState(true);
+  const [pendingCompoundActions, setPendingCompoundActions] = useState<ParsedVoiceAction[]>([]);
+  const [compoundActionIndex, setCompoundActionIndex] = useState(0);
+  const [awaitingTradeSelection, setAwaitingTradeSelection] = useState<{
+    action: ParsedVoiceAction;
+    trades: Trade[];
+  } | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionType | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+
+  // Extract natural language context from command
+  const extractContext = useCallback((text: string): string | undefined => {
+    const lowerText = text.toLowerCase();
+
+    // Sizing hints
+    if (lowerText.includes("lightly") || lowerText.includes("light")) return "Size lightly";
+    if (lowerText.includes("heavily") || lowerText.includes("heavy")) return "Size heavily";
+    if (lowerText.includes("small")) return "Small size";
+    if (lowerText.includes("large")) return "Large size";
+    if (lowerText.includes("half size")) return "Half size";
+    if (lowerText.includes("full size")) return "Full size";
+    if (lowerText.includes("aggressive")) return "Aggressive sizing";
+    if (lowerText.includes("conservative")) return "Conservative sizing";
+
+    // Reasoning
+    if (lowerText.includes("resistance")) return "At resistance";
+    if (lowerText.includes("support")) return "At support";
+    if (lowerText.includes("breakout")) return "Breakout play";
+    if (lowerText.includes("reversal")) return "Reversal setup";
+    if (lowerText.includes("trend")) return "Following trend";
+
+    // Timing
+    if (lowerText.includes("quick scalp")) return "Quick scalp";
+    if (lowerText.includes("day trade")) return "Day trade";
+    if (lowerText.includes("swing")) return "Swing trade";
+    if (lowerText.includes("overnight")) return "Hold overnight";
+    if (lowerText.includes("until close")) return "Until close";
+
+    return undefined;
+  }, []);
 
   // Parse voice transcript into action with context awareness
   const parseVoiceCommand = useCallback((text: string): ParsedVoiceAction => {
@@ -248,11 +294,13 @@ export function useVoiceCommands({
       lowerText.includes("take position")
     ) {
       const isShort = lowerText.includes("short") || lowerText.includes("put");
+      const context = extractContext(text);
       return {
         type: "enter-trade",
         ticker,
         price,
         optionType: isShort ? "P" : "C",
+        extractedContext: context,
       };
     }
 
@@ -261,9 +309,26 @@ export function useVoiceCommands({
       return { type: "trim-trade", ticker, trimPercent };
     }
 
-    // Update stop loss
+    // Update stop loss (detect break even)
     if (lowerText.includes("update") && (lowerText.includes("stop") || lowerText.includes("sl"))) {
-      return { type: "update-sl", ticker, price };
+      const breakEven =
+        lowerText.includes("break even") ||
+        lowerText.includes("breakeven") ||
+        lowerText.includes("break-even") ||
+        lowerText.includes("b/e") ||
+        lowerText.includes(" be ");
+      return { type: "update-sl", ticker, price, breakEvenStop: breakEven };
+    }
+
+    // Move stop to break even (shorthand)
+    if (
+      (lowerText.includes("move") || lowerText.includes("set")) &&
+      lowerText.includes("stop") &&
+      (lowerText.includes("break even") ||
+        lowerText.includes("breakeven") ||
+        lowerText.includes("break-even"))
+    ) {
+      return { type: "update-sl", ticker, breakEvenStop: true };
     }
 
     // Exit trade
@@ -281,6 +346,47 @@ export function useVoiceCommands({
         lowerText.includes("contracts"))
     ) {
       return { type: "add-position", ticker, price };
+    }
+
+    // Navigation commands
+    if (lowerText.includes("go to") || lowerText.includes("show") || lowerText.includes("open")) {
+      if (lowerText.includes("active") || lowerText.includes("trade")) {
+        return { type: "navigate", destination: "active" };
+      }
+      if (lowerText.includes("history") || lowerText.includes("review")) {
+        return { type: "navigate", destination: "history" };
+      }
+      if (lowerText.includes("settings")) {
+        return { type: "navigate", destination: "settings" };
+      }
+      if (lowerText.includes("monitoring") || lowerText.includes("monitor")) {
+        return { type: "navigate", destination: "monitoring" };
+      }
+      if (lowerText.includes("watchlist") || lowerText.includes("live")) {
+        return { type: "navigate", destination: "live" };
+      }
+    }
+
+    // Detect compound commands with "and" separator (parse recursively)
+    if (lowerText.includes(" and ")) {
+      const parts = lowerText.split(" and ").map((p) => p.trim());
+      const subActions: ParsedVoiceAction[] = [];
+
+      for (const part of parts) {
+        // Recursively parse each part
+        const subAction = parseVoiceCommand(part);
+        if (subAction.type !== "unknown") {
+          subActions.push(subAction);
+        }
+      }
+
+      if (subActions.length > 1) {
+        return {
+          type: "compound",
+          ticker,
+          subActions,
+        };
+      }
     }
 
     return { type: "unknown", ticker };
@@ -424,6 +530,105 @@ export function useVoiceCommands({
     synthRef.current.speak(utterance);
   }, []);
 
+  // Select trade for action with disambiguation
+  const selectTradeForAction = useCallback(
+    (action: ParsedVoiceAction): Trade | null | "needs-clarification" => {
+      // If ticker specified, find that specific trade
+      if (action.ticker) {
+        const trades = activeTrades.filter(
+          (t) => t.state === "ENTERED" && t.ticker === action.ticker
+        );
+
+        if (trades.length === 0) {
+          speak(`No active ${action.ticker} trade found`);
+          setError(`No active ${action.ticker} trade`);
+          return null;
+        }
+        if (trades.length === 1) {
+          return trades[0];
+        }
+        // Multiple trades for same ticker - need clarification
+        setAwaitingTradeSelection({ action, trades });
+        const tickerList = trades
+          .map(
+            (t, i) =>
+              `${i + 1}: ${t.contract.strike} ${t.contract.optionType === "C" ? "call" : "put"}`
+          )
+          .join(", ");
+        speak(`You have ${trades.length} ${action.ticker} trades. ${tickerList}. Which one?`);
+        setHudState("confirming");
+        return "needs-clarification";
+      }
+
+      // No ticker specified - use currentTrade or ask
+      if (currentTrade && currentTrade.state === "ENTERED") {
+        return currentTrade;
+      }
+
+      const enteredTrades = activeTrades.filter((t) => t.state === "ENTERED");
+      if (enteredTrades.length === 0) {
+        speak("No active trades found");
+        setError("No active trades");
+        return null;
+      }
+      if (enteredTrades.length === 1) {
+        return enteredTrades[0];
+      }
+
+      // Multiple trades - need clarification
+      setAwaitingTradeSelection({ action, trades: enteredTrades });
+      const tradeList = enteredTrades.map((t, i) => `${i + 1}: ${t.ticker}`).join(", ");
+      speak(`You have ${enteredTrades.length} active trades: ${tradeList}. Which one?`);
+      setHudState("confirming");
+      return "needs-clarification";
+    },
+    [activeTrades, currentTrade, speak]
+  );
+
+  // Handle trade selection response
+  const handleTradeSelectionResponse = useCallback(
+    (response: string) => {
+      if (!awaitingTradeSelection) return;
+
+      const lowerResponse = response.toLowerCase().trim();
+      const { action, trades } = awaitingTradeSelection;
+
+      // Check for numeric response (1, 2, 3, etc.)
+      const numMatch = lowerResponse.match(/(\d+)/);
+      if (numMatch) {
+        const index = parseInt(numMatch[1]) - 1;
+        if (index >= 0 && index < trades.length) {
+          const selectedTrade = trades[index];
+          speak(`Selected ${selectedTrade.ticker}`);
+
+          // Execute action with selected trade
+          const updatedAction = {
+            ...action,
+            ticker: selectedTrade.ticker,
+            tradeId: selectedTrade.id,
+          };
+          setAwaitingTradeSelection(null);
+          executeAction(updatedAction);
+          return;
+        }
+      }
+
+      // Check for ticker mention
+      for (const trade of trades) {
+        if (lowerResponse.includes(trade.ticker.toLowerCase())) {
+          speak(`Selected ${trade.ticker}`);
+          const updatedAction = { ...action, ticker: trade.ticker, tradeId: trade.id };
+          setAwaitingTradeSelection(null);
+          executeAction(updatedAction);
+          return;
+        }
+      }
+
+      speak("I didn't understand. Please say the number or ticker symbol.");
+    },
+    [awaitingTradeSelection, speak]
+  );
+
   // Execute the confirmed action with smart alert generation
   const executeAction = useCallback(
     async (action: ParsedVoiceAction, transcriptText?: string) => {
@@ -494,7 +699,11 @@ export function useVoiceCommands({
 
             // Load contract through trade state machine
             if (onLoadContract) {
-              onLoadContract(entryAlert.alert.contract, ticker, entryAlert.reasoning);
+              // Combine reasoning with extracted context
+              const fullReasoning = action.extractedContext
+                ? `${entryAlert.reasoning} - ${action.extractedContext}`
+                : entryAlert.reasoning;
+              onLoadContract(entryAlert.alert.contract, ticker, fullReasoning);
               speak(`Loaded ${entryAlert.reasoning}. Review and send alert.`);
               setHudState("success");
               setTimeout(() => {
@@ -605,6 +814,37 @@ export function useVoiceCommands({
             }
             break;
           }
+
+          case "compound": {
+            if (!action.subActions || action.subActions.length === 0) {
+              setError("Invalid compound command");
+              setHudState("error");
+              return;
+            }
+
+            setPendingCompoundActions(action.subActions);
+            setCompoundActionIndex(0);
+            speak(`Executing ${action.subActions.length} actions in sequence`);
+
+            // Execute first action
+            await executeAction(action.subActions[0], currentTranscript);
+            break;
+          }
+
+          case "navigate": {
+            if (action.destination && onNavigate) {
+              const destName = action.destination === "live" ? "watchlist" : action.destination;
+              speak(`Going to ${destName}`);
+              onNavigate(action.destination);
+              setHudState("success");
+              setTimeout(() => {
+                setHudState(null);
+                setIsListening(false);
+                setWaitingForWakeWord(true);
+              }, 1000);
+            }
+            break;
+          }
         }
 
         // Clear state after simple actions
@@ -629,6 +869,7 @@ export function useVoiceCommands({
       onUpdateSL,
       onExitTrade,
       onAddPosition,
+      onNavigate,
       speak,
       createVoiceCommand,
     ]
@@ -703,9 +944,24 @@ export function useVoiceCommands({
     (text: string) => {
       setTranscript(text);
 
+      // If awaiting trade selection, handle that first
+      if (awaitingTradeSelection) {
+        handleTradeSelectionResponse(text);
+        return;
+      }
+
       console.warn("[v0] processVoiceInput:", text);
       const action = parseVoiceCommand(text);
       console.warn("[v0] Parsed action:", action);
+
+      // Track command
+      trackCommand({
+        userId: "voice-user",
+        command: action.type,
+        rawTranscript: text,
+        parsedType: action.type,
+        wasHandled: action.type !== "unknown",
+      });
 
       // Handle wake word (optional - auto-activates on any command)
       if (action.type === "wake-word") {
@@ -736,7 +992,14 @@ export function useVoiceCommands({
       console.warn("[v0] Executing action:", action);
       executeAction(action, text);
     },
-    [parseVoiceCommand, executeAction, waitingForWakeWord, speak]
+    [
+      parseVoiceCommand,
+      executeAction,
+      waitingForWakeWord,
+      speak,
+      awaitingTradeSelection,
+      handleTradeSelectionResponse,
+    ]
   );
 
   // Confirm action and send alert
@@ -782,6 +1045,27 @@ export function useVoiceCommands({
       await executeAction(pendingAction);
     }
 
+    // Check for pending compound actions
+    if (
+      pendingCompoundActions.length > 0 &&
+      compoundActionIndex < pendingCompoundActions.length - 1
+    ) {
+      const nextIndex = compoundActionIndex + 1;
+      setCompoundActionIndex(nextIndex);
+      const nextAction = pendingCompoundActions[nextIndex];
+
+      speak(`Next action: ${nextAction.type.replace("-", " ")}`);
+      setTimeout(() => {
+        executeAction(nextAction);
+      }, 1000);
+      return;
+    } else if (pendingCompoundActions.length > 0) {
+      // All compound actions complete
+      speak("All actions completed");
+      setPendingCompoundActions([]);
+      setCompoundActionIndex(0);
+    }
+
     setHudState(null);
     setPendingAction(null);
     setPendingAlert(null);
@@ -794,6 +1078,8 @@ export function useVoiceCommands({
     pendingAction,
     pendingAlert,
     pendingTickerAdd,
+    pendingCompoundActions,
+    compoundActionIndex,
     onSendAlert,
     onAddTicker,
     executeAction,
@@ -807,6 +1093,9 @@ export function useVoiceCommands({
     setPendingAction(null);
     setPendingAlert(null);
     setPendingTickerAdd(null);
+    setPendingCompoundActions([]);
+    setCompoundActionIndex(0);
+    setAwaitingTradeSelection(null);
     setCommand(null);
     setTranscript("");
     setIsListening(false);

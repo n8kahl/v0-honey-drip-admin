@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Trade } from "../../../types";
 import { MobileActiveCard } from "../cards/MobileActiveCard";
+import { MobileTradeDetailSheet } from "../sheets/MobileTradeDetailSheet";
 import { Zap } from "lucide-react";
 
 interface MobileActiveScreenProps {
@@ -15,6 +17,7 @@ export function MobileActiveScreen({
   onUpdateSL,
   onExit,
 }: MobileActiveScreenProps) {
+  const [detailTrade, setDetailTrade] = useState<Trade | null>(null);
   if (trades.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
@@ -30,18 +33,28 @@ export function MobileActiveScreen({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-4 space-y-3">
-        {trades.map((trade) => (
-          <MobileActiveCard
-            key={trade.id}
-            trade={trade}
-            onTrim={() => onTrim(trade)}
-            onUpdateSL={() => onUpdateSL(trade)}
-            onExit={() => onExit(trade)}
-          />
-        ))}
+    <>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 space-y-3">
+          {trades.map((trade) => (
+            <MobileActiveCard
+              key={trade.id}
+              trade={trade}
+              onTrim={() => onTrim(trade)}
+              onUpdateSL={() => onUpdateSL(trade)}
+              onExit={() => onExit(trade)}
+              onTap={() => setDetailTrade(trade)}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      {/* Trade Detail Drawer */}
+      <MobileTradeDetailSheet
+        open={!!detailTrade}
+        onOpenChange={(open) => !open && setDetailTrade(null)}
+        trade={detailTrade}
+      />
+    </>
   );
 }
