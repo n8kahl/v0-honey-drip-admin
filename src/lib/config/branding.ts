@@ -169,12 +169,5 @@ export function applyBrandingTheme(theme: Partial<BrandingTheme>): void {
   setIfPresent("--border-hairline", theme.borderHairline);
   setIfPresent("--border-strong", theme.borderStrong);
 
-  // Surfaces/text are left untouched to preserve light/dark mode unless explicitly provided
-  setIfPresent("--surface-1", theme.surface1);
-  setIfPresent("--surface-2", theme.surface2);
-  setIfPresent("--surface-3", theme.surface3);
-  setIfPresent("--surface-4", theme.surface4);
-  setIfPresent("--text-high", theme.textHigh);
-  setIfPresent("--text-muted", theme.textMuted);
-  setIfPresent("--text-subtle", theme.textSubtle);
+  // Surfaces/text are intentionally not set here to preserve light/dark palettes.
 }

@@ -185,6 +185,7 @@ export function applyBrandingToDocument(config: ResellerConfig | null): void {
         config.brandPrimaryColor || defaultBrandingTheme.brandPrimary,
         -20
       ),
+      // Surfaces/text are intentionally left untouched to preserve light/dark
     });
 
     // Update page title
