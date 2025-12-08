@@ -1,27 +1,27 @@
 /**
- * HDAnimatedTradeLayout - Three-column animated layout for trading workspace
+ * HDAnimatedTradeLayout - Two-column animated layout for trading workspace
  *
  * Layout States:
  * - DEFAULT (no contract selected): Options Chain (50%) | Empty/Preview (50%)
- * - CONTRACT SELECTED: Collapsed Options (120px) | Contract Details (flex) | Alert Composer (400px)
+ * - CONTRACT SELECTED: Collapsed Options (140px) | Contract Details (flex-1)
+ *   - Click "Strikes" header to toggle expand/collapse
  *
  * Animations:
  * - Options chain collapses with 300ms ease-in-out transition
- * - Alert composer slides in from right with 300ms ease-in-out transition
  */
 
-import React from "react";
-import type { Trade, Contract, Ticker, AlertType, DiscordChannel, Challenge } from "../../types";
+import React, { useState } from "react";
+import type { Trade, Contract, Ticker } from "../../types";
 import { isKCUSetupType } from "../../types";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
 import { HDKCUTradeCard } from "../hd/cards/HDKCUTradeCard";
 import { HDRecommendedContractPreview } from "../hd/cards/HDRecommendedContractPreview";
-import { HDAlertComposer, PriceOverrides } from "../hd/alerts/HDAlertComposer";
 import { useBidAskThresholdMonitor } from "../../hooks/useBidAskThresholdMonitor";
 import type { ContractRecommendation } from "../../hooks/useContractRecommendation";
 import type { KCUTradeSetup } from "../../lib/composite/detectors/kcu/types";
 import { cn } from "../../lib/utils";
+import { ChevronLeft } from "lucide-react";
 
 interface HDAnimatedTradeLayoutProps {
   trade: Trade;
@@ -35,28 +35,6 @@ interface HDAnimatedTradeLayoutProps {
   recommendation?: ContractRecommendation | null;
   /** KCU setup data when trade is a KCU strategy */
   kcuSetup?: KCUTradeSetup | null;
-  /** Whether alert composer is shown */
-  showAlert: boolean;
-  alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
-  /** Discord channels for alert composer */
-  channels: DiscordChannel[];
-  challenges: Challenge[];
-  /** Alert composer callbacks */
-  onSendAlert: (
-    channelIds: string[],
-    challengeIds: string[],
-    comment?: string,
-    priceOverrides?: PriceOverrides
-  ) => void;
-  onEnterAndAlert?: (
-    channelIds: string[],
-    challengeIds: string[],
-    comment?: string,
-    priceOverrides?: PriceOverrides
-  ) => void;
-  onCancelAlert: () => void;
-  onUnload?: () => void;
 }
 
 export function HDAnimatedTradeLayout({

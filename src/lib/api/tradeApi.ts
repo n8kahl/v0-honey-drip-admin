@@ -132,7 +132,8 @@ export async function addTradeUpdateApi(
   tradeId: string,
   action: string,
   price: number,
-  notes?: string
+  message?: string,
+  pnlPercent?: number
 ): Promise<any> {
   return apiCallWithRetry(async () => {
     const response = await fetch(`/api/trades/${tradeId}/updates`, {
@@ -141,7 +142,13 @@ export async function addTradeUpdateApi(
         "Content-Type": "application/json",
         "x-user-id": userId,
       },
-      body: JSON.stringify({ action, price, notes: notes || "" }),
+      body: JSON.stringify({
+        type: action,
+        price,
+        message: message || `${action} action`,
+        pnl_percent: pnlPercent || null,
+        timestamp: new Date().toISOString(),
+      }),
     });
 
     if (!response.ok) {

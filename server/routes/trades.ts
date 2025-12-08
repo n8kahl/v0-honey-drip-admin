@@ -151,10 +151,11 @@ interface TradeUpdate {
 interface TradeUpdateInsert {
   trade_id: string;
   user_id: string;
-  action: string;
-  price?: number;
-  quantity?: number;
-  notes?: string | null;
+  type: string; // 'enter', 'trim', 'update', 'update-sl', 'trail-stop', 'add', 'exit'
+  price: number;
+  message: string;
+  pnl_percent?: number | null;
+  timestamp?: string;
 }
 
 interface DiscordChannelLink {
@@ -388,28 +389,29 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
     }
 
     const { tradeId } = req.params;
-    const { action, price, quantity, notes } = req.body;
+    const { type, price, message, pnl_percent, timestamp } = req.body;
 
     if (!tradeId) {
       return res.status(400).json({ error: "Missing trade ID" });
     }
 
     // Validate input
-    const validation = validateTradeUpdateInput({ action, price });
+    const validation = validateTradeUpdateInput({ action: type, price });
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error });
     }
 
-    console.log(`[Trades API] Creating trade update for trade ${tradeId}: action=${action}`);
+    console.log(`[Trades API] Creating trade update for trade ${tradeId}: type=${type}`);
 
     // Create trade update
     const updateRecord: TradeUpdateInsert = {
       trade_id: tradeId,
       user_id: userId,
-      action,
-      price,
-      quantity: quantity || 1,
-      notes: notes || null,
+      type,
+      price: price || 0,
+      message: message || `${type} action`,
+      pnl_percent: pnl_percent || null,
+      timestamp: timestamp || new Date().toISOString(),
     };
 
     const { data, error } = await getSupabaseClient()
