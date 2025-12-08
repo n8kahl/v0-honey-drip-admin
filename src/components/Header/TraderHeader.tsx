@@ -16,6 +16,8 @@ import {
   Radar,
   LogOut,
   ClipboardList,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { DESIGN_TOKENS } from "../../lib/designTokens";
@@ -496,7 +498,19 @@ const TabButton: React.FC<TabButtonProps> = ({ label, active, onClick }) => {
   );
 };
 
-export const TraderHeader: React.FC = () => {
+interface TraderHeaderProps {
+  isListening?: boolean;
+  isProcessingVoice?: boolean;
+  waitingForWakeWord?: boolean;
+  onToggleVoice?: () => void;
+}
+
+export const TraderHeader: React.FC<TraderHeaderProps> = ({
+  isListening = false,
+  isProcessingVoice = false,
+  waitingForWakeWord = false,
+  onToggleVoice,
+}) => {
   const [darkMode, setDarkMode] = useState(true);
   const [scannerHealthy, setScannerHealthy] = useState(false);
 
@@ -607,7 +621,7 @@ export const TraderHeader: React.FC = () => {
 
   const handleProfileClick = () => {
     console.log("[v0] Profile clicked");
-    navigate('/profile');
+    navigate("/profile");
   };
 
   const handleSettingsClick = () => {
@@ -757,8 +771,36 @@ export const TraderHeader: React.FC = () => {
           />
         </nav>
 
-        {/* Right: Theme Toggle + User Menu */}
+        {/* Right: Voice + Theme Toggle + User Menu */}
         <div className="flex items-center gap-3">
+          {onToggleVoice && (
+            <button
+              onClick={onToggleVoice}
+              className={cn(
+                "w-8 h-8 rounded-md flex items-center justify-center transition-colors",
+                isListening
+                  ? "bg-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/90 text-white"
+                  : "hover:bg-[var(--surface-2)] text-[var(--text-high)]",
+                colorTransition,
+                buttonHoverColor,
+                focusStateSmooth
+              )}
+              title={
+                waitingForWakeWord
+                  ? "Say 'Hey Honey'"
+                  : isListening
+                    ? "Listening... (Click to stop)"
+                    : "Start voice (Press M)"
+              }
+            >
+              {isListening ? (
+                <Mic className={cn("w-4 h-4", isListening && "animate-pulse")} />
+              ) : (
+                <MicOff className="w-4 h-4" />
+              )}
+            </button>
+          )}
+
           <button
             onClick={handleDarkModeToggle}
             className={cn(

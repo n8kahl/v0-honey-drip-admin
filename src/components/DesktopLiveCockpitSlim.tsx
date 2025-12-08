@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import { Trade, Ticker, Challenge, DiscordChannel } from "../types";
 import { HDPanelWatchlist } from "./hd/dashboard/HDPanelWatchlist";
 import { HDVoiceHUD } from "./hd/voice/HDVoiceHUD";
-import { FloatingVoiceButton } from "./hd/voice/FloatingVoiceButton";
 import { HDDialogChallengeDetail } from "./hd/forms/HDDialogChallengeDetail";
 import { HDMacroPanel } from "./hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "./hd/layout/HDWatchlistRail";
@@ -11,13 +10,11 @@ import { MobileNowPlayingSheet } from "./MobileNowPlayingSheet";
 import { MobileWatermark } from "./MobileWatermark";
 
 import { useVoiceCommands } from "../hooks/useVoiceCommands";
-import { cn } from "../lib/utils";
 import { streamingManager } from "../lib/massive/streaming-manager";
 import { useTradeStateMachine } from "../hooks/useTradeStateMachine";
 import { TradingWorkspace } from "./trading/TradingWorkspace";
 import { ActiveTradesPanel } from "./trading/ActiveTradesPanel";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
-import { Contract, OptionType } from "../types";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
 import { branding } from "../lib/config/branding";
 
@@ -50,6 +47,12 @@ interface DesktopLiveCockpitSlimProps {
   onOpenReviewTrade?: (tradeId: string) => void;
   activeTab?: "live" | "active" | "history" | "settings";
   compositeSignals?: CompositeSignal[]; // Composite trade signals
+  onVoiceStateChange?: (state: {
+    isListening: boolean;
+    isProcessing: boolean;
+    waitingForWakeWord: boolean;
+    onToggle: () => void;
+  }) => void;
 }
 
 export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
@@ -70,6 +73,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onMobileTabChange,
     onOpenActiveTrade,
     onOpenReviewTrade,
+    onVoiceStateChange,
   } = props;
 
   const {
@@ -117,7 +121,31 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onUpdateSL: actions.handleUpdateSL,
     onExitTrade: actions.handleExit,
     onAddPosition: actions.handleAdd,
+    onSendAlert: async (alert) => {
+      // Smart alerts generate via useVoiceCommands → smartAlertService
+      // This sends them to Discord via the existing alert system
+      console.warn("[v0] Voice smart alert:", alert);
+      // TODO: Wire up to Discord via actions.handleSendAlert when alert format is finalized
+    },
   });
+
+  // Report voice state to parent (for header mic button)
+  useEffect(() => {
+    if (onVoiceStateChange) {
+      onVoiceStateChange({
+        isListening: voice.isListening,
+        isProcessing: voice.hudState === "processing",
+        waitingForWakeWord: voice.waitingForWakeWord,
+        onToggle: () => {
+          if (voice.isListening) {
+            voice.stopListening();
+          } else {
+            voice.startListening();
+          }
+        },
+      });
+    }
+  }, [voice.isListening, voice.hudState, voice.waitingForWakeWord, onVoiceStateChange]);
 
   useEffect(() => {
     const handles = watchlist.map((t) =>
@@ -377,20 +405,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
       <div className="lg:hidden">
         <MobileWatermark />
       </div>
-
-      {/* Floating Voice Button - Always Visible */}
-      <FloatingVoiceButton
-        isListening={voice.isListening}
-        isProcessing={voice.hudState === "processing"}
-        waitingForWakeWord={voice.waitingForWakeWord}
-        onToggle={() => {
-          if (voice.isListening) {
-            voice.stopListening();
-          } else {
-            voice.startListening();
-          }
-        }}
-      />
     </>
   );
 }
