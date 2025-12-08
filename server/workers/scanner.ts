@@ -13,7 +13,7 @@
  * - Graceful error handling with continued operation
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { scanStrategiesForUser } from "../../src/lib/strategy/scanner.js";
 import { buildSymbolFeatures, type TimeframeKey } from "../../src/lib/strategy/featuresBuilder.js";
 import { sendStrategySignalToDiscord } from "../../src/lib/discord/strategyAlerts.js";
@@ -38,7 +38,17 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Singleton Supabase client
+let supabaseClient: SupabaseClient<any> | null = null;
+
+function getSupabaseClient(): SupabaseClient<any> {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  }
+  return supabaseClient!;
+}
+
+const supabase = getSupabaseClient();
 
 /**
  * Calculate indicator values from bars (simplified version for server-side)

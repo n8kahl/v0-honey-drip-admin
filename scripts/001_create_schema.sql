@@ -135,6 +135,9 @@ CREATE TABLE IF NOT EXISTS public.trades (
   discord_channels TEXT[] DEFAULT '{}',
   challenges TEXT[] DEFAULT '{}',
   
+  -- Confluence tracking
+  confluence_updated_at TIMESTAMP WITH TIME ZONE,
+  
   -- Metadata
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -143,6 +146,8 @@ CREATE TABLE IF NOT EXISTS public.trades (
 CREATE INDEX idx_trades_user_id ON public.trades(user_id);
 CREATE INDEX idx_trades_state ON public.trades(state);
 CREATE INDEX idx_trades_ticker ON public.trades(ticker);
+CREATE INDEX idx_trades_confluence_updated_at ON public.trades(confluence_updated_at);
+CREATE INDEX idx_trades_user_state ON public.trades(user_id, state);
 
 ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
 

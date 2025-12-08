@@ -27,12 +27,22 @@ globalThis.fetch = fetch as any;
 
 import { ConfluenceOptimizer } from "./confluenceOptimizer.js";
 import { BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Singleton Supabase client
+let supabaseClient: SupabaseClient<any> | null = null;
+
+function getSupabaseClient(): SupabaseClient<any> {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  }
+  return supabaseClient!;
+}
 
 // Schedule: Every Sunday at 6pm ET (18:00 Eastern Time)
 const OPTIMIZATION_SCHEDULE = {
@@ -134,7 +144,7 @@ async function sendDiscordNotification(
   }
 ): Promise<void> {
   try {
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const supabase = getSupabaseClient();
 
     // Get first Discord webhook from database
     const { data: channels } = await supabase
@@ -222,7 +232,7 @@ async function runOptimization(): Promise<void> {
   try {
     // Fetch watchlist symbols
     console.log("[Scheduler] 📋 Fetching symbols from watchlist...");
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const supabase = getSupabaseClient();
     const { data: watchlistData, error: watchlistError } = await supabase
       .from("watchlist")
       .select("symbol");

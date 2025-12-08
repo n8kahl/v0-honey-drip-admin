@@ -5,13 +5,10 @@
  * Provides functions to load/save branding settings and upload assets to Supabase Storage.
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "../supabase/client";
 import { applyBrandingTheme, defaultBrandingTheme } from "../config/branding";
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const supabase = createClient();
 
 export interface ResellerConfig {
   id: string;

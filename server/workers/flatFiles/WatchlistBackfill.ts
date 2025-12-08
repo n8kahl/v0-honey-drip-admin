@@ -17,7 +17,7 @@ import { config } from "dotenv";
 config({ path: ".env.local", override: true });
 config();
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HybridBackfillOrchestrator } from "./HybridBackfillOrchestrator.js";
 
 // Environment
@@ -29,7 +29,17 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Singleton Supabase client
+let supabaseClient: SupabaseClient<any> | null = null;
+
+function getSupabaseClient(): SupabaseClient<any> {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  }
+  return supabaseClient!;
+}
+
+const supabase = getSupabaseClient();
 
 export interface WatchlistBackfillConfig {
   days: number; // 90 (lookback period)

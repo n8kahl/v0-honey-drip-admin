@@ -1,4 +1,4 @@
--- Migration 012: Historical Data Warehouse
+-- Migration 012: Historical Data Warehouse (Safe Re-run Version)
 -- Phase 1: Enhanced Strategy Engine with Massive.com Historical Data
 -- Date: 2025-11-24
 --
@@ -8,23 +8,21 @@
 -- 3. iv_percentile_cache: 52-week IV percentile calculations
 -- 4. gamma_exposure_snapshots: Dealer positioning and gamma walls
 -- 5. market_regime_history: VIX, breadth, correlation tracking
+--
+-- SAFE RE-RUN: Uses IF NOT EXISTS and DROP POLICY IF EXISTS
 
 -- ============================================================================
 -- Table: historical_greeks
 -- ============================================================================
--- Purpose: Store historical Greeks and IV data for percentile calculations
--- Enables: IV rank/percentile, time decay analysis, Greeks tracking
--- Frequency: Updated every 15 minutes during market hours
-
 CREATE TABLE IF NOT EXISTS historical_greeks (
   -- Identity
   symbol TEXT NOT NULL,
-  contract_ticker TEXT NOT NULL,     -- e.g., O:SPX251219C06475000
+  contract_ticker TEXT NOT NULL,
   strike NUMERIC(10,2) NOT NULL,
   expiration DATE NOT NULL,
-  timestamp BIGINT NOT NULL,          -- Epoch milliseconds
+  timestamp BIGINT NOT NULL,
 
-  -- Greeks (from Massive.com options snapshot)
+  -- Greeks
   delta NUMERIC(8,6),
   gamma NUMERIC(10,8),
   theta NUMERIC(10,6),
@@ -33,19 +31,19 @@ CREATE TABLE IF NOT EXISTS historical_greeks (
 
   -- IV Metrics
   implied_volatility NUMERIC(8,6),
-  iv_rank NUMERIC(5,4),               -- Calculated: (current - low) / (high - low)
-  iv_percentile NUMERIC(5,4),         -- Calculated: % of days below current
+  iv_rank NUMERIC(5,4),
+  iv_percentile NUMERIC(5,4),
 
   -- Context
   underlying_price NUMERIC(12,4) NOT NULL,
-  dte INTEGER NOT NULL,               -- Days to expiration
+  dte INTEGER NOT NULL,
   option_type TEXT CHECK (option_type IN ('call', 'put')),
 
   -- Pricing
   bid NUMERIC(12,4),
   ask NUMERIC(12,4),
   last NUMERIC(12,4),
-  mid_price NUMERIC(12,4),            -- (bid + ask) / 2
+  mid_price NUMERIC(12,4),
 
   -- Volume & OI
   volume INTEGER,
@@ -57,7 +55,6 @@ CREATE TABLE IF NOT EXISTS historical_greeks (
   PRIMARY KEY (contract_ticker, timestamp)
 );
 
--- Indexes for fast queries
 CREATE INDEX IF NOT EXISTS idx_historical_greeks_symbol
   ON historical_greeks(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_historical_greeks_expiration
@@ -67,39 +64,21 @@ CREATE INDEX IF NOT EXISTS idx_historical_greeks_timestamp
 CREATE INDEX IF NOT EXISTS idx_historical_greeks_strike
   ON historical_greeks(symbol, strike, timestamp DESC);
 
--- Cleanup function: Delete data older than 1 year
-CREATE OR REPLACE FUNCTION cleanup_old_greeks()
-RETURNS INTEGER AS $$
-DECLARE
-  deleted_count INTEGER;
-BEGIN
-  DELETE FROM historical_greeks
-  WHERE timestamp < EXTRACT(EPOCH FROM (NOW() - INTERVAL '1 year'))::BIGINT * 1000;
-
-  GET DIAGNOSTICS deleted_count = ROW_COUNT;
-  RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Table: options_flow_history
 -- ============================================================================
--- Purpose: Track institutional options flow (sweeps, blocks, large trades)
--- Enables: Smart money alignment, sentiment analysis, unusual activity detection
--- Frequency: Real-time (processed from Massive.com trade feed)
-
 CREATE TABLE IF NOT EXISTS options_flow_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Identity
   symbol TEXT NOT NULL,
   contract_ticker TEXT NOT NULL,
-  timestamp BIGINT NOT NULL,          -- Epoch milliseconds
+  timestamp BIGINT NOT NULL,
 
   -- Trade Details
   price NUMERIC(12,4) NOT NULL,
   size INTEGER NOT NULL,
-  premium NUMERIC(16,2) NOT NULL,     -- price × size × 100
+  premium NUMERIC(16,2) NOT NULL,
 
   -- Classification
   trade_type TEXT CHECK (trade_type IN ('SWEEP', 'BLOCK', 'SPLIT', 'LARGE', 'REGULAR')),
@@ -116,23 +95,22 @@ CREATE TABLE IF NOT EXISTS options_flow_history (
   -- Detection Flags
   is_sweep BOOLEAN DEFAULT false,
   is_block BOOLEAN DEFAULT false,
-  is_above_ask BOOLEAN DEFAULT false,  -- Aggressive buy
-  is_below_bid BOOLEAN DEFAULT false,  -- Aggressive sell
+  is_above_ask BOOLEAN DEFAULT false,
+  is_below_bid BOOLEAN DEFAULT false,
   is_unusual_volume BOOLEAN DEFAULT false,
 
-  -- Percentiles (relative to recent activity)
-  size_percentile NUMERIC(5,2),       -- Size relative to 20-day avg
-  premium_percentile NUMERIC(5,2),    -- Premium relative to 20-day avg
+  -- Percentiles
+  size_percentile NUMERIC(5,2),
+  premium_percentile NUMERIC(5,2),
 
   -- Exchange & Conditions
   exchange TEXT,
-  conditions TEXT[],                   -- Trade conditions/flags
+  conditions TEXT[],
 
   -- Metadata
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for fast queries
 CREATE INDEX IF NOT EXISTS idx_flow_symbol_time
   ON options_flow_history(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_flow_contract
@@ -146,32 +124,14 @@ CREATE INDEX IF NOT EXISTS idx_flow_type
 CREATE INDEX IF NOT EXISTS idx_flow_timestamp
   ON options_flow_history(timestamp DESC);
 
--- Cleanup function: Delete data older than 90 days
-CREATE OR REPLACE FUNCTION cleanup_old_flow()
-RETURNS INTEGER AS $$
-DECLARE
-  deleted_count INTEGER;
-BEGIN
-  DELETE FROM options_flow_history
-  WHERE timestamp < EXTRACT(EPOCH FROM (NOW() - INTERVAL '90 days'))::BIGINT * 1000;
-
-  GET DIAGNOSTICS deleted_count = ROW_COUNT;
-  RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Table: iv_percentile_cache
 -- ============================================================================
--- Purpose: Cache IV percentile calculations (expensive to compute)
--- Enables: IV rank/percentile context for entry timing
--- Frequency: Calculated daily at market close, updated intraday if needed
-
 CREATE TABLE IF NOT EXISTS iv_percentile_cache (
   symbol TEXT NOT NULL,
   date DATE NOT NULL,
 
-  -- Current IV (from ATM options)
+  -- Current IV
   current_iv NUMERIC(8,6) NOT NULL,
   current_iv_call NUMERIC(8,6),
   current_iv_put NUMERIC(8,6),
@@ -184,20 +144,20 @@ CREATE TABLE IF NOT EXISTS iv_percentile_cache (
   iv_52w_stddev NUMERIC(8,6),
 
   -- Calculated metrics
-  iv_rank NUMERIC(5,4) NOT NULL,           -- (current - low) / (high - low)
-  iv_percentile NUMERIC(5,4) NOT NULL,     -- % of days IV was below current
-  iv_zscore NUMERIC(6,3),                  -- (current - mean) / stddev
+  iv_rank NUMERIC(5,4) NOT NULL,
+  iv_percentile NUMERIC(5,4) NOT NULL,
+  iv_zscore NUMERIC(6,3),
 
   -- Regime classification
   iv_regime TEXT CHECK (iv_regime IN ('EXTREMELY_LOW', 'LOW', 'NORMAL', 'ELEVATED', 'HIGH', 'EXTREMELY_HIGH')),
 
-  -- Trend analysis (5-day, 20-day changes)
+  -- Trend analysis
   iv_change_5d NUMERIC(8,6),
   iv_change_20d NUMERIC(8,6),
   iv_trend TEXT CHECK (iv_trend IN ('EXPANDING', 'STABLE', 'CONTRACTING')),
 
   -- Call/Put skew
-  iv_skew NUMERIC(8,6),                    -- call_iv - put_iv
+  iv_skew NUMERIC(8,6),
   skew_percentile NUMERIC(5,4),
 
   -- Sample size
@@ -209,7 +169,6 @@ CREATE TABLE IF NOT EXISTS iv_percentile_cache (
   PRIMARY KEY (symbol, date)
 );
 
--- Indexes
 CREATE INDEX IF NOT EXISTS idx_iv_cache_symbol
   ON iv_percentile_cache(symbol, date DESC);
 CREATE INDEX IF NOT EXISTS idx_iv_cache_date
@@ -220,24 +179,20 @@ CREATE INDEX IF NOT EXISTS idx_iv_cache_regime
 -- ============================================================================
 -- Table: gamma_exposure_snapshots
 -- ============================================================================
--- Purpose: Store dealer gamma positioning and gamma walls
--- Enables: Price pinning detection, breakout/breakdown probability
--- Frequency: Every 15 minutes during market hours
-
 CREATE TABLE IF NOT EXISTS gamma_exposure_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Identity
   symbol TEXT NOT NULL,
-  timestamp BIGINT NOT NULL,          -- Epoch milliseconds
+  timestamp BIGINT NOT NULL,
   underlying_price NUMERIC(12,4) NOT NULL,
 
   -- Aggregate gamma metrics
   total_gamma NUMERIC(16,4),
-  total_gamma_notional NUMERIC(20,2), -- Gamma × price^2 × 100
+  total_gamma_notional NUMERIC(20,2),
   call_gamma NUMERIC(16,4),
   put_gamma NUMERIC(16,4),
-  gamma_skew NUMERIC(8,4),            -- call_gamma / put_gamma
+  gamma_skew NUMERIC(8,4),
 
   -- Open interest aggregates
   total_call_oi INTEGER,
@@ -249,10 +204,10 @@ CREATE TABLE IF NOT EXISTS gamma_exposure_snapshots (
   total_put_volume INTEGER,
   put_call_volume_ratio NUMERIC(6,4),
 
-  -- By strike (JSONB for flexibility)
-  gamma_by_strike JSONB NOT NULL DEFAULT '{}'::jsonb,       -- {"6400": -1500000, "6450": 2300000}
-  oi_by_strike JSONB NOT NULL DEFAULT '{}'::jsonb,         -- {"6400": 50000, "6450": 75000}
-  volume_by_strike JSONB NOT NULL DEFAULT '{}'::jsonb,     -- {"6400": 12000, "6450": 8500}
+  -- By strike (JSONB)
+  gamma_by_strike JSONB NOT NULL DEFAULT '{}'::jsonb,
+  oi_by_strike JSONB NOT NULL DEFAULT '{}'::jsonb,
+  volume_by_strike JSONB NOT NULL DEFAULT '{}'::jsonb,
 
   -- Key strike levels
   max_call_oi_strike NUMERIC(10,2),
@@ -260,33 +215,32 @@ CREATE TABLE IF NOT EXISTS gamma_exposure_snapshots (
   max_call_volume_strike NUMERIC(10,2),
   max_put_volume_strike NUMERIC(10,2),
 
-  -- Gamma walls (critical for price prediction)
-  gamma_wall_resistance NUMERIC(10,2),      -- Strike with most negative gamma above price
-  gamma_wall_support NUMERIC(10,2),         -- Strike with most positive gamma below price
-  gamma_wall_resistance_strength NUMERIC(16,4), -- Magnitude of gamma at resistance
-  gamma_wall_support_strength NUMERIC(16,4),    -- Magnitude of gamma at support
+  -- Gamma walls
+  gamma_wall_resistance NUMERIC(10,2),
+  gamma_wall_support NUMERIC(10,2),
+  gamma_wall_resistance_strength NUMERIC(16,4),
+  gamma_wall_support_strength NUMERIC(16,4),
 
-  -- Dealer positioning (negative gamma = dealers short = bullish for price)
+  -- Dealer positioning
   dealer_net_gamma NUMERIC(16,4),
   dealer_positioning TEXT CHECK (dealer_positioning IN ('LONG_GAMMA', 'SHORT_GAMMA', 'NEUTRAL')),
   positioning_strength TEXT CHECK (positioning_strength IN ('WEAK', 'MODERATE', 'STRONG', 'EXTREME')),
 
-  -- Expected behavior based on gamma
+  -- Expected behavior
   expected_behavior TEXT CHECK (expected_behavior IN ('PINNING', 'TRENDING', 'VOLATILE', 'RANGE_BOUND')),
 
-  -- Distance to gamma walls (%)
+  -- Distance to gamma walls
   distance_to_resistance_pct NUMERIC(6,3),
   distance_to_support_pct NUMERIC(6,3),
 
   -- Metadata
-  expiration_focus DATE,              -- Which expiration dominated this snapshot
-  expirations_included TEXT[],        -- All expirations in calculation
+  expiration_focus DATE,
+  expirations_included TEXT[],
   created_at TIMESTAMPTZ DEFAULT NOW(),
 
   UNIQUE (symbol, timestamp)
 );
 
--- Indexes
 CREATE INDEX IF NOT EXISTS idx_gamma_symbol_time
   ON gamma_exposure_snapshots(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_gamma_timestamp
@@ -294,51 +248,33 @@ CREATE INDEX IF NOT EXISTS idx_gamma_timestamp
 CREATE INDEX IF NOT EXISTS idx_gamma_positioning
   ON gamma_exposure_snapshots(dealer_positioning, timestamp DESC);
 
--- Cleanup function: Delete data older than 90 days
-CREATE OR REPLACE FUNCTION cleanup_old_gamma()
-RETURNS INTEGER AS $$
-DECLARE
-  deleted_count INTEGER;
-BEGIN
-  DELETE FROM gamma_exposure_snapshots
-  WHERE timestamp < EXTRACT(EPOCH FROM (NOW() - INTERVAL '90 days'))::BIGINT * 1000;
-
-  GET DIAGNOSTICS deleted_count = ROW_COUNT;
-  RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Table: market_regime_history
 -- ============================================================================
--- Purpose: Track overall market regime (VIX, breadth, correlation)
--- Enables: Strategy selection based on market conditions
--- Frequency: Calculated daily at market close
-
 CREATE TABLE IF NOT EXISTS market_regime_history (
   date DATE PRIMARY KEY,
 
   -- VIX Metrics
   vix_level NUMERIC(6,3) NOT NULL,
-  vix_change NUMERIC(6,3),            -- Change from previous day
+  vix_change NUMERIC(6,3),
   vix_change_pct NUMERIC(6,3),
   vix_regime TEXT CHECK (vix_regime IN ('EXTREMELY_LOW', 'LOW', 'NORMAL', 'ELEVATED', 'HIGH', 'EXTREME')),
 
-  -- VIX term structure (if VX futures available)
+  -- VIX term structure
   vix_front_month NUMERIC(6,3),
   vix_back_month NUMERIC(6,3),
   vix_term_structure TEXT CHECK (vix_term_structure IN ('STEEP_CONTANGO', 'CONTANGO', 'FLAT', 'BACKWARDATION', 'STEEP_BACKWARDATION')),
-  vix_term_spread NUMERIC(6,3),      -- back - front
+  vix_term_spread NUMERIC(6,3),
 
   -- Market Breadth
-  tick_index NUMERIC(8,2),            -- NYSE TICK (intraday average)
+  tick_index NUMERIC(8,2),
   tick_regime TEXT CHECK (tick_regime IN ('EXTREME_SELLING', 'WEAK', 'NEUTRAL', 'STRONG', 'EXTREME_BUYING')),
 
   advancers INTEGER,
   decliners INTEGER,
   unchanged INTEGER,
   advance_decline_ratio NUMERIC(6,4),
-  advance_decline_diff INTEGER,      -- advancers - decliners
+  advance_decline_diff INTEGER,
 
   new_highs INTEGER,
   new_lows INTEGER,
@@ -347,12 +283,12 @@ CREATE TABLE IF NOT EXISTS market_regime_history (
   breadth_regime TEXT CHECK (breadth_regime IN ('EXTREMELY_BEARISH', 'BEARISH', 'NEUTRAL', 'BULLISH', 'EXTREMELY_BULLISH')),
 
   -- Correlation & Leadership
-  spy_ndx_correlation NUMERIC(6,4),   -- 20-day rolling correlation
-  spy_rut_correlation NUMERIC(6,4),   -- Large cap vs small cap
+  spy_ndx_correlation NUMERIC(6,4),
+  spy_rut_correlation NUMERIC(6,4),
   correlation_regime TEXT CHECK (correlation_regime IN ('DIVERGING', 'LOW', 'NORMAL', 'HIGH', 'EXTREMELY_HIGH')),
 
-  -- Sector performance (leaders/laggards)
-  leading_sector TEXT,                -- XLK, XLF, XLE, etc.
+  -- Sector performance
+  leading_sector TEXT,
   lagging_sector TEXT,
   sector_rotation TEXT CHECK (sector_rotation IN ('DEFENSIVE', 'CYCLICAL', 'GROWTH', 'VALUE', 'MIXED')),
 
@@ -372,9 +308,9 @@ CREATE TABLE IF NOT EXISTS market_regime_history (
 
   -- Volume
   spy_volume BIGINT,
-  spy_volume_ratio NUMERIC(6,4),     -- vs 20-day average
+  spy_volume_ratio NUMERIC(6,4),
 
-  -- Overall Market Regime Classification
+  -- Overall Market Regime
   market_regime TEXT CHECK (market_regime IN (
     'STRONG_UPTREND',
     'WEAK_UPTREND',
@@ -389,13 +325,12 @@ CREATE TABLE IF NOT EXISTS market_regime_history (
     'EUPHORIA'
   )),
 
-  confidence_score NUMERIC(5,2),      -- 0-100 confidence in regime classification
+  confidence_score NUMERIC(5,2),
 
   -- Metadata
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes
 CREATE INDEX IF NOT EXISTS idx_market_regime_date
   ON market_regime_history(date DESC);
 CREATE INDEX IF NOT EXISTS idx_market_regime_vix
@@ -404,52 +339,67 @@ CREATE INDEX IF NOT EXISTS idx_market_regime_overall
   ON market_regime_history(market_regime);
 
 -- ============================================================================
--- Row-Level Security (RLS)
+-- Cleanup Functions (OR REPLACE for safe re-run)
 -- ============================================================================
--- These tables contain global market data, not user-specific
--- Allow all authenticated users to READ
--- Only service role can WRITE (via workers)
+CREATE OR REPLACE FUNCTION cleanup_old_greeks()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM historical_greeks
+  WHERE timestamp < EXTRACT(EPOCH FROM (NOW() - INTERVAL '1 year'))::BIGINT * 1000;
 
-ALTER TABLE historical_greeks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON historical_greeks;
-CREATE POLICY "Allow read access to all authenticated users"
-  ON historical_greeks FOR SELECT
-  TO authenticated
-  USING (true);
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
 
-ALTER TABLE options_flow_history ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON options_flow_history;
-CREATE POLICY "Allow read access to all authenticated users"
-  ON options_flow_history FOR SELECT
-  TO authenticated
-  USING (true);
+CREATE OR REPLACE FUNCTION cleanup_old_flow()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM options_flow_history
+  WHERE timestamp < EXTRACT(EPOCH FROM (NOW() - INTERVAL '90 days'))::BIGINT * 1000;
 
-ALTER TABLE iv_percentile_cache ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON iv_percentile_cache;
-CREATE POLICY "Allow read access to all authenticated users"
-  ON iv_percentile_cache FOR SELECT
-  TO authenticated
-  USING (true);
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
 
-ALTER TABLE gamma_exposure_snapshots ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON gamma_exposure_snapshots;
-CREATE POLICY "Allow read access to all authenticated users"
-  ON gamma_exposure_snapshots FOR SELECT
-  TO authenticated
-  USING (true);
+CREATE OR REPLACE FUNCTION cleanup_old_gamma()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM gamma_exposure_snapshots
+  WHERE timestamp < EXTRACT(EPOCH FROM (NOW() - INTERVAL '90 days'))::BIGINT * 1000;
 
-ALTER TABLE market_regime_history ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON market_regime_history;
-CREATE POLICY "Allow read access to all authenticated users"
-  ON market_regime_history FOR SELECT
-  TO authenticated
-  USING (true);
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION cleanup_all_historical_data()
+RETURNS TABLE (
+  table_name TEXT,
+  rows_deleted INTEGER
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 'historical_greeks'::TEXT, cleanup_old_greeks();
+
+  RETURN QUERY
+  SELECT 'options_flow_history'::TEXT, cleanup_old_flow();
+
+  RETURN QUERY
+  SELECT 'gamma_exposure_snapshots'::TEXT, cleanup_old_gamma();
+END;
+$$ LANGUAGE plpgsql;
 
 -- ============================================================================
--- Utility Functions
+-- Utility Functions (OR REPLACE)
 -- ============================================================================
-
--- Function to get latest IV percentile for a symbol
 CREATE OR REPLACE FUNCTION get_latest_iv_percentile(p_symbol TEXT)
 RETURNS TABLE (
   symbol TEXT,
@@ -473,7 +423,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get recent options flow summary
 CREATE OR REPLACE FUNCTION get_flow_summary(
   p_symbol TEXT,
   p_minutes INTEGER DEFAULT 60
@@ -512,7 +461,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get latest gamma exposure
 CREATE OR REPLACE FUNCTION get_latest_gamma_exposure(p_symbol TEXT)
 RETURNS TABLE (
   symbol TEXT,
@@ -536,7 +484,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get current market regime
 CREATE OR REPLACE FUNCTION get_current_market_regime()
 RETURNS TABLE (
   date DATE,
@@ -562,53 +509,57 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================================
--- Data Retention & Cleanup
+-- Row-Level Security (Drop existing policies first, then recreate)
 -- ============================================================================
--- Schedule these functions to run periodically (via cron or worker)
+ALTER TABLE historical_greeks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON historical_greeks;
+CREATE POLICY "Allow read access to all authenticated users"
+  ON historical_greeks FOR SELECT
+  TO authenticated
+  USING (true);
 
--- Master cleanup function
-CREATE OR REPLACE FUNCTION cleanup_all_historical_data()
-RETURNS TABLE (
-  table_name TEXT,
-  rows_deleted INTEGER
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 'historical_greeks'::TEXT, cleanup_old_greeks();
+ALTER TABLE options_flow_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON options_flow_history;
+CREATE POLICY "Allow read access to all authenticated users"
+  ON options_flow_history FOR SELECT
+  TO authenticated
+  USING (true);
 
-  RETURN QUERY
-  SELECT 'options_flow_history'::TEXT, cleanup_old_flow();
+ALTER TABLE iv_percentile_cache ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON iv_percentile_cache;
+CREATE POLICY "Allow read access to all authenticated users"
+  ON iv_percentile_cache FOR SELECT
+  TO authenticated
+  USING (true);
 
-  RETURN QUERY
-  SELECT 'gamma_exposure_snapshots'::TEXT, cleanup_old_gamma();
-END;
-$$ LANGUAGE plpgsql;
+ALTER TABLE gamma_exposure_snapshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON gamma_exposure_snapshots;
+CREATE POLICY "Allow read access to all authenticated users"
+  ON gamma_exposure_snapshots FOR SELECT
+  TO authenticated
+  USING (true);
+
+ALTER TABLE market_regime_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON market_regime_history;
+CREATE POLICY "Allow read access to all authenticated users"
+  ON market_regime_history FOR SELECT
+  TO authenticated
+  USING (true);
 
 -- ============================================================================
--- Comments for Documentation
+-- Comments
 -- ============================================================================
-
 COMMENT ON TABLE historical_greeks IS
-  'Time-series Greeks and IV data from Massive.com options chain. Updated every 15 minutes during market hours. Enables IV percentile calculations and Greeks tracking.';
+  'Time-series Greeks and IV data from Massive.com options chain. Updated every 15 minutes during market hours.';
 
 COMMENT ON TABLE options_flow_history IS
-  'Institutional options flow tracking (sweeps, blocks, large trades). Real-time processing from Massive.com trade feed. Enables smart money alignment detection.';
+  'Institutional options flow tracking (sweeps, blocks, large trades). Real-time processing from Massive.com trade feed.';
 
 COMMENT ON TABLE iv_percentile_cache IS
-  'Cached IV percentile calculations (expensive to compute). Updated daily at market close. Provides IV rank/percentile context for entry timing decisions.';
+  'Cached IV percentile calculations (expensive to compute). Updated daily at market close.';
 
 COMMENT ON TABLE gamma_exposure_snapshots IS
-  'Dealer gamma positioning and gamma wall detection. Updated every 15 minutes. Enables price pinning prediction and breakout probability analysis.';
+  'Dealer gamma positioning and gamma wall detection. Updated every 15 minutes.';
 
 COMMENT ON TABLE market_regime_history IS
-  'Overall market regime tracking (VIX, breadth, correlation, put/call ratios). Calculated daily. Enables regime-aware strategy selection.';
-
--- ============================================================================
--- Migration Complete
--- ============================================================================
--- Next Steps:
--- 1. Run this migration in Supabase SQL Editor
--- 2. Build data ingestion workers (server/workers/historicalDataIngestion.ts)
--- 3. Backfill historical data (3-6 months recommended)
--- 4. Build context engines to query this data
--- 5. Integrate with CompositeScanner for enhanced signal detection
+  'Overall market regime tracking (VIX, breadth, correlation, put/call ratios). Calculated daily.';

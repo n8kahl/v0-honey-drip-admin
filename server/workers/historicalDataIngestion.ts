@@ -12,6 +12,7 @@
  * Run this worker alongside compositeScanner for complete data coverage
  */
 
+import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { getOptionChain, getIndicesSnapshot } from "../massive/client.js";
 import { isIndex } from "../lib/symbolUtils.js";
@@ -26,7 +27,24 @@ import { calculateMarketRegime, MarketRegimeResult } from "./ingestion/marketReg
 // ============================================================================
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+// Allow using anon key if service role key is not available (for development)
+// In production, you should use SUPABASE_SERVICE_ROLE_KEY for workers
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY!;
+
+// Singleton Supabase client
+let supabaseClient: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+  return supabaseClient!;
+}
 
 const INGESTION_INTERVALS = {
   greeks: 15 * 60 * 1000, // 15 minutes
@@ -78,13 +96,13 @@ class HistoricalDataIngestionWorker {
   private equitySymbols: string[] = [];
 
   constructor() {
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
       throw new Error(
-        "Missing required environment variables: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
+        "Missing required environment variables: SUPABASE_URL and (SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_ANON_KEY)"
       );
     }
 
-    this.supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    this.supabase = getSupabaseClient();
 
     this.stats = {
       startTime: new Date(),
@@ -110,19 +128,35 @@ class HistoricalDataIngestionWorker {
 
   /**
    * Fetch all watchlist symbols from database and categorize them
+   * Note: Uses RPC function to bypass RLS and get all symbols across all users
    */
   private async refreshWatchlistSymbols(): Promise<void> {
     try {
       console.log("[HistoricalIngestion] 🔄 Refreshing watchlist symbols from database...");
 
-      const { data, error } = await this.supabase.from("watchlist").select("symbol");
+      // Query all distinct symbols from watchlist (bypasses RLS when using service role key)
+      // If using anon key, we need to use a stored procedure or get symbols another way
+      const { data, error } = await this.supabase.rpc("get_all_watchlist_symbols");
 
-      if (error) {
+      // Fallback: If RPC function doesn't exist, try direct query (works with service role key)
+      let rows: Array<{ symbol: string }> = [];
+      if (error && error.message?.includes("function")) {
+        console.log("[HistoricalIngestion] RPC function not found, trying direct query...");
+        const { data: directData, error: directError } = await this.supabase
+          .from("watchlist")
+          .select("symbol");
+
+        if (directError) {
+          throw directError;
+        }
+        rows = directData || [];
+      } else if (error) {
         throw error;
+      } else {
+        rows = data || [];
       }
 
       // Get unique symbols (explicit type to avoid TypeScript inference issues)
-      const rows: Array<{ symbol: string }> = data || [];
       const allSymbols = [...new Set(rows.map((row) => row.symbol))];
 
       // Categorize into indices vs equities

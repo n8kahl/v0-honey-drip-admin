@@ -34,10 +34,9 @@ interface TradeStore {
   deleteTrade: (tradeId: string) => Promise<void>;
   loadTrades: (userId: string) => Promise<void>;
 
-  // Trade lifecycle transitions
-  transitionToLoaded: (contract: Contract) => void;
-  transitionToEntered: (entryPrice: number, quantity: number) => void;
-  transitionToExited: (exitPrice: number) => void;
+  // NOTE: Old transitionToLoaded/transitionToEntered/transitionToExited removed
+  // These functions only updated memory and never persisted to database
+  // Use createTradeApi/updateTradeApi from useTradeStateMachine instead
 
   // Trade updates
   addTradeUpdate: (tradeId: string, update: TradeUpdate) => void;
@@ -78,10 +77,6 @@ const mapStatusToState = (status: string): TradeState => {
     default:
       return "WATCHING";
   }
-};
-
-const mapStateToStatus = (state: TradeState): string => {
-  return state.toLowerCase();
 };
 
 export const useTradeStore = create<TradeStore>()(
@@ -150,6 +145,7 @@ export const useTradeStore = create<TradeStore>()(
       },
 
       updateTrade: async (tradeId, updates) => {
+        console.warn(`[TradeStore] updateTrade called for ${tradeId}:`, updates);
         set({ isLoading: true, error: null });
         try {
           // First update local state
@@ -167,19 +163,55 @@ export const useTradeStore = create<TradeStore>()(
             isLoading: false,
           }));
 
-          // Try to update database (may fail for in-memory trades)
-          // This is a best-effort update - don't fail if trade not in DB
-          try {
-            await dbUpdateTrade(tradeId, updates as any);
-          } catch (dbError: any) {
-            // Only log if not a "not found" error (trade may be in-memory only)
-            if (!dbError?.message?.includes("No rows") && !dbError?.code?.includes("PGRST116")) {
-              console.warn("[TradeStore] DB update failed (trade may be in-memory only):", dbError);
+          // Filter updates to only include fields that exist in the database schema
+          // Exclude client-only fields like confluence, confluenceUpdatedAt, etc.
+          const dbFields = [
+            "entry_price",
+            "exit_price",
+            "entry_time",
+            "exit_time",
+            "pnl",
+            "pnl_percent",
+            "notes",
+            "target_price",
+            "stop_loss",
+            "current_price",
+            "move_percent",
+            "state",
+            "status",
+          ];
+          const dbUpdates: Record<string, any> = {};
+          for (const [key, value] of Object.entries(updates)) {
+            // Convert camelCase to snake_case for DB fields
+            const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+            if (dbFields.includes(snakeKey) && value !== undefined) {
+              dbUpdates[snakeKey] = value;
             }
+          }
+
+          console.warn(`[TradeStore] DB updates for ${tradeId}:`, dbUpdates);
+
+          // Only try DB update if we have valid fields to update
+          if (Object.keys(dbUpdates).length > 0) {
+            try {
+              await dbUpdateTrade(tradeId, dbUpdates as any);
+              console.warn(`[TradeStore] ✅ Trade ${tradeId} successfully updated in database`);
+            } catch (dbError: any) {
+              // FAIL LOUDLY - don't silently swallow errors
+              console.error(
+                `[TradeStore] ❌ CRITICAL: Failed to update trade ${tradeId} in database:`,
+                dbError
+              );
+              set({ error: `Failed to sync trade: ${dbError.message || "Unknown error"}` });
+              throw dbError; // Re-throw to prevent silent failures
+            }
+          } else {
+            console.warn(`[TradeStore] No database fields to update for trade ${tradeId}`);
           }
         } catch (error) {
           console.error("[TradeStore] Failed to update trade:", error);
           set({ error: "Failed to update trade", isLoading: false });
+          throw error; // Re-throw for caller to handle
         }
       },
 
@@ -210,9 +242,11 @@ export const useTradeStore = create<TradeStore>()(
       },
 
       loadTrades: async (userId) => {
+        console.warn(`[TradeStore] loadTrades called for userId: ${userId}`);
         set({ isLoading: true, error: null });
         try {
           const tradesData = await getTrades(userId);
+          console.warn(`[TradeStore] Loaded ${tradesData.length} trades from database`);
           const mappedTrades: Trade[] = tradesData.map((t) => {
             // Use stored contract if available, otherwise reconstruct from basic fields
             const storedContract = t.contract as any;
@@ -300,6 +334,13 @@ export const useTradeStore = create<TradeStore>()(
           const active = mappedTrades.filter((t) => t.state !== "EXITED");
           const history = mappedTrades.filter((t) => t.state === "EXITED");
 
+          console.warn(`[TradeStore] Mapped trades:`, {
+            total: mappedTrades.length,
+            active: active.length,
+            history: history.length,
+            activeStates: active.map((t) => ({ id: t.id, ticker: t.ticker, state: t.state })),
+          });
+
           set({
             activeTrades: active,
             historyTrades: history,
@@ -311,78 +352,9 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      // Trade lifecycle transitions
-      transitionToLoaded: (contract) => {
-        const { currentTrade } = get();
-        if (!currentTrade) {
-          console.warn("[TradeStore] Cannot transition to LOADED: no current trade");
-          return;
-        }
-
-        const loadedTrade: Trade = {
-          ...currentTrade,
-          contract,
-          state: "LOADED",
-        };
-
-        set((state) => ({
-          currentTrade: loadedTrade,
-          tradeState: "LOADED",
-          activeTrades: [...state.activeTrades.filter((t) => t.id !== loadedTrade.id), loadedTrade],
-        }));
-      },
-
-      transitionToEntered: (entryPrice, _quantity) => {
-        const { currentTrade } = get();
-        if (!currentTrade || currentTrade.state !== "LOADED") {
-          console.warn("[TradeStore] Cannot transition to ENTERED: invalid state");
-          return;
-        }
-
-        const updatedTrade: Trade = {
-          ...currentTrade,
-          entryPrice,
-          currentPrice: entryPrice,
-          entryTime: new Date(),
-          state: "ENTERED",
-        };
-
-        set((state) => ({
-          currentTrade: updatedTrade,
-          tradeState: "ENTERED",
-          activeTrades: state.activeTrades.map((t) =>
-            t.id === updatedTrade.id ? updatedTrade : t
-          ),
-        }));
-      },
-
-      transitionToExited: (exitPrice) => {
-        const { currentTrade } = get();
-        if (!currentTrade || currentTrade.state !== "ENTERED") {
-          console.warn("[TradeStore] Cannot transition to EXITED: invalid state");
-          return;
-        }
-
-        const exitTime = new Date();
-        const movePercent = currentTrade.entryPrice
-          ? ((exitPrice - currentTrade.entryPrice) / currentTrade.entryPrice) * 100
-          : 0;
-
-        const exitedTrade: Trade = {
-          ...currentTrade,
-          exitPrice,
-          exitTime,
-          movePercent,
-          state: "EXITED",
-        };
-
-        set((state) => ({
-          currentTrade: null,
-          tradeState: "WATCHING",
-          activeTrades: state.activeTrades.filter((t) => t.id !== exitedTrade.id),
-          historyTrades: [exitedTrade, ...state.historyTrades],
-        }));
-      },
+      // NOTE: Old transitionToLoaded/transitionToEntered/transitionToExited functions removed
+      // These only updated memory and never persisted to database
+      // Use createTradeApi/updateTradeApi from useTradeStateMachine instead
 
       // Trade updates
       addTradeUpdate: (tradeId, update) => {

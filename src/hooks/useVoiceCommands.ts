@@ -37,6 +37,7 @@ export type VoiceActionType =
   | "remove-ticker"
   | "load-contract"
   | "enter-trade"
+  | "enter-trade-direct" // Direct entry after disambiguation
   | "trim-trade"
   | "update-sl"
   | "exit-trade"
@@ -116,6 +117,12 @@ export function useVoiceCommands({
     action: ParsedVoiceAction;
     trades: Trade[];
   } | null>(null);
+  const [awaitingDisambiguation, setAwaitingDisambiguation] = useState<{
+    ticker: string;
+    options: Array<{ action: VoiceActionType; label: string }>;
+  } | null>(null);
+  const [awaitingDisambiguationResponse, setAwaitingDisambiguationResponse] =
+    useState<boolean>(false);
 
   const recognitionRef = useRef<SpeechRecognitionType | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
@@ -728,14 +735,65 @@ export function useVoiceCommands({
               return;
             }
 
-            // Check if ticker is in watchlist
+            // Smart context detection: Is ticker in watchlist? Is there an active trade?
             const ticker = watchlist.find((t) => t.symbol === action.ticker);
+            const existingTrade = activeTrades.find((t) => t.ticker === action.ticker);
+            const isViewingContract =
+              currentTrade?.ticker === action.ticker && currentTrade?.status === "LOADED";
+
+            // Case 1: Ticker not in watchlist - offer to add
             if (!ticker) {
-              // Prompt user to add to watchlist
               setPendingTickerAdd({ symbol: action.ticker, action });
               setHudState("confirming");
               speak(`${action.ticker} is not in your watchlist. Add it? Say yes to add.`);
-              return; // Wait for confirmation
+              return;
+            }
+
+            // Case 2: Active trade exists - offer trade management options
+            if (existingTrade) {
+              setAwaitingDisambiguation({
+                ticker: action.ticker,
+                options: [
+                  { action: "trim-trade", label: "Trim position" },
+                  { action: "update-sl", label: "Update stop loss" },
+                  { action: "exit-trade", label: "Exit trade" },
+                  { action: "add-position", label: "Add to position" },
+                ],
+              });
+              setHudState("confirming");
+              speak(
+                `You have an active ${action.ticker} trade. Trim, update stop, exit, or add to position?`
+              );
+              return;
+            }
+
+            // Case 3: Currently viewing contract - offer quick entry
+            if (isViewingContract) {
+              setHudState("confirming");
+              setPendingAction(action);
+              speak(`Enter trade with loaded ${action.ticker} contract? Say yes to confirm.`);
+              return;
+            }
+
+            // Case 4: Ticker in watchlist but no active position - offer load or enter
+            setAwaitingDisambiguation({
+              ticker: action.ticker,
+              options: [
+                { action: "load-contract", label: "Load contract" },
+                { action: "enter-trade", label: "Enter trade" },
+              ],
+            });
+            setHudState("confirming");
+            speak(`${action.ticker} found. Load contract to review, or enter trade directly?`);
+            return;
+          }
+
+          case "enter-trade-direct": {
+            // Direct entry without disambiguation (used after user confirms)
+            if (!action.ticker) {
+              setError("No ticker specified");
+              setHudState("error");
+              return;
             }
 
             // Generate smart entry alert to find best contract
@@ -1011,12 +1069,57 @@ export function useVoiceCommands({
     setWaitingForWakeWord(true);
   }, [voiceEngine, whisper]);
 
+  // Handle disambiguation response
+  const handleDisambiguationResponse = useCallback(
+    (text: string) => {
+      if (!awaitingDisambiguation) return;
+
+      const lowerResponse = text.toLowerCase().trim();
+      const { ticker, options } = awaitingDisambiguation;
+
+      // Check for cancel
+      if (lowerResponse.includes("cancel") || lowerResponse.includes("nevermind")) {
+        speak("Cancelled");
+        setAwaitingDisambiguation(null);
+        setHudState(null);
+        return;
+      }
+
+      // Match user response to available options
+      for (const option of options) {
+        const keywords = option.label.toLowerCase().split(" ");
+        const matches = keywords.some((kw) => lowerResponse.includes(kw));
+
+        if (matches) {
+          speak(`${option.label} for ${ticker}`);
+          // Convert "enter-trade" to "enter-trade-direct" for actual execution
+          const actionType = option.action === "enter-trade" ? "enter-trade-direct" : option.action;
+          const action: ParsedVoiceAction = { type: actionType, ticker };
+          setAwaitingDisambiguation(null);
+          setAwaitingDisambiguationResponse(false);
+          setHudState("processing");
+          executeAction(action);
+          return;
+        }
+      }
+
+      speak("I didn't understand. Please repeat your choice or say cancel.");
+    },
+    [awaitingDisambiguation, speak, executeAction]
+  );
+
   // Process voice input with wake word detection
   const processVoiceInput = useCallback(
     async (text: string) => {
       setTranscript(text);
 
-      // If awaiting trade selection, handle that first
+      // If awaiting disambiguation response, handle that first
+      if (awaitingDisambiguationResponse && awaitingDisambiguation) {
+        handleDisambiguationResponse(text);
+        return;
+      }
+
+      // If awaiting trade selection, handle that next
       if (awaitingTradeSelection) {
         handleTradeSelectionResponse(text);
         return;
@@ -1028,7 +1131,7 @@ export function useVoiceCommands({
       let action: ParsedVoiceAction;
       const hasOpenAI = isOpenAIAvailable();
       console.warn("[v0] OpenAI available:", hasOpenAI);
-      
+
       if (hasOpenAI) {
         console.warn("[v0] Using OpenAI for parsing transcript:", text);
         const openAIAction = await parseVoiceWithOpenAI(text);
@@ -1072,12 +1175,73 @@ export function useVoiceCommands({
         console.warn("[v0] Unknown command. Transcript:", text);
         console.warn("[v0] Parsed action:", action);
         setHudState("error");
-        const errorMsg = text.length < 3 
-          ? "I didn't hear anything. Please try again."
-          : `Didn't understand: '${text}'. Try 'Enter SPY' or 'Add GOOGL'`;
+        const errorMsg =
+          text.length < 3
+            ? "I didn't hear anything. Please try again."
+            : `Didn't understand: '${text}'. Try 'Enter SPY' or 'Add GOOGL'`;
         setError(errorMsg);
         speak("Command not recognized");
         return;
+      }
+
+      // Screen-aware disambiguation for enter-trade commands
+      if (action.type === "enter-trade" && action.ticker) {
+        const ticker = action.ticker;
+        const inWatchlist = watchlist.some((t) => t.symbol === ticker);
+        const hasActiveTrade = activeTrades.some((t) => t.ticker === ticker);
+        const isCurrentlyViewing = currentTrade?.ticker === ticker;
+
+        const options: Array<{ action: VoiceActionType; label: string }> = [];
+
+        // If already has active trade, offer trade management
+        if (hasActiveTrade) {
+          options.push(
+            { action: "trim-trade", label: "Trim position" },
+            { action: "update-sl", label: "Update stop loss" },
+            { action: "exit-trade", label: "Exit trade" }
+          );
+          setAwaitingDisambiguation({ ticker, options });
+          setAwaitingDisambiguationResponse(true);
+          setHudState("waiting");
+          speak(
+            `You already have a trade on ${ticker}. Say trim position, update stop loss, or exit trade.`
+          );
+          return;
+        }
+
+        // If viewing contract, offer quick entry
+        if (isCurrentlyViewing && currentTrade?.contractLoaded) {
+          options.push(
+            { action: "enter-trade", label: "Enter with loaded contract" },
+            { action: "load-contract", label: "Load different contract" }
+          );
+          setAwaitingDisambiguation({ ticker, options });
+          setAwaitingDisambiguationResponse(true);
+          setHudState("waiting");
+          speak(`${ticker} contract loaded. Say enter trade or load different contract.`);
+          return;
+        }
+
+        // If in watchlist, offer load or enter
+        if (inWatchlist) {
+          options.push(
+            { action: "load-contract", label: "Load contract" },
+            { action: "enter-trade", label: "Find and enter" }
+          );
+          setAwaitingDisambiguation({ ticker, options });
+          setAwaitingDisambiguationResponse(true);
+          setHudState("waiting");
+          speak(`${ticker} is in your watchlist. Say load contract or find and enter.`);
+          return;
+        }
+
+        // Not in watchlist - add it first, then offer next step
+        if (!inWatchlist && onAddTicker) {
+          speak(`Adding ${ticker} to watchlist`);
+          setPendingTickerAdd({ symbol: ticker, action });
+          setHudState("awaiting-confirm");
+          return;
+        }
       }
 
       setPendingAction(action);
@@ -1117,6 +1281,12 @@ export function useVoiceCommands({
       speak,
       awaitingTradeSelection,
       handleTradeSelectionResponse,
+      awaitingDisambiguation,
+      handleDisambiguationResponse,
+      watchlist,
+      activeTrades,
+      currentTrade,
+      onAddTicker,
     ]
   );
 
@@ -1134,12 +1304,20 @@ export function useVoiceCommands({
         setHudState("processing");
         speak(`Adding ${pendingTickerAdd.symbol} to watchlist`);
         await onAddTicker(pendingTickerAdd.symbol);
-        speak(`${pendingTickerAdd.symbol} added. Searching for contract.`);
 
-        // Wait a moment for watchlist to update, then retry the original action
-        setTimeout(() => {
-          executeAction(pendingTickerAdd.action);
-        }, 1000);
+        // After adding, offer next steps (screen-aware)
+        setAwaitingDisambiguation({
+          ticker: pendingTickerAdd.symbol,
+          options: [
+            { action: "load-contract", label: "Load contract" },
+            { action: "enter-trade", label: "Find and enter" },
+          ],
+        });
+        setAwaitingDisambiguationResponse(true);
+        setHudState("waiting");
+        speak(
+          `${pendingTickerAdd.symbol} added. Say load contract to review, or find and enter directly.`
+        );
 
         setPendingTickerAdd(null);
         return;
@@ -1308,6 +1486,19 @@ export function useVoiceCommands({
     // Handle end
     recognition.onend = () => {
       console.warn("[v0] Speech recognition ended");
+
+      // Don't restart if we're waiting for disambiguation response
+      if (awaitingDisambiguationResponse) {
+        console.warn("[v0] Keeping recognition active for disambiguation response");
+        setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (err) {
+            // Ignore if already started
+          }
+        }, 100);
+        return;
+      }
 
       // Restart if still listening
       if (isListening) {

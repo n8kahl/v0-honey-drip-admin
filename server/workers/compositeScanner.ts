@@ -23,7 +23,7 @@ config();
 
 // Note: Node 18+ has native fetch support - no polyfill needed
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { CompositeScanner } from "../../src/lib/composite/CompositeScanner.js";
 import type { CompositeSignal } from "../../src/lib/composite/CompositeSignal.js";
 import { buildSymbolFeatures, type TimeframeKey } from "../../src/lib/strategy/featuresBuilder.js";
@@ -62,8 +62,18 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-console.log("[Composite Scanner] ✅ Supabase client created successfully");
+// Singleton Supabase client
+let supabaseClient: SupabaseClient<any> | null = null;
+
+function getSupabaseClient(): SupabaseClient<any> {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    console.log("[Composite Scanner] ✅ Supabase client created successfully");
+  }
+  return supabaseClient!;
+}
+
+const supabase = getSupabaseClient();
 
 /**
  * Phase 6: Load optimized parameters from configuration file

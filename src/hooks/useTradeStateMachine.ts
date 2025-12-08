@@ -485,6 +485,26 @@ export function useTradeStateMachine({
 
           console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
 
+          // Verify trade was actually saved to database
+          try {
+            const verifyTrades = await getTrades(userId);
+            const foundTrade = verifyTrades.find((t) => t.id === dbTrade.id);
+            if (!foundTrade) {
+              console.error(
+                `[v0] ❌ CRITICAL: Trade ${dbTrade.id} not found in database immediately after creation!`
+              );
+              toast.error("Trade failed to persist", {
+                description: "Please try again or contact support.",
+              } as any);
+              return;
+            }
+            console.warn(
+              `[v0] ✅ Verified trade ${dbTrade.id} exists in database with status: ${foundTrade.status}`
+            );
+          } catch (verifyError) {
+            console.error(`[v0] Failed to verify trade creation:`, verifyError);
+          }
+
           // Create trade object with REAL database ID
           const loadedTrade: Trade = {
             ...currentTrade,
@@ -715,8 +735,11 @@ export function useTradeStateMachine({
               target_price: newTrade.targetPrice,
               stop_loss: newTrade.stopLoss,
             }).catch((error) => {
-              console.error("[v0] Failed to update trade to entered:", error);
-              throw error;
+              // Best-effort: trade may be in-memory only
+              console.warn(
+                "[v0] Trade status update failed (trade may be in-memory only):",
+                error?.message
+              );
             })
           );
 
@@ -738,8 +761,11 @@ export function useTradeStateMachine({
               exit_time: newTrade.exitTime,
               move_percent: newTrade.movePercent,
             }).catch((error) => {
-              console.error("[v0] Failed to update trade state:", error);
-              throw error;
+              // Best-effort: trade may be in-memory only
+              console.warn(
+                "[v0] Trade status update failed (trade may be in-memory only):",
+                error?.message
+              );
             })
           );
         } else {
@@ -748,40 +774,48 @@ export function useTradeStateMachine({
           );
         }
 
-        // Add trade update record
+        // Add trade update record (best-effort - trade may not exist in DB yet)
         if (updateType) {
           persistencePromises.push(
             addTradeUpdateApi(userId, newTrade.id, updateType, basePrice, message).catch(
               (error) => {
-                console.error("[v0] Failed to add trade update:", error);
-                throw error;
+                // Don't fail the alert if trade_update insert fails
+                // This happens when trade is in-memory only (not yet persisted via LOAD)
+                console.warn(
+                  "[v0] Trade update not persisted (trade may be in-memory only):",
+                  error?.message
+                );
               }
             )
           );
         }
 
-        // Link channels if provided
+        // Link channels if provided (best-effort - trade may not exist in DB yet)
         if (
           channelIds.length > 0 &&
           (alertType === "enter" || alertType === "trim" || alertType === "update")
         ) {
           persistencePromises.push(
             linkChannelsApi(userId, newTrade.id, channelIds).catch((error) => {
-              console.error("[v0] Failed to link channels:", error);
-              throw error;
+              console.warn(
+                "[v0] Channels not linked (trade may be in-memory only):",
+                error?.message
+              );
             })
           );
         }
 
-        // Link challenges if provided
+        // Link challenges if provided (best-effort - trade may not exist in DB yet)
         if (
           challengeIds.length > 0 &&
           (alertType === "enter" || alertType === "trim" || alertType === "update")
         ) {
           persistencePromises.push(
             linkChallengesApi(userId, newTrade.id, challengeIds).catch((error) => {
-              console.error("[v0] Failed to link challenges:", error);
-              throw error;
+              console.warn(
+                "[v0] Challenges not linked (trade may be in-memory only):",
+                error?.message
+              );
             })
           );
         }
@@ -1210,6 +1244,26 @@ export function useTradeStateMachine({
           setActiveTrades((prev) => prev.map((t) => (t.id === currentTrade.id ? enteredTrade : t)));
 
           console.warn(`[v0] Trade created with DB ID: ${dbTrade.id}`);
+
+          // Verify trade was actually saved to database
+          try {
+            const verifyTrades = await getTrades(userId);
+            const foundTrade = verifyTrades.find((t) => t.id === dbTrade.id);
+            if (!foundTrade) {
+              console.error(
+                `[v0] ❌ CRITICAL: Trade ${dbTrade.id} not found in database immediately after creation!`
+              );
+              toast.error("Trade failed to persist", {
+                description: "Please try again or contact support.",
+              } as any);
+              return;
+            }
+            console.warn(
+              `[v0] ✅ Verified trade ${dbTrade.id} exists in database with status: ${foundTrade.status}`
+            );
+          } catch (verifyError) {
+            console.error(`[v0] Failed to verify trade creation:`, verifyError);
+          }
         } else if (currentTrade.state === "LOADED") {
           // LOADED → ENTERED: Trade already in DB, just update status
           console.warn("[v0] Updating trade in database (Enter and Alert from LOADED)");
@@ -1223,6 +1277,33 @@ export function useTradeStateMachine({
           });
 
           console.warn(`[v0] Trade ${currentTrade.id} updated to ENTERED`);
+
+          // Verify trade status was actually updated in database
+          try {
+            const verifyTrades = await getTrades(userId);
+            const foundTrade = verifyTrades.find((t) => t.id === currentTrade.id);
+            if (!foundTrade) {
+              console.error(
+                `[v0] ❌ CRITICAL: Trade ${currentTrade.id} not found in database after update!`
+              );
+              toast.error("Trade update failed to persist", {
+                description: "Trade may revert on refresh.",
+              } as any);
+            } else if (foundTrade.status !== "entered") {
+              console.error(
+                `[v0] ❌ CRITICAL: Trade ${currentTrade.id} status is '${foundTrade.status}', expected 'entered'`
+              );
+              toast.error("Trade status not updated correctly", {
+                description: `Status is '${foundTrade.status}' instead of 'entered'`,
+              } as any);
+            } else {
+              console.warn(
+                `[v0] ✅ Verified trade ${currentTrade.id} status updated to: ${foundTrade.status}`
+              );
+            }
+          } catch (verifyError) {
+            console.error(`[v0] Failed to verify trade update:`, verifyError);
+          }
         }
       } catch (error) {
         console.error("[v0] Failed to persist trade to database:", error);
