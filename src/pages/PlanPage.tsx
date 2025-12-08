@@ -140,51 +140,79 @@ export default function PlanPage() {
   return (
     <AppLayout>
       <Suspense fallback={<PlanLoading />}>
-        <div className="p-4 max-w-7xl mx-auto space-y-4">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <ClipboardList className="w-6 h-6 text-[var(--brand-primary)]" />
-              <div>
-                <h1 className="text-xl font-bold text-[var(--text-high)]">Plan</h1>
-                <p className="text-sm text-[var(--text-muted)]">
-                  {effectiveMode === "session"
-                    ? "Live strategy status per symbol"
-                    : "Analyze market & prep for next session"}
-                </p>
+        <div className="relative p-4 max-w-7xl mx-auto space-y-4">
+          {/* Blurred Content */}
+          <div className="filter blur-md pointer-events-none select-none">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ClipboardList className="w-6 h-6 text-[var(--brand-primary)]" />
+                <div>
+                  <h1 className="text-xl font-bold text-[var(--text-high)]">Plan</h1>
+                  <p className="text-sm text-[var(--text-muted)]">
+                    {effectiveMode === "session"
+                      ? "Live strategy status per symbol"
+                      : "Analyze market & prep for next session"}
+                  </p>
+                </div>
               </div>
+
+              {/* Mode Toggle */}
+              <ModeToggle mode={mode} setMode={setMode} isOffHours={isOffHours} session={session} />
             </div>
 
-            {/* Mode Toggle */}
-            <ModeToggle mode={mode} setMode={setMode} isOffHours={isOffHours} session={session} />
+            {/* Upcoming Events Banner */}
+            <HDEconomicEventWarning compact />
+
+            {/* Content */}
+            {isLoading ? (
+              <PlanLoading />
+            ) : effectiveMode === "session" ? (
+              /* Session Mode - Live signals */
+              <SessionView
+                symbolsWithSignals={symbolsWithSignals}
+                gradedSignals={gradedSignals}
+                tierCounts={tierCounts}
+                onStrategyClick={handleStrategyClick}
+              />
+            ) : (
+              /* Playbook Mode - Weekend Analysis */
+              <PlaybookView
+                futures={futures}
+                keyLevelsBySymbol={keyLevelsBySymbol}
+                setupScenarios={setupScenarios}
+                countdown={countdown}
+                error={offHoursError}
+                onRefresh={refreshOffHours}
+                onSymbolClick={handleSymbolClick}
+              />
+            )}
           </div>
 
-          {/* Upcoming Events Banner */}
-          <HDEconomicEventWarning compact />
-
-          {/* Content */}
-          {isLoading ? (
-            <PlanLoading />
-          ) : effectiveMode === "session" ? (
-            /* Session Mode - Live signals */
-            <SessionView
-              symbolsWithSignals={symbolsWithSignals}
-              gradedSignals={gradedSignals}
-              tierCounts={tierCounts}
-              onStrategyClick={handleStrategyClick}
-            />
-          ) : (
-            /* Playbook Mode - Weekend Analysis */
-            <PlaybookView
-              futures={futures}
-              keyLevelsBySymbol={keyLevelsBySymbol}
-              setupScenarios={setupScenarios}
-              countdown={countdown}
-              error={offHoursError}
-              onRefresh={refreshOffHours}
-              onSymbolClick={handleSymbolClick}
-            />
-          )}
+          {/* Coming Soon Overlay */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50">
+            <div className="text-center px-8 py-12 bg-[var(--surface-1)] rounded-xl border-2 border-[var(--brand-primary)] shadow-2xl max-w-md mx-4">
+              <div className="mb-4">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--brand-primary)]/20 mb-4">
+                  <ClipboardList className="w-8 h-8 text-[var(--brand-primary)]" />
+                </div>
+              </div>
+              <h2 className="text-3xl font-bold text-[var(--text-high)] mb-3">Coming Soon</h2>
+              <p className="text-lg text-[var(--text-med)] mb-6">
+                The Mission Playbook feature is under development
+              </p>
+              <p className="text-sm text-[var(--text-muted)] mb-8">
+                Get real-time strategy analysis, key levels, and setup scenarios to plan your
+                trading day.
+              </p>
+              <button
+                onClick={() => navigate("/")}
+                className="px-6 py-3 bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-black font-semibold rounded-lg transition-colors"
+              >
+                Back to Live Trading
+              </button>
+            </div>
+          </div>
         </div>
       </Suspense>
     </AppLayout>
