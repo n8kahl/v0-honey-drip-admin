@@ -2,13 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { VoiceHUDState, VoiceCommand } from "../components/hd/HDVoiceHUD";
 import { Trade, Ticker, Contract } from "../types";
 import { useSettingsStore } from "../stores/settingsStore";
-import {
-  generateEntryAlert,
-  generateExitAlert,
-  generateTrimAlert,
-  generateStopLossAlert,
-  SmartAlertResult,
-} from "../lib/services/smartAlertService";
+import { generateEntryAlert, SmartAlertResult } from "../lib/services/smartAlertService";
 import { useWhisperVoice } from "./useWhisperVoice";
 import { useUserSettings } from "./useUserSettings";
 
@@ -80,10 +74,10 @@ export function useVoiceCommands({
   onAddTicker,
   onRemoveTicker,
   onLoadContract,
-  _onEnterTrade,
-  _onTrimTrade,
-  _onUpdateSL,
-  _onExitTrade,
+  onEnterTrade,
+  onTrimTrade,
+  onUpdateSL,
+  onExitTrade,
   onAddPosition,
   onSendAlert,
 }: UseVoiceCommandsProps) {
@@ -524,13 +518,18 @@ export function useVoiceCommands({
               return;
             }
 
-            const trimAlert = generateTrimAlert(trade, action.trimPercent);
-            setPendingAlert(trimAlert);
-            const cmd = createVoiceCommand(action, currentTranscript, trimAlert);
-            setCommand(cmd);
-            setHudState("confirming");
-            speak(`${trimAlert.reasoning}. Send alert?`);
-            return; // Wait for confirmation
+            // Use trade state machine to open alert composer
+            if (onTrimTrade) {
+              onTrimTrade();
+              speak(`Opening trim alert for ${trade.ticker}. Review and send.`);
+              setHudState("success");
+              setTimeout(() => {
+                setHudState(null);
+                setIsListening(false);
+                setWaitingForWakeWord(true);
+              }, 2000);
+            }
+            break;
           }
 
           case "update-sl": {
@@ -545,13 +544,18 @@ export function useVoiceCommands({
               return;
             }
 
-            const slAlert = generateStopLossAlert(trade, action.price);
-            setPendingAlert(slAlert);
-            const cmd = createVoiceCommand(action, currentTranscript, slAlert);
-            setCommand(cmd);
-            setHudState("confirming");
-            speak(`${slAlert.reasoning}. Send alert?`);
-            return; // Wait for confirmation
+            // Use trade state machine to open alert composer
+            if (onUpdateSL) {
+              onUpdateSL();
+              speak(`Opening stop loss update for ${trade.ticker}. Review and send.`);
+              setHudState("success");
+              setTimeout(() => {
+                setHudState(null);
+                setIsListening(false);
+                setWaitingForWakeWord(true);
+              }, 2000);
+            }
+            break;
           }
 
           case "exit-trade": {
@@ -566,21 +570,41 @@ export function useVoiceCommands({
               return;
             }
 
-            const exitAlert = generateExitAlert(trade);
-            setPendingAlert(exitAlert);
-            const cmd = createVoiceCommand(action, currentTranscript, exitAlert);
-            setCommand(cmd);
-            setHudState("confirming");
-            speak(`${exitAlert.reasoning}. Send alert?`);
-            return; // Wait for confirmation
-          }
-
-          case "add-position":
-            if (onAddPosition) {
-              onAddPosition();
-              speak("Adding to position");
+            // Use trade state machine to open alert composer
+            if (onExitTrade) {
+              onExitTrade();
+              speak(`Opening exit alert for ${trade.ticker}. Review and send.`);
+              setHudState("success");
+              setTimeout(() => {
+                setHudState(null);
+                setIsListening(false);
+                setWaitingForWakeWord(true);
+              }, 2000);
             }
             break;
+          }
+
+          case "add-position": {
+            if (!currentTrade) {
+              setError("No active trade found");
+              setHudState("error");
+              speak("No active trade to add to");
+              return;
+            }
+
+            // Use trade state machine to open alert composer
+            if (onAddPosition) {
+              onAddPosition();
+              speak(`Opening add position alert for ${currentTrade.ticker}. Review and send.`);
+              setHudState("success");
+              setTimeout(() => {
+                setHudState(null);
+                setIsListening(false);
+                setWaitingForWakeWord(true);
+              }, 2000);
+            }
+            break;
+          }
         }
 
         // Clear state after simple actions
@@ -600,6 +624,10 @@ export function useVoiceCommands({
       // transcript, // Removed to prevent infinite loop
       onAddTicker,
       onRemoveTicker,
+      onLoadContract,
+      onTrimTrade,
+      onUpdateSL,
+      onExitTrade,
       onAddPosition,
       speak,
       createVoiceCommand,
