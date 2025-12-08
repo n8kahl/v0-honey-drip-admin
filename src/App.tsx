@@ -15,6 +15,7 @@ import { HDDialogAddChallenge } from "./components/hd/forms/HDDialogAddChallenge
 import { Toaster } from "./components/ui/sonner";
 import { useAuth } from "./contexts/AuthContext";
 import { AuthPage } from "./pages/AuthPage";
+import { PublicPortal } from "./pages/PublicPortal";
 import { useQuotes } from "./hooks/useMassiveData";
 import { useDiscord } from "./hooks/useDiscord";
 import { useCompositeSignals } from "./hooks/useCompositeSignals";
@@ -210,6 +211,11 @@ export default function App() {
       marketDataCleanup();
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
+
+  // Public portal route (no auth required)
+  if (location.pathname === "/public") {
+    return <PublicPortal />;
+  }
 
   if (loading) {
     return (

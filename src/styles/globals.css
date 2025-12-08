@@ -3,6 +3,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Public Portal Animations */
+@keyframes scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-scroll {
+  animation: scroll 30s linear infinite;
+}
+
+.shadow-glow-lg {
+  box-shadow: 0 0 20px rgba(226, 183, 20, 0.4), 0 0 40px rgba(226, 183, 20, 0.2);
+}
+
 @layer base {
   /* CSS Variables - Design Tokens */
   :root {
