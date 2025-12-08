@@ -31,6 +31,7 @@ interface ChecklistItem {
   label: string;
   status: "pass" | "fail" | "warn" | "neutral";
   detail?: string;
+  secondary?: string;
   icon: React.ReactNode;
 }
 
@@ -57,6 +58,24 @@ export function HDEntryChecklist({
   // Build checklist items
   const items: ChecklistItem[] = [];
 
+  // Common derived data
+  const primaryTimeframe = symbolData?.primaryTimeframe;
+  const candles = primaryTimeframe ? (symbolData?.candles[primaryTimeframe] ?? []) : [];
+  const lastCandle = candles[candles.length - 1];
+
+  const recentVolumes = candles.slice(-20).map((c) => c.volume);
+  const avgVolume =
+    recentVolumes.length > 0
+      ? recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length
+      : undefined;
+
+  const bullCount = symbolData?.mtfTrend
+    ? Object.values(symbolData.mtfTrend).filter((t) => t === "bull").length
+    : 0;
+  const bearCount = symbolData?.mtfTrend
+    ? Object.values(symbolData.mtfTrend).filter((t) => t === "bear").length
+    : 0;
+
   // 1. Trend Alignment Check
   const trendScore = confluence?.trend ?? 50;
   const isBullishTrend = trendScore >= 60;
@@ -75,6 +94,8 @@ export function HDEntryChecklist({
     ) : (
       <TrendingDown className="w-3.5 h-3.5" />
     ),
+    secondary:
+      bullCount + bearCount > 0 ? `${bullCount} TF bull / ${bearCount} TF bear` : undefined,
   });
 
   // 2. VWAP Position Check
@@ -91,6 +112,10 @@ export function HDEntryChecklist({
       label: "VWAP Position",
       status: vwapAligned ? "pass" : vwapDistance < 0.5 ? "warn" : "fail",
       detail: `Price ${aboveVwap ? "above" : "below"} VWAP (${vwapDistance.toFixed(2)}%)`,
+      secondary:
+        primaryTimeframe && vwap
+          ? `${primaryTimeframe} close ${aboveVwap ? ">" : "<"} VWAP ${vwap.toFixed(2)}`
+          : undefined,
       icon: <Activity className="w-3.5 h-3.5" />,
     });
   }
@@ -106,6 +131,10 @@ export function HDEntryChecklist({
     detail: hasVolume
       ? `Above average volume (${volumeScore.toFixed(0)}%)`
       : `Below average volume (${volumeScore.toFixed(0)}%)`,
+    secondary:
+      avgVolume && lastCandle
+        ? `${(lastCandle.volume / avgVolume).toFixed(2)}× vs 20-bar avg (${avgVolume.toFixed(0)})`
+        : undefined,
     icon: <BarChart3 className="w-3.5 h-3.5" />,
   });
 
@@ -127,6 +156,10 @@ export function HDEntryChecklist({
       : isOversold
         ? `Oversold (RSI ${rsi.toFixed(0)}) - risky for puts`
         : `Neutral zone (RSI ${rsi.toFixed(0)})`,
+    secondary:
+      primaryTimeframe && direction
+        ? `${primaryTimeframe} RSI ${rsi.toFixed(1)} • Favoring ${direction === "call" ? "bulls" : "bears"} if mid > 50`
+        : undefined,
     icon: <Gauge className="w-3.5 h-3.5" />,
   });
 
@@ -134,6 +167,8 @@ export function HDEntryChecklist({
   const ivPercentile = confluence?.volatility ?? 50;
   const ivElevated = ivPercentile > 70;
   const ivCheap = ivPercentile < 30;
+
+  const ivValue = contract?.iv ? (contract.iv * 100).toFixed(1) : undefined;
 
   items.push({
     id: "iv",
@@ -144,12 +179,14 @@ export function HDEntryChecklist({
       : ivCheap
         ? `Low IV (${ivPercentile.toFixed(0)}%) - cheap premium`
         : `Normal IV (${ivPercentile.toFixed(0)}%)`,
+    secondary: ivValue ? `IV ${ivValue}% • IV rank ${ivPercentile.toFixed(0)}%` : undefined,
     icon: <Activity className="w-3.5 h-3.5" />,
   });
 
   // 6. DTE/Time Decay Check
   const dte = contract?.daysToExpiry ?? 0;
   const dteWarning = dte === 0 || (dte === 1 && new Date().getHours() >= 14);
+  const theta = contract?.theta;
 
   items.push({
     id: "dte",
@@ -161,6 +198,12 @@ export function HDEntryChecklist({
         : dte === 1
           ? "1DTE - Elevated theta, be quick"
           : `${dte}DTE - Normal decay curve`,
+    secondary:
+      theta !== undefined
+        ? `Theta ${theta.toFixed(2)} / contract`
+        : dte > 0
+          ? `Expires in ${dte} day${dte === 1 ? "" : "s"}`
+          : undefined,
     icon: <Clock className="w-3.5 h-3.5" />,
   });
 
@@ -180,6 +223,12 @@ export function HDEntryChecklist({
     detail: hasGoodLiquidity
       ? `Good liquidity (Vol: ${volume}, OI: ${openInterest})`
       : `Check liquidity (Spread: ${spreadPct.toFixed(1)}%)`,
+    secondary:
+      contract?.bid !== undefined && contract?.ask !== undefined
+        ? `Bid ${contract.bid.toFixed(2)} x Ask ${contract.ask.toFixed(
+            2
+          )} • Mid ${contract.mid.toFixed(2)}`
+        : undefined,
     icon: <BarChart3 className="w-3.5 h-3.5" />,
   });
 
@@ -291,10 +340,15 @@ export function HDEntryChecklist({
                 </span>
                 <span className="text-xs text-[var(--text-high)] font-medium">{item.label}</span>
               </div>
-              {item.detail && (
-                <p className="text-[10px] text-[var(--text-muted)] mt-0.5 truncate">
-                  {item.detail}
-                </p>
+              {(item.detail || item.secondary) && (
+                <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)] flex-wrap justify-between">
+                  {item.detail && <span className="min-w-0 truncate">{item.detail}</span>}
+                  {item.secondary && (
+                    <span className="shrink-0 text-[10px] text-[var(--text-muted)]/90">
+                      {item.secondary}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
