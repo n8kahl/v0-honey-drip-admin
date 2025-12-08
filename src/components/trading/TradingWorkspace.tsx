@@ -107,7 +107,10 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
     timeframe: "5",
     lookbackDays: 5,
     orbWindow: 5,
-    enabled: Boolean(levelsTicker && (tradeState === "LOADED" || tradeState === "ENTERED")),
+    enabled: Boolean(
+      levelsTicker &&
+        (tradeState === "WATCHING" || tradeState === "LOADED" || tradeState === "ENTERED")
+    ),
   });
   const [chartHeight, setChartHeight] = React.useState(360);
   React.useEffect(() => {
@@ -255,7 +258,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
                   ticker: activeTicker.symbol,
                   tradeType: "Day",
                   state: "WATCHING",
-                  contract: contracts[0] || {
+                  contract: {
                     id: "",
                     type: "C",
                     strike: 0,
@@ -294,7 +297,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
                   ticker: activeTicker.symbol,
                   tradeType: "Day",
                   state: "WATCHING",
-                  contract: contracts[0] || {
+                  contract: {
                     id: "",
                     type: "C",
                     strike: 0,
