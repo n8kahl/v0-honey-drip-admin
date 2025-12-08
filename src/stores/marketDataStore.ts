@@ -314,7 +314,7 @@ interface MarketDataStore {
   recomputeIndicators: (symbol: string) => void;
 
   /** Comprehensive recompute: indicators + MTF trends + confluence + strategies */
-  recomputeSymbol: (symbol: string) => void;
+  recomputeSymbol: (symbol: string, options?: { force?: boolean }) => void;
 
   /** Update confluence score */
   updateConfluence: (symbol: string, confluence: Partial<ConfluenceScore>) => void;
@@ -870,6 +870,9 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
               get().updateCandles(normalized, "1m", candles1m);
               console.log(`[v0] ✅ Loaded ${candles1m.length} 1m bars for ${normalized}`);
+
+              // Force immediate confluence calculation after initial load
+              get().recomputeSymbol(normalized, { force: true });
             } else {
               console.warn(`[v0] ⚠️ No bars returned for ${normalized} - market may be closed`);
 
@@ -897,6 +900,9 @@ export const useMarketDataStore = create<MarketDataStore>()(
                 console.log(
                   `[v0] ✅ Loaded ${candlesDaily.length} daily bars for ${normalized} (market closed fallback)`
                 );
+
+                // Force immediate confluence calculation after fallback load
+                get().recomputeSymbol(normalized, { force: true });
               }
             }
           } catch (error) {
@@ -1095,16 +1101,24 @@ export const useMarketDataStore = create<MarketDataStore>()(
        * Only runs on bar close OR significant price move
        * 0DTE contracts use tighter threshold (0.2%) vs regular (0.5%)
        */
-      recomputeSymbol: (symbol: string) => {
+      recomputeSymbol: (symbol: string, options?: { force?: boolean }) => {
         const normalized = symbol.toUpperCase();
         const symbolData = get().symbols[normalized];
         if (!symbolData) return;
 
         const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
-        if (primaryCandles.length < 2) return; // Need at least 2 candles for comparison
+        if (primaryCandles.length < 2) {
+          // If only 1 candle but force=true, still calculate with minimal data
+          if (options?.force && primaryCandles.length === 1) {
+            console.log(`[v0] 📊 Force calculating confluence for ${normalized} with 1 candle`);
+          } else {
+            return; // Need at least 2 candles for comparison (unless forced)
+          }
+        }
 
         const lastCandle = primaryCandles[primaryCandles.length - 1];
-        const prevCandle = primaryCandles[primaryCandles.length - 2];
+        const prevCandle =
+          primaryCandles.length >= 2 ? primaryCandles[primaryCandles.length - 2] : lastCandle;
 
         // ===== Conditional Execution: Only recompute on bar close or significant move =====
 
@@ -1125,10 +1139,10 @@ export const useMarketDataStore = create<MarketDataStore>()(
           : false;
 
         // Check if price moved significantly
-        // 0DTE: 0.2% threshold (tighter for fast-moving 0DTE options)
-        // Regular: 0.5% threshold (normal sensitivity)
+        // 0DTE: 0.1% threshold (tighter for fast-moving 0DTE options)
+        // Regular: 0.2% threshold (more sensitive for better responsiveness)
         const priceChange = Math.abs((lastCandle.close - prevCandle.close) / prevCandle.close);
-        const threshold = is0DTE ? 0.002 : 0.005; // 0.2% for 0DTE, 0.5% for others
+        const threshold = is0DTE ? 0.001 : 0.002; // 0.1% for 0DTE, 0.2% for others (reduced from 0.5%)
         const significantMove = priceChange > threshold;
 
         // Always update timestamp to prevent false "stale" indicators
@@ -1141,9 +1155,20 @@ export const useMarketDataStore = create<MarketDataStore>()(
           })
         );
 
-        // Skip heavy recomputation if neither condition met
-        if (!isNewBar && !significantMove) {
+        // Skip heavy recomputation if neither condition met (unless force=true)
+        if (!options?.force && !isNewBar && !significantMove) {
           return;
+        }
+
+        // Log why we're computing
+        if (options?.force) {
+          console.log(`[v0] 🔄 Force recomputing ${normalized}`);
+        } else if (isNewBar) {
+          console.log(`[v0] 🕐 New bar for ${normalized}, recomputing`);
+        } else if (significantMove) {
+          console.log(
+            `[v0] 📈 Significant move (${(priceChange * 100).toFixed(2)}%) for ${normalized}, recomputing`
+          );
         }
 
         // ===== Step 1: Calculate comprehensive indicators from all timeframes =====

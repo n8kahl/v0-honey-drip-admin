@@ -19,7 +19,6 @@ import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 import { CompositeSignalBadge } from "../signals/CompositeSignalBadge";
 import { HDMiniSparkline, HDMiniSparklineSkeleton } from "../charts/HDMiniSparkline";
 import { HDLiveIndicator, HDConfluenceBadge, type DataStatus } from "../common/HDLiveIndicator";
-import { HDWatchlistMetrics } from "../watchlist/HDWatchlistMetrics";
 import { useWarehouseData } from "../../../hooks/useWarehouseData";
 
 interface HDRowWatchlistProps {
@@ -50,9 +49,6 @@ export function HDRowWatchlist({
   // Local timestamp tracking based on price changes
   const lastUpdateRef = useRef<number>(Date.now());
   const prevPriceRef = useRef<number>(ticker.last);
-
-  // Expandable metrics panel state
-  const [metricsExpanded, setMetricsExpanded] = useState(false);
 
   // Warehouse data integration
   const { flowSummary, gammaData, ivData } = useWarehouseData(ticker.symbol);
@@ -234,28 +230,104 @@ export function HDRowWatchlist({
           </div>
 
           {/* Status indicators - compact right side */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             {/* Live indicator */}
             <HDLiveIndicator status={dataStatus} lastUpdate={lastUpdated} showLabel={false} />
 
             {/* Confluence score */}
             <HDConfluenceBadge score={confluenceScore} />
 
-            {/* Metrics expand toggle */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setMetricsExpanded(!metricsExpanded);
-              }}
-              className="min-w-[24px] min-h-[24px] flex items-center justify-center rounded-[var(--radius)] text-zinc-400 hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
-              title="View detailed metrics"
-            >
-              {metricsExpanded ? (
-                <ChevronUp className="w-3 h-3" />
-              ) : (
-                <ChevronDown className="w-3 h-3" />
+            {/* Inline metrics badges */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {/* Flow indicator */}
+              {flowSummary && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        "px-1.5 py-0.5 rounded font-mono font-medium",
+                        flowSummary.netPremium > 0
+                          ? "bg-green-500/20 text-green-500"
+                          : "bg-red-500/20 text-red-500"
+                      )}
+                    >
+                      {flowSummary.netPremium > 0 ? "F+" : "F-"}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-xs">
+                      <div className="font-semibold mb-1">Options Flow</div>
+                      <div className="text-[var(--text-low)]">
+                        Net: ${(flowSummary.netPremium / 1e6).toFixed(1)}M
+                      </div>
+                      <div className="text-[var(--text-low)]">
+                        Calls: {flowSummary.callCount} | Puts: {flowSummary.putCount}
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
               )}
-            </button>
+
+              {/* Gamma indicator */}
+              {gammaData && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        "px-1.5 py-0.5 rounded font-mono font-medium",
+                        gammaData.netGamma > 0
+                          ? "bg-blue-500/20 text-blue-500"
+                          : "bg-orange-500/20 text-orange-500"
+                      )}
+                    >
+                      {gammaData.netGamma > 0 ? "G+" : "G-"}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-xs">
+                      <div className="font-semibold mb-1">Gamma Exposure</div>
+                      <div className="text-[var(--text-low)]">
+                        {gammaData.netGamma > 0 ? "Positive (Support)" : "Negative (Resistance)"}
+                      </div>
+                      {gammaData.majorStrike && (
+                        <div className="text-[var(--text-low)]">
+                          Key: ${gammaData.majorStrike.toFixed(0)}
+                        </div>
+                      )}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
+              {/* IV indicator */}
+              {ivData && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        "px-1.5 py-0.5 rounded font-mono font-medium",
+                        ivData.iv_percentile >= 70
+                          ? "bg-red-500/20 text-red-500"
+                          : ivData.iv_percentile >= 40
+                            ? "bg-yellow-500/20 text-yellow-500"
+                            : "bg-green-500/20 text-green-500"
+                      )}
+                    >
+                      IV{Math.round(ivData.iv_percentile)}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-xs">
+                      <div className="font-semibold mb-1">IV Percentile</div>
+                      <div className="text-[var(--text-low)]">
+                        {ivData.iv_percentile.toFixed(0)}th percentile
+                      </div>
+                      <div className="text-[var(--text-low)]">{ivData.iv_regime || "Normal"}</div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
           </div>
 
           {/* Remove button */}
@@ -273,42 +345,6 @@ export function HDRowWatchlist({
           )}
         </div>
       </div>
-
-      {/* Expandable metrics panel */}
-      {metricsExpanded && (
-        <HDWatchlistMetrics
-          symbol={ticker.symbol}
-          lastBarTimestamp={lastUpdated}
-          dataAvailability={{
-            hasGreeks: !!ivData,
-            hasFlow: !!flowSummary,
-            hasGamma: !!gammaData,
-            dataAge: null,
-          }}
-          wsStatus={
-            dataStatus === "live"
-              ? "connected"
-              : dataStatus === "stale"
-                ? "fallback"
-                : "disconnected"
-          }
-          confluence={{
-            overall: confluenceScore,
-            trend: 0,
-            momentum: 0,
-            technical: 0,
-            volume: 0,
-            volatility: 0,
-            trendConfirmed: false,
-            momentumConfirmed: false,
-            vwapAligned: false,
-            emaAligned: false,
-            volumeAboveAvg: false,
-          }}
-          flowSummary={flowSummary}
-          gammaContext={gammaData}
-        />
-      )}
     </>
   );
 }
