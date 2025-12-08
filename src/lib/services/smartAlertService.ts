@@ -1,15 +1,15 @@
 /**
  * Smart Alert Generation Service
- * 
+ *
  * Generates intelligent trade alerts with context-aware recommendations.
  * Acts like an experienced admin calling trades in a trading room.
  */
 
-import { Trade, Contract, OptionType } from '../../types';
-import { useMarketStore } from '../../stores/marketStore';
-import { useTradeStore } from '../../stores/tradeStore';
-import { fetchNormalizedChain } from '../../services/options';
-import { massive } from '../massive';
+import { Trade, Contract, OptionType } from "../../types";
+import { useMarketStore } from "../../stores/marketStore";
+import { useTradeStore } from "../../stores/tradeStore";
+import { fetchNormalizedChain } from "../../services/options";
+import { massive } from "../massive";
 
 export interface SmartAlertResult {
   alert: {
@@ -18,7 +18,7 @@ export interface SmartAlertResult {
     price?: number;
     reasoning: string;
     confidence: number;
-    alertType: 'entry' | 'exit' | 'trim' | 'update-sl';
+    alertType: "entry" | "exit" | "trim" | "update-sl";
   };
   reasoning: string;
   confidence: number;
@@ -45,11 +45,11 @@ function calculateDTE(expirationISO: string): number {
 /**
  * Determine trade type based on DTE
  */
-function inferTradeType(dte: number): 'Scalp' | 'Day' | 'Swing' | 'LEAP' {
-  if (dte < 1) return 'Scalp';
-  if (dte < 5) return 'Day';
-  if (dte < 30) return 'Swing';
-  return 'LEAP';
+function inferTradeType(dte: number): "Scalp" | "Day" | "Swing" | "LEAP" {
+  if (dte < 1) return "Scalp";
+  if (dte < 5) return "Day";
+  if (dte < 30) return "Swing";
+  return "LEAP";
 }
 
 /**
@@ -73,21 +73,26 @@ function rankContracts(
     // Liquidity checks
     const spread = contract.ask - contract.bid;
     const spreadPercent = (spread / contract.mid) * 100;
-    
+
     if (spreadPercent > 10) score -= 30; // Wide spread penalty
     if (contract.openInterest < 100) score -= 20; // Low OI penalty
     if (contract.volume < 50) score -= 15; // Low volume penalty
     if (contract.bid <= 0 || contract.ask <= 0) score -= 50; // No market
 
     // ATM proximity (best within 5% of underlying)
-    if (percentFromATM < 2) score += 30; // Very close to ATM
-    else if (percentFromATM < 5) score += 15; // Close to ATM
+    if (percentFromATM < 2)
+      score += 30; // Very close to ATM
+    else if (percentFromATM < 5)
+      score += 15; // Close to ATM
     else if (percentFromATM > 10) score -= 20; // Far from ATM
 
     // DTE scoring
-    if (dte >= 30 && dte <= 60) score += 20; // Sweet spot for swings
-    else if (dte >= 7 && dte <= 20) score += 15; // Good for day/swing
-    else if (dte < 3) score -= 10; // Too short for most strategies
+    if (dte >= 30 && dte <= 60)
+      score += 20; // Sweet spot for swings
+    else if (dte >= 7 && dte <= 20)
+      score += 15; // Good for day/swing
+    else if (dte < 3)
+      score -= 10; // Too short for most strategies
     else if (dte > 90) score -= 5; // Very long dated
 
     // Volume/OI ratio (higher is better)
@@ -134,23 +139,23 @@ function buildReasoningString(
   const reasons: string[] = [];
 
   if (percentFromATM < 2) {
-    reasons.push('ATM strike');
+    reasons.push("ATM strike");
   } else if (percentFromATM < 5) {
     reasons.push(`${percentFromATM.toFixed(1)}% from ATM`);
   }
 
   if (contract.volume > 500) {
-    reasons.push('high volume');
+    reasons.push("high volume");
   } else if (contract.volume > 100) {
-    reasons.push('good volume');
+    reasons.push("good volume");
   }
 
   if (spreadPercent < 5) {
-    reasons.push('tight spread');
+    reasons.push("tight spread");
   }
 
   if (contract.openInterest > 1000) {
-    reasons.push('strong OI');
+    reasons.push("strong OI");
   }
 
   reasons.push(`${dte} DTE (${tradeType})`);
@@ -159,7 +164,7 @@ function buildReasoningString(
     reasons.push(`${(contract.iv * 100).toFixed(0)}% IV`);
   }
 
-  return reasons.join(', ');
+  return reasons.join(", ");
 }
 
 /**
@@ -192,23 +197,25 @@ export async function searchBestContract(
       return null;
     }
 
-    // Filter by liquidity
+    // Filter by minimum liquidity (relaxed - we'll warn, not block)
     const liquidContracts = contracts.filter(
-      (c) =>
-        c.bid > 0 &&
-        c.ask > 0 &&
-        c.openInterest >= 100 &&
-        c.volume >= 30 &&
-        (c.ask - c.bid) / c.mid < 0.15 // Spread < 15%
+      (c) => c.bid > 0 && c.ask > 0 && (c.ask - c.bid) / c.mid < 0.25 // Spread < 25% (relaxed from 15%)
     );
 
-    if (liquidContracts.length === 0) {
+    // If no liquid contracts, try all contracts with valid pricing
+    const contractsToRank =
+      liquidContracts.length > 0
+        ? liquidContracts
+        : contracts.filter((c) => c.bid > 0 && c.ask > 0);
+
+    if (contractsToRank.length === 0) {
+      console.warn("[v0] SmartAlert: No contracts with valid pricing found");
       return null;
     }
 
     // Rank and select best
-    const ranked = rankContracts(liquidContracts, underlyingPrice, optionType);
-    
+    const ranked = rankContracts(contractsToRank, underlyingPrice, optionType);
+
     if (ranked.length === 0) {
       return null;
     }
@@ -223,14 +230,14 @@ export async function searchBestContract(
         price: best.contract.mid,
         reasoning: best.reasoning,
         confidence: Math.min(100, best.score),
-        alertType: 'entry',
+        alertType: "entry",
       },
       reasoning: `${ticker} ${best.contract.strike}${best.contract.type} — ${best.reasoning}`,
       confidence: Math.min(100, best.score),
       alternatives,
     };
   } catch (error) {
-    console.error('[v0] SmartAlert: Contract search failed:', error);
+    console.error("[v0] SmartAlert: Contract search failed:", error);
     return null;
   }
 }
@@ -246,7 +253,7 @@ export async function generateEntryAlert(
 ): Promise<SmartAlertResult | null> {
   // Check if contract already loaded
   const currentTrade = useTradeStore.getState().currentTrade;
-  
+
   if (currentTrade && currentTrade.ticker === ticker && currentTrade.contract) {
     // Use loaded contract
     const dte = calculateDTE(currentTrade.contract.expiry);
@@ -260,7 +267,7 @@ export async function generateEntryAlert(
         price: price || currentTrade.contract.mid,
         reasoning,
         confidence: 90,
-        alertType: 'entry',
+        alertType: "entry",
       },
       reasoning,
       confidence: 90,
@@ -277,9 +284,9 @@ export async function generateEntryAlert(
 export function generateExitAlert(trade: Trade): SmartAlertResult {
   const pnlPercent = trade.movePercent || 0;
   const isProfit = pnlPercent > 0;
-  
+
   let reasoning = `${trade.ticker} ${trade.contract.strike}${trade.contract.type} — `;
-  
+
   if (isProfit) {
     if (pnlPercent > 100) {
       reasoning += `Excellent ${pnlPercent.toFixed(0)}% gain, lock profit`;
@@ -305,7 +312,7 @@ export function generateExitAlert(trade: Trade): SmartAlertResult {
       price: trade.currentPrice,
       reasoning,
       confidence: 95,
-      alertType: 'exit',
+      alertType: "exit",
     },
     reasoning,
     confidence: 95,
@@ -318,7 +325,7 @@ export function generateExitAlert(trade: Trade): SmartAlertResult {
 export function generateTrimAlert(trade: Trade, trimPercent?: number): SmartAlertResult {
   const pnlPercent = trade.movePercent || 0;
   const suggestedTrim = trimPercent || (pnlPercent > 50 ? 50 : 30);
-  
+
   const reasoning = `${trade.ticker} ${trade.contract.strike}${trade.contract.type} — Up ${pnlPercent.toFixed(0)}%, trim ${suggestedTrim}% to lock profit`;
 
   return {
@@ -328,7 +335,7 @@ export function generateTrimAlert(trade: Trade, trimPercent?: number): SmartAler
       price: trade.currentPrice,
       reasoning,
       confidence: 85,
-      alertType: 'trim',
+      alertType: "trim",
     },
     reasoning,
     confidence: 85,
@@ -340,9 +347,10 @@ export function generateTrimAlert(trade: Trade, trimPercent?: number): SmartAler
  */
 export function generateStopLossAlert(trade: Trade, newStopLoss?: number): SmartAlertResult {
   const stopLoss = newStopLoss || trade.stopLoss;
-  const distancePercent = stopLoss && trade.currentPrice
-    ? ((trade.currentPrice - stopLoss) / trade.currentPrice) * 100
-    : 0;
+  const distancePercent =
+    stopLoss && trade.currentPrice
+      ? ((trade.currentPrice - stopLoss) / trade.currentPrice) * 100
+      : 0;
 
   const reasoning = `${trade.ticker} ${trade.contract.strike}${trade.contract.type} — Update SL to ${stopLoss?.toFixed(2)}, ${distancePercent.toFixed(1)}% cushion`;
 
@@ -353,7 +361,7 @@ export function generateStopLossAlert(trade: Trade, newStopLoss?: number): Smart
       price: trade.currentPrice,
       reasoning,
       confidence: 80,
-      alertType: 'update-sl',
+      alertType: "update-sl",
     },
     reasoning,
     confidence: 80,

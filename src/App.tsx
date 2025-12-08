@@ -25,6 +25,7 @@ import { useMarketSessionActions, useMarketDataStore } from "./stores/marketData
 import { useKeyboardShortcuts, type KeyboardShortcut } from "./hooks/useKeyboardShortcuts";
 import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcutsDialog";
 import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
+import { initWhisper, isWhisperSupported } from "./lib/whisper/client";
 import "./styles/globals.css";
 
 // Hook to detect mobile viewport
@@ -190,12 +191,21 @@ export default function App() {
     }
   }, [quotes, updateQuotes]);
 
+  // Pre-load Whisper model in background (if supported)
+  useEffect(() => {
+    if (isWhisperSupported()) {
+      initWhisper().catch((err) => {
+        console.warn("[v0] Failed to pre-load Whisper model:", err);
+      });
+    }
+  }, []);
+
   // Load user data on auth
   useEffect(() => {
     if (!user && !isTestAuto) return;
 
     const loadUserData = async () => {
-      console.log("[v0] Loading user data from Supabase...");
+      console.warn("[v0] Loading user data from Supabase...");
       try {
         await Promise.all([
           loadDiscordChannels((user?.id || "00000000-0000-0000-0000-000000000001") as string),

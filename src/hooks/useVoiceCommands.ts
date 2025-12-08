@@ -9,6 +9,8 @@ import {
   generateStopLossAlert,
   SmartAlertResult,
 } from "../lib/services/smartAlertService";
+import { useWhisperVoice } from "./useWhisperVoice";
+import { useUserSettings } from "./useUserSettings";
 
 // Web Speech API types
 interface SpeechRecognitionType {
@@ -85,6 +87,13 @@ export function useVoiceCommands({
   onAddPosition,
   onSendAlert,
 }: UseVoiceCommandsProps) {
+  // Get user settings for voice engine preference
+  const { profile } = useUserSettings();
+  const voiceEngine = profile?.voiceEngine || "webspeech";
+
+  // Whisper hook (only active when voiceEngine === 'whisper')
+  const whisper = useWhisperVoice();
+
   const [isListening, setIsListening] = useState(false);
   const [hudState, setHudState] = useState<VoiceHUDState | null>(null);
   const [transcript, setTranscript] = useState("");
@@ -106,9 +115,87 @@ export function useVoiceCommands({
       return { type: "wake-word" };
     }
 
-    // Extract ticker from anywhere in the command
-    const tickerMatch = lowerText.match(/\b([a-z]{1,5})\b/i);
-    const ticker = tickerMatch ? tickerMatch[1].toUpperCase() : undefined;
+    // Reserved words to ignore when extracting ticker
+    const reservedWords = [
+      "hey",
+      "honey",
+      "ok",
+      "add",
+      "remove",
+      "watchlist",
+      "load",
+      "contract",
+      "enter",
+      "go",
+      "long",
+      "short",
+      "buy",
+      "take",
+      "position",
+      "trim",
+      "profit",
+      "update",
+      "stop",
+      "loss",
+      "sl",
+      "exit",
+      "close",
+      "call",
+      "put",
+      "dollars",
+      "bucks",
+      "percent",
+      "at",
+      "price",
+      "target",
+    ];
+
+    // Ticker aliases: map company names to ticker symbols
+    const tickerAliases: Record<string, string> = {
+      apple: "AAPL",
+      microsoft: "MSFT",
+      google: "GOOGL",
+      alphabet: "GOOGL",
+      amazon: "AMZN",
+      tesla: "TSLA",
+      meta: "META",
+      facebook: "META",
+      netflix: "NFLX",
+      nvidia: "NVDA",
+      amd: "AMD",
+      intel: "INTC",
+      disney: "DIS",
+      sofi: "SOFI",
+      nio: "NIO",
+      lucid: "LCID",
+      rivian: "RIVN",
+      palantir: "PLTR",
+      coinbase: "COIN",
+      spy: "SPY",
+      qqq: "QQQ",
+      dia: "DIA",
+      iwm: "IWM",
+    };
+
+    // Extract ticker - check aliases first, then look for ticker symbols
+    const words = lowerText.split(/\s+/);
+    let ticker: string | undefined;
+
+    // First check for company name aliases
+    for (const word of words) {
+      if (tickerAliases[word]) {
+        ticker = tickerAliases[word];
+        break;
+      }
+    }
+
+    // If no alias found, find first word that looks like a ticker
+    if (!ticker) {
+      const potentialTicker = words.find(
+        (word) => /^[a-z]{1,5}$/i.test(word) && !reservedWords.includes(word)
+      );
+      ticker = potentialTicker ? potentialTicker.toUpperCase() : undefined;
+    }
 
     // Extract price if mentioned
     const priceMatch =
@@ -482,8 +569,18 @@ export function useVoiceCommands({
     ]
   );
 
-  // Start listening with Web Speech API
-  const startListening = useCallback(() => {
+  // Start listening (hybrid: Web Speech or Whisper)
+  const startListening = useCallback(async () => {
+    // Whisper mode: push-to-talk recording
+    if (voiceEngine === "whisper") {
+      setTranscript("");
+      setError("");
+      setCommand(null);
+      await whisper.startRecording();
+      return;
+    }
+
+    // Web Speech mode: continuous listening
     if (!recognitionRef.current) {
       setError("Speech recognition not available");
       return;
@@ -511,10 +608,17 @@ export function useVoiceCommands({
         setHudState("error");
       }
     }
-  }, [waitingForWakeWord, speak]);
+  }, [voiceEngine, waitingForWakeWord, speak, whisper]);
 
-  // Stop listening with Web Speech API
+  // Stop listening (hybrid: Web Speech or Whisper)
   const stopListening = useCallback(() => {
+    // Whisper mode: stop recording
+    if (voiceEngine === "whisper") {
+      whisper.stopRecording();
+      return;
+    }
+
+    // Web Speech mode: stop continuous listening
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -527,7 +631,7 @@ export function useVoiceCommands({
     setHudState(null);
     setTranscript("");
     setWaitingForWakeWord(true);
-  }, []);
+  }, [voiceEngine, whisper]);
 
   // Process voice input with wake word detection
   const processVoiceInput = useCallback(
@@ -708,6 +812,29 @@ export function useVoiceCommands({
       }
     };
   }, [isListening, processVoiceInput, speak]);
+
+  // Handle Whisper transcripts
+  useEffect(() => {
+    if (voiceEngine === "whisper" && whisper.transcript) {
+      console.warn("[v0] Whisper transcript:", whisper.transcript);
+      processVoiceInput(whisper.transcript);
+      whisper.clearTranscript();
+    }
+  }, [voiceEngine, whisper.transcript, processVoiceInput, whisper]);
+
+  // Update isListening state based on active engine
+  useEffect(() => {
+    if (voiceEngine === "whisper") {
+      setIsListening(whisper.isRecording || whisper.isProcessing);
+      if (whisper.isProcessing) {
+        setHudState("processing");
+      }
+      if (whisper.error) {
+        setError(whisper.error);
+        setHudState("error");
+      }
+    }
+  }, [voiceEngine, whisper.isRecording, whisper.isProcessing, whisper.error]);
 
   // Keyboard shortcut (M key)
   useEffect(() => {

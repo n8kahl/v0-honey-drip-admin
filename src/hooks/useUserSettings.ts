@@ -29,6 +29,7 @@ export interface UserProfile {
   voiceEnabled: boolean;
   voiceRequireConfirmation: boolean;
   voiceAudioFeedback: boolean;
+  voiceEngine: "webspeech" | "whisper";
   // Live data behavior
   atrMultiTimeframe: boolean;
   autoInferTradeType: boolean;
@@ -56,6 +57,7 @@ const DEFAULT_PROFILE: Omit<UserProfile, "id" | "createdAt" | "updatedAt"> = {
   voiceEnabled: true,
   voiceRequireConfirmation: true,
   voiceAudioFeedback: true,
+  voiceEngine: "webspeech",
   atrMultiTimeframe: false,
   autoInferTradeType: true,
   tpMode: "percent",
@@ -242,10 +244,11 @@ function mapToCamelCase(obj: Record<string, any>): UserProfile {
     tiktokHandle: obj.tiktok_handle || "",
     youtubeHandle: obj.youtube_handle || "",
     socialSharingEnabled: obj.social_sharing_enabled ?? false,
-      voiceEnabled: obj.voice_enabled ?? true,
-      voiceRequireConfirmation: obj.voice_require_confirmation ?? true,
-      voiceAudioFeedback: obj.voice_audio_feedback ?? true,
-      atrMultiTimeframe: obj.atr_multi_timeframe ?? false,
+    voiceEnabled: obj.voice_enabled ?? true,
+    voiceRequireConfirmation: obj.voice_require_confirmation ?? true,
+    voiceAudioFeedback: obj.voice_audio_feedback ?? true,
+    voiceEngine: (obj.voice_engine || "webspeech") as "webspeech" | "whisper",
+    atrMultiTimeframe: obj.atr_multi_timeframe ?? false,
     autoInferTradeType: obj.auto_infer_trade_type ?? true,
     tpMode: obj.tp_mode || "percent",
     tpPercent: obj.tp_percent ?? 50,
