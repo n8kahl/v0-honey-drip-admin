@@ -118,6 +118,7 @@ export function useVoiceCommands({
 
   const recognitionRef = useRef<SpeechRecognitionType | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Extract natural language context from command
   const extractContext = useCallback((text: string): string | undefined => {
@@ -988,6 +989,29 @@ export function useVoiceCommands({
       setPendingAction(action);
       setHudState("processing");
 
+      // Set timeout to prevent hanging (8 seconds)
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+      processingTimeoutRef.current = setTimeout(() => {
+        console.error("[v0] Voice command processing timeout after 8 seconds");
+        setHudState("error");
+        const errorMsg =
+          action.type === "compound"
+            ? "Compound commands require manual completion. Complete each step, then say the next command."
+            : "Command timed out. Please try again.";
+        setError(errorMsg);
+        speak(errorMsg);
+        setTimeout(() => {
+          setHudState(null);
+          setError("");
+          setPendingAction(null);
+          setPendingCompoundActions([]);
+          setCompoundActionIndex(0);
+          setIsListening(false);
+        }, 4000);
+      }, 8000);
+
       // Execute action (async for smart alerts)
       console.warn("[v0] Executing action:", action);
       executeAction(action, text);
@@ -1004,6 +1028,12 @@ export function useVoiceCommands({
 
   // Confirm action and send alert
   const confirmAction = useCallback(async () => {
+    // Clear processing timeout since action is completing
+    if (processingTimeoutRef.current) {
+      clearTimeout(processingTimeoutRef.current);
+      processingTimeoutRef.current = null;
+    }
+
     // Handle ticker addition confirmation
     if (pendingTickerAdd && onAddTicker) {
       try {
@@ -1088,6 +1118,12 @@ export function useVoiceCommands({
 
   // Cancel action
   const cancelAction = useCallback(() => {
+    // Clear processing timeout
+    if (processingTimeoutRef.current) {
+      clearTimeout(processingTimeoutRef.current);
+      processingTimeoutRef.current = null;
+    }
+
     speak("Cancelled");
     setHudState(null);
     setPendingAction(null);
