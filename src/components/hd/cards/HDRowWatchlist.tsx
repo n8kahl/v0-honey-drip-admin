@@ -131,7 +131,7 @@ export function HDRowWatchlist({
         <span
           className={cn(
             "inline-flex h-[22px] items-center justify-center gap-1.5 px-2.5 self-center",
-            "text-[10px] leading-none font-medium rounded-full border border-[var(--border-strong)]",
+            "text-[10px] leading-[1] font-medium rounded-full border border-[var(--border-strong)]",
             "bg-[var(--surface-3)] text-[var(--text-high)]",
             confluenceStatus.tone === "success" &&
               "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
@@ -145,17 +145,19 @@ export function HDRowWatchlist({
           {confluenceStatus.label === "Setup" && <Zap className="w-3 h-3 text-current" />}
           {confluenceStatus.label === "Confluence" && <Zap className="w-3 h-3 text-current" />}
           {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3 text-current" />}
-          <span className="leading-none">{confluenceStatus.label}</span>
+          <span className="leading-[1]">{confluenceStatus.label}</span>
           {typeof confluenceStatus.score === "number" && (
-            <span className="font-mono text-[10px] leading-none opacity-80">
+            <span className="font-mono text-[10px] leading-[1] opacity-80">
               {Math.round(confluenceStatus.score)}
             </span>
           )}
         </span>
       </TooltipTrigger>
       <TooltipContent
-        sideOffset={8}
-        className="z-50 w-[220px] rounded-[12px] border border-[var(--border-strong)] bg-[var(--surface-4)] px-3 py-2.5 shadow-lg text-[11px] leading-tight text-[var(--text-high)]"
+        side="bottom"
+        align="start"
+        sideOffset={10}
+        className="z-50 w-[220px] rounded-[12px] border border-[var(--border-strong)] bg-[#0f1115] text-[#f5f5f7] px-3 py-2.5 shadow-2xl text-[11px] leading-tight"
       >
         <div className="flex items-center justify-between font-semibold">
           <span>
@@ -167,20 +169,20 @@ export function HDRowWatchlist({
             </span>
           )}
         </div>
-        <div className="mt-1 text-[10.5px] text-[var(--text-muted)]">
+        <div className="mt-1 text-[10.5px] text-[#a0a3ad]">
           {lastUpdatedText ? `Updated ${lastUpdatedText}` : "No recent updates"}
         </div>
         {symbolData?.confluence && (
-          <div className="mt-2 grid grid-cols-2 gap-y-1">
-            <span className="text-[var(--text-muted)]">Trend</span>
+          <div className="mt-2 grid grid-cols-2 gap-y-1 text-[11px]">
+            <span className="text-[#a0a3ad]">Trend</span>
             <span className="font-mono text-right">
               {Math.round(symbolData.confluence.trend ?? 0)}
             </span>
-            <span className="text-[var(--text-muted)]">Momentum</span>
+            <span className="text-[#a0a3ad]">Momentum</span>
             <span className="font-mono text-right">
               {Math.round(symbolData.confluence.momentum ?? 0)}
             </span>
-            <span className="text-[var(--text-muted)]">Volume</span>
+            <span className="text-[#a0a3ad]">Volume</span>
             <span className="font-mono text-right">
               {Math.round(symbolData.confluence.volume ?? 0)}
             </span>

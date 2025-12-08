@@ -530,7 +530,7 @@ export function useVoiceCommands({
 
       const action = parseVoiceCommand(text);
 
-      // Handle wake word
+      // Handle wake word (optional - auto-activates on any command)
       if (action.type === "wake-word") {
         setWaitingForWakeWord(false);
         setHudState("listening");
@@ -538,11 +538,12 @@ export function useVoiceCommands({
         return;
       }
 
-      // Ignore commands before wake word
+      // Auto-activate on first command (no wake word required)
       if (waitingForWakeWord) {
-        return;
+        console.warn("[v0] Auto-activating on first command:", text);
+        setWaitingForWakeWord(false);
+        // Continue to process the command below
       }
-
       if (action.type === "unknown") {
         setHudState("error");
         setError("Try: 'Enter SPY' or 'Trim current trade'");
