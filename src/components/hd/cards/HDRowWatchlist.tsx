@@ -232,7 +232,7 @@ export function HDRowWatchlist({
         className="flex-1 flex items-center justify-between text-left"
         title={isStale ? "Data is stale" : undefined}
       >
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-0.5 min-w-0">
           <div className="flex items-center gap-1.5">
             {/* Composite signals - primary signal display */}
             {compositeSignals && compositeSignals.length > 0 && (
@@ -267,8 +267,9 @@ export function HDRowWatchlist({
                 )}
               </Tooltip>
             )}
-            <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
-            {confluencePill}
+            <span className="text-[var(--text-high)] font-medium leading-tight">
+              {ticker.symbol}
+            </span>
           </div>
           <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
             <Wifi className="w-2.5 h-2.5 text-green-500" />
@@ -276,6 +277,9 @@ export function HDRowWatchlist({
             {isStale && <span className="ml-1 text-red-500">stale</span>}
           </div>
         </div>
+
+        <div className="px-2 flex-shrink-0">{confluencePill}</div>
+
         <div className="flex flex-col items-end gap-0.5">
           <div className="flex items-baseline gap-1.5">
             <span className={cn("font-mono text-sm font-medium", priceColor)}>{priceDisplay}</span>

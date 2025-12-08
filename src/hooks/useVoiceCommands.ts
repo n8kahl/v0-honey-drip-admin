@@ -528,7 +528,9 @@ export function useVoiceCommands({
     (text: string) => {
       setTranscript(text);
 
+      console.warn("[v0] processVoiceInput:", text);
       const action = parseVoiceCommand(text);
+      console.warn("[v0] Parsed action:", action);
 
       // Handle wake word (optional - auto-activates on any command)
       if (action.type === "wake-word") {
@@ -545,6 +547,7 @@ export function useVoiceCommands({
         // Continue to process the command below
       }
       if (action.type === "unknown") {
+        console.warn("[v0] Unknown command");
         setHudState("error");
         setError("Try: 'Enter SPY' or 'Trim current trade'");
         speak("Command not recognized");
@@ -555,6 +558,7 @@ export function useVoiceCommands({
       setHudState("processing");
 
       // Execute action (async for smart alerts)
+      console.warn("[v0] Executing action:", action);
       executeAction(action);
     },
     [parseVoiceCommand, executeAction, waitingForWakeWord, speak]
