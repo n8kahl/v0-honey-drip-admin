@@ -175,7 +175,9 @@ export function HDAlertComposer({
       defaultComment = `Moving stop loss to $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)} to protect gains. Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)} (${trade.movePercent ? (trade.movePercent > 0 ? "+" : "") + trade.movePercent.toFixed(1) : "0.0"}%).`;
     } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
       defaultComment = `Update: Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)}. ${trade.movePercent ? `P&L: ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
-    } else if (alertType === "trail_stop") {
+    } else if (alertType === "update" && alertOptions?.updateKind === "take-profit") {
+      defaultComment = `Taking profit at target! Exiting partial position at $${formatPrice(trade.currentPrice || trade.targetPrice || trade.contract.mid)}. ${trade.movePercent ? `Locking in ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
+    } else if (alertType === "trail-stop") {
       defaultComment = `Enabling trailing stop at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}. Letting winners run.`;
     } else if (alertType === "add") {
       defaultComment = `Adding to position at $${formatPrice(trade.currentPrice || trade.contract.mid)}. ${trade.movePercent ? `Currently ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
@@ -233,7 +235,19 @@ export function HDAlertComposer({
       setShowGreeks(false);
       setShowUnderlying(false);
       setShowSetupType(false);
-    } else if (alertType === "trail_stop") {
+    } else if (alertType === "update" && alertOptions?.updateKind === "take-profit") {
+      // Take profit shows target reached, P&L locked in
+      setShowEntry(false);
+      setShowCurrent(true);
+      setShowTarget(true);
+      setShowStopLoss(false);
+      setShowPnL(true);
+      setShowDTE(true);
+      setShowRiskReward(false);
+      setShowGreeks(false);
+      setShowUnderlying(false);
+      setShowSetupType(false);
+    } else if (alertType === "trail-stop") {
       setShowEntry(false);
       setShowCurrent(false);
       setShowTarget(false);
@@ -310,10 +324,12 @@ export function HDAlertComposer({
     if (alertType === "enter") return "Entry Alert";
     if (alertType === "exit") return "Exit Alert";
     if (alertType === "add") return "Add Alert";
-    if (alertType === "trail_stop") return "Trail Stop Alert";
+    if (alertType === "trail-stop") return "Trail Stop Alert";
     if (alertType === "update" && alertOptions?.updateKind === "trim") return "Trim Alert";
     if (alertType === "update" && alertOptions?.updateKind === "sl") return "Update Stop Loss";
     if (alertType === "update" && alertOptions?.updateKind === "generic") return "Update Alert";
+    if (alertType === "update" && alertOptions?.updateKind === "take-profit")
+      return "Take Profit Alert";
     return "Alert";
   };
 
