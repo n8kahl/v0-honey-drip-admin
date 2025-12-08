@@ -324,9 +324,10 @@ export function useVoiceCommands({
 
   // Execute the confirmed action with smart alert generation
   const executeAction = useCallback(
-    async (action: ParsedVoiceAction) => {
+    async (action: ParsedVoiceAction, transcriptText?: string) => {
       try {
         setHudState("processing");
+        const currentTranscript = transcriptText || transcript;
 
         switch (action.type) {
           case "wake-word":
@@ -378,7 +379,7 @@ export function useVoiceCommands({
             }
 
             setPendingAlert(entryAlert);
-            const cmd = createVoiceCommand(action, transcript, entryAlert);
+            const cmd = createVoiceCommand(action, currentTranscript, entryAlert);
             setCommand(cmd);
             setHudState("confirming");
             speak(`Found ${entryAlert.reasoning}. Send alert?`);
@@ -398,7 +399,7 @@ export function useVoiceCommands({
 
             const trimAlert = generateTrimAlert(trade, action.trimPercent);
             setPendingAlert(trimAlert);
-            const cmd = createVoiceCommand(action, transcript, trimAlert);
+            const cmd = createVoiceCommand(action, currentTranscript, trimAlert);
             setCommand(cmd);
             setHudState("confirming");
             speak(`${trimAlert.reasoning}. Send alert?`);
@@ -418,7 +419,7 @@ export function useVoiceCommands({
 
             const slAlert = generateStopLossAlert(trade, action.price);
             setPendingAlert(slAlert);
-            const cmd = createVoiceCommand(action, transcript, slAlert);
+            const cmd = createVoiceCommand(action, currentTranscript, slAlert);
             setCommand(cmd);
             setHudState("confirming");
             speak(`${slAlert.reasoning}. Send alert?`);
@@ -438,7 +439,7 @@ export function useVoiceCommands({
 
             const exitAlert = generateExitAlert(trade);
             setPendingAlert(exitAlert);
-            const cmd = createVoiceCommand(action, transcript, exitAlert);
+            const cmd = createVoiceCommand(action, currentTranscript, exitAlert);
             setCommand(cmd);
             setHudState("confirming");
             speak(`${exitAlert.reasoning}. Send alert?`);
@@ -467,7 +468,7 @@ export function useVoiceCommands({
       watchlist,
       activeTrades,
       currentTrade,
-      transcript,
+      // transcript, // Removed to prevent infinite loop
       onAddTicker,
       onRemoveTicker,
       onAddPosition,
@@ -559,7 +560,7 @@ export function useVoiceCommands({
 
       // Execute action (async for smart alerts)
       console.warn("[v0] Executing action:", action);
-      executeAction(action);
+      executeAction(action, text);
     },
     [parseVoiceCommand, executeAction, waitingForWakeWord, speak]
   );
