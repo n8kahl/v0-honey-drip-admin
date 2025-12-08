@@ -234,8 +234,146 @@ export function HDRowWatchlist({
             {/* Live indicator */}
             <HDLiveIndicator status={dataStatus} lastUpdate={lastUpdated} showLabel={false} />
 
-            {/* Confluence score */}
-            <HDConfluenceBadge score={confluenceScore} />
+            {/* Enhanced Confluence Indicator with pulsing beacon + component badges */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex flex-col gap-0.5">
+                  {/* Pulsing beacon + score */}
+                  <div className="flex items-center gap-1">
+                    <div
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                        confluenceScore >= 70
+                          ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)] animate-pulse"
+                          : confluenceScore >= 40
+                            ? "bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.5)] animate-pulse"
+                            : "bg-zinc-500 animate-pulse"
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "text-[10px] font-mono font-bold tabular-nums",
+                        confluenceScore >= 70
+                          ? "text-green-500"
+                          : confluenceScore >= 40
+                            ? "text-yellow-500"
+                            : "text-zinc-500"
+                      )}
+                    >
+                      {Math.round(confluenceScore || 0)}
+                    </span>
+                  </div>
+
+                  {/* Component mini-badges */}
+                  <div className="flex items-center gap-0.5">
+                    {/* MTF - Multi-Timeframe */}
+                    <div
+                      className={cn(
+                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
+                        symbolData?.confluence?.components?.trendAlignment
+                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          : "bg-zinc-700/40 text-zinc-600"
+                      )}
+                    >
+                      M
+                    </div>
+
+                    {/* RSI - Momentum */}
+                    <div
+                      className={cn(
+                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
+                        symbolData?.confluence?.components?.rsiConfirm
+                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          : "bg-zinc-700/40 text-zinc-600"
+                      )}
+                    >
+                      R
+                    </div>
+
+                    {/* VOL - Volume */}
+                    <div
+                      className={cn(
+                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
+                        symbolData?.confluence?.components?.volumeConfirm
+                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          : "bg-zinc-700/40 text-zinc-600"
+                      )}
+                    >
+                      V
+                    </div>
+
+                    {/* VWAP - Price Position */}
+                    <div
+                      className={cn(
+                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
+                        symbolData?.confluence?.components?.aboveVWAP
+                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          : "bg-zinc-700/40 text-zinc-600"
+                      )}
+                    >
+                      W
+                    </div>
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="text-xs space-y-2">
+                  <div className="font-semibold">
+                    Confluence: {Math.round(confluenceScore || 0)}/100
+                  </div>
+                  <div className="text-[10px] text-zinc-400 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={
+                          symbolData?.confluence?.components?.trendAlignment
+                            ? "text-green-500"
+                            : "text-zinc-500"
+                        }
+                      >
+                        {symbolData?.confluence?.components?.trendAlignment ? "✓" : "○"}
+                      </span>
+                      <span>Multi-Timeframe Trend</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={
+                          symbolData?.confluence?.components?.rsiConfirm
+                            ? "text-green-500"
+                            : "text-zinc-500"
+                        }
+                      >
+                        {symbolData?.confluence?.components?.rsiConfirm ? "✓" : "○"}
+                      </span>
+                      <span>RSI Momentum</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={
+                          symbolData?.confluence?.components?.volumeConfirm
+                            ? "text-green-500"
+                            : "text-zinc-500"
+                        }
+                      >
+                        {symbolData?.confluence?.components?.volumeConfirm ? "✓" : "○"}
+                      </span>
+                      <span>Volume Confirmation</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={
+                          symbolData?.confluence?.components?.aboveVWAP
+                            ? "text-green-500"
+                            : "text-zinc-500"
+                        }
+                      >
+                        {symbolData?.confluence?.components?.aboveVWAP ? "✓" : "○"}
+                      </span>
+                      <span>Above VWAP</span>
+                    </div>
+                  </div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
 
             {/* Inline metrics badges */}
             <div className="flex items-center gap-1 text-[10px]">
