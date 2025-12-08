@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Trade, TradeType } from "../../../types";
 import { cn, formatPrice, formatPercent } from "../../../lib/utils";
 import { normalizeSymbolForAPI, isIndex } from "../../../lib/symbolUtils";
@@ -16,13 +16,16 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Brain,
 } from "lucide-react";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { useKeyLevels } from "../../../hooks/useKeyLevels";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
 import { useThesisValidation } from "../../../hooks/useThesisValidation";
+import { useAITradeCoach } from "../../../hooks/useAITradeCoach";
 import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
 import { HDGreeksMonitor } from "./HDGreeksMonitor";
+import { AICoachPanel } from "../ai/AICoachPanel";
 
 interface HDActiveTradePanelProps {
   trade: Trade;
@@ -231,6 +234,20 @@ export function HDActiveTradePanel({
   onAdd,
   onExit,
 }: HDActiveTradePanelProps) {
+  // AI Coach state
+  const [showCoach, setShowCoach] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+
+  // AI Coach hook
+  const aiCoach = useAITradeCoach({ enableVoice: voiceEnabled });
+
+  // Start AI coach session when panel opens
+  useEffect(() => {
+    if (showCoach && !aiCoach.state.isActive) {
+      aiCoach.startSession(trade);
+    }
+  }, [showCoach, trade, aiCoach.state.isActive]);
+
   // Get real-time P&L
   const { currentPrice, pnlPercent, pnlDollars } = useActiveTradePnL(
     trade.contract.id,
@@ -616,6 +633,19 @@ export function HDActiveTradePanel({
           <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide">
             Quick Actions
           </h3>
+          {/* AI Coach Button */}
+          <button
+            onClick={() => setShowCoach(!showCoach)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors",
+              showCoach
+                ? "bg-[var(--brand-primary)] text-[var(--bg-base)]"
+                : "bg-[var(--brand-primary)]/10 border border-[var(--brand-primary)]/30 text-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/20"
+            )}
+          >
+            <Brain className="w-3.5 h-3.5" />
+            {showCoach ? "Hide Coach" : "AI Coach"}
+          </button>
         </div>
         <div className="flex flex-wrap gap-2">
           {onTrim && (
@@ -691,6 +721,35 @@ export function HDActiveTradePanel({
         direction={trade.contract.type === "C" ? "call" : "put"}
         onAutoTrim={onAutoTrim}
       />
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          AI COACH PANEL - Inline coaching section
+          ═══════════════════════════════════════════════════════════════════════ */}
+      {showCoach && (
+        <div className="bg-[var(--surface-2)] rounded-lg border border-[var(--brand-primary)]/30 overflow-hidden">
+          <AICoachPanel
+            trade={trade}
+            sessionId={aiCoach.state.sessionId}
+            coachingMode={aiCoach.state.coachingMode}
+            latestResponse={aiCoach.state.latestResponse}
+            isLoading={aiCoach.state.isLoading}
+            isProcessing={aiCoach.isProcessing}
+            error={aiCoach.state.error}
+            updateCount={aiCoach.state.updateCount}
+            tokensUsed={aiCoach.state.tokensUsed}
+            startTime={aiCoach.state.startTime}
+            onClose={() => {
+              setShowCoach(false);
+              aiCoach.endSession();
+            }}
+            onRefresh={aiCoach.refresh}
+            onAsk={aiCoach.ask}
+            onEndSession={aiCoach.endSession}
+            voiceEnabled={voiceEnabled}
+            onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -44,6 +44,16 @@ const S3_QUOTES_PATH = "us_options_opra/quotes_v1";
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+// Singleton Supabase client
+let supabaseClient: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  }
+  return supabaseClient!;
+}
+
 // Validate environment
 if (!S3_ACCESS_KEY || !S3_SECRET_KEY) {
   console.error("❌ Missing MASSIVE_AWS_ACCESS_KEY or MASSIVE_AWS_SECRET_KEY");
@@ -66,7 +76,7 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = getSupabaseClient();
 
 // CLI arguments
 const args = process.argv.slice(2);

@@ -40,7 +40,17 @@ if (!MASSIVE_API_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Singleton Supabase client
+let supabaseClient: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  }
+  return supabaseClient!;
+}
+
+const supabase = getSupabaseClient();
 
 // Configuration
 const WATCHED_SYMBOLS = ["SPX", "NDX", "SPY", "QQQ", "IWM"]; // Add more as needed

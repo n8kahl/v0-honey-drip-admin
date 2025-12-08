@@ -1,7 +1,7 @@
-import WebSocket from 'ws';
-import { setInterval, clearInterval } from 'timers';
+import WebSocket from "ws";
+import { setInterval, clearInterval } from "timers";
 
-type Asset = 'options' | 'indices';
+type Asset = "options" | "indices";
 
 interface ClientCtx {
   ws: WebSocket;
@@ -31,9 +31,9 @@ export class MassiveHub {
     const ctx: ClientCtx = { ws: clientWs, subs: new Set() };
     this.clients.add(ctx);
 
-    clientWs.on('message', (raw: WebSocket.RawData) => this.onClientMessage(ctx, raw));
-    clientWs.on('close', () => this.detachClient(ctx));
-    clientWs.on('error', () => this.detachClient(ctx));
+    clientWs.on("message", (raw: WebSocket.RawData) => this.onClientMessage(ctx, raw));
+    clientWs.on("close", () => this.detachClient(ctx));
+    clientWs.on("error", () => this.detachClient(ctx));
 
     if (!this.upstream || this.upstream.readyState >= WebSocket.CLOSING) {
       this.connectUpstream();
@@ -57,34 +57,38 @@ export class MassiveHub {
 
     this.upstream = new WebSocket(upstreamUrl);
 
-    this.upstream.once('open', () => {
+    this.upstream.once("open", () => {
       this.upstreamOpen = true;
       console.log(`${logPrefix} Upstream connected, sending auth...`);
-      
+
       // Per Massive WebSocket Quickstart: {"action":"auth","params":"<apikey>"}
-      const authMsg = { action: 'auth', params: apiKey };
-      console.log(`${logPrefix} Auth message structure:`, JSON.stringify({ action: 'auth', params: apiKey ? `${apiKey.slice(0, 8)}...` : 'MISSING' }));
-      
+      const authMsg = { action: "auth", params: apiKey };
+      console.log(
+        `${logPrefix} Auth message structure:`,
+        JSON.stringify({ action: "auth", params: apiKey ? `${apiKey.slice(0, 8)}...` : "MISSING" })
+      );
+
       this.sendUpstream(authMsg);
-      
+
       this.heartbeat = setInterval(() => {
         try {
           this.upstream?.ping();
         } catch (err) {
-          console.warn(`${logPrefix} Heartbeat ping failed:`, err);
+          console.error(`${logPrefix} Ping failed:`, err);
         }
       }, 30_000);
     });
 
-    this.upstream.on('message', (data) => {
+    this.upstream.on("message", (data) => {
       // Convert Buffer/Blob to string for JSON parsing
-      const textData = data.toString('utf-8');
-      
+      const textData = data.toString("utf-8");
+
       for (const client of this.clients) {
         try {
           client.ws.send(textData);
         } catch (err) {
           console.warn(`${logPrefix} Failed to send to client:`, err);
+          console.error(`${logPrefix} Send failed:`, err);
         }
       }
 
@@ -95,6 +99,11 @@ export class MassiveHub {
         const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === 'status') : undefined;
         if (statusMsg?.status === 'auth_success') {
           console.log(`${logPrefix} ✅ Authentication successful!`);
+        console.warn(`${logPrefix} Received upstream message:`, JSON.stringify(arr).slice(0, 200));
+
+        const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === "status") : undefined;
+        if (statusMsg?.status === "auth_success") {
+          console.warn(`${logPrefix} ✅ Authentication successful!`);
           this.upstreamAuthd = true;
           this.flushQueuedTopics();
         }
@@ -103,10 +112,11 @@ export class MassiveHub {
         if (process.env.DEBUG_WS) {
           console.warn(`${logPrefix} Failed to parse message:`, err);
         }
+        console.error(`${logPrefix} Parse error:`, err);
       }
     });
 
-    this.upstream.on('close', (code, reason) => {
+    this.upstream.on("close", (code, reason) => {
       if (this.heartbeat) {
         clearInterval(this.heartbeat);
         this.heartbeat = undefined;
@@ -120,10 +130,10 @@ export class MassiveHub {
           // Ignore send errors
         }
       }
-      
-      const reasonText = reason ? reason.toString('utf-8') : 'No reason provided';
+
+      const reasonText = reason ? reason.toString("utf-8") : "No reason provided";
       console.warn(`${logPrefix} upstream closed with code ${code}: ${reasonText}`);
-      
+
       if (code === 1008) {
         console.error(`${logPrefix} ❌ Code 1008 = Policy Violation. Possible causes:
   1. Invalid API key format or expired key
@@ -131,18 +141,20 @@ export class MassiveHub {
   3. WebSocket endpoint mismatch (check ${upstreamUrl})
   4. Authentication message rejected
   
-  Current API key: ${apiKey ? apiKey.slice(0, 12) + '...' : 'MISSING'}
+  Current API key: ${apiKey ? apiKey.slice(0, 12) + "..." : "MISSING"}
   Authenticated before close: ${this.upstreamAuthd}
   
   Check Massive dashboard: https://massive.com/dashboard/keys`);
       }
     });
 
-    this.upstream.on('error', (err) => {
+    this.upstream.on("error", (err) => {
       console.error(`${logPrefix} upstream error`, err);
       try {
         this.upstream?.close();
-      } catch {}
+      } catch (closeErr) {
+        console.error(`${logPrefix} Close error:`, closeErr);
+      }
     });
   }
 
@@ -151,10 +163,12 @@ export class MassiveHub {
       clearInterval(this.heartbeat);
       this.heartbeat = undefined;
     }
-      if (this.upstream && this.upstream.readyState === WebSocket.OPEN) {
+    if (this.upstream && this.upstream.readyState === WebSocket.OPEN) {
       try {
-        this.upstream.close(1000, 'idle');
-      } catch {}
+        this.upstream.close(1000, "idle");
+      } catch (err) {
+        console.error("Close error:", err);
+      }
     }
     this.upstreamOpen = false;
     this.upstreamAuthd = false;
@@ -167,8 +181,8 @@ export class MassiveHub {
 
   private flushQueuedTopics() {
     if (!this.queuedTopics.size) return;
-    const params = Array.from(this.queuedTopics).join(',');
-    this.sendUpstream({ action: 'subscribe', params });
+    const params = Array.from(this.queuedTopics).join(",");
+    this.sendUpstream({ action: "subscribe", params });
     this.queuedTopics.clear();
   }
 
@@ -179,7 +193,7 @@ export class MassiveHub {
       if (!this.upstreamAuthd) {
         this.queuedTopics.add(topic);
       } else {
-        this.sendUpstream({ action: 'subscribe', params: topic });
+        this.sendUpstream({ action: "subscribe", params: topic });
       }
     }
   }
@@ -189,7 +203,7 @@ export class MassiveHub {
     if (count <= 0) {
       this.topicRefCount.delete(topic);
       if (this.upstreamAuthd) {
-        this.sendUpstream({ action: 'unsubscribe', params: topic });
+        this.sendUpstream({ action: "unsubscribe", params: topic });
       } else {
         this.queuedTopics.delete(topic);
       }
@@ -199,25 +213,30 @@ export class MassiveHub {
   }
 
   private onClientMessage(ctx: ClientCtx, raw: WebSocket.RawData) {
-    let msg: any;
+    let msg: unknown;
     try {
       msg = JSON.parse(String(raw));
-    } catch {
+    } catch (err) {
+      console.error("Parse error:", err);
       return;
     }
-    if (!msg || typeof msg !== 'object') return;
+    if (!msg || typeof msg !== "object") return;
 
-    switch (msg.action) {
-      case 'subscribe': {
-        const rawParams: string = msg.params ?? '';
-        const topics = rawParams.split(',').map((s) => s.trim()).filter(Boolean);
+    const msgObj = msg as Record<string, unknown>;
+    switch (msgObj.action) {
+      case "subscribe": {
+        const rawParams: string = (msgObj.params as string) ?? "";
+        const topics = rawParams
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
         const fixed = topics.map((topic) => {
-          if (this.opts.asset !== 'indices') return topic;
+          if (this.opts.asset !== "indices") return topic;
           const match = topic.match(/^(V|AM|A)\.(.+)$/);
           if (!match) return topic;
           const ev = match[1];
           const sym = match[2];
-          return sym.startsWith('I:') ? topic : `${ev}.I:${sym}`;
+          return sym.startsWith("I:") ? topic : `${ev}.I:${sym}`;
         });
         for (const topic of fixed) {
           if (!ctx.subs.has(topic)) {
@@ -227,9 +246,12 @@ export class MassiveHub {
         }
         break;
       }
-      case 'unsubscribe': {
-        const rawParams: string = msg.params ?? '';
-        const topics = rawParams.split(',').map((s) => s.trim()).filter(Boolean);
+      case "unsubscribe": {
+        const rawParams: string = (msgObj.params as string) ?? "";
+        const topics = rawParams
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
         for (const topic of topics) {
           if (ctx.subs.has(topic)) {
             ctx.subs.delete(topic);
@@ -238,10 +260,12 @@ export class MassiveHub {
         }
         break;
       }
-      case 'ping': {
+      case "ping": {
         try {
           ctx.ws.pong();
-        } catch {}
+        } catch (err) {
+          console.error("Pong error:", err);
+        }
         break;
       }
     }

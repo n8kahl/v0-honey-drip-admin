@@ -7,6 +7,59 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOptionChain } from "../../massive/client.js";
 import { calculateDTE } from "../../lib/marketCalendar.js";
 
+// Type definitions for Massive.com API responses
+interface MassiveContractDetails {
+  ticker?: string;
+  strike_price?: number;
+  expiration_date?: string;
+  contract_type?: string;
+}
+
+interface MassiveQuote {
+  bid?: number;
+  ask?: number;
+  bp?: number;
+  ap?: number;
+}
+
+interface MassiveTrade {
+  price?: number;
+  p?: number;
+}
+
+interface MassiveGreeks {
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
+  rho?: number;
+}
+
+interface MassiveDayData {
+  volume?: number;
+}
+
+interface MassiveContract {
+  details?: MassiveContractDetails;
+  ticker?: string;
+  strike_price?: number;
+  strike?: number;
+  expiration_date?: string;
+  expiration?: string;
+  contract_type?: string;
+  option_type?: string;
+  last_quote?: MassiveQuote;
+  bid?: number;
+  ask?: number;
+  last_trade?: MassiveTrade;
+  last?: number;
+  greeks?: MassiveGreeks;
+  implied_volatility?: number;
+  volume?: number;
+  day?: MassiveDayData;
+  open_interest?: number;
+}
+
 export interface GreeksIngestionResult {
   success: boolean;
   symbol: string;
@@ -99,7 +152,7 @@ export async function ingestHistoricalGreeks(
     // Map contracts to Greeks records (filter out invalid contracts)
     // Massive.com API structure: contract.details contains ticker, strike_price, expiration_date, contract_type
     const records: GreeksRecord[] = chain.contracts
-      .filter((contract: any) => {
+      .filter((contract: MassiveContract) => {
         // Extract fields from nested details object (Massive.com API format)
         const details = contract.details || {};
         const ticker = details.ticker || contract.ticker;
@@ -112,7 +165,7 @@ export async function ingestHistoricalGreeks(
         // Must have required fields
         return ticker && strike !== undefined && expiration && contractType;
       })
-      .map((contract: any) => {
+      .map((contract: MassiveContract) => {
         // Extract fields from nested details object (Massive.com API format)
         const details = contract.details || {};
         const ticker = details.ticker || contract.ticker;
@@ -162,7 +215,7 @@ export async function ingestHistoricalGreeks(
       });
 
     // Store in database (upsert to handle duplicates)
-    const { error } = await supabase.from("historical_greeks").upsert(records as any, {
+    const { error } = await supabase.from("historical_greeks").upsert(records, {
       onConflict: "contract_ticker,timestamp",
       ignoreDuplicates: true,
     });

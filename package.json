@@ -36,7 +36,7 @@
     "start:composite": "node server/dist/server/workers/compositeScanner.js",
     "start:optimizer-scheduler": "node server/dist/server/workers/scheduledOptimizer.js",
     "start:prewarm": "node server/dist/server/workers/weekendPreWarm.js --force",
-    "start:ingestion": "node server/dist/server/workers/historicalDataIngestion.js",
+    "start:ingestion": "tsx server/workers/historicalDataIngestion.ts",
     "start:watchlist": "node server/dist/server/workers/flatFiles/WatchlistBackfill.js --worker",
     "start:all": "concurrently \"node server/dist/server/index.js\" \"node server/dist/server/workers/compositeScanner.js\"",
     "start:full": "concurrently \"node server/dist/server/index.js\" \"node server/dist/server/workers/compositeScanner.js\" \"node server/dist/server/workers/historicalDataIngestion.js\"",

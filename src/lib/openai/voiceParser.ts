@@ -23,7 +23,7 @@ Available actions:
 - add-position: Add to existing position (e.g., "add to spy", "scale into qqq")
 - navigate: Navigate to different tab (e.g., "go to settings", "show history")
 
-Ticker aliases:
+Ticker aliases (ALWAYS map company names to tickers):
 - google/alphabet → GOOGL
 - tesla → TSLA
 - apple → AAPL
@@ -31,8 +31,12 @@ Ticker aliases:
 - microsoft → MSFT
 - meta/facebook → META
 - nvidia → NVDA
+- target → TGT
+- sofi → SOFI
 - spy/spiders → SPY
 - qqq/nasdaq → QQQ
+- spx/s&p → SPX
+- ndx/nasdaq 100 → NDX
 
 Context extraction (preserve these phrases):
 - Sizing: "size lightly", "size up", "full position", "starter position"
@@ -106,7 +110,7 @@ interface OpenAIResponse {
 export async function parseVoiceWithOpenAI(transcript: string): Promise<ParsedVoiceAction | null> {
   try {
     console.warn("[v0] OpenAI: Parsing transcript:", transcript);
-    
+
     // Skip if transcript is too short or empty
     if (!transcript || transcript.trim().length < 3) {
       console.warn("[v0] OpenAI: Transcript too short, skipping");
