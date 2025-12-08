@@ -249,6 +249,7 @@ function mapToCamelCase(obj: Record<string, any>): UserProfile {
     slPercent: obj.sl_percent ?? 20,
     tpNearThreshold: obj.tp_near_threshold ?? 0.85,
     tpAutoOpenTrim: obj.tp_auto_open_trim ?? true,
+    isSuperAdmin: obj.is_super_admin ?? false,
     createdAt: obj.created_at,
     updatedAt: obj.updated_at,
   };

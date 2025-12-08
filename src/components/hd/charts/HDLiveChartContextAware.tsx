@@ -174,40 +174,36 @@ export function HDLiveChartContextAware({
     );
   }
 
-  // Default: Dual 1m+5m side-by-side view
+  // Default: Single 1m chart with metrics panel on right (Phase 2 layout)
+  // Metrics panel ALWAYS shows - Key Levels are underlying-dependent
   return (
     <div className={className}>
-      {/* Dual 1m+5m side-by-side view for day trading */}
-      <HDChartContainer title="📊 Charts" defaultExpanded={true}>
+      <HDChartContainer title="📊 Chart" defaultExpanded={true}>
         <div className="flex flex-row gap-4 w-full p-4">
-          {/* Left: 1-minute chart for entry precision (50% width) */}
-          <div className="flex-1 min-w-0" style={{ minWidth: 0 }}>
+          {/* Left: 1-minute chart (flex-grow to fill available space) */}
+          <div className="flex-[3] min-w-0">
             <HDLiveChart
               ticker={chartTicker}
               initialTimeframe="1"
               indicators={indicatorConfig}
               events={[]}
               levels={showKeyLevels ? levels : []}
-              height={finalChartHeight}
+              height={compactChartHeight}
               className="w-full"
               showControls={false}
               showHeader={true}
               loadDelay={0}
             />
           </div>
-          {/* Right: 5-minute chart for context (50% width) - staggered load */}
-          <div className="flex-1 min-w-0" style={{ minWidth: 0 }}>
-            <HDLiveChart
-              ticker={chartTicker}
-              initialTimeframe="5"
-              indicators={indicatorConfig}
-              events={[]}
-              levels={showKeyLevels ? levels : []}
-              height={finalChartHeight}
-              className="w-full"
-              showControls={false}
-              showHeader={true}
-              loadDelay={500}
+
+          {/* Right: Compact metrics panel - ALWAYS visible */}
+          <div className="flex-[2] min-w-[180px] max-w-[280px]">
+            <HDContractMetricsPanelCompact
+              contract={currentTrade?.contract || null}
+              trade={currentTrade}
+              underlyingPrice={activeTicker?.last}
+              keyLevels={keyLevels}
+              className="h-full"
             />
           </div>
         </div>

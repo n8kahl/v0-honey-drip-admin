@@ -1,18 +1,36 @@
 /**
  * HDContractMetricsPanelCompact - Compact vertical metrics panel for side-by-side with chart
- * Displays: Bid/Ask/Mid, Spread, Greeks, and Trade Targets in a narrow vertical layout
+ *
+ * Phase 2 Redesign:
+ * - Key Levels (VWAP, ORB, Prior Day) - ALWAYS visible (underlying-dependent)
+ * - Bid/Ask (real-time) - ALWAYS visible
+ * - Take Profit Progress Bars - Show when contract loaded, animate when ENTERED
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import type { Contract, Trade } from "../../../types";
 import type { KeyLevels } from "../../../lib/riskEngine/types";
 
 interface HDContractMetricsPanelCompactProps {
-  contract: Contract;
+  /** Contract data (nullable - panel still shows Key Levels when no contract) */
+  contract: Contract | null;
   trade?: Trade | null;
   underlyingPrice?: number;
   keyLevels?: Partial<KeyLevels>;
   className?: string;
+}
+
+/** Calculate progress percentage towards a target */
+function calculateProgress(entryPrice: number, currentPrice: number, targetPrice: number): number {
+  if (targetPrice === entryPrice) return 0;
+  const progress = ((currentPrice - entryPrice) / (targetPrice - entryPrice)) * 100;
+  return Math.min(100, Math.max(0, progress));
+}
+
+/** Format price for display */
+function formatPrice(price: number | undefined): string {
+  if (price === undefined || price === null || isNaN(price)) return "—";
+  return `$${price.toFixed(2)}`;
 }
 
 export function HDContractMetricsPanelCompact({
@@ -22,168 +40,271 @@ export function HDContractMetricsPanelCompact({
   keyLevels,
   className = "",
 }: HDContractMetricsPanelCompactProps) {
-  // Calculate spread percentage
-  const spread = contract.ask - contract.bid;
-  const spreadPercent = contract.mid > 0 ? (spread / contract.mid) * 100 : 0;
-  const spreadQuality =
-    spreadPercent < 2
-      ? "excellent"
-      : spreadPercent < 5
-        ? "good"
-        : spreadPercent < 10
-          ? "fair"
-          : "poor";
-  const spreadColor = {
-    excellent: "text-green-400",
-    good: "text-emerald-400",
-    fair: "text-yellow-400",
-    poor: "text-red-400",
-  }[spreadQuality];
+  // Check if trade is in ENTERED state (for progress bar animation)
+  const isEntered = trade?.state === "ENTERED";
 
-  // Format volume with K/M suffix
-  const formatVolume = (vol: number) => {
-    if (vol >= 1000000) return `${(vol / 1000000).toFixed(1)}M`;
-    if (vol >= 1000) return `${(vol / 1000).toFixed(1)}K`;
-    return vol.toString();
-  };
+  // Get entry price (for progress calculation)
+  const entryPrice = trade?.entryPrice || trade?.contract?.mid || 0;
 
-  // VWAP position relative to price
-  const vwapPosition =
-    keyLevels?.vwap && underlyingPrice
-      ? underlyingPrice > keyLevels.vwap
-        ? "Above"
-        : underlyingPrice < keyLevels.vwap
-          ? "Below"
-          : "At"
-      : undefined;
-  const vwapColor =
-    vwapPosition === "Above"
-      ? "text-green-400"
-      : vwapPosition === "Below"
-        ? "text-red-400"
-        : "text-yellow-400";
+  // Get current contract price (real-time updates)
+  const currentContractPrice = contract?.mid || 0;
 
-  // Calculate R:R if both target and stop are present
-  const riskReward =
-    trade?.targetPrice && trade?.stopLoss && trade?.contract?.mid
-      ? (trade.targetPrice - trade.contract.mid) / (trade.contract.mid - trade.stopLoss)
-      : null;
+  // Calculate VWAP position
+  const vwapPosition = useMemo(() => {
+    if (!keyLevels?.vwap || !underlyingPrice) return null;
+    if (underlyingPrice > keyLevels.vwap) return { label: "Above", color: "text-green-400" };
+    if (underlyingPrice < keyLevels.vwap) return { label: "Below", color: "text-red-400" };
+    return { label: "At", color: "text-yellow-400" };
+  }, [keyLevels?.vwap, underlyingPrice]);
+
+  // Calculate price change percentage
+  const priceChange = useMemo(() => {
+    if (!underlyingPrice || !keyLevels?.priorDayClose) return null;
+    const change = ((underlyingPrice - keyLevels.priorDayClose) / keyLevels.priorDayClose) * 100;
+    return {
+      value: change,
+      label: change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`,
+      color: change >= 0 ? "text-green-400" : "text-red-400",
+    };
+  }, [underlyingPrice, keyLevels?.priorDayClose]);
+
+  // Build take profit targets with progress
+  const tpTargets = useMemo(() => {
+    if (!trade) return [];
+
+    const targets: Array<{
+      label: string;
+      price: number;
+      progress: number;
+      percentGain: number;
+    }> = [];
+
+    // T1 - primary target
+    if (trade.targetPrice) {
+      const percentGain =
+        entryPrice > 0 ? ((trade.targetPrice - entryPrice) / entryPrice) * 100 : 0;
+      targets.push({
+        label: "T1",
+        price: trade.targetPrice,
+        progress: isEntered
+          ? calculateProgress(entryPrice, currentContractPrice, trade.targetPrice)
+          : 0,
+        percentGain,
+      });
+    }
+
+    // T2 and T3 from dynamic targets if available
+    const dynamicTargets = (trade as any).dynamicTargets;
+    if (dynamicTargets?.t2) {
+      const percentGain =
+        entryPrice > 0 ? ((dynamicTargets.t2 - entryPrice) / entryPrice) * 100 : 0;
+      targets.push({
+        label: "T2",
+        price: dynamicTargets.t2,
+        progress: isEntered
+          ? calculateProgress(entryPrice, currentContractPrice, dynamicTargets.t2)
+          : 0,
+        percentGain,
+      });
+    }
+    if (dynamicTargets?.t3) {
+      const percentGain =
+        entryPrice > 0 ? ((dynamicTargets.t3 - entryPrice) / entryPrice) * 100 : 0;
+      targets.push({
+        label: "T3",
+        price: dynamicTargets.t3,
+        progress: isEntered
+          ? calculateProgress(entryPrice, currentContractPrice, dynamicTargets.t3)
+          : 0,
+        percentGain,
+      });
+    }
+
+    return targets;
+  }, [trade, entryPrice, currentContractPrice, isEntered]);
 
   return (
     <div
-      className={`bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-lg p-3 space-y-3 ${className}`}
+      className={`bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-lg p-3 space-y-3 overflow-y-auto ${className}`}
     >
-      {/* Pricing Section */}
+      {/* Underlying Price - Real-time Bid/Ask */}
       <div className="space-y-2">
         <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-medium">
-          Contract Pricing
+          Underlying
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div>
-            <div className="text-[9px] text-[var(--text-muted)]">BID</div>
-            <div className="text-xs font-semibold text-[var(--text-high)]">
-              ${contract.bid.toFixed(2)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[9px] text-[var(--text-muted)]">ASK</div>
-            <div className="text-xs font-semibold text-[var(--text-high)]">
-              ${contract.ask.toFixed(2)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[9px] text-[var(--text-muted)]">MID</div>
-            <div className="text-xs font-semibold text-[var(--brand-primary)]">
-              ${contract.mid.toFixed(2)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Spread & Volume */}
-      <div className="border-t border-[var(--border-hairline)] pt-2 space-y-1">
-        <div className="flex justify-between items-center">
-          <span className="text-[9px] text-[var(--text-muted)]">SPREAD</span>
-          <span className={`text-xs font-semibold ${spreadColor}`}>
-            {spreadPercent.toFixed(1)}%
+        <div className="flex items-baseline justify-between">
+          <span className="text-lg font-bold text-[var(--text-high)]">
+            {formatPrice(underlyingPrice)}
           </span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-[9px] text-[var(--text-muted)]">VOL</span>
-          <span className="text-xs text-[var(--text-high)]">{formatVolume(contract.volume)}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-[9px] text-[var(--text-muted)]">OI</span>
-          <span className="text-xs text-[var(--text-high)]">
-            {formatVolume(contract.openInterest)}
-          </span>
-        </div>
-      </div>
-
-      {/* Greeks */}
-      {(contract.delta !== undefined || contract.theta !== undefined) && (
-        <div className="border-t border-[var(--border-hairline)] pt-2 space-y-1">
-          <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Greeks</div>
-          <div className="flex justify-center gap-3 text-xs">
-            {contract.delta !== undefined && (
-              <span className="text-[var(--text-high)]">Δ {contract.delta?.toFixed(2)}</span>
-            )}
-            {contract.theta !== undefined && (
-              <span className={contract.theta < 0 ? "text-red-400" : "text-green-400"}>
-                Θ {contract.theta?.toFixed(2)}
-              </span>
-            )}
-          </div>
-          {contract.gamma !== undefined && contract.vega !== undefined && (
-            <div className="flex justify-center gap-3 text-[10px] text-[var(--text-muted)]">
-              <span>Γ {contract.gamma?.toFixed(3)}</span>
-              <span>V {contract.vega?.toFixed(2)}</span>
-            </div>
+          {priceChange && (
+            <span className={`text-xs font-medium ${priceChange.color}`}>{priceChange.label}</span>
           )}
         </div>
-      )}
+      </div>
 
-      {/* VWAP Position */}
-      {keyLevels?.vwap && (
-        <div className="border-t border-[var(--border-hairline)] pt-2">
+      {/* Key Levels Section */}
+      <div className="border-t border-[var(--border-hairline)] pt-2 space-y-1.5">
+        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-medium">
+          Key Levels
+        </div>
+
+        {/* VWAP */}
+        {keyLevels?.vwap && (
           <div className="flex justify-between items-center">
             <span className="text-[9px] text-[var(--text-muted)]">VWAP</span>
-            <div className="text-right">
-              <span className="text-xs text-[var(--text-high)]">${keyLevels.vwap.toFixed(2)}</span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-[var(--text-high)]">{formatPrice(keyLevels.vwap)}</span>
               {vwapPosition && (
-                <span className={`text-[9px] ml-1 ${vwapColor}`}>({vwapPosition})</span>
+                <span className={`text-[9px] ${vwapPosition.color}`}>({vwapPosition.label})</span>
               )}
             </div>
           </div>
+        )}
+
+        {/* ORB High/Low */}
+        {(keyLevels?.orbHigh || keyLevels?.orbLow) && (
+          <>
+            {keyLevels?.orbHigh && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">ORB High</span>
+                <span className="text-xs text-green-400">{formatPrice(keyLevels.orbHigh)}</span>
+              </div>
+            )}
+            {keyLevels?.orbLow && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">ORB Low</span>
+                <span className="text-xs text-red-400">{formatPrice(keyLevels.orbLow)}</span>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Prior Day High/Low */}
+        {(keyLevels?.priorDayHigh || keyLevels?.priorDayLow) && (
+          <>
+            {keyLevels?.priorDayHigh && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">PDH</span>
+                <span className="text-xs text-[var(--text-high)]">
+                  {formatPrice(keyLevels.priorDayHigh)}
+                </span>
+              </div>
+            )}
+            {keyLevels?.priorDayLow && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">PDL</span>
+                <span className="text-xs text-[var(--text-high)]">
+                  {formatPrice(keyLevels.priorDayLow)}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Pre-Market High/Low */}
+        {(keyLevels?.preMarketHigh || keyLevels?.preMarketLow) && (
+          <>
+            {keyLevels?.preMarketHigh && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">PM High</span>
+                <span className="text-xs text-amber-400">
+                  {formatPrice(keyLevels.preMarketHigh)}
+                </span>
+              </div>
+            )}
+            {keyLevels?.preMarketLow && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">PM Low</span>
+                <span className="text-xs text-amber-400">
+                  {formatPrice(keyLevels.preMarketLow)}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* No key levels available */}
+        {!keyLevels?.vwap && !keyLevels?.orbHigh && !keyLevels?.priorDayHigh && (
+          <div className="text-[10px] text-[var(--text-muted)] italic">Loading levels...</div>
+        )}
+      </div>
+
+      {/* Contract Bid/Ask - Only when contract loaded */}
+      {contract && (
+        <div className="border-t border-[var(--border-hairline)] pt-2 space-y-1.5">
+          <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-medium">
+            Contract
+          </div>
+          <div className="grid grid-cols-3 gap-1 text-center">
+            <div>
+              <div className="text-[9px] text-[var(--text-muted)]">BID</div>
+              <div className="text-xs font-semibold text-[var(--text-high)]">
+                ${contract.bid.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] text-[var(--text-muted)]">ASK</div>
+              <div className="text-xs font-semibold text-[var(--text-high)]">
+                ${contract.ask.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] text-[var(--text-muted)]">MID</div>
+              <div className="text-xs font-semibold text-[var(--brand-primary)]">
+                ${contract.mid.toFixed(2)}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Trade Targets */}
-      {trade && (trade.targetPrice || trade.stopLoss) && (
-        <div className="border-t border-[var(--border-hairline)] pt-2 space-y-1">
-          <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Targets</div>
-          {trade.targetPrice && (
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] text-[var(--text-muted)]">TP</span>
-              <span className="text-xs font-semibold text-green-400">
-                ${trade.targetPrice.toFixed(2)}
+      {/* Take Profit Targets with Progress Bars */}
+      {tpTargets.length > 0 && (
+        <div className="border-t border-[var(--border-hairline)] pt-2 space-y-2">
+          <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-medium">
+            Take Profit Targets
+          </div>
+
+          {tpTargets.map((target) => (
+            <div key={target.label} className="space-y-1">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[var(--text-muted)]">
+                  {target.label}: {formatPrice(target.price)}
+                </span>
+                <span className="text-green-400 font-medium">
+                  +{target.percentGain.toFixed(0)}%
+                </span>
+              </div>
+              {/* Progress Bar */}
+              <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all duration-300 ease-out"
+                  style={{ width: `${target.progress}%` }}
+                />
+              </div>
+            </div>
+          ))}
+
+          {/* Stop Loss */}
+          {trade?.stopLoss && (
+            <div className="flex justify-between items-center text-xs pt-1">
+              <span className="text-[var(--text-muted)]">SL: {formatPrice(trade.stopLoss)}</span>
+              <span className="text-red-400 font-medium">
+                {entryPrice > 0
+                  ? `${(((trade.stopLoss - entryPrice) / entryPrice) * 100).toFixed(0)}%`
+                  : "—"}
               </span>
             </div>
           )}
-          {trade.stopLoss && (
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] text-[var(--text-muted)]">SL</span>
-              <span className="text-xs font-semibold text-red-400">
-                ${trade.stopLoss.toFixed(2)}
-              </span>
-            </div>
-          )}
-          {riskReward !== null && (
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] text-[var(--text-muted)]">R:R</span>
-              <span className="text-xs text-[var(--text-high)]">{riskReward.toFixed(1)}:1</span>
-            </div>
-          )}
+        </div>
+      )}
+
+      {/* Loading state when no contract and no key levels */}
+      {!contract && !keyLevels?.vwap && (
+        <div className="text-center py-4">
+          <div className="text-[10px] text-[var(--text-muted)]">
+            Select a symbol to view key levels
+          </div>
         </div>
       )}
     </div>
