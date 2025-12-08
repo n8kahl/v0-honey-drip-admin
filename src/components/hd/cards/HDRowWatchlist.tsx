@@ -130,7 +130,7 @@ export function HDRowWatchlist({
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex items-center justify-center gap-1 px-2 py-[2px] text-[9px] leading-none font-semibold rounded-full border self-center",
+            "inline-flex h-[22px] items-center justify-center gap-1.5 px-2.5 text-[10px] leading-none font-medium rounded-full border",
             confluenceStatus.tone === "success" &&
               "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
             confluenceStatus.tone === "warn" &&
@@ -145,27 +145,40 @@ export function HDRowWatchlist({
           {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3" />}
           <span className="leading-none">{confluenceStatus.label}</span>
           {typeof confluenceStatus.score === "number" && (
-            <span className="font-mono text-[10px] opacity-80">
+            <span className="font-mono text-[10px] leading-none opacity-80">
               {Math.round(confluenceStatus.score)}
             </span>
           )}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="bg-zinc-900 text-zinc-100 border border-zinc-700 max-w-xs">
-        <div className="text-xs font-semibold mb-1">
-          {ticker.symbol} · {confluenceStatus.label}
+      <TooltipContent className="bg-[var(--surface-4)] text-[var(--text-high)] border border-[var(--border-strong)] max-w-xs px-3 py-2.5 shadow-lg rounded-[10px]">
+        <div className="flex items-center justify-between text-[11px] font-semibold leading-tight">
+          <span>
+            {ticker.symbol} · {confluenceStatus.label}
+          </span>
+          {typeof confluenceStatus.score === "number" && (
+            <span className="font-mono text-[11px] text-emerald-200">
+              {Math.round(confluenceStatus.score)}
+            </span>
+          )}
         </div>
-        <div className="text-[11px] text-zinc-300">
+        <div className="mt-1 text-[10.5px] text-[var(--text-muted)] leading-tight">
           {lastUpdatedText ? `Updated ${lastUpdatedText}` : "No recent updates"}
         </div>
         {symbolData?.confluence && (
-          <div className="text-[11px] text-zinc-300 mt-1">
-            Score: {Math.round(symbolData.confluence.overall ?? 0)}
-            <div className="mt-1 space-y-0.5">
-              <div>Trend: {Math.round(symbolData.confluence.trend ?? 0)}</div>
-              <div>Momentum: {Math.round(symbolData.confluence.momentum ?? 0)}</div>
-              <div>Volume: {Math.round(symbolData.confluence.volume ?? 0)}</div>
-            </div>
+          <div className="mt-2 grid grid-cols-2 gap-y-1 text-[11px] text-[var(--text-high)] leading-tight">
+            <span className="text-[var(--text-muted)]">Trend</span>
+            <span className="font-mono text-right">
+              {Math.round(symbolData.confluence.trend ?? 0)}
+            </span>
+            <span className="text-[var(--text-muted)]">Momentum</span>
+            <span className="font-mono text-right">
+              {Math.round(symbolData.confluence.momentum ?? 0)}
+            </span>
+            <span className="text-[var(--text-muted)]">Volume</span>
+            <span className="font-mono text-right">
+              {Math.round(symbolData.confluence.volume ?? 0)}
+            </span>
           </div>
         )}
       </TooltipContent>
