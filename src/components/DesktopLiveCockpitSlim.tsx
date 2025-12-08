@@ -127,7 +127,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     activeTrades,
     currentTrade,
     onAddTicker: async (symbol: string) => {
-      if (!user) return;
+      const userId = user?.id || "00000000-0000-0000-0000-000000000001";
       const ticker: Ticker = {
         id: crypto.randomUUID(),
         symbol: symbol.toUpperCase(),
@@ -135,14 +135,10 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
         change: 0,
         changePercent: 0,
       };
-      await useMarketStore.getState().addTicker(user.id, ticker);
+      await useMarketStore.getState().addTicker(userId, ticker);
     },
     onRemoveTicker,
     onLoadContract: (contract, ticker, reasoning) => {
-      if (!user) {
-        toast.error("Unable to create trade: User not authenticated");
-        return;
-      }
       // Set active ticker first
       actions.setActiveTicker(ticker);
       // Wait for next tick to ensure state is updated

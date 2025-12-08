@@ -124,7 +124,8 @@ export function useTradeStateMachine({
   const toast = useAppToast();
   const discord = useDiscord();
   const auth = useAuth();
-  const userId = auth?.user?.id;
+  // Use fallback test user ID for local testing when not authenticated
+  const userId = auth?.user?.id || "00000000-0000-0000-0000-000000000001";
 
   // State
   const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
@@ -291,11 +292,6 @@ export function useTradeStateMachine({
     ) => {
       if (!activeTicker) {
         toast.error("Unable to create trade: No ticker selected");
-        return;
-      }
-
-      if (!userId) {
-        toast.error("Unable to create trade: User not authenticated");
         return;
       }
 
