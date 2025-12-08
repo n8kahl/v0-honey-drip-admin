@@ -1,0 +1,519 @@
+/**
+ * PublicPortal.tsx - Public-facing engagement page
+ *
+ * High-energy showcase of real-time admin trades, challenges, pre-market analysis,
+ * and economic calendar to drive Discord membership signups.
+ *
+ * No authentication required.
+ */
+
+import { useEffect, useState } from "react";
+import { createClient } from "../lib/supabase/client";
+import { ExternalLink, TrendingUp, Zap, Calendar, Play } from "lucide-react";
+import { cn } from "../lib/utils";
+import { Button } from "../components/ui/button";
+import {
+  fetchLatestPremarket,
+  getWatchUrl,
+  formatPublishedDate,
+  type PremarketVideo,
+} from "../lib/youtube/client";
+import {
+  fetchEconomicCalendar,
+  fetchEarningsCalendar,
+  type EconomicEvent,
+  type EarningsEvent,
+} from "../lib/calendar/EconomicCalendar";
+
+const supabase = createClient();
+
+// Types
+interface PublicTrade {
+  id: string;
+  symbol: string;
+  contract_type: "call" | "put";
+  strike: number;
+  expiration_iso: string;
+  entry_price: number;
+  current_price: number;
+  quantity: number;
+  state: "entered" | "loaded";
+  public_comment: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Challenge {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_pnl: number;
+  start_date: string;
+  end_date: string;
+}
+
+export function PublicPortal() {
+  // State
+  const [activeTrades, setActiveTrades] = useState<PublicTrade[]>([]);
+  const [loadedTrades, setLoadedTrades] = useState<PublicTrade[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [premarketVideo, setPremarketVideo] = useState<PremarketVideo | null>(null);
+  const [economicEvents, setEconomicEvents] = useState<EconomicEvent[]>([]);
+  const [earnings, setEarnings] = useState<EarningsEvent[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+
+  const DISCORD_INVITE_URL =
+    import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
+
+  // Fetch public trades
+  const fetchPublicTrades = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("trades")
+        .select("*")
+        .eq("show_on_public", true)
+        .in("state", ["entered", "loaded"])
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const entered = data?.filter((t) => t.state === "entered") || [];
+      const loaded = data?.filter((t) => t.state === "loaded") || [];
+
+      setActiveTrades(entered);
+      setLoadedTrades(loaded);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("[v0] Error fetching public trades:", error);
+    }
+  };
+
+  // Fetch active challenges
+  const fetchChallenges = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("challenges")
+        .select("*")
+        .eq("is_active", true)
+        .is("archived_at", null)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setChallenges(data || []);
+    } catch (error) {
+      console.error("[v0] Error fetching challenges:", error);
+    }
+  };
+
+  // Fetch pre-market video
+  const fetchPremarket = async () => {
+    const video = await fetchLatestPremarket();
+    setPremarketVideo(video);
+  };
+
+  // Fetch calendar data
+  const fetchCalendarData = async () => {
+    try {
+      // Get current week date range
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 7); // Next Sunday
+
+      const [econ, earn] = await Promise.all([
+        fetchEconomicCalendar(startOfWeek, endOfWeek),
+        fetchEarningsCalendar(now, new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)),
+      ]);
+
+      // Filter medium+ impact events for current week
+      const highImpactEvents = econ.filter((e) =>
+        ["medium", "high"].includes(e.impact.toLowerCase())
+      );
+      setEconomicEvents(highImpactEvents.slice(0, 10));
+
+      // Get next 3 days of earnings
+      const upcomingEarnings = earn.slice(0, 8);
+      setEarnings(upcomingEarnings);
+    } catch (error) {
+      console.error("[v0] Error fetching calendar data:", error);
+    }
+  };
+
+  // Setup real-time subscription
+  useEffect(() => {
+    // Initial fetch
+    fetchPublicTrades();
+    fetchChallenges();
+    fetchPremarket();
+    fetchCalendarData();
+
+    // Setup subscription for trades
+    const tradesChannel = supabase
+      .channel("public-trades")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "trades",
+          filter: "show_on_public=eq.true",
+        },
+        () => {
+          fetchPublicTrades();
+        }
+      )
+      .subscribe();
+
+    // Refresh calendar every 30 minutes
+    const calendarInterval = setInterval(fetchCalendarData, 30 * 60 * 1000);
+
+    // Refresh pre-market every 15 minutes
+    const premarketInterval = setInterval(fetchPremarket, 15 * 60 * 1000);
+
+    return () => {
+      tradesChannel.unsubscribe();
+      clearInterval(calendarInterval);
+      clearInterval(premarketInterval);
+    };
+  }, []);
+
+  // Check staleness (5 second threshold)
+  const isStale = Date.now() - lastUpdated.getTime() > 5000;
+
+  // Calculate time since last update
+  const getTimeSinceUpdate = () => {
+    const seconds = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ago`;
+  };
+
+  return (
+    <div className="min-h-screen bg-[var(--bg-base)] overflow-x-hidden">
+      {/* Hero Section */}
+      <header className="relative border-b border-[var(--border-hairline)] bg-gradient-to-br from-[var(--brand-primary)]/10 via-[var(--bg-base)] to-[var(--bg-base)]">
+        <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16">
+          <div className="text-center">
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold text-[var(--text-high)] mb-4 tracking-tight">
+              <span className="text-[var(--brand-primary)]">Honeydrip</span> Live
+            </h1>
+            <p className="text-xl sm:text-2xl text-[var(--text-muted)] mb-8 font-medium">
+              Real Trades. Real Profits.{" "}
+              <span className="text-[var(--accent-positive)]">Real Time.</span>
+            </p>
+            <Button
+              size="lg"
+              onClick={() => window.open(DISCORD_INVITE_URL, "_blank")}
+              className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--bg-base)] font-bold text-lg px-8 py-6 shadow-glow-lg animate-pulse"
+            >
+              <ExternalLink className="w-5 h-5 mr-2" />
+              Join Discord for Live Alerts
+            </Button>
+          </div>
+
+          {/* Animated ticker tape */}
+          <div className="mt-8 overflow-hidden">
+            <div className="flex gap-4 animate-scroll whitespace-nowrap">
+              {activeTrades.concat(activeTrades).map((trade, i) => (
+                <div
+                  key={`${trade.id}-${i}`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]"
+                >
+                  <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
+                  <span className="font-bold text-[var(--text-high)]">{trade.symbol}</span>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    ${trade.strike} {trade.contract_type.toUpperCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Grid */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Staleness indicator */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "w-2 h-2 rounded-full",
+                isStale ? "bg-amber-400 animate-pulse" : "bg-[var(--accent-positive)] animate-pulse"
+              )}
+            />
+            <span className="text-sm text-[var(--text-muted)]">
+              {isStale ? "Reconnecting..." : "Live"} · Last updated {getTimeSinceUpdate()}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Active Trades - Span 4 */}
+          <section className="lg:col-span-4 space-y-4">
+            <h2 className="text-2xl font-bold text-[var(--text-high)] flex items-center gap-2">
+              <Zap className="w-6 h-6 text-[var(--accent-positive)]" />
+              Active Trades
+              <span className="text-sm font-normal text-[var(--text-muted)]">
+                ({activeTrades.length})
+              </span>
+            </h2>
+            {activeTrades.length === 0 ? (
+              <div className="p-8 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                <p className="text-[var(--text-muted)]">
+                  No active trades right now. Check back soon!
+                </p>
+              </div>
+            ) : (
+              activeTrades.map((trade) => <PublicTradeCard key={trade.id} trade={trade} />)
+            )}
+          </section>
+
+          {/* Loaded Trades - Span 3 */}
+          <section className="lg:col-span-3 space-y-4">
+            <h2 className="text-2xl font-bold text-[var(--text-high)]">
+              Queued Setups
+              <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
+                ({loadedTrades.length})
+              </span>
+            </h2>
+            {loadedTrades.length === 0 ? (
+              <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                <p className="text-sm text-[var(--text-muted)]">No queued setups</p>
+              </div>
+            ) : (
+              loadedTrades.map((trade) => <LoadedTradeCard key={trade.id} trade={trade} />)
+            )}
+          </section>
+
+          {/* Challenges + Calendar - Span 3 */}
+          <section className="lg:col-span-3 space-y-6">
+            {/* Challenges */}
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-[var(--text-high)]">Active Challenges</h2>
+              {challenges.length === 0 ? (
+                <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                  <p className="text-sm text-[var(--text-muted)]">No active challenges</p>
+                </div>
+              ) : (
+                challenges.map((challenge) => (
+                  <ChallengeCard key={challenge.id} challenge={challenge} />
+                ))
+              )}
+            </div>
+
+            {/* Economic Calendar */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[var(--text-high)] flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                This Week
+              </h2>
+              <div className="space-y-2">
+                {economicEvents.slice(0, 5).map((event, i) => (
+                  <EconomicEventCard key={i} event={event} />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Pre-Market + Earnings - Span 2 */}
+          <section className="lg:col-span-2 space-y-6">
+            {/* Pre-Market Video */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[var(--text-high)] flex items-center gap-2">
+                <Play className="w-5 h-5" />
+                Pre-Market
+              </h2>
+              {premarketVideo?.available ? (
+                <div className="space-y-2">
+                  <a
+                    href={getWatchUrl(premarketVideo.videoId!)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block group"
+                  >
+                    <div className="relative rounded-lg overflow-hidden border border-[var(--border-hairline)] hover:border-[var(--brand-primary)] transition-all">
+                      <img
+                        src={premarketVideo.thumbnail}
+                        alt={premarketVideo.title}
+                        className="w-full aspect-video object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                      <div className="absolute bottom-2 left-2 right-2">
+                        <p className="text-xs text-white font-medium line-clamp-2">
+                          {premarketVideo.title}
+                        </p>
+                      </div>
+                    </div>
+                  </a>
+                  <p className="text-xs text-[var(--text-faint)]">
+                    {formatPublishedDate(premarketVideo.publishedAt!)}
+                  </p>
+                </div>
+              ) : (
+                <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Pre-market analysis posted daily by 9am ET
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Upcoming Earnings */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[var(--text-high)]">Earnings</h2>
+              <div className="space-y-2">
+                {earnings.slice(0, 6).map((event, i) => (
+                  <EarningsCard key={i} event={event} />
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      {/* Fixed CTA Button */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <Button
+          size="lg"
+          onClick={() => window.open(DISCORD_INVITE_URL, "_blank")}
+          className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--bg-base)] font-bold shadow-glow-lg animate-pulse"
+        >
+          <ExternalLink className="w-5 h-5 mr-2" />
+          Join Discord
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Trade card components
+function PublicTradeCard({ trade }: { trade: PublicTrade }) {
+  const pnl = ((trade.current_price - trade.entry_price) / trade.entry_price) * 100;
+  const pnlColor = pnl >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]";
+
+  return (
+    <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] hover:scale-[1.02] transition-transform">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h3 className="text-xl font-bold text-[var(--text-high)]">{trade.symbol}</h3>
+          <p className="text-sm text-[var(--text-muted)]">
+            ${trade.strike} {trade.contract_type.toUpperCase()}
+          </p>
+        </div>
+        <div className={cn("text-right", pnlColor)}>
+          <p className="text-5xl font-bold font-mono">
+            {pnl >= 0 ? "+" : ""}
+            {pnl.toFixed(1)}%
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+        <div>
+          <span className="text-[var(--text-faint)]">Entry:</span>
+          <span className="ml-1 font-mono text-[var(--text-high)]">
+            ${trade.entry_price.toFixed(2)}
+          </span>
+        </div>
+        <div>
+          <span className="text-[var(--text-faint)]">Current:</span>
+          <span className="ml-1 font-mono text-[var(--text-high)]">
+            ${trade.current_price.toFixed(2)}
+          </span>
+        </div>
+      </div>
+
+      {trade.public_comment && (
+        <div className="mt-3 p-3 bg-[var(--surface-2)] rounded border-l-2 border-[var(--brand-primary)]">
+          <p className="text-sm text-[var(--text-muted)] italic">{trade.public_comment}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
+  return (
+    <div className="p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+      <h4 className="font-bold text-[var(--text-high)]">{trade.symbol}</h4>
+      <p className="text-xs text-[var(--text-muted)]">
+        ${trade.strike} {trade.contract_type.toUpperCase()}
+      </p>
+      {trade.public_comment && (
+        <p className="text-xs text-[var(--text-muted)] mt-2 italic line-clamp-2">
+          {trade.public_comment}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChallengeCard({ challenge }: { challenge: Challenge }) {
+  const progress = (challenge.current_pnl / challenge.target_amount) * 100;
+  const daysLeft = Math.ceil(
+    (new Date(challenge.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
+
+  return (
+    <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+      <h3 className="font-bold text-[var(--text-high)] mb-2">{challenge.name}</h3>
+      <div className="mb-2">
+        <div className="flex justify-between text-sm mb-1">
+          <span className="text-[var(--text-muted)]">${challenge.current_pnl.toFixed(0)}</span>
+          <span className="text-[var(--text-muted)]">${challenge.target_amount.toFixed(0)}</span>
+        </div>
+        <div className="h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-[var(--accent-positive)] transition-all"
+            style={{ width: `${Math.min(100, progress)}%` }}
+          />
+        </div>
+      </div>
+      <p className="text-xs text-[var(--text-faint)]">{daysLeft} days remaining</p>
+    </div>
+  );
+}
+
+function EconomicEventCard({ event }: { event: EconomicEvent }) {
+  const impactColor =
+    event.impact === "HIGH" || event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400";
+
+  return (
+    <div className="p-2 bg-[var(--surface-1)] rounded border border-[var(--border-hairline)]">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm text-[var(--text-high)] flex-1 line-clamp-1">{event.name}</p>
+        <span className={cn("text-xs font-bold", impactColor)}>
+          {event.impact === "HIGH" || event.impact === "CRITICAL" ? "🔴" : "🟡"}
+        </span>
+      </div>
+      <p className="text-xs text-[var(--text-faint)] mt-1">
+        {event.datetime.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}
+      </p>
+    </div>
+  );
+}
+
+function EarningsCard({ event }: { event: EarningsEvent }) {
+  return (
+    <div className="p-2 bg-[var(--surface-1)] rounded border border-[var(--border-hairline)]">
+      <div className="flex items-center justify-between">
+        <span className="font-bold text-[var(--text-high)]">{event.symbol}</span>
+        <span className="text-xs text-[var(--text-muted)]">
+          {event.datetime.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+        </span>
+      </div>
+      {event.estimate && (
+        <p className="text-xs text-[var(--text-faint)] mt-1">Est: ${event.estimate}</p>
+      )}
+    </div>
+  );
+}
+
+export default PublicPortal;
