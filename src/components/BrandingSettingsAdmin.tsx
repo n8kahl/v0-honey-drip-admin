@@ -36,13 +36,8 @@ export function BrandingSettingsAdmin() {
   const [supportEmail, setSupportEmail] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [faviconUrl, setFaviconUrl] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [themePreview, setThemePreview] = useState({
-    surface1: defaultBrandingTheme.surface1,
-    surface2: defaultBrandingTheme.surface2,
-    surface3: defaultBrandingTheme.surface3,
-    surface4: defaultBrandingTheme.surface4,
-    textHigh: defaultBrandingTheme.textHigh,
-    textMuted: defaultBrandingTheme.textMuted,
     success: defaultBrandingTheme.success,
     warning: defaultBrandingTheme.warning,
     danger: defaultBrandingTheme.danger,
@@ -76,24 +71,6 @@ export function BrandingSettingsAdmin() {
         setFaviconUrl(data.faviconUrl || "");
         setThemePreview((prev) => ({
           ...prev,
-          surface1:
-            getComputedStyle(document.documentElement).getPropertyValue("--surface-1")?.trim() ||
-            prev.surface1,
-          surface2:
-            getComputedStyle(document.documentElement).getPropertyValue("--surface-2")?.trim() ||
-            prev.surface2,
-          surface3:
-            getComputedStyle(document.documentElement).getPropertyValue("--surface-3")?.trim() ||
-            prev.surface3,
-          surface4:
-            getComputedStyle(document.documentElement).getPropertyValue("--surface-4")?.trim() ||
-            prev.surface4,
-          textHigh:
-            getComputedStyle(document.documentElement).getPropertyValue("--text-high")?.trim() ||
-            prev.textHigh,
-          textMuted:
-            getComputedStyle(document.documentElement).getPropertyValue("--text-muted")?.trim() ||
-            prev.textMuted,
           success:
             getComputedStyle(document.documentElement)
               .getPropertyValue("--accent-positive")

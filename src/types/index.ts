@@ -167,6 +167,8 @@ export interface Trade {
   originalSignalScore?: number; // Composite signal score at entry
   // Trade notes for journal
   notes?: string;
+  // Voice command context for pre-filling alert composer
+  voiceContext?: string;
   // Legacy confluence fields (deprecated, use confluence.factors)
   legacyConfluence?: {
     trend?: string;

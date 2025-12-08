@@ -74,7 +74,8 @@ interface TradeStateMachineActions {
   handleTickerClick: (ticker: Ticker) => void;
   handleContractSelect: (
     contract: Contract,
-    confluenceData?: { trend?: any; volatility?: any; liquidity?: any }
+    confluenceData?: { trend?: any; volatility?: any; liquidity?: any },
+    voiceReasoning?: string
   ) => void;
   handleActiveTradeClick: (trade: Trade, watchlist: Ticker[]) => void;
   handleSendAlert: (
@@ -285,7 +286,8 @@ export function useTradeStateMachine({
         trend?: any;
         volatility?: any;
         liquidity?: any;
-      }
+      },
+      voiceReasoning?: string
     ) => {
       if (!activeTicker || !userId) {
         toast.error("Unable to create trade: User not authenticated");
@@ -392,6 +394,8 @@ export function useTradeStateMachine({
           underlyingPriceAtLoad: underlyingPrice,
           targetUnderlyingPrice,
           stopUnderlyingPrice,
+          // Voice command context for alert composer
+          voiceContext: voiceReasoning,
         };
 
         // Set as currentTrade for UI display (Trade Details, Analysis, etc.)

@@ -19,6 +19,8 @@ import type { CompositeSignal } from "../lib/composite/CompositeSignal";
 import { branding } from "../lib/config/branding";
 import { useDiscord } from "../hooks/useDiscord";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useMarketStore } from "../stores/marketStore";
+import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
 
 // Default confluence object to prevent undefined errors in child components
@@ -79,6 +81,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onVoiceStateChange,
   } = props;
 
+  const { user } = useAuth();
+
   const {
     activeTicker,
     contracts,
@@ -122,8 +126,24 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     watchlist,
     activeTrades,
     currentTrade,
-    onAddTicker: () => {},
+    onAddTicker: async (symbol: string) => {
+      if (!user) return;
+      const ticker: Ticker = {
+        id: crypto.randomUUID(),
+        symbol: symbol.toUpperCase(),
+        last: 0,
+        change: 0,
+        changePercent: 0,
+      };
+      await useMarketStore.getState().addTicker(user.id, ticker);
+    },
     onRemoveTicker,
+    onLoadContract: (contract, ticker, reasoning) => {
+      // Set active ticker first
+      actions.setActiveTicker(ticker);
+      // Load contract through state machine with voice reasoning
+      actions.handleContractSelect(contract, undefined, reasoning);
+    },
     onEnterTrade: actions.handleEnterTrade,
     onTrimTrade: actions.handleTrim,
     onUpdateSL: actions.handleUpdateSL,

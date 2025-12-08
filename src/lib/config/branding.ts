@@ -152,22 +152,29 @@ export function getAppName(): string {
  * Apply a branding theme to document-level CSS variables
  */
 export function applyBrandingTheme(theme: Partial<BrandingTheme>): void {
-  const merged = { ...defaultBrandingTheme, ...theme };
   const root = document.documentElement;
 
-  root.style.setProperty("--brand-primary", merged.brandPrimary);
-  root.style.setProperty("--brand-primary-hover", merged.brandPrimaryHover);
-  root.style.setProperty("--brand-primary-pressed", merged.brandPrimaryPressed);
-  root.style.setProperty("--accent-positive", merged.success);
-  root.style.setProperty("--accent-warning", merged.warning);
-  root.style.setProperty("--accent-negative", merged.danger);
-  root.style.setProperty("--surface-1", merged.surface1);
-  root.style.setProperty("--surface-2", merged.surface2);
-  root.style.setProperty("--surface-3", merged.surface3);
-  root.style.setProperty("--surface-4", merged.surface4);
-  root.style.setProperty("--border-hairline", merged.borderHairline);
-  root.style.setProperty("--border-strong", merged.borderStrong);
-  root.style.setProperty("--text-high", merged.textHigh);
-  root.style.setProperty("--text-muted", merged.textMuted);
-  root.style.setProperty("--text-subtle", merged.textSubtle);
+  const setIfPresent = (varName: string, value?: string) => {
+    if (value) root.style.setProperty(varName, value);
+  };
+
+  setIfPresent("--brand-primary", theme.brandPrimary);
+  setIfPresent("--brand-primary-hover", theme.brandPrimaryHover);
+  setIfPresent("--brand-primary-pressed", theme.brandPrimaryPressed);
+
+  setIfPresent("--accent-positive", theme.success);
+  setIfPresent("--accent-warning", theme.warning);
+  setIfPresent("--accent-negative", theme.danger);
+
+  setIfPresent("--border-hairline", theme.borderHairline);
+  setIfPresent("--border-strong", theme.borderStrong);
+
+  // Surfaces/text are left untouched to preserve light/dark mode unless explicitly provided
+  setIfPresent("--surface-1", theme.surface1);
+  setIfPresent("--surface-2", theme.surface2);
+  setIfPresent("--surface-3", theme.surface3);
+  setIfPresent("--surface-4", theme.surface4);
+  setIfPresent("--text-high", theme.textHigh);
+  setIfPresent("--text-muted", theme.textMuted);
+  setIfPresent("--text-subtle", theme.textSubtle);
 }

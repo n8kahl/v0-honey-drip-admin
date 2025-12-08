@@ -200,18 +200,7 @@ export function applyBrandingToDocument(config: ResellerConfig | null): void {
       }
     }
 
-    // Update brand color CSS variable
-    if (config.brandPrimaryColor) {
-      document.documentElement.style.setProperty("--brand-primary", config.brandPrimaryColor);
-
-      // Generate hover and pressed variants (10% darker)
-      const color = config.brandPrimaryColor;
-      const hoverColor = adjustColor(color, -10);
-      const pressedColor = adjustColor(color, -20);
-
-      document.documentElement.style.setProperty("--brand-primary-hover", hoverColor);
-      document.documentElement.style.setProperty("--brand-primary-pressed", pressedColor);
-    }
+    // Brand color is handled above; avoid overriding surfaces/text to keep light/dark intact
   } catch (error) {
     console.error("[v0] Failed to apply branding:", error);
   }

@@ -163,9 +163,13 @@ export function HDAlertComposer({
     setTargetPrice(trade.targetPrice || trade.contract.mid * 1.5);
     setStopLoss(trade.stopLoss || trade.contract.mid * 0.5);
 
-    // Set default comment with auto-populated info
+    // Set default comment with auto-populated info or voice context
     let defaultComment = "";
-    if (alertType === "load") {
+
+    // If voice context exists, use it as the default comment
+    if (trade.voiceContext) {
+      defaultComment = trade.voiceContext;
+    } else if (alertType === "load") {
       defaultComment = `Watching this ${trade.tradeType} setup. Entry around $${formatPrice(trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ""}.`;
     } else if (alertType === "enter") {
       defaultComment = `Entering at $${formatPrice(trade.entryPrice || trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ""}. Targeting $${formatPrice(trade.targetPrice || trade.contract.mid * 1.5)} with stop at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}.`;

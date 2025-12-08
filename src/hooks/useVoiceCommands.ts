@@ -64,7 +64,7 @@ interface UseVoiceCommandsProps {
   currentTrade: Trade | null;
   onAddTicker?: (symbol: string) => void;
   onRemoveTicker?: (ticker: Ticker) => void;
-  onLoadContract?: (contract: Contract) => void;
+  onLoadContract?: (contract: Contract, ticker: Ticker, reasoning?: string) => void;
   onEnterTrade?: () => void;
   onTrimTrade?: () => void;
   onUpdateSL?: () => void;
@@ -79,7 +79,7 @@ export function useVoiceCommands({
   currentTrade,
   onAddTicker,
   onRemoveTicker,
-  _onLoadContract,
+  onLoadContract,
   _onEnterTrade,
   _onTrimTrade,
   _onUpdateSL,
@@ -452,7 +452,17 @@ export function useVoiceCommands({
               return;
             }
 
-            // Generate smart entry alert
+            // Check if ticker is in watchlist
+            const ticker = watchlist.find((t) => t.symbol === action.ticker);
+            if (!ticker) {
+              // Prompt user to add to watchlist
+              setPendingTickerAdd({ symbol: action.ticker, action });
+              setHudState("confirming");
+              speak(`${action.ticker} is not in your watchlist. Add it? Say yes to add.`);
+              return; // Wait for confirmation
+            }
+
+            // Generate smart entry alert to find best contract
             speak("Searching for best contract");
             const entryAlert = await generateEntryAlert(
               action.ticker,
@@ -460,19 +470,25 @@ export function useVoiceCommands({
               action.optionType
             );
 
-            if (!entryAlert) {
+            if (!entryAlert || !entryAlert.alert.contract) {
               setError(`No suitable contracts found for ${action.ticker}`);
               setHudState("error");
               speak(`No suitable contracts found for ${action.ticker}`);
               return;
             }
 
-            setPendingAlert(entryAlert);
-            const cmd = createVoiceCommand(action, currentTranscript, entryAlert);
-            setCommand(cmd);
-            setHudState("confirming");
-            speak(`Found ${entryAlert.reasoning}. Send alert?`);
-            return; // Wait for confirmation
+            // Load contract through trade state machine
+            if (onLoadContract) {
+              onLoadContract(entryAlert.alert.contract, ticker, entryAlert.reasoning);
+              speak(`Loaded ${entryAlert.reasoning}. Review and send alert.`);
+              setHudState("success");
+              setTimeout(() => {
+                setHudState(null);
+                setIsListening(false);
+                setWaitingForWakeWord(true);
+              }, 2000);
+            }
+            break;
           }
 
           case "trim-trade": {
@@ -676,6 +692,30 @@ export function useVoiceCommands({
 
   // Confirm action and send alert
   const confirmAction = useCallback(async () => {
+    // Handle ticker addition confirmation
+    if (pendingTickerAdd && onAddTicker) {
+      try {
+        setHudState("processing");
+        speak(`Adding ${pendingTickerAdd.symbol} to watchlist`);
+        await onAddTicker(pendingTickerAdd.symbol);
+        speak(`${pendingTickerAdd.symbol} added. Searching for contract.`);
+
+        // Wait a moment for watchlist to update, then retry the original action
+        setTimeout(() => {
+          executeAction(pendingTickerAdd.action);
+        }, 1000);
+
+        setPendingTickerAdd(null);
+        return;
+      } catch (error) {
+        console.error("[v0] Failed to add ticker:", error);
+        setError("Failed to add ticker");
+        setHudState("error");
+        setPendingTickerAdd(null);
+        return;
+      }
+    }
+
     if (pendingAlert && onSendAlert) {
       try {
         setHudState("processing");
@@ -696,11 +736,20 @@ export function useVoiceCommands({
     setHudState(null);
     setPendingAction(null);
     setPendingAlert(null);
+    setPendingTickerAdd(null);
     setCommand(null);
     setTranscript("");
     setIsListening(false);
     setWaitingForWakeWord(true);
-  }, [pendingAction, pendingAlert, onSendAlert, executeAction, speak]);
+  }, [
+    pendingAction,
+    pendingAlert,
+    pendingTickerAdd,
+    onSendAlert,
+    onAddTicker,
+    executeAction,
+    speak,
+  ]);
 
   // Cancel action
   const cancelAction = useCallback(() => {
@@ -708,6 +757,7 @@ export function useVoiceCommands({
     setHudState(null);
     setPendingAction(null);
     setPendingAlert(null);
+    setPendingTickerAdd(null);
     setCommand(null);
     setTranscript("");
     setIsListening(false);
