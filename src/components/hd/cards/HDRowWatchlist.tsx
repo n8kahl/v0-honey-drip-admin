@@ -130,7 +130,7 @@ export function HDRowWatchlist({
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex items-center justify-center gap-1 px-1.5 py-[3px] text-[9px] leading-none font-semibold rounded-full border self-center",
+            "inline-flex items-center justify-center gap-1 px-2 py-[2px] text-[9px] leading-none font-semibold rounded-full border self-center",
             confluenceStatus.tone === "success" &&
               "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
             confluenceStatus.tone === "warn" &&
