@@ -6,6 +6,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { applyBrandingTheme, defaultBrandingTheme } from "../config/branding";
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -173,6 +174,19 @@ export function applyBrandingToDocument(config: ResellerConfig | null): void {
   if (!config) return;
 
   try {
+    // Base theme from defaults
+    applyBrandingTheme({
+      brandPrimary: config.brandPrimaryColor || defaultBrandingTheme.brandPrimary,
+      brandPrimaryHover: adjustColor(
+        config.brandPrimaryColor || defaultBrandingTheme.brandPrimary,
+        -10
+      ),
+      brandPrimaryPressed: adjustColor(
+        config.brandPrimaryColor || defaultBrandingTheme.brandPrimary,
+        -20
+      ),
+    });
+
     // Update page title
     if (config.appName) {
       document.title = `${config.appName} Trading Dashboard`;

@@ -86,7 +86,8 @@ export function BrandingSettingsAdmin() {
       });
 
       setConfig(updated);
-      toast.success("Branding settings saved! Reload the page to see changes.");
+      applyBrandingToDocument(updated);
+      toast.success("Branding settings saved and applied.");
     } catch (error) {
       console.error("[v0] Failed to save branding config:", error);
       toast.error("Failed to save branding settings");
@@ -155,17 +156,25 @@ export function BrandingSettingsAdmin() {
 
   const handlePreview = () => {
     if (config) {
-      applyBrandingToDocument({
+      const previewConfig = {
         ...config,
         appName,
         brandPrimaryColor,
         supportEmail: supportEmail || null,
         logoUrl: logoUrl || null,
         faviconUrl: faviconUrl || null,
-      });
-      toast.info("Preview applied! Reload page to revert changes.");
+      };
+      applyBrandingToDocument(previewConfig);
+      toast.info("Preview applied to current session.");
     }
   };
+
+  // Apply theme once when config loads so the admin page reflects saved branding
+  useEffect(() => {
+    if (config) {
+      applyBrandingToDocument(config);
+    }
+  }, [config]);
 
   if (loading) {
     return (
@@ -230,11 +239,20 @@ export function BrandingSettingsAdmin() {
             <Label className="text-[var(--text-high)]">Logo</Label>
             <div className="flex items-center gap-3">
               {logoUrl && (
-                <img
-                  src={logoUrl}
-                  alt="Logo preview"
-                  className="w-12 h-12 rounded border border-[var(--border-hairline)]"
-                />
+                <div className="flex items-center gap-2">
+                  <img
+                    src={logoUrl}
+                    alt="Logo preview"
+                    className="w-12 h-12 rounded border border-[var(--border-hairline)] object-contain bg-[var(--surface-2)]"
+                  />
+                  <HDButton
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.open(logoUrl, "_blank")}
+                  >
+                    View
+                  </HDButton>
+                </div>
               )}
               <input
                 ref={logoInputRef}
@@ -262,11 +280,20 @@ export function BrandingSettingsAdmin() {
             <Label className="text-[var(--text-high)]">Favicon</Label>
             <div className="flex items-center gap-3">
               {faviconUrl && (
-                <img
-                  src={faviconUrl}
-                  alt="Favicon preview"
-                  className="w-8 h-8 rounded border border-[var(--border-hairline)]"
-                />
+                <div className="flex items-center gap-2">
+                  <img
+                    src={faviconUrl}
+                    alt="Favicon preview"
+                    className="w-8 h-8 rounded border border-[var(--border-hairline)] object-contain bg-[var(--surface-2)]"
+                  />
+                  <HDButton
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.open(faviconUrl, "_blank")}
+                  >
+                    View
+                  </HDButton>
+                </div>
               )}
               <input
                 ref={faviconInputRef}
