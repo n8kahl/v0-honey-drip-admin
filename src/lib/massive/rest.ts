@@ -5,17 +5,12 @@
  * Handles authentication, retry logic, rate limiting, and error handling.
  */
 
-import { MassiveTokenManager } from './token-manager';
-import { MassiveCache } from './cache';
-import { getMetricsService } from '../../services/monitoring';
-import type {
-  MassiveQuote,
-  MassiveOption,
-  MassiveOptionsChain,
-  MassiveIndex,
-} from './types';
+import { MassiveTokenManager } from "./token-manager";
+import { MassiveCache } from "./cache";
+import { getMetricsService } from "../../services/monitoring";
+import type { MassiveQuote, MassiveOption, MassiveOptionsChain, MassiveIndex } from "./types";
 
-const MASSIVE_API_BASE = '/api/massive';
+const MASSIVE_API_BASE = "/api/massive";
 const CONTRACT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const AGGREGATES_TTL_MS = 60 * 1000; // 60 seconds
 
@@ -37,7 +32,7 @@ export interface MassiveMarketStatus {
 }
 
 export interface EnrichedMarketStatus {
-  session: 'PRE' | 'OPEN' | 'POST' | 'CLOSED';
+  session: "PRE" | "OPEN" | "POST" | "CLOSED";
   isOpen: boolean;
   tradingDay: string;
   nextOpen: number;
@@ -91,7 +86,7 @@ export class MassiveREST {
    */
   async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
     const url = this.buildUrl(endpoint, params);
-    return this.fetchWithRetry(url, { method: 'GET' });
+    return this.fetchWithRetry(url, { method: "GET" });
   }
 
   /**
@@ -100,8 +95,8 @@ export class MassiveREST {
   async post<T>(endpoint: string, body?: any): Promise<T> {
     const url = this.buildUrl(endpoint);
     return this.fetchWithRetry(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
   }
@@ -110,7 +105,7 @@ export class MassiveREST {
    * Get current market status
    */
   async getMarketStatus(): Promise<MassiveMarketStatus> {
-    return this.get('/v1/marketstatus/now');
+    return this.get("/v1/marketstatus/now");
   }
 
   /**
@@ -128,15 +123,15 @@ export class MassiveREST {
           const items: any[] = Array.isArray(data?.results)
             ? data.results
             : Array.isArray(data)
-            ? data
-            : [];
+              ? data
+              : [];
           const dates = items
             .map((it: any) => it?.date || it?.holiday_date)
             .filter(Boolean)
             .map((d: any) => String(d));
           return dates;
         } catch (err) {
-          console.debug('[MassiveREST] Failed to fetch market holidays', err);
+          console.debug("[MassiveREST] Failed to fetch market holidays", err);
           return [];
         }
       },
@@ -151,9 +146,9 @@ export class MassiveREST {
     optionsTicker: string,
     params?: {
       timestamp?: string;
-      timespan?: 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
+      timespan?: "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year";
       window?: number;
-      series_type?: 'close' | 'open' | 'high' | 'low';
+      series_type?: "close" | "open" | "high" | "low";
       limit?: number;
     }
   ): Promise<{ values: MassiveRSI[] }> {
@@ -175,11 +170,11 @@ export class MassiveREST {
   async getQuotes(symbols: string[]): Promise<MassiveQuote[]> {
     // Try unified server endpoint first
     try {
-      const tickers = symbols.join(',');
+      const tickers = symbols.join(",");
       const token = await this.tokenManager.getToken();
       const resp = await fetch(`/api/quotes?tickers=${encodeURIComponent(tickers)}`, {
         headers: {
-          'x-massive-proxy-token': token,
+          "x-massive-proxy-token": token,
         },
       });
 
@@ -187,7 +182,7 @@ export class MassiveREST {
         const json = await resp.json();
         const items: any[] = Array.isArray(json?.results) ? json.results : [];
         return items.map((it) => ({
-          symbol: String(it.symbol ?? ''),
+          symbol: String(it.symbol ?? ""),
           last: Number(it.last ?? 0),
           change: Number(it.change ?? 0),
           changePercent: Number(it.changePercent ?? 0),
@@ -202,16 +197,16 @@ export class MassiveREST {
         })) as MassiveQuote[];
       }
 
-      console.warn('[MassiveREST] /api/quotes returned non-OK, falling back per-symbol');
+      console.warn("[MassiveREST] /api/quotes returned non-OK, falling back per-symbol");
     } catch (e) {
-      console.warn('[MassiveREST] /api/quotes failed, falling back per-symbol', e);
+      console.warn("[MassiveREST] /api/quotes failed, falling back per-symbol", e);
     }
 
     // Fallback: per-symbol requests
     const quotes: MassiveQuote[] = [];
     for (const symbol of symbols) {
       try {
-        const isIndex = symbol.startsWith('I:') || ['SPX', 'NDX', 'VIX', 'RUT'].includes(symbol);
+        const isIndex = symbol.startsWith("I:") || ["SPX", "NDX", "VIX", "RUT"].includes(symbol);
         if (isIndex) {
           const index = await this.getIndex(symbol);
           quotes.push({
@@ -284,7 +279,7 @@ export class MassiveREST {
 
     if (price === 0) {
       try {
-        const isIndex = ['SPX', 'NDX', 'VIX', 'RUT'].includes(underlyingTicker);
+        const isIndex = ["SPX", "NDX", "VIX", "RUT"].includes(underlyingTicker);
         if (isIndex) {
           const indexTicker = `I:${underlyingTicker}`;
           const indexData = await this.get<any>(`/v3/snapshot/indices?ticker=${indexTicker}`);
@@ -298,7 +293,7 @@ export class MassiveREST {
           }
         }
       } catch (err) {
-        console.warn('[MassiveREST] Could not fetch price:', err);
+        console.warn("[MassiveREST] Could not fetch price:", err);
       }
     }
 
@@ -385,7 +380,7 @@ export class MassiveREST {
     minStrike?: number,
     maxStrike?: number
   ): Promise<any> {
-    const cacheKey = `contracts:${underlying}:${limit}:${expiration || ''}:${minStrike || ''}:${maxStrike || ''}`;
+    const cacheKey = `contracts:${underlying}:${limit}:${expiration || ""}:${minStrike || ""}:${maxStrike || ""}`;
 
     return this.cache.getOrFetch(
       cacheKey,
@@ -396,21 +391,21 @@ export class MassiveREST {
         };
 
         if (expiration) {
-          params['expiration_date'] = expiration;
+          params["expiration_date"] = expiration;
         } else {
           // Filter for contracts expiring today or later
-          const today = new Date().toISOString().split('T')[0];
-          params['expiration_date.gte'] = today;
+          const today = new Date().toISOString().split("T")[0];
+          params["expiration_date.gte"] = today;
         }
 
         if (minStrike !== undefined) {
-          params['strike_price.gte'] = minStrike;
+          params["strike_price.gte"] = minStrike;
         }
         if (maxStrike !== undefined) {
-          params['strike_price.lte'] = maxStrike;
+          params["strike_price.lte"] = maxStrike;
         }
 
-        return this.get('/v3/reference/options/contracts', params);
+        return this.get("/v3/reference/options/contracts", params);
       },
       CONTRACT_TTL_MS
     );
@@ -420,7 +415,7 @@ export class MassiveREST {
    * Get single index
    */
   async getIndex(ticker: string): Promise<MassiveIndex> {
-    const finalTicker = ticker.startsWith('I:') ? ticker : `I:${ticker}`;
+    const finalTicker = ticker.startsWith("I:") ? ticker : `I:${ticker}`;
     const data = await this.get<any>(`/v3/snapshot/indices?ticker=${finalTicker}`);
     return data.results?.[0] || data;
   }
@@ -429,7 +424,7 @@ export class MassiveREST {
    * Get multiple indices
    */
   async getIndices(tickers: string[]): Promise<MassiveIndex[]> {
-    const finalTickers = tickers.map((t) => (t.startsWith('I:') ? t : `I:${t}`)).join(',');
+    const finalTickers = tickers.map((t) => (t.startsWith("I:") ? t : `I:${t}`)).join(",");
     const data = await this.get<any>(`/v3/snapshot/indices?ticker.any_of=${finalTickers}`);
     return data.results || [];
   }
@@ -440,7 +435,7 @@ export class MassiveREST {
   async getHistoricalData(
     symbol: string,
     multiplier: number = 1,
-    timespan: string = 'day',
+    timespan: string = "day",
     from: string,
     to: string
   ): Promise<any> {
@@ -452,7 +447,7 @@ export class MassiveREST {
    */
   async getAggregates(
     symbol: string,
-    timeframe: '1' | '5' | '15' | '60' | '1D',
+    timeframe: "1" | "5" | "15" | "60" | "1D",
     lookback: number = 200
   ): Promise<MassiveAggregateBar[]> {
     const cacheKey = `aggs:${symbol}:${timeframe}:${lookback}`;
@@ -461,10 +456,10 @@ export class MassiveREST {
       cacheKey,
       async () => {
         const to = new Date();
-        const formatDay = (date: Date) => date.toISOString().split('T')[0];
+        const formatDay = (date: Date) => date.toISOString().split("T")[0];
 
         // Handle daily timeframe
-        if (timeframe === '1D') {
+        if (timeframe === "1D") {
           const from = new Date(to.getTime() - lookback * 24 * 60 * 60 * 1000);
           const endpointV2 = `/v2/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
           const endpointV3 = `/v3/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
@@ -473,9 +468,9 @@ export class MassiveREST {
           try {
             data = await this.get(endpointV2);
           } catch (e: any) {
-            const msg = String(e?.message || '');
+            const msg = String(e?.message || "");
             if (/403|forbidden/i.test(msg) || /Massive API error/.test(msg)) {
-              console.warn('[MassiveREST] v2 daily aggregates forbidden, trying v3');
+              console.warn("[MassiveREST] v2 daily aggregates forbidden, trying v3");
               data = await this.get(endpointV3);
             } else {
               throw e;
@@ -497,27 +492,54 @@ export class MassiveREST {
         }
 
         // Handle intraday timeframes
-        const timeframeSegments = timeframe.split('/');
+        const timeframeSegments = timeframe.split("/");
         const normalizedTimeframe = Number(timeframeSegments[timeframeSegments.length - 1]) || 1;
-        const from = new Date(to.getTime() - normalizedTimeframe * lookback * 60 * 1000);
+
+        // For intraday bars, go back 7 days to catch at least one trading day
+        // This handles weekends and holidays gracefully
+        const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+
         const endpointV2 = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
         const endpointV3 = `/v3/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
 
         let data: any;
         try {
           data = await this.get(endpointV2);
+          console.log(`[MassiveREST] v2 aggs response for ${symbol}:`, {
+            hasResults: !!data?.results,
+            resultsLength: data?.results?.length || 0,
+            dataLength: Array.isArray(data) ? data.length : "not array",
+          });
         } catch (e: any) {
-          const msg = String(e?.message || '');
+          const msg = String(e?.message || "");
           if (/403|forbidden/i.test(msg) || /Massive API error/.test(msg)) {
-            console.warn('[MassiveREST] v2 aggregates forbidden, trying v3');
-            data = await this.get(endpointV3);
+            console.warn("[MassiveREST] v2 aggregates forbidden, trying v3");
+            try {
+              data = await this.get(endpointV3);
+              console.log(`[MassiveREST] v3 aggs response for ${symbol}:`, {
+                hasResults: !!data?.results,
+                resultsLength: data?.results?.length || 0,
+                dataLength: Array.isArray(data) ? data.length : "not array",
+              });
+            } catch (e2: any) {
+              // If both Massive endpoints fail, fallback to Tradier for stocks
+              console.warn("[MassiveREST] v3 aggregates also failed, trying Tradier fallback");
+              return this.getTradierBars(symbol, normalizedTimeframe, from, to, lookback);
+            }
           } else {
             throw e;
           }
         }
 
         const results: any[] = data.results || data;
-        if (!Array.isArray(results)) return [];
+        if (!Array.isArray(results) || results.length === 0) {
+          // Empty results from Massive - try Tradier
+          console.warn(
+            "[MassiveREST] Empty results from Massive, trying Tradier fallback for",
+            symbol
+          );
+          return this.getTradierBars(symbol, normalizedTimeframe, from, to, lookback);
+        }
 
         return results.map((bar) => ({
           t: bar.t,
@@ -538,12 +560,12 @@ export class MassiveREST {
    */
   async getOptionTrades(
     optionsTicker: string,
-    params?: { limit?: number; order?: 'asc' | 'desc'; sort?: string; cursor?: string }
+    params?: { limit?: number; order?: "asc" | "desc"; sort?: string; cursor?: string }
   ): Promise<any[]> {
     const queryParams: Record<string, any> = {
       limit: params?.limit ?? 50,
-      order: params?.order ?? 'asc',
-      sort: params?.sort ?? 'timestamp',
+      order: params?.order ?? "asc",
+      sort: params?.sort ?? "timestamp",
     };
 
     if (params?.cursor) {
@@ -567,9 +589,9 @@ export class MassiveREST {
    */
   private buildUrl(endpoint: string, params?: Record<string, any>): string {
     // Remove leading slash from endpoint if present to avoid path replacement
-    const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+    const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
     // Ensure base URL ends with slash for proper path joining
-    const baseWithSlash = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`;
+    const baseWithSlash = this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`;
     const url = new URL(cleanEndpoint, `${window.location.origin}${baseWithSlash}`);
 
     if (params) {
@@ -595,7 +617,7 @@ export class MassiveREST {
         const token = await this.tokenManager.getToken();
         const headers = {
           ...init.headers,
-          'x-massive-proxy-token': token,
+          "x-massive-proxy-token": token,
         };
 
         const response = await fetch(url, { ...init, headers });
@@ -603,7 +625,7 @@ export class MassiveREST {
         if (!response.ok) {
           if (response.status === 429) {
             // Rate limit - wait and retry
-            const retryAfter = parseInt(response.headers.get('Retry-After') || '5');
+            const retryAfter = parseInt(response.headers.get("Retry-After") || "5");
             console.warn(`[MassiveREST] Rate limited, waiting ${retryAfter}s`);
             await this.sleep(retryAfter * 1000);
             continue;
@@ -611,7 +633,7 @@ export class MassiveREST {
 
           if (response.status === 401) {
             // Token expired - refresh and retry
-            console.warn('[MassiveREST] Token expired, refreshing');
+            console.warn("[MassiveREST] Token expired, refreshing");
             await this.tokenManager.refreshToken();
             continue;
           }
@@ -632,7 +654,7 @@ export class MassiveREST {
 
         // Record monitoring metrics
         try {
-          getMetricsService().recordApiRequest('massive', responseTime, true);
+          getMetricsService().recordApiRequest("massive", responseTime, true);
           getMetricsService().recordResponseTime(responseTime);
         } catch (e) {
           // Ignore monitoring errors
@@ -653,8 +675,8 @@ export class MassiveREST {
         if (attempt >= 2) {
           try {
             const responseTime = Date.now() - startTime;
-            getMetricsService().recordApiRequest('massive', responseTime, false);
-            getMetricsService().recordError('MassiveREST', lastError.message);
+            getMetricsService().recordApiRequest("massive", responseTime, false);
+            getMetricsService().recordError("MassiveREST", lastError.message);
           } catch (e) {
             // Ignore monitoring errors
           }
@@ -663,14 +685,76 @@ export class MassiveREST {
         if (attempt < 2) {
           // Exponential backoff: 1s, 2s
           const backoffMs = Math.pow(2, attempt) * 1000;
-          console.warn(`[MassiveREST] Request failed (attempt ${attempt + 1}/3), retrying in ${backoffMs}ms`);
+          console.warn(
+            `[MassiveREST] Request failed (attempt ${attempt + 1}/3), retrying in ${backoffMs}ms`
+          );
           await this.sleep(backoffMs);
         }
       }
     }
 
-    console.error('[MassiveREST] Request failed after 3 attempts:', lastError);
+    console.error("[MassiveREST] Request failed after 3 attempts:", lastError);
     throw new Error(`Request failed after 3 attempts: ${lastError?.message}`);
+  }
+
+  /**
+   * Tradier bars fallback (for stocks when Massive stock plan not available)
+   */
+  private async getTradierBars(
+    symbol: string,
+    multiplier: number,
+    from: Date,
+    to: Date,
+    limit: number
+  ): Promise<MassiveAggregateBar[]> {
+    try {
+      // Map timeframe to Tradier intervals
+      const intervalMap: Record<number, string> = {
+        1: "1min",
+        5: "5min",
+        15: "15min",
+        60: "1hour",
+      };
+      const interval = intervalMap[multiplier] || "5min";
+
+      // Format dates for Tradier
+      const formatDate = (date: Date) => date.toISOString().split("T")[0];
+
+      console.log(`[MassiveREST] 🔄 Fetching Tradier bars for ${symbol} (${interval})`);
+
+      const params = new URLSearchParams({
+        symbol,
+        interval,
+        start: formatDate(from),
+        end: formatDate(to),
+      });
+
+      const url = `${this.baseUrl}/tradier/stocks/bars?${params}`;
+      const token = await this.tokenManager.getToken();
+      const response = await fetch(url, {
+        headers: {
+          "x-massive-proxy-token": token,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[MassiveREST] Tradier API ${response.status}:`, errorText);
+        throw new Error(
+          `Tradier API error ${response.status}: ${errorText || response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      const results = data.results || [];
+
+      console.log(`[MassiveREST] ✅ Tradier returned ${results.length} bars for ${symbol}`);
+
+      return results.slice(-limit); // Return last N bars
+    } catch (error) {
+      console.error("[MassiveREST] ❌ Tradier fallback failed:", error);
+      return [];
+    }
   }
 
   /**

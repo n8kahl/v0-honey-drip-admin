@@ -6,7 +6,6 @@ import { DesktopLiveCockpitSlim } from "./components/DesktopLiveCockpitSlim";
 import { DesktopHistory } from "./components/DesktopHistory";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { MobileActive } from "./components/MobileActive";
-import { VoiceCommandDemo } from "./components/VoiceCommandDemo";
 import { TraderHeader } from "./components/Header/TraderHeader";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { MobileApp } from "./components/mobile/MobileApp";
@@ -22,7 +21,9 @@ import { useDiscord } from "./hooks/useDiscord";
 import { useCompositeSignals } from "./hooks/useCompositeSignals";
 import { useTradeStore, useMarketStore, useUIStore, useSettingsStore } from "./stores";
 import { useMarketSessionActions, useMarketDataStore } from "./stores/marketDataStore";
+import type { MarketQuote } from "./stores/marketStore";
 import { useKeyboardShortcuts, type KeyboardShortcut } from "./hooks/useKeyboardShortcuts";
+import type { Trade } from "./types";
 import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcutsDialog";
 import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
 import { initWhisper, isWhisperSupported } from "./lib/whisper/client";
@@ -61,7 +62,7 @@ function getActiveTabFromPath(pathname: string): AppTab {
 
 export default function App() {
   const { user, loading } = useAuth();
-  const isTestAuto = (import.meta as any)?.env?.VITE_TEST_AUTO_LOGIN === "true";
+  const isTestAuto = import.meta.env?.VITE_TEST_AUTO_LOGIN === "true";
   const isMobile = useIsMobile();
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [headerVoiceState, setHeaderVoiceState] = useState<{
@@ -83,11 +84,11 @@ export default function App() {
     showDiscordDialog,
     showAddTickerDialog,
     showAddChallengeDialog,
-    voiceState,
-    voiceActive,
+    voiceState: _voiceState,
+    voiceActive: _voiceActive,
     focusedTrade,
     flashTradeTab,
-    toggleVoice,
+    toggleVoice: _toggleVoice,
     setFocusedTrade,
     setFlashTradeTab,
   } = useUIStore();
@@ -102,6 +103,7 @@ export default function App() {
   // Market data store - for WebSocket management
   const initializeMarketData = useMarketDataStore((state) => state.initialize);
   const marketDataCleanup = useMarketDataStore((state) => state.cleanup);
+  const subscribeToMarketData = useMarketDataStore((state) => state.subscribe);
 
   // Discord hook - MUST be called before any early returns
   const discord = useDiscord();
@@ -110,11 +112,21 @@ export default function App() {
   const watchlistSymbols = useMemo(() => getWatchlistSymbols(), [watchlist]);
   const { quotes } = useQuotes(watchlistSymbols);
 
+  // Subscribe watchlist symbols to marketDataStore for confluence metrics
+  useEffect(() => {
+    if (watchlistSymbols.length > 0) {
+      console.log("[v0] 📊 Subscribing watchlist to marketDataStore:", watchlistSymbols);
+      watchlistSymbols.forEach((symbol) => {
+        subscribeToMarketData(symbol);
+      });
+    }
+  }, [watchlistSymbols, subscribeToMarketData]);
+
   // Composite signals - monitors for trade setup signals
   const {
-    signals: compositeSignals,
+    signals: _compositeSignals,
     activeSignals,
-    loading: signalsLoading,
+    loading: _signalsLoading,
   } = useCompositeSignals({
     userId: user?.id || "00000000-0000-0000-0000-000000000001",
     autoSubscribe: !!user, // Only subscribe when authenticated
@@ -187,7 +199,7 @@ export default function App() {
   // Update quotes in market store when new data arrives
   useEffect(() => {
     if (quotes.size > 0) {
-      updateQuotes(quotes as any);
+      updateQuotes(quotes as Map<string, MarketQuote>);
     }
   }, [quotes, updateQuotes]);
 
@@ -342,15 +354,15 @@ export default function App() {
   };
 
   // Helper function to focus a trade in the live view
-  const focusTradeInLive = (trade: any) => {
+  const focusTradeInLive = (trade: Trade) => {
     navigate("/");
     setFocusedTrade(trade);
     // Clear focus after component has processed the state change
     setTimeout(() => setFocusedTrade(null), 300);
   };
 
-  const handleExitedTrade = (trade: any) => {
-    console.log("Trade exited:", trade);
+  const handleExitedTrade = (_trade: Trade) => {
+    // Trade exited - navigate back to main page
     // Navigate back to main page so user can select another ticker
     setTimeout(() => navigate("/"), 100);
   };
@@ -475,13 +487,11 @@ export default function App() {
 
       <div className="md:hidden">
         <MobileBottomNav
-          activeTab={activeTab as any}
+          activeTab={activeTab === "live" || activeTab === "history" ? activeTab : "live"}
           onTabChange={(tab) => {
             // Navigate using React Router
             if (tab === "live") navigate("/");
-            else if (tab === "active") navigateToActive();
             else if (tab === "history") navigate("/history");
-            else if (tab === "settings") navigate("/settings");
           }}
           hasActiveTrades={activeTrades.filter((t) => t.state === "ENTERED").length > 0}
           flashTradeTab={flashTradeTab}

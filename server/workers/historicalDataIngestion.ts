@@ -26,7 +26,7 @@ import { calculateMarketRegime, MarketRegimeResult } from "./ingestion/marketReg
 // Configuration
 // ============================================================================
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL!;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL!;
 // Allow using anon key if service role key is not available (for development)
 // In production, you should use SUPABASE_SERVICE_ROLE_KEY for workers
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY!;
@@ -96,6 +96,10 @@ class HistoricalDataIngestionWorker {
   private equitySymbols: string[] = [];
 
   constructor() {
+    console.log("[HistoricalDataIngestion] Environment check:");
+    console.log("  VITE_SUPABASE_URL:", SUPABASE_URL ? "✅" : "❌");
+    console.log("  SUPABASE_KEY:", SUPABASE_KEY ? "✅" : "❌");
+
     if (!SUPABASE_URL || !SUPABASE_KEY) {
       throw new Error(
         "Missing required environment variables: SUPABASE_URL and (SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_ANON_KEY)"

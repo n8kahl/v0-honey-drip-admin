@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
-import { Trade, TradeState } from '../types';
-import { HDTagTradeType } from './hd/common/HDTagTradeType';
-import { formatPercent, formatPrice, cn } from '../lib/utils';
-import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, X } from 'lucide-react';
-import { useSymbolData } from '../stores/marketDataStore';
-import { useUIStore } from '../stores/uiStore';
+import { useState, useEffect } from "react";
+import { Trade, TradeState } from "../types";
+import { HDTagTradeType } from "./hd/common/HDTagTradeType";
+import { formatPercent, formatPrice, cn } from "../lib/utils";
+import { ChevronUp, TrendingUp, TrendingDown, X } from "lucide-react";
 import {
   MassiveTrendMetrics,
   MassiveVolatilityMetrics,
   MassiveLiquidityMetrics,
-} from '../services/massive';
+} from "../services/massiveClient";
 
 interface MobileNowPlayingSheetProps {
   trade: Trade | null;
@@ -25,7 +23,7 @@ interface MobileNowPlayingSheetProps {
   };
   onEnter?: () => void;
   onDiscard?: () => void;
-  onAction?: (type: 'trim' | 'update-sl' | 'update' | 'add' | 'exit') => void;
+  onAction?: (type: "trim" | "update-sl" | "update" | "add" | "exit") => void;
 }
 
 export function MobileNowPlayingSheet({
@@ -36,15 +34,15 @@ export function MobileNowPlayingSheet({
   confluence,
   onEnter,
   onDiscard,
-  onAction
+  onAction,
 }: MobileNowPlayingSheetProps) {
   // Only emit noisy logs in development
-  const __DEV__ = typeof window !== 'undefined' && (import.meta as any)?.env?.DEV;
+  const __DEV__ = typeof window !== "undefined" && (import.meta as any)?.env?.DEV;
 
-  const [expanded, setExpanded] = useState(state === 'LOADED' || state === 'ENTERED');
+  const [expanded, setExpanded] = useState(state === "LOADED" || state === "ENTERED");
 
   if (__DEV__) {
-    console.debug('MobileNowPlayingSheet init', {
+    console.debug("MobileNowPlayingSheet init", {
       state,
       expanded,
       hasTrade: !!trade,
@@ -58,29 +56,34 @@ export function MobileNowPlayingSheet({
   // Auto-expand when trade or state changes (e.g., clicking a loaded trade from the list)
   // This ensures clicking a trade always opens the modal, even if it's the same trade
   useEffect(() => {
-    if (trade && (state === 'LOADED' || state === 'ENTERED')) {
+    if (trade && (state === "LOADED" || state === "ENTERED")) {
       setExpanded(true);
     }
   }, [trade, state]);
 
   // Don't show if no trade and no ticker
   if (!trade && !ticker) {
-    if (__DEV__) console.debug('MobileNowPlayingSheet: no trade and no ticker - skipping render');
+    if (__DEV__) console.debug("MobileNowPlayingSheet: no trade and no ticker - skipping render");
     return null;
   }
-  
+
   // Hide when alert composer is showing
   if (hideWhenAlert) {
-    if (__DEV__) console.debug('MobileNowPlayingSheet: hideWhenAlert is true - skipping render');
+    if (__DEV__) console.debug("MobileNowPlayingSheet: hideWhenAlert is true - skipping render");
     return null;
   }
-  
-  if (__DEV__) console.debug('MobileNowPlayingSheet will render UI');
+
+  if (__DEV__) console.debug("MobileNowPlayingSheet will render UI");
 
   const isPositive = (trade?.movePercent || 0) >= 0;
-  const borderColor = state === 'ENTERED' 
-    ? isPositive ? 'border-[var(--accent-positive)]' : 'border-[var(--accent-negative)]'
-    : state === 'LOADED' ? 'border-blue-500/30' : 'border-[var(--border-hairline)]';
+  const borderColor =
+    state === "ENTERED"
+      ? isPositive
+        ? "border-[var(--accent-positive)]"
+        : "border-[var(--accent-negative)]"
+      : state === "LOADED"
+        ? "border-blue-500/30"
+        : "border-[var(--border-hairline)]";
 
   // COLLAPSED VIEW
   if (!expanded) {
@@ -88,27 +91,24 @@ export function MobileNowPlayingSheet({
       <button
         onClick={() => setExpanded(true)}
         className={cn(
-          'fixed bottom-16 left-0 right-0 bg-[var(--surface-1)] border-t p-4 flex items-center justify-between z-10 pointer-events-auto',
+          "fixed bottom-16 left-0 right-0 bg-[var(--surface-1)] border-t p-4 flex items-center justify-between z-10 pointer-events-auto",
           borderColor
         )}
       >
         <div className="flex-1 min-w-0">
-          {state === 'WATCHING' && ticker ? (
+          {state === "WATCHING" && ticker ? (
             <>
-              <div className="text-[var(--text-high)] font-medium mb-1">
-                Watching {ticker}
-              </div>
-              <div className="text-[var(--text-muted)] text-xs">
-                Tap to select a contract
-              </div>
+              <div className="text-[var(--text-high)] font-medium mb-1">Watching {ticker}</div>
+              <div className="text-[var(--text-muted)] text-xs">Tap to select a contract</div>
             </>
           ) : trade ? (
             <>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[var(--text-high)] font-medium truncate">
-                  {trade.ticker} {trade.contract.strike}{trade.contract.type}
+                  {trade.ticker} {trade.contract.strike}
+                  {trade.contract.type}
                 </span>
-                {state === 'LOADED' && (
+                {state === "LOADED" && (
                   <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wide bg-blue-500/20 text-blue-400 flex-shrink-0">
                     Loaded
                   </span>
@@ -116,20 +116,24 @@ export function MobileNowPlayingSheet({
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <HDTagTradeType type={trade.tradeType} />
-                {state === 'LOADED' && (
+                {state === "LOADED" && (
                   <span className="text-[var(--text-muted)]">Not entered yet</span>
                 )}
-                {state === 'ENTERED' && trade.movePercent !== undefined && (
+                {state === "ENTERED" && trade.movePercent !== undefined && (
                   <div className="flex items-center gap-1">
                     {isPositive ? (
                       <TrendingUp className="w-3.5 h-3.5 text-[var(--accent-positive)]" />
                     ) : (
                       <TrendingDown className="w-3.5 h-3.5 text-[var(--accent-negative)]" />
                     )}
-                    <span className={cn(
-                      'font-medium tabular-nums',
-                      isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
-                    )}>
+                    <span
+                      className={cn(
+                        "font-medium tabular-nums",
+                        isPositive
+                          ? "text-[var(--accent-positive)]"
+                          : "text-[var(--accent-negative)]"
+                      )}
+                    >
                       {formatPercent(trade.movePercent)}
                     </span>
                   </div>
@@ -145,17 +149,19 @@ export function MobileNowPlayingSheet({
 
   // EXPANDED VIEW
   return (
-    <div className={cn(
-      'fixed bottom-16 left-0 right-0 bg-[var(--surface-1)] border-t max-h-[75vh] flex flex-col z-10 pointer-events-auto',
-      state === 'ENTERED' && isPositive && 'border-t-2 border-[var(--accent-positive)]',
-      state === 'ENTERED' && !isPositive && 'border-t-2 border-[var(--accent-negative)]',
-      state === 'LOADED' && 'border-t border-[var(--border-hairline)]',
-      state === 'WATCHING' && 'border-t border-[var(--border-hairline)]'
-    )}>
+    <div
+      className={cn(
+        "fixed bottom-16 left-0 right-0 bg-[var(--surface-1)] border-t max-h-[75vh] flex flex-col z-10 pointer-events-auto",
+        state === "ENTERED" && isPositive && "border-t-2 border-[var(--accent-positive)]",
+        state === "ENTERED" && !isPositive && "border-t-2 border-[var(--accent-negative)]",
+        state === "LOADED" && "border-t border-[var(--border-hairline)]",
+        state === "WATCHING" && "border-t border-[var(--border-hairline)]"
+      )}
+    >
       {/* Drag Handle & Close Button */}
       <div className="relative flex items-center justify-center py-2">
-        <div 
-          className="w-10 h-1 rounded-full bg-[var(--border-hairline)] cursor-pointer" 
+        <div
+          className="w-10 h-1 rounded-full bg-[var(--border-hairline)] cursor-pointer"
           onClick={() => setExpanded(false)}
         />
         <button
@@ -168,7 +174,7 @@ export function MobileNowPlayingSheet({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {state === 'WATCHING' && ticker ? (
+        {state === "WATCHING" && ticker ? (
           // WATCHING STATE
           <div>
             <div className="mb-4">
@@ -183,13 +189,14 @@ export function MobileNowPlayingSheet({
               Browse contracts to load a trade idea
             </p>
           </div>
-        ) : state === 'LOADED' && trade ? (
+        ) : state === "LOADED" && trade ? (
           // LOADED STATE
           <div>
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-[var(--text-high)] text-lg font-medium">
-                  {trade.ticker} {trade.contract.daysToExpiry}DTE {trade.contract.strike}{trade.contract.type}
+                  {trade.ticker} {trade.contract.daysToExpiry}DTE {trade.contract.strike}
+                  {trade.contract.type}
                 </h3>
                 <span className="px-2 py-0.5 rounded text-[9px] uppercase tracking-wide bg-blue-500/20 text-blue-400">
                   📋 Loaded
@@ -198,7 +205,8 @@ export function MobileNowPlayingSheet({
               <div className="flex items-center gap-2 flex-wrap">
                 <HDTagTradeType type={trade.tradeType} />
                 <span className="text-xs text-[var(--text-muted)]">
-                  Loaded at {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  Loaded at{" "}
+                  {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
                 </span>
               </div>
             </div>
@@ -207,13 +215,16 @@ export function MobileNowPlayingSheet({
               <div className="p-3 bg-[var(--surface-2)] rounded-lg">
                 <div className="text-xs text-[var(--text-muted)] mb-1">Contract</div>
                 <div className="text-[var(--text-high)]">
-                  ${trade.contract.strike} {trade.contract.type === 'C' ? 'Call' : 'Put'} • {trade.contract.daysToExpiry}DTE ({trade.contract.expiry})
+                  ${trade.contract.strike} {trade.contract.type === "C" ? "Call" : "Put"} •{" "}
+                  {trade.contract.daysToExpiry}DTE ({trade.contract.expiry})
                 </div>
               </div>
 
               <div className="p-3 bg-[var(--surface-2)] rounded-lg">
                 <div className="text-xs text-[var(--text-muted)] mb-1">Current Mid</div>
-                <div className="text-[var(--text-high)] font-medium">${formatPrice(trade.contract.mid)}</div>
+                <div className="text-[var(--text-high)] font-medium">
+                  ${formatPrice(trade.contract.mid)}
+                </div>
               </div>
 
               <div className="p-3 bg-[var(--surface-2)] rounded-lg">
@@ -232,7 +243,7 @@ export function MobileNowPlayingSheet({
               >
                 Enter Now
               </button>
-              <button 
+              <button
                 onClick={onDiscard}
                 className="w-full py-3 bg-transparent border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--text-high)] rounded-lg transition-colors text-center flex items-center justify-center"
               >
@@ -240,7 +251,7 @@ export function MobileNowPlayingSheet({
               </button>
             </div>
           </div>
-        ) : state === 'ENTERED' && trade ? (
+        ) : state === "ENTERED" && trade ? (
           // ENTERED STATE
           <div>
             {/* Header with P&L */}
@@ -248,7 +259,8 @@ export function MobileNowPlayingSheet({
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <h3 className="text-[var(--text-high)] text-lg font-medium mb-1">
-                    {trade.ticker} {trade.contract.daysToExpiry}DTE {trade.contract.strike}{trade.contract.type}
+                    {trade.ticker} {trade.contract.daysToExpiry}DTE {trade.contract.strike}
+                    {trade.contract.type}
                   </h3>
                   <div className="flex items-center gap-2">
                     <HDTagTradeType type={trade.tradeType} />
@@ -259,16 +271,24 @@ export function MobileNowPlayingSheet({
                 </div>
                 {trade.movePercent !== undefined && (
                   <div className="text-right">
-                    <div className={cn(
-                      'text-xl font-medium flex items-center gap-1',
-                      isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
-                    )}>
-                      {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    <div
+                      className={cn(
+                        "text-xl font-medium flex items-center gap-1",
+                        isPositive
+                          ? "text-[var(--accent-positive)]"
+                          : "text-[var(--accent-negative)]"
+                      )}
+                    >
+                      {isPositive ? (
+                        <TrendingUp className="w-4 h-4" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4" />
+                      )}
                       {formatPercent(trade.movePercent)}
                     </div>
                     {trade.movePrice !== undefined && (
                       <div className="text-xs text-[var(--text-muted)]">
-                        {isPositive ? '+' : ''}${formatPrice(trade.movePrice)}
+                        {isPositive ? "+" : ""}${formatPrice(trade.movePrice)}
                       </div>
                     )}
                   </div>
@@ -285,39 +305,63 @@ export function MobileNowPlayingSheet({
                 <div className="grid grid-cols-3 gap-2">
                   {confluence.trend && (
                     <div className="text-center">
-                      <div className={cn(
-                        'text-xs font-medium mb-0.5',
-                        confluence.trend.signal === 'bullish' ? 'text-[var(--accent-positive)]' : 
-                        confluence.trend.signal === 'bearish' ? 'text-[var(--accent-negative)]' : 
-                        'text-[var(--text-muted)]'
-                      )}>
-                        {confluence.trend.signal === 'bullish' ? '↑' : confluence.trend.signal === 'bearish' ? '↓' : '→'}
+                      <div
+                        className={cn(
+                          "text-xs font-medium mb-0.5",
+                          confluence.trend.trendScore > 60
+                            ? "text-[var(--accent-positive)]"
+                            : confluence.trend.trendScore < 40
+                              ? "text-[var(--accent-negative)]"
+                              : "text-[var(--text-muted)]"
+                        )}
+                      >
+                        {confluence.trend.trendScore > 60
+                          ? "↑"
+                          : confluence.trend.trendScore < 40
+                            ? "↓"
+                            : "→"}
                       </div>
                       <div className="text-[9px] text-[var(--text-muted)]">Trend</div>
                     </div>
                   )}
                   {confluence.volatility && (
                     <div className="text-center">
-                      <div className={cn(
-                        'text-xs font-medium mb-0.5',
-                        confluence.volatility.level === 'high' ? 'text-[var(--accent-negative)]' :
-                        confluence.volatility.level === 'medium' ? 'text-[var(--brand-primary)]' :
-                        'text-[var(--accent-positive)]'
-                      )}>
-                        {confluence.volatility.level === 'high' ? 'H' : confluence.volatility.level === 'medium' ? 'M' : 'L'}
+                      <div
+                        className={cn(
+                          "text-xs font-medium mb-0.5",
+                          confluence.volatility.ivPercentile > 70
+                            ? "text-[var(--accent-negative)]"
+                            : confluence.volatility.ivPercentile > 30
+                              ? "text-[var(--brand-primary)]"
+                              : "text-[var(--accent-positive)]"
+                        )}
+                      >
+                        {confluence.volatility.ivPercentile > 70
+                          ? "H"
+                          : confluence.volatility.ivPercentile > 30
+                            ? "M"
+                            : "L"}
                       </div>
                       <div className="text-[9px] text-[var(--text-muted)]">Vol</div>
                     </div>
                   )}
                   {confluence.liquidity && (
                     <div className="text-center">
-                      <div className={cn(
-                        'text-xs font-medium mb-0.5',
-                        confluence.liquidity.level === 'high' ? 'text-[var(--accent-positive)]' :
-                        confluence.liquidity.level === 'medium' ? 'text-[var(--brand-primary)]' :
-                        'text-[var(--accent-negative)]'
-                      )}>
-                        {confluence.liquidity.level === 'high' ? 'H' : confluence.liquidity.level === 'medium' ? 'M' : 'L'}
+                      <div
+                        className={cn(
+                          "text-xs font-medium mb-0.5",
+                          confluence.liquidity.liquidityScore > 70
+                            ? "text-[var(--accent-positive)]"
+                            : confluence.liquidity.liquidityScore > 40
+                              ? "text-[var(--brand-primary)]"
+                              : "text-[var(--accent-negative)]"
+                        )}
+                      >
+                        {confluence.liquidity.liquidityScore > 70
+                          ? "H"
+                          : confluence.liquidity.liquidityScore > 40
+                            ? "M"
+                            : "L"}
                       </div>
                       <div className="text-[9px] text-[var(--text-muted)]">Liq</div>
                     </div>
@@ -329,28 +373,48 @@ export function MobileNowPlayingSheet({
             {/* Key Metrics Grid */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               <div className="p-3 bg-[var(--surface-2)] rounded-lg">
-                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">Entry</div>
-                <div className="text-[var(--text-high)] font-medium">${formatPrice(trade.entryPrice || 0)}</div>
+                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">
+                  Entry
+                </div>
+                <div className="text-[var(--text-high)] font-medium">
+                  ${formatPrice(trade.entryPrice || 0)}
+                </div>
               </div>
               <div className="p-3 bg-[var(--surface-2)] rounded-lg">
-                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">Current</div>
-                <div className="text-[var(--text-high)] font-medium">${formatPrice(trade.currentPrice || 0)}</div>
+                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">
+                  Current
+                </div>
+                <div className="text-[var(--text-high)] font-medium">
+                  ${formatPrice(trade.currentPrice || 0)}
+                </div>
               </div>
               {trade.targetPrice && (
                 <div className="p-3 bg-[var(--surface-2)] rounded-lg">
-                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">Target</div>
-                  <div className="text-[var(--accent-positive)] font-medium">${formatPrice(trade.targetPrice)}</div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">
+                    Target
+                  </div>
+                  <div className="text-[var(--accent-positive)] font-medium">
+                    ${formatPrice(trade.targetPrice)}
+                  </div>
                   {trade.entryPrice && (
                     <div className="text-[9px] text-[var(--text-muted)]">
-                      +{(((trade.targetPrice - trade.entryPrice) / trade.entryPrice) * 100).toFixed(1)}%
+                      +
+                      {(((trade.targetPrice - trade.entryPrice) / trade.entryPrice) * 100).toFixed(
+                        1
+                      )}
+                      %
                     </div>
                   )}
                 </div>
               )}
               {trade.stopLoss && (
                 <div className="p-3 bg-[var(--surface-2)] rounded-lg">
-                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">Stop</div>
-                  <div className="text-[var(--accent-negative)] font-medium">${formatPrice(trade.stopLoss)}</div>
+                  <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">
+                    Stop
+                  </div>
+                  <div className="text-[var(--accent-negative)] font-medium">
+                    ${formatPrice(trade.stopLoss)}
+                  </div>
                   {trade.entryPrice && (
                     <div className="text-[9px] text-[var(--text-muted)]">
                       {(((trade.stopLoss - trade.entryPrice) / trade.entryPrice) * 100).toFixed(1)}%
@@ -365,15 +429,25 @@ export function MobileNowPlayingSheet({
               <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-2">
                 Position Management
               </div>
-              
+
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onMouseDown={() => { if (__DEV__) console.debug('TRIM mouseDown'); }}
-                  onTouchStart={() => { if (__DEV__) console.debug('TRIM touchStart'); }}
+                  onMouseDown={() => {
+                    if (__DEV__) console.debug("TRIM mouseDown");
+                  }}
+                  onTouchStart={() => {
+                    if (__DEV__) console.debug("TRIM touchStart");
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug('TRIM clicked, onAction exists?', !!onAction, 'type:', typeof onAction);
-                    onAction?.('trim');
+                    if (__DEV__)
+                      console.debug(
+                        "TRIM clicked, onAction exists?",
+                        !!onAction,
+                        "type:",
+                        typeof onAction
+                      );
+                    onAction?.("trim");
                     if (__DEV__) console.debug('onAction("trim") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
@@ -381,14 +455,18 @@ export function MobileNowPlayingSheet({
                   <div className="text-lg mb-1">📊</div>
                   <div className="text-xs text-[var(--text-high)]">Trim</div>
                 </button>
-                
+
                 <button
-                  onMouseDown={() => { if (__DEV__) console.debug('UPDATE SL mouseDown'); }}
-                  onTouchStart={() => { if (__DEV__) console.debug('UPDATE SL touchStart'); }}
+                  onMouseDown={() => {
+                    if (__DEV__) console.debug("UPDATE SL mouseDown");
+                  }}
+                  onTouchStart={() => {
+                    if (__DEV__) console.debug("UPDATE SL touchStart");
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug('UPDATE SL clicked, onAction exists?', !!onAction);
-                    onAction?.('update-sl');
+                    if (__DEV__) console.debug("UPDATE SL clicked, onAction exists?", !!onAction);
+                    onAction?.("update-sl");
                     if (__DEV__) console.debug('onAction("update-sl") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
@@ -398,12 +476,16 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => { if (__DEV__) console.debug('UPDATE mouseDown'); }}
-                  onTouchStart={() => { if (__DEV__) console.debug('UPDATE touchStart'); }}
+                  onMouseDown={() => {
+                    if (__DEV__) console.debug("UPDATE mouseDown");
+                  }}
+                  onTouchStart={() => {
+                    if (__DEV__) console.debug("UPDATE touchStart");
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug('UPDATE clicked, onAction exists?', !!onAction);
-                    onAction?.('update');
+                    if (__DEV__) console.debug("UPDATE clicked, onAction exists?", !!onAction);
+                    onAction?.("update");
                     if (__DEV__) console.debug('onAction("update") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
@@ -413,12 +495,16 @@ export function MobileNowPlayingSheet({
                 </button>
 
                 <button
-                  onMouseDown={() => { if (__DEV__) console.debug('ADD mouseDown'); }}
-                  onTouchStart={() => { if (__DEV__) console.debug('ADD touchStart'); }}
+                  onMouseDown={() => {
+                    if (__DEV__) console.debug("ADD mouseDown");
+                  }}
+                  onTouchStart={() => {
+                    if (__DEV__) console.debug("ADD touchStart");
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (__DEV__) console.debug('ADD clicked, onAction exists?', !!onAction);
-                    onAction?.('add');
+                    if (__DEV__) console.debug("ADD clicked, onAction exists?", !!onAction);
+                    onAction?.("add");
                     if (__DEV__) console.debug('onAction("add") called');
                   }}
                   className="p-3 bg-[var(--surface-2)] hover:bg-[var(--surface-2)]/80 border-2 border-[var(--brand-primary)] rounded-lg transition-colors flex flex-col items-center justify-center"
@@ -429,12 +515,16 @@ export function MobileNowPlayingSheet({
               </div>
 
               <button
-                onMouseDown={() => { if (__DEV__) console.debug('EXIT mouseDown'); }}
-                onTouchStart={() => { if (__DEV__) console.debug('EXIT touchStart'); }}
+                onMouseDown={() => {
+                  if (__DEV__) console.debug("EXIT mouseDown");
+                }}
+                onTouchStart={() => {
+                  if (__DEV__) console.debug("EXIT touchStart");
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (__DEV__) console.debug('EXIT clicked, onAction exists?', !!onAction);
-                  onAction?.('exit');
+                  if (__DEV__) console.debug("EXIT clicked, onAction exists?", !!onAction);
+                  onAction?.("exit");
                   if (__DEV__) console.debug('onAction("exit") called');
                 }}
                 className="w-full p-3 bg-[var(--accent-negative)]/10 hover:bg-[var(--accent-negative)]/20 border border-[var(--accent-negative)]/30 rounded-lg transition-colors text-[var(--accent-negative)] font-medium text-center"

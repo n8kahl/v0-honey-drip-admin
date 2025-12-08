@@ -17,9 +17,12 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
-import { produce } from "immer";
+import { produce, enableMapSet } from "immer";
 import { Bar } from "../types/shared";
 import { massive } from "../lib/massive";
+
+// Enable Immer's MapSet plugin for Set/Map support
+enableMapSet();
 import {
   calculateEMA,
   calculateVWAP,
@@ -832,10 +835,74 @@ export const useMarketDataStore = create<MarketDataStore>()(
               draft.symbols[normalized] = createEmptySymbolData(normalized);
             }
 
+            // Mark as subscribed
+            draft.symbols[normalized].isSubscribed = true;
+
             // Add to subscribed set (Immer supports Set mutations)
             draft.subscribedSymbols.add(normalized);
           })
         );
+
+        // Fetch initial bars immediately for this symbol (async, don't block)
+        (async () => {
+          try {
+            console.log(`[v0] 🔄 Fetching initial bars for ${normalized}...`);
+
+            // Fetch last 100 1m bars (~2 hours of data)
+            const bars1m = await massive.getAggregates(normalized, "1", 100);
+
+            console.log(
+              `[v0] 📊 Received ${bars1m?.length || 0} bars for ${normalized}`,
+              bars1m?.slice(0, 2)
+            );
+
+            if (bars1m && bars1m.length > 0) {
+              const candles1m: Candle[] = bars1m.map((bar) => ({
+                time: bar.t,
+                timestamp: bar.t,
+                open: bar.o,
+                high: bar.h,
+                low: bar.l,
+                close: bar.c,
+                volume: bar.v,
+                vwap: bar.vw,
+              }));
+
+              get().updateCandles(normalized, "1m", candles1m);
+              console.log(`[v0] ✅ Loaded ${candles1m.length} 1m bars for ${normalized}`);
+            } else {
+              console.warn(`[v0] ⚠️ No bars returned for ${normalized} - market may be closed`);
+
+              // Try fetching last 5 days of 1D bars as fallback
+              console.log(`[v0] 🔄 Trying daily bars fallback for ${normalized}...`);
+              const barsDaily = await massive.getAggregates(normalized, "1D", 5);
+              console.log(
+                `[v0] 📊 Received ${barsDaily?.length || 0} daily bars`,
+                barsDaily?.slice(0, 2)
+              );
+
+              if (barsDaily && barsDaily.length > 0) {
+                const candlesDaily: Candle[] = barsDaily.map((bar) => ({
+                  time: bar.t,
+                  timestamp: bar.t,
+                  open: bar.o,
+                  high: bar.h,
+                  low: bar.l,
+                  close: bar.c,
+                  volume: bar.v,
+                  vwap: bar.vw,
+                }));
+
+                get().updateCandles(normalized, "1D", candlesDaily);
+                console.log(
+                  `[v0] ✅ Loaded ${candlesDaily.length} daily bars for ${normalized} (market closed fallback)`
+                );
+              }
+            }
+          } catch (error) {
+            console.warn(`[v0] ⚠️ Failed to fetch initial bars for ${normalized}:`, error);
+          }
+        })();
 
         // Debounced watchlist update (batches rapid subscriptions)
         get().flushWatchlistUpdate();

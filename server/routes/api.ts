@@ -404,6 +404,7 @@ router.get("/massive/options/bars", requireProxyToken, async (req, res) => {
 });
 
 // Tradier stock bars endpoint - fallback for stocks when user doesn't have Massive stocks plan
+// Uses Tradier /markets/timesales for intraday (1min, 5min, 15min) and /markets/history for daily
 router.get("/massive/tradier/stocks/bars", requireProxyToken, async (req, res) => {
   const {
     symbol,
@@ -425,17 +426,21 @@ router.get("/massive/tradier/stocks/bars", requireProxyToken, async (req, res) =
     console.log(
       `[Tradier] Fetching ${symbol} bars: interval=${interval}, start=${start}, end=${end}`
     );
+
+    // Use vendor tradierGetHistory which supports both intraday and daily
     const bars = await tradierGetHistory(symbol, interval, start, end);
     console.log(`[Tradier] ✅ Received ${bars.length} bars for ${symbol}`);
+
     // Return in Massive-compatible format
     res.json({
       results: bars.map((bar) => ({
-        t: bar.time * 1000,
+        t: bar.time * 1000, // Convert seconds to milliseconds
         o: bar.open,
         h: bar.high,
         l: bar.low,
         c: bar.close,
         v: bar.volume,
+        vw: (bar.open + bar.high + bar.low + bar.close) / 4, // Approximate VWAP
       })),
     });
   } catch (error: any) {
