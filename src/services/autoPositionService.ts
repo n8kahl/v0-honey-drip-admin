@@ -10,16 +10,16 @@
  * ALL actions require one-click approval before execution.
  */
 
-import { Trade } from '../types';
-import { ConfluenceScore } from '../stores/marketDataStore';
-import { useAlertEscalationStore } from '../stores/alertEscalationStore';
-import { useTradeStore } from '../stores/tradeStore';
+import { Trade } from "../types";
+import { ConfluenceScore } from "../stores/marketDataStore";
+import { useAlertEscalationStore } from "../stores/alertEscalationStore";
+import { useTradeStore } from "../stores/tradeStore";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type AutoActionType = 'TRIM' | 'EXIT' | 'MOVE_SL' | 'TRAIL_STOP';
+export type AutoActionType = "TRIM" | "EXIT" | "MOVE_SL" | "TRAIL_STOP";
 
 export interface AutoRule {
   id: string;
@@ -56,7 +56,7 @@ export interface AutoAction {
   tradeId: string;
   ticker: string;
   type: AutoActionType;
-  status: 'PENDING' | 'APPROVED' | 'EXECUTED' | 'REJECTED';
+  status: "PENDING" | "APPROVED" | "EXECUTED" | "REJECTED";
 
   // Action details
   description: string;
@@ -90,7 +90,7 @@ class AutoPositionManager {
   /**
    * Add an auto-management rule for a trade
    */
-  addRule(rule: Omit<AutoRule, 'id' | 'createdAt' | 'lastChecked' | 'triggeredCount'>): string {
+  addRule(rule: Omit<AutoRule, "id" | "createdAt" | "lastChecked" | "triggeredCount">): string {
     const newRule: AutoRule = {
       ...rule,
       id: `rule-${crypto.randomUUID()}`,
@@ -103,7 +103,7 @@ class AutoPositionManager {
     tradeRules.push(newRule);
     this.store.rules.set(rule.tradeId, tradeRules);
 
-    console.log('[AutoPosition] Rule added:', newRule.type, 'for trade', rule.tradeId);
+    console.log("[AutoPosition] Rule added:", newRule.type, "for trade", rule.tradeId);
     return newRule.id;
   }
 
@@ -118,7 +118,7 @@ class AutoPositionManager {
         if (rules.length === 0) {
           this.store.rules.delete(tradeId);
         }
-        console.log('[AutoPosition] Rule removed:', ruleId);
+        console.log("[AutoPosition] Rule removed:", ruleId);
         return true;
       }
     }
@@ -133,7 +133,7 @@ class AutoPositionManager {
       const rule = rules.find((r) => r.id === ruleId);
       if (rule) {
         rule.isActive = isActive;
-        console.log('[AutoPosition] Rule', isActive ? 'activated' : 'deactivated');
+        console.log("[AutoPosition] Rule", isActive ? "activated" : "deactivated");
         return true;
       }
     }
@@ -178,7 +178,10 @@ class AutoPositionManager {
         triggered = true;
       }
 
-      if (condition.confluenceBelow !== undefined && confluence.overall < condition.confluenceBelow) {
+      if (
+        condition.confluenceBelow !== undefined &&
+        confluence.overall < condition.confluenceBelow
+      ) {
         triggered = true;
       }
 
@@ -216,30 +219,30 @@ class AutoPositionManager {
   ) {
     // Check if there's already a pending action for this rule
     const existing = this.store.pendingActions.find(
-      (a) => a.ruleId === rule.id && a.status === 'PENDING'
+      (a) => a.ruleId === rule.id && a.status === "PENDING"
     );
 
     if (existing) {
-      console.log('[AutoPosition] Pending action already exists for rule', rule.id);
+      console.log("[AutoPosition] Pending action already exists for rule", rule.id);
       return;
     }
 
-    let description = '';
+    let description = "";
     let trimPercent: number | undefined;
     let newStopLoss: number | undefined;
 
     switch (rule.type) {
-      case 'TRIM':
+      case "TRIM":
         trimPercent = rule.action.trimPercent || 25;
         description = `Auto-trim ${trimPercent}% at ${pnlPercent.toFixed(1)}% profit (confluence ${confluence.overall})`;
         break;
 
-      case 'EXIT':
+      case "EXIT":
         description = `Auto-exit position at ${pnlPercent.toFixed(1)}% (confluence ${confluence.overall})`;
         break;
 
-      case 'MOVE_SL':
-      case 'TRAIL_STOP':
+      case "MOVE_SL":
+      case "TRAIL_STOP":
         if (rule.action.moveStopToBreakeven) {
           newStopLoss = trade.entryPrice;
           description = `Auto-trail stop to breakeven at $${trade.entryPrice?.toFixed(2)}`;
@@ -258,7 +261,7 @@ class AutoPositionManager {
       tradeId: trade.id,
       ticker: trade.ticker,
       type: rule.type,
-      status: 'PENDING',
+      status: "PENDING",
       description,
       trimPercent,
       newStopLoss,
@@ -268,22 +271,27 @@ class AutoPositionManager {
 
     this.store.pendingActions.push(action);
 
-    console.log('[AutoPosition] Pending action created:', action.description);
+    console.log("[AutoPosition] Pending action created:", action.description);
 
     // Trigger alert for approval
     const alertStore = useAlertEscalationStore.getState();
     alertStore.addAlert({
       tradeId: trade.id,
       ticker: trade.ticker,
-      severity: 'WARNING',
-      category: 'position-management',
-      title: 'Auto-Action Pending Approval',
+      severity: "WARNING",
+      category: "position-management",
+      title: "Auto-Action Pending Approval",
       message: action.description,
       isActionable: true,
-      actionLabel: 'Approve',
-      actionType: 'custom',
+      actionLabel: "Approve",
+      actionType: "custom",
       actionPayload: { actionId: action.id },
-      metadata: { action },
+      metadata: {
+        autoActionId: action.id,
+        autoActionType: action.type,
+        trimPercent: action.trimPercent,
+        newStopLoss: action.newStopLoss,
+      },
     });
   }
 
@@ -292,16 +300,16 @@ class AutoPositionManager {
    */
   approveAction(actionId: string, userId?: string): boolean {
     const action = this.store.pendingActions.find((a) => a.id === actionId);
-    if (!action || action.status !== 'PENDING') {
-      console.error('[AutoPosition] Action not found or not pending:', actionId);
+    if (!action || action.status !== "PENDING") {
+      console.error("[AutoPosition] Action not found or not pending:", actionId);
       return false;
     }
 
-    action.status = 'APPROVED';
+    action.status = "APPROVED";
     action.approvedAt = Date.now();
     action.approvedBy = userId;
 
-    console.log('[AutoPosition] Action approved:', action.description);
+    console.log("[AutoPosition] Action approved:", action.description);
 
     // Execute the action asynchronously
     setTimeout(() => {
@@ -316,15 +324,15 @@ class AutoPositionManager {
    */
   rejectAction(actionId: string): boolean {
     const action = this.store.pendingActions.find((a) => a.id === actionId);
-    if (!action || action.status !== 'PENDING') {
-      console.error('[AutoPosition] Action not found or not pending:', actionId);
+    if (!action || action.status !== "PENDING") {
+      console.error("[AutoPosition] Action not found or not pending:", actionId);
       return false;
     }
 
-    action.status = 'REJECTED';
+    action.status = "REJECTED";
     action.rejectedAt = Date.now();
 
-    console.log('[AutoPosition] Action rejected:', action.description);
+    console.log("[AutoPosition] Action rejected:", action.description);
     return true;
   }
 
@@ -333,98 +341,104 @@ class AutoPositionManager {
    */
   private executeAction(actionId: string) {
     const action = this.store.pendingActions.find((a) => a.id === actionId);
-    if (!action || action.status !== 'APPROVED') {
-      console.error('[AutoPosition] Action not approved:', actionId);
+    if (!action || action.status !== "APPROVED") {
+      console.error("[AutoPosition] Action not approved:", actionId);
       return;
     }
 
-    action.status = 'EXECUTED';
+    action.status = "EXECUTED";
     action.executedAt = Date.now();
 
-    console.log('[AutoPosition] Action executed:', action.description);
+    console.log("[AutoPosition] Action executed:", action.description);
 
     // Execute the action based on type
     try {
       const tradeStore = useTradeStore.getState();
-      const trade = tradeStore.activeTrades.find(t => t.id === action.tradeId);
+      const trade = tradeStore.activeTrades.find((t) => t.id === action.tradeId);
 
       if (!trade) {
-        console.error('[AutoPosition] Trade not found:', action.tradeId);
+        console.error("[AutoPosition] Trade not found:", action.tradeId);
         return;
       }
 
+      const tradeRules = this.store.rules.get(action.tradeId) || [];
+
       switch (action.type) {
-        case 'TRIM':
+        case "TRIM": {
           // Partially exit the position
-          const trimPercent = this.store.rules
-            .find(r => r.tradeId === action.tradeId && r.type === 'TRIM')
-            ?.action.trimPercent || 50;
+          const trimRule = tradeRules.find((r) => r.type === "TRIM");
+          const trimPercent = trimRule?.action.trimPercent || 50;
 
           console.log(`[AutoPosition] Trimming ${trimPercent}% of position ${trade.ticker}`);
           tradeStore.updateTrade(trade.id, {
-            notes: `${trade.notes || ''}\n[AUTO] Trimmed ${trimPercent}% at ${new Date().toLocaleString()}`
+            notes: `${trade.notes || ""}\n[AUTO] Trimmed ${trimPercent}% at ${new Date().toLocaleString()}`,
           });
           break;
+        }
 
-        case 'EXIT':
+        case "EXIT": {
           // Fully exit the position
           console.log(`[AutoPosition] Exiting position ${trade.ticker}`);
           tradeStore.updateTrade(trade.id, {
-            state: 'EXITED',
-            exitTime: new Date().toISOString(),
+            state: "EXITED",
+            exitTime: new Date(),
             exitPrice: trade.currentPrice,
-            notes: `${trade.notes || ''}\n[AUTO] Full exit at ${new Date().toLocaleString()}`
+            notes: `${trade.notes || ""}\n[AUTO] Full exit at ${new Date().toLocaleString()}`,
           });
           break;
+        }
 
-        case 'MOVE_SL':
+        case "MOVE_SL": {
           // Update stop loss
-          const rule = this.store.rules.find(r => r.tradeId === action.tradeId && r.type === 'MOVE_SL');
-          if (rule?.action.moveStopToBreakeven && trade.entryPrice) {
+          const moveSlRule = tradeRules.find((r) => r.type === "MOVE_SL");
+          if (moveSlRule?.action.moveStopToBreakeven && trade.entryPrice) {
             console.log(`[AutoPosition] Moving stop to breakeven for ${trade.ticker}`);
             tradeStore.updateTrade(trade.id, {
               stopLoss: trade.entryPrice,
-              notes: `${trade.notes || ''}\n[AUTO] Stop moved to breakeven at ${new Date().toLocaleString()}`
+              notes: `${trade.notes || ""}\n[AUTO] Stop moved to breakeven at ${new Date().toLocaleString()}`,
             });
           }
           break;
+        }
 
-        case 'TRAIL_STOP':
+        case "TRAIL_STOP": {
           // Implement trailing stop logic
-          const trailRule = this.store.rules.find(r => r.tradeId === action.tradeId && r.type === 'TRAIL_STOP');
+          const trailRule = tradeRules.find((r) => r.type === "TRAIL_STOP");
           const retracePercent = trailRule?.action.moveStopToPercent || 0.5;
 
           if (trade.currentPrice && trade.entryPrice) {
             const move = trade.currentPrice - trade.entryPrice;
-            const newStop = trade.entryPrice + (move * retracePercent);
+            const newStop = trade.entryPrice + move * retracePercent;
 
-            console.log(`[AutoPosition] Trailing stop for ${trade.ticker} to $${newStop.toFixed(2)}`);
+            console.log(
+              `[AutoPosition] Trailing stop for ${trade.ticker} to $${newStop.toFixed(2)}`
+            );
             tradeStore.updateTrade(trade.id, {
               stopLoss: newStop,
-              notes: `${trade.notes || ''}\n[AUTO] Trailing stop updated to $${newStop.toFixed(2)} at ${new Date().toLocaleString()}`
+              notes: `${trade.notes || ""}\n[AUTO] Trailing stop updated to $${newStop.toFixed(2)} at ${new Date().toLocaleString()}`,
             });
           }
           break;
+        }
 
         default:
-          console.warn('[AutoPosition] Unknown action type:', action.type);
+          console.warn("[AutoPosition] Unknown action type:", action.type);
       }
 
       // Send alert about action execution
       const alertStore = useAlertEscalationStore.getState();
       alertStore.addAlert({
-        id: `auto-${actionId}`,
         tradeId: action.tradeId,
         ticker: trade.ticker,
-        type: 'AUTO_ACTION',
-        severity: 'MEDIUM',
+        severity: "INFO",
+        category: "position-management",
+        title: "Auto Action Executed",
         message: `Auto action executed: ${action.description}`,
-        timestamp: Date.now(),
-        isRead: false,
+        isActionable: false,
       });
     } catch (error) {
-      console.error('[AutoPosition] Failed to execute action:', error);
-      action.status = 'REJECTED';
+      console.error("[AutoPosition] Failed to execute action:", error);
+      action.status = "REJECTED";
     }
   }
 
@@ -432,7 +446,7 @@ class AutoPositionManager {
    * Get pending actions
    */
   getPendingActions(): AutoAction[] {
-    return this.store.pendingActions.filter((a) => a.status === 'PENDING');
+    return this.store.pendingActions.filter((a) => a.status === "PENDING");
   }
 
   /**
@@ -454,7 +468,7 @@ class AutoPositionManager {
    */
   clearCompletedActions() {
     this.store.pendingActions = this.store.pendingActions.filter(
-      (a) => a.status === 'PENDING' || a.status === 'APPROVED'
+      (a) => a.status === "PENDING" || a.status === "APPROVED"
     );
   }
 
@@ -463,10 +477,8 @@ class AutoPositionManager {
    */
   clearTrade(tradeId: string) {
     this.store.rules.delete(tradeId);
-    this.store.pendingActions = this.store.pendingActions.filter(
-      (a) => a.tradeId !== tradeId
-    );
-    console.log('[AutoPosition] Cleared all data for trade', tradeId);
+    this.store.pendingActions = this.store.pendingActions.filter((a) => a.tradeId !== tradeId);
+    console.log("[AutoPosition] Cleared all data for trade", tradeId);
   }
 }
 
@@ -484,7 +496,7 @@ export const autoPositionManager = new AutoPositionManager();
  * Add an auto-management rule
  */
 export function addAutoRule(
-  rule: Omit<AutoRule, 'id' | 'createdAt' | 'lastChecked' | 'triggeredCount'>
+  rule: Omit<AutoRule, "id" | "createdAt" | "lastChecked" | "triggeredCount">
 ): string {
   return autoPositionManager.addRule(rule);
 }
@@ -578,7 +590,7 @@ export function createTrimOnProfitRule(
 ): string {
   return addAutoRule({
     tradeId,
-    type: 'TRIM',
+    type: "TRIM",
     isActive: true,
     condition: {
       pnlPercentAbove: profitPercent,
@@ -595,7 +607,7 @@ export function createTrimOnProfitRule(
 export function createTrailToBreakevenRule(tradeId: string, profitPercent: number): string {
   return addAutoRule({
     tradeId,
-    type: 'TRAIL_STOP',
+    type: "TRAIL_STOP",
     isActive: true,
     condition: {
       pnlPercentAbove: profitPercent,
@@ -616,7 +628,7 @@ export function createTrimOnConfluenceDropRule(
 ): string {
   return addAutoRule({
     tradeId,
-    type: 'TRIM',
+    type: "TRIM",
     isActive: true,
     condition: {
       confluenceDropGreaterThan: confluenceDrop,
@@ -633,7 +645,7 @@ export function createTrimOnConfluenceDropRule(
 export function createStopLossExitRule(tradeId: string, distancePercent: number): string {
   return addAutoRule({
     tradeId,
-    type: 'EXIT',
+    type: "EXIT",
     isActive: true,
     condition: {
       distanceToStopLessPercent: distancePercent,
