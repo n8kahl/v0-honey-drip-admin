@@ -17,6 +17,9 @@ import { ActiveTradesPanel } from "./trading/ActiveTradesPanel";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
 import { branding } from "../lib/config/branding";
+import { useDiscord } from "../hooks/useDiscord";
+import { useSettingsStore } from "../stores/settingsStore";
+import { toast } from "sonner";
 
 // Default confluence object to prevent undefined errors in child components
 const DEFAULT_CONFLUENCE = {
@@ -110,6 +113,11 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     }
   }, [streamingContracts, activeTicker, actions]);
 
+  // Discord integration for voice alerts
+  const discord = useDiscord();
+  const getDefaultChannels = useSettingsStore((s) => s.getDefaultChannels);
+  const discordAlertsEnabled = useSettingsStore((s) => s.discordAlertsEnabled);
+
   const voice = useVoiceCommands({
     watchlist,
     activeTrades,
@@ -122,10 +130,78 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onExitTrade: actions.handleExit,
     onAddPosition: actions.handleAdd,
     onSendAlert: async (alert) => {
-      // Smart alerts generate via useVoiceCommands → smartAlertService
-      // This sends them to Discord via the existing alert system
-      console.warn("[v0] Voice smart alert:", alert);
-      // TODO: Wire up to Discord via actions.handleSendAlert when alert format is finalized
+      if (!discordAlertsEnabled) {
+        toast.info("Discord alerts disabled", {
+          description: "Enable in Settings → Discord to send alerts to channels.",
+        });
+        return;
+      }
+
+      const alertType = alert.alert.alertType;
+      const channelType =
+        alertType === "entry" ? "enter" : alertType === "exit" ? "exit" : "update";
+      const defaultChannels = getDefaultChannels(channelType);
+
+      if (defaultChannels.length === 0) {
+        toast.warning("No Discord channels configured", {
+          description: `Set up ${channelType} channels in Settings → Discord.`,
+        });
+        return;
+      }
+
+      console.warn("[v0] Sending voice smart alert to Discord:", {
+        alertType,
+        channels: defaultChannels.map((c) => c.name),
+        contract: alert.alert.contract,
+      });
+
+      try {
+        // Create a minimal trade object for Discord formatting
+        const tradeForAlert: Trade = {
+          id: "voice-alert-" + Date.now(),
+          ticker: alert.alert.ticker,
+          contract: alert.alert.contract!,
+          state: "LOADED",
+          tradeType: "Day", // Will be inferred by Discord client from DTE
+          targetPrice: alert.alert.contract?.mid,
+          stopLoss: undefined,
+          underlyingPriceAtLoad: alert.alert.price,
+          updates: [],
+          discordChannels: defaultChannels.map((c) => c.id),
+          challenges: [],
+        };
+
+        if (alertType === "entry") {
+          await discord.sendEntryAlert(
+            defaultChannels,
+            { ...tradeForAlert, entryPrice: alert.alert.price, state: "ENTERED" },
+            alert.reasoning
+          );
+          toast.success("Entry alert sent", {
+            description: `${alert.alert.ticker} ${alert.alert.contract?.strike}${alert.alert.contract?.type}`,
+          });
+        } else if (alertType === "exit") {
+          await discord.sendExitAlert(
+            defaultChannels,
+            { ...tradeForAlert, state: "EXITED", exitPrice: alert.alert.price },
+            alert.reasoning
+          );
+          toast.success("Exit alert sent", {
+            description: `${alert.alert.ticker} exited`,
+          });
+        } else {
+          // Load/update alerts
+          await discord.sendLoadAlert(defaultChannels, tradeForAlert, alert.reasoning);
+          toast.success("Alert sent", {
+            description: `${alert.alert.ticker} ${alert.alert.contract?.strike}${alert.alert.contract?.type}`,
+          });
+        }
+      } catch (error) {
+        console.error("[v0] Failed to send voice alert to Discord:", error);
+        toast.error("Failed to send alert", {
+          description: "Check console for details",
+        });
+      }
     },
   });
 
