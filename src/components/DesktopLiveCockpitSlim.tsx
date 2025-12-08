@@ -225,7 +225,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           />
         </div>
         {/* Options chain area */}
-        <div className="flex-1 relative flex flex-col">
+        <div className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
           {!activeTicker && (
             <div className="flex-1 relative flex items-center justify-center bg-[#0a0a0a]">
               <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">

@@ -61,7 +61,7 @@ export const ActiveTradesPanel: React.FC<ActiveTradesPanelProps> = ({
   underlyingChange,
 }) => {
   return (
-    <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-[var(--border-hairline)] flex flex-col h-full">
+    <div className="w-full lg:w-80 lg:flex-shrink-0 border-t lg:border-t-0 lg:border-l border-[var(--border-hairline)] flex flex-col h-full">
       {showAlert && currentTrade ? (
         <div className="hidden lg:flex lg:flex-col lg:h-full">
           <HDAlertComposer
