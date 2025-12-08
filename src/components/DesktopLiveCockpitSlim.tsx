@@ -139,10 +139,16 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     },
     onRemoveTicker,
     onLoadContract: (contract, ticker, reasoning) => {
+      if (!user) {
+        toast.error("Unable to create trade: User not authenticated");
+        return;
+      }
       // Set active ticker first
       actions.setActiveTicker(ticker);
-      // Load contract through state machine with voice reasoning
-      actions.handleContractSelect(contract, undefined, reasoning);
+      // Wait for next tick to ensure state is updated
+      setTimeout(() => {
+        actions.handleContractSelect(contract, undefined, reasoning);
+      }, 0);
     },
     onEnterTrade: actions.handleEnterTrade,
     onTrimTrade: actions.handleTrim,

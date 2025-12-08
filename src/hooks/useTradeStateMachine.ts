@@ -289,7 +289,12 @@ export function useTradeStateMachine({
       },
       voiceReasoning?: string
     ) => {
-      if (!activeTicker || !userId) {
+      if (!activeTicker) {
+        toast.error("Unable to create trade: No ticker selected");
+        return;
+      }
+
+      if (!userId) {
         toast.error("Unable to create trade: User not authenticated");
         return;
       }
