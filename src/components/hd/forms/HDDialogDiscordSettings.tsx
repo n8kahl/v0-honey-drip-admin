@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { AppSheet } from "../../ui/AppSheet";
 import { Label } from "../../ui/label";
 import { Input } from "../../ui/input";
@@ -182,7 +182,7 @@ export function HDDialogDiscordSettings({
   };
 
   // Load once on open
-  React.useEffect(() => {
+  useEffect(() => {
     if (open) loadPreferences();
   }, [open]);
 
