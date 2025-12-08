@@ -1518,6 +1518,76 @@ router.get("/backfill/status", async (req: Request, res: Response) => {
   }
 });
 
+// -----------------------------------------------------------------------------
+// Discord alert preferences (admin control)
+// -----------------------------------------------------------------------------
+router.get("/discord/alert-preferences", async (req, res) => {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return res.status(500).json({ error: "Supabase not configured" });
+    const userId = String((req.query.userId as string) || req.headers["x-user-id"] || "");
+
+    const { data, error } = await supabase
+      .from("discord_alert_preferences")
+      .select("alert_type, enabled, webhook_urls")
+      .or(`user_id.eq.${userId},user_id.is.null`);
+
+    if (error) {
+      console.warn("[DiscordPrefs API] Using defaults because query failed:", error.message);
+      return res.json({
+        preferences: [
+          { alert_type: "setup", enabled: true, webhook_urls: null },
+          { alert_type: "ready", enabled: true, webhook_urls: null },
+          { alert_type: "signal", enabled: true, webhook_urls: null },
+          { alert_type: "error", enabled: true, webhook_urls: null },
+          { alert_type: "heartbeat", enabled: true, webhook_urls: null },
+        ],
+      });
+    }
+
+    return res.json({ preferences: data || [] });
+  } catch (err: any) {
+    console.warn("[DiscordPrefs API] error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to load preferences" });
+  }
+});
+
+router.post("/discord/alert-preferences", async (req, res) => {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return res.status(500).json({ error: "Supabase not configured" });
+
+    const userIdHeader = req.headers["x-user-id"] as string | undefined;
+    const { alert_type, enabled, webhook_urls, user_id: bodyUserId } = req.body || {};
+    const userId = bodyUserId || userIdHeader || null;
+
+    if (!alert_type) {
+      return res.status(400).json({ error: "alert_type is required" });
+    }
+
+    const payload: Record<string, any> = {
+      alert_type,
+      enabled: enabled !== undefined ? !!enabled : true,
+      webhook_urls: Array.isArray(webhook_urls) ? webhook_urls : null,
+    };
+    if (userId) payload.user_id = userId;
+
+    const { error } = await supabase
+      .from("discord_alert_preferences")
+      .upsert(payload as any, { onConflict: "user_id,alert_type" });
+
+    if (error) {
+      console.warn("[DiscordPrefs API] upsert failed:", error.message);
+      return res.status(500).json({ error: "Failed to save preferences" });
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.warn("[DiscordPrefs API] error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to save preferences" });
+  }
+});
+
 // ===== Strategy Scanner Routes =====
 // NOTE: Scanner runs client-side via hooks, server endpoint moved to future iteration
 // import strategiesRouter from './strategies';

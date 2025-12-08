@@ -125,6 +125,67 @@ export function HDDialogDiscordSettings({
   // Get the default channel
   const defaultChannel = channels.find((c) => c.isGlobalDefault);
 
+  const alertTypes: Array<{ key: string; label: string; description: string }> = [
+    { key: "setup", label: "Setups", description: "Pre-signal setups when confluence is forming" },
+    { key: "ready", label: "Ready", description: "High-confidence signals ready to trade" },
+    { key: "signal", label: "Signals", description: "General signal notifications" },
+    { key: "error", label: "Errors", description: "Scanner/worker errors and health issues" },
+    { key: "heartbeat", label: "Heartbeat", description: "Periodic health checks (admin only)" },
+  ];
+
+  const [alertPrefs, setAlertPrefs] = useState<
+    Record<string, { enabled: boolean; channels: string[] }>
+  >({});
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  const loadPreferences = async () => {
+    setLoadingPrefs(true);
+    try {
+      const resp = await fetch("/api/discord/alert-preferences");
+      const data = await resp.json();
+      const prefs: Record<string, { enabled: boolean; channels: string[] }> = {};
+      if (Array.isArray(data?.preferences)) {
+        for (const p of data.preferences) {
+          prefs[p.alert_type] = {
+            enabled: p.enabled ?? true,
+            channels: Array.isArray(p.webhook_urls) ? p.webhook_urls : [],
+          };
+        }
+      }
+      setAlertPrefs(prefs);
+    } catch (err) {
+      toast.error("Failed to load alert preferences");
+    } finally {
+      setLoadingPrefs(false);
+    }
+  };
+
+  const savePreference = async (alertType: string, enabled: boolean, channels: string[]) => {
+    setSavingPrefs(true);
+    try {
+      await fetch("/api/discord/alert-preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          alert_type: alertType,
+          enabled,
+          webhook_urls: channels,
+        }),
+      });
+      toast.success(`Saved alert settings for ${alertType}`);
+    } catch {
+      toast.error(`Failed to save settings for ${alertType}`);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  // Load once on open
+  React.useEffect(() => {
+    if (open) loadPreferences();
+  }, [open]);
+
   return (
     <AppSheet
       open={open}
@@ -168,6 +229,93 @@ export function HDDialogDiscordSettings({
             </p>
           </div>
         )}
+
+        {/* Alert Type Controls */}
+        <div className="space-y-3 p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[var(--text-high)] text-sm uppercase tracking-wide">
+              Alert Types & Routing
+            </h3>
+            {loadingPrefs && <span className="text-xs text-[var(--text-muted)]">Loading…</span>}
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            Turn specific alert types on/off and choose which channels receive them.
+          </p>
+          <div className="space-y-3">
+            {alertTypes.map((t) => {
+              const pref = alertPrefs[t.key] || { enabled: true, channels: [] };
+              return (
+                <div
+                  key={t.key}
+                  className="p-3 rounded-[var(--radius)] border border-[var(--border-hairline)] bg-[var(--surface-3)]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[var(--text-high)] font-medium capitalize">
+                          {t.label}
+                        </Label>
+                        {t.key === "error" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-200 border border-red-500/40">
+                            Admin
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[var(--text-muted)]">{t.description}</p>
+                    </div>
+                    <Switch
+                      checked={pref.enabled}
+                      onCheckedChange={(checked) => {
+                        const next = { ...pref, enabled: checked };
+                        setAlertPrefs((p) => ({ ...p, [t.key]: next }));
+                        savePreference(t.key, checked, pref.channels);
+                      }}
+                      disabled={savingPrefs}
+                    />
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <Label className="text-[11px] text-[var(--text-med)]">Channels</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {channels.map((ch) => {
+                        const selected = pref.channels.includes(
+                          ch.webhookUrl || ch.webhook_url || ch.id
+                        );
+                        const key = ch.webhookUrl || ch.webhook_url || ch.id;
+                        return (
+                          <button
+                            key={key}
+                            className={cn(
+                              "px-2 py-1 text-[11px] rounded border transition-colors",
+                              selected
+                                ? "bg-[var(--brand-primary)]/15 border-[var(--brand-primary)] text-[var(--text-high)]"
+                                : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-med)] hover:border-[var(--brand-primary)]/60"
+                            )}
+                            onClick={() => {
+                              const nextChannels = selected
+                                ? pref.channels.filter((c) => c !== key)
+                                : [...pref.channels, key];
+                              const next = { ...pref, channels: nextChannels };
+                              setAlertPrefs((p) => ({ ...p, [t.key]: next }));
+                              savePreference(t.key, pref.enabled, nextChannels);
+                            }}
+                            disabled={savingPrefs}
+                          >
+                            #{ch.name}
+                          </button>
+                        );
+                      })}
+                      {channels.length === 0 && (
+                        <span className="text-[11px] text-[var(--text-muted)]">
+                          No channels added yet
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Add New Channel Section */}
         <div className="space-y-4 p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]">

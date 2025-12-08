@@ -20,6 +20,7 @@ import { sendStrategySignalToDiscord } from "../../src/lib/discord/strategyAlert
 import type { Bar } from "../../src/lib/strategy/patternDetection.js";
 import { fileURLToPath } from "url";
 import { fetchBarsForRange } from "./lib/barProvider.js";
+import { getAlertPreferencesForUser, pickWebhooks } from "./lib/discordAlertPreferences.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -247,9 +248,22 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
       return;
     }
 
-    // Send alerts for each signal
+    const prefs = await getAlertPreferencesForUser(userId);
+
+    // Send alerts for each signal with type-based preferences
     for (const signal of signals) {
       try {
+        const confidence = signal.confidence ?? 0;
+        const alertType = confidence >= 80 ? "ready" : confidence >= 50 ? "setup" : "signal";
+        const targets = pickWebhooks(alertType, prefs, webhookUrls);
+
+        if (!targets.enabled || targets.webhooks.length === 0) {
+          console.log(
+            `[Scanner Worker] Alert ${alertType} for ${signal.symbol} skipped (disabled or no channels)`
+          );
+          continue;
+        }
+
         // Fetch strategy definition
         const { data: strategy, error: strategyErr } = await supabase
           .from("strategy_definitions")
@@ -263,10 +277,10 @@ async function sendDiscordAlerts(userId: string, signals: any[]) {
         }
 
         // Send to Discord
-        await sendStrategySignalToDiscord(webhookUrls, signal, strategy);
+        await sendStrategySignalToDiscord(targets.webhooks, signal, strategy);
 
         console.log(
-          `[Scanner Worker] ✅ Discord alert sent for ${signal.symbol} (${strategy.name})`
+          `[Scanner Worker] ✅ Discord alert (${alertType}) sent for ${signal.symbol} (${strategy.name}) to ${targets.webhooks.length} channel(s)`
         );
       } catch (alertError) {
         console.error(

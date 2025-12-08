@@ -1,6 +1,6 @@
 import { Ticker } from "../../../types";
 import { formatPrice, cn } from "../../../lib/utils";
-import { X, Wifi, Zap } from "lucide-react";
+import { X, Wifi, Zap, Activity } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useUIStore } from "../../../stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
@@ -102,6 +102,64 @@ export function HDRowWatchlist({
   // Staleness check: stale if lastUpdated > 30s ago (aligned with marketDataStore)
   const isStale = lastUpdated ? Date.now() - lastUpdated > 30000 : true;
 
+  // Confluence / monitoring status
+  const confluenceStatus = (() => {
+    if (!symbolData?.confluence || !lastUpdated)
+      return { label: "Monitoring", tone: "muted" as const };
+    if (isStale) return { label: "Stale", tone: "danger" as const };
+    const score = symbolData.confluence.overall ?? 0;
+    if (score >= 80) return { label: "Confluence", tone: "success" as const, score };
+    if (score >= 60) return { label: "Setup", tone: "warn" as const, score };
+    return { label: "Monitoring", tone: "muted" as const, score };
+  })();
+
+  const confluencePill = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-full border",
+            confluenceStatus.tone === "success" &&
+              "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
+            confluenceStatus.tone === "warn" &&
+              "bg-amber-500/15 text-amber-200 border-amber-500/60",
+            confluenceStatus.tone === "danger" && "bg-red-500/15 text-red-200 border-red-500/60",
+            confluenceStatus.tone === "muted" && "bg-zinc-700/40 text-zinc-200 border-zinc-600/80"
+          )}
+        >
+          {confluenceStatus.label === "Monitoring" && <Activity className="w-3 h-3" />}
+          {confluenceStatus.label === "Setup" && <Zap className="w-3 h-3" />}
+          {confluenceStatus.label === "Confluence" && <Zap className="w-3 h-3" />}
+          {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3" />}
+          <span>{confluenceStatus.label}</span>
+          {typeof confluenceStatus.score === "number" && (
+            <span className="font-mono text-[10px] opacity-80">
+              {Math.round(confluenceStatus.score)}
+            </span>
+          )}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="bg-zinc-900 text-zinc-100 border border-zinc-700 max-w-xs">
+        <div className="text-xs font-semibold mb-1">
+          {ticker.symbol} · {confluenceStatus.label}
+        </div>
+        <div className="text-[11px] text-zinc-300">
+          {lastUpdatedText ? `Updated ${lastUpdatedText}` : "No recent updates"}
+        </div>
+        {symbolData?.confluence && (
+          <div className="text-[11px] text-zinc-300 mt-1">
+            Score: {Math.round(symbolData.confluence.overall ?? 0)}
+            <div className="mt-1 space-y-0.5">
+              <div>Trend: {Math.round(symbolData.confluence.trend ?? 0)}</div>
+              <div>Momentum: {Math.round(symbolData.confluence.momentum ?? 0)}</div>
+              <div>Volume: {Math.round(symbolData.confluence.volume ?? 0)}</div>
+            </div>
+          </div>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+
   // Defensive: fallback for missing price
   const priceDisplay =
     typeof currentPrice === "number" && !isNaN(currentPrice) ? (
@@ -189,13 +247,7 @@ export function HDRowWatchlist({
               </Tooltip>
             )}
             <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
-
-            {/* Confluence indicator when no signals but high confluence */}
-            {confluence && confluence.overall > 70 && (
-              <span title={`Confluence: ${confluence.overall}`}>
-                <Zap className="w-3 h-3 text-yellow-500" />
-              </span>
-            )}
+            {confluencePill}
           </div>
           <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
             <Wifi className="w-2.5 h-2.5 text-green-500" />
