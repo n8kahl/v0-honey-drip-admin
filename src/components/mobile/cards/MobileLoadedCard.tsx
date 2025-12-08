@@ -1,69 +1,94 @@
 import { Trade } from "../../../types";
+import { HDTagTradeType } from "../../hd/common/HDTagTradeType";
 import { cn, formatPrice } from "../../../lib/utils";
-import { Play, X } from "lucide-react";
+import { Play, X, Zap } from "lucide-react";
+import { useSymbolData } from "../../../stores/marketDataStore";
 
 interface MobileLoadedCardProps {
   trade: Trade;
   onEnter: () => void;
   onDismiss: () => void;
+  active?: boolean;
 }
 
-export function MobileLoadedCard({ trade, onEnter, onDismiss }: MobileLoadedCardProps) {
+export function MobileLoadedCard({ trade, onEnter, onDismiss, active }: MobileLoadedCardProps) {
   const contract = trade.contract;
   const mid = contract?.mid || 0;
 
+  // Get live confluence from market data store
+  const symbolData = useSymbolData(trade.ticker);
+  const confluenceScore = symbolData?.confluence?.overall;
+
   // Calculate DTE
-  const dte = contract?.expiration
+  const dte = contract?.expiry
     ? Math.max(
         0,
-        Math.floor((new Date(contract.expiration).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+        Math.ceil((new Date(contract.expiry).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
       )
-    : null;
+    : (contract?.daysToExpiry ?? null);
+
+  // DTE color coding (match desktop)
+  const getDTEColor = () => {
+    if (dte === null) return "text-[var(--text-muted)]";
+    if (dte === 0) return "text-red-500";
+    if (dte <= 3) return "text-orange-500";
+    if (dte <= 7) return "text-yellow-500";
+    return "text-green-500";
+  };
 
   return (
-    <div className="bg-[var(--surface-1)] rounded-xl border border-[var(--border-hairline)] overflow-hidden">
-      {/* Info row */}
-      <div className="px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-[var(--text-high)] font-semibold">{trade.ticker}</span>
-          <span className="text-[var(--text-med)] text-sm">
+    <div
+      className={cn(
+        // Match HDRowLoadedTrade styling - flat row with bottom border
+        "w-full p-3 border-b border-[var(--border-hairline)] min-h-[52px]",
+        "hover:bg-[var(--surface-2)] transition-colors duration-150",
+        active && "bg-blue-500/10 border-l-2 border-l-blue-500"
+      )}
+    >
+      {/* Main row: Contract info + Price */}
+      <div className="flex items-center justify-between">
+        {/* Left: Ticker, Trade Type, Contract, DTE */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[var(--text-high)] font-medium">{trade.ticker}</span>
+          <HDTagTradeType type={trade.tradeType} />
+          <span className="text-[var(--text-muted)] text-xs">
             {contract?.strike}
-            {contract?.type?.[0]}
+            {contract?.type}
           </span>
           {dte !== null && (
-            <span
-              className={cn(
-                "text-xs px-1.5 py-0.5 rounded",
-                dte === 0
-                  ? "bg-red-500/20 text-red-400"
-                  : dte <= 2
-                    ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
-                    : "bg-[var(--surface-2)] text-[var(--text-muted)]"
-              )}
-            >
-              {dte}DTE
-            </span>
+            <span className={cn("text-xs font-semibold", getDTEColor())}>{dte}DTE</span>
           )}
         </div>
-        <span className="text-[var(--text-med)] text-sm tabular-nums">${formatPrice(mid)}</span>
+
+        {/* Right: Price + Confluence */}
+        <div className="flex items-center gap-3">
+          <span className="text-[var(--text-high)] font-mono text-sm">${formatPrice(mid)}</span>
+          {confluenceScore !== undefined && confluenceScore > 70 && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-500/20 border border-yellow-500/30">
+              <Zap className="w-2.5 h-2.5 text-yellow-500" />
+              <span className="text-[9px] font-medium text-yellow-500">
+                {Math.round(confluenceScore)}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex border-t border-[var(--border-hairline)]">
+      {/* Action buttons - compact row */}
+      <div className="flex items-center gap-1 mt-2">
         <button
           onClick={onEnter}
-          className="flex-1 flex items-center justify-center gap-2 py-3 text-[var(--accent-positive)] hover:bg-[var(--surface-2)] transition-colors min-h-[48px]"
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-[var(--radius)] text-[var(--accent-positive)] bg-[var(--surface-1)] hover:bg-[var(--surface-2)] transition-colors min-h-[40px] border border-[var(--border-hairline)]"
         >
-          <Play className="w-4 h-4" />
-          <span className="text-sm font-medium">Enter</span>
+          <Play className="w-3.5 h-3.5" />
+          <span className="text-xs font-medium">Enter</span>
         </button>
-        <div className="w-px bg-[var(--border-hairline)]" />
         <button
           onClick={onDismiss}
-          className="flex-1 flex items-center justify-center gap-2 py-3 text-[var(--text-muted)] hover:bg-[var(--surface-2)] transition-colors min-h-[48px]"
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-[var(--radius)] text-[var(--text-muted)] bg-[var(--surface-1)] hover:bg-[var(--surface-2)] transition-colors min-h-[40px] border border-[var(--border-hairline)]"
         >
-          <X className="w-4 h-4" />
-          <span className="text-sm font-medium">Dismiss</span>
+          <X className="w-3.5 h-3.5" />
+          <span className="text-xs font-medium">Dismiss</span>
         </button>
       </div>
     </div>

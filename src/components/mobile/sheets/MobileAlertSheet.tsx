@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerFooter } from "../../ui/drawer";
+import { Drawer } from "vaul";
 import { Trade, AlertType, DiscordChannel, Challenge } from "../../../types";
 import { cn, formatPrice } from "../../../lib/utils";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
 interface MobileAlertSheetProps {
   open: boolean;
@@ -26,49 +26,63 @@ export function MobileAlertSheet({
   onSend,
 }: MobileAlertSheetProps) {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
-  const [showChannels, setShowChannels] = useState(false);
+  const [selectedChallenges, setSelectedChallenges] = useState<string[]>([]);
   const [comment, setComment] = useState("");
+  const [showChannels, setShowChannels] = useState(false);
+  const [showChallenges, setShowChallenges] = useState(false);
 
-  // Get alert title
-  const alertTitle = useMemo(() => {
-    if (alertType === "load") return "Load Alert";
-    if (alertType === "enter") return "Entry Alert";
-    if (alertType === "exit") return "Exit Alert";
-    if (alertType === "update" && alertOptions?.updateKind === "trim") return "Trim Alert";
-    if (alertType === "update" && alertOptions?.updateKind === "sl") return "Update Stop Loss";
-    return "Alert";
-  }, [alertType, alertOptions]);
+  // Field toggles for alert customization (matching desktop)
+  const [showEntry, setShowEntry] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showTarget, setShowTarget] = useState(false);
+  const [showStopLoss, setShowStopLoss] = useState(false);
+  const [showPnL, setShowPnL] = useState(false);
 
-  // Generate default message
-  const defaultMessage = useMemo(() => {
-    if (!trade) return "";
-    const contract = trade.contract;
-    const pnl = trade.movePercent;
-    const currentPrice = trade.currentPrice || contract?.mid || 0;
+  // Get alert title with emoji (matching desktop)
+  const getAlertTitle = () => {
+    switch (alertType) {
+      case "load":
+        return "LOADED";
+      case "enter":
+        return "ENTERED";
+      case "add":
+        return "ADDED";
+      case "exit":
+        return "EXITED";
+      case "update":
+        if (alertOptions?.updateKind === "trim") return "TRIM";
+        if (alertOptions?.updateKind === "sl") return "STOP LOSS UPDATE";
+        return "UPDATE";
+      case "trail_stop":
+        return "TRAIL STOP";
+      default:
+        return "ALERT";
+    }
+  };
 
-    if (alertType === "update" && alertOptions?.updateKind === "trim") {
-      return `Trimming ${trade.ticker} ${contract?.strike}${contract?.type?.[0]} at $${formatPrice(currentPrice)}${pnl ? ` (${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%)` : ""}`;
+  const getAlertEmoji = () => {
+    switch (alertType) {
+      case "load":
+        return "\u{1F4CB}"; // clipboard
+      case "enter":
+        return "\u{1F3AF}"; // target
+      case "add":
+        return "\u{2795}"; // plus
+      case "exit":
+        return "\u{1F3C1}"; // checkered flag
+      case "update":
+        return "\u{1F4CA}"; // chart
+      case "trail_stop":
+        return "\u{1F3C3}"; // runner
+      default:
+        return "\u{1F514}"; // bell
     }
-    if (alertType === "update" && alertOptions?.updateKind === "sl") {
-      return `Moving stop loss on ${trade.ticker} to $${formatPrice(trade.stopLoss || 0)}`;
-    }
-    if (alertType === "exit") {
-      return `Exiting ${trade.ticker} ${contract?.strike}${contract?.type?.[0]} at $${formatPrice(currentPrice)}${pnl ? `. Final P&L: ${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%` : ""}`;
-    }
-    if (alertType === "enter") {
-      return `Entering ${trade.ticker} ${contract?.strike}${contract?.type?.[0]} at $${formatPrice(currentPrice)}`;
-    }
-    if (alertType === "load") {
-      return `Watching ${trade.ticker} ${contract?.strike}${contract?.type?.[0]}`;
-    }
-    return "";
-  }, [trade, alertType, alertOptions]);
+  };
 
-  // Initialize state when sheet opens
+  // Initialize state when sheet opens (matching desktop defaults)
   useEffect(() => {
     if (open && trade) {
-      setComment(defaultMessage);
-      // Default to trade's channels or global defaults
+      // Initialize channels from trade or defaults
       const tradeChannels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
       if (tradeChannels.length > 0) {
         setSelectedChannels(tradeChannels);
@@ -76,8 +90,113 @@ export function MobileAlertSheet({
         const defaultChannel = channels.find((c) => c.isGlobalDefault);
         setSelectedChannels(defaultChannel ? [defaultChannel.id] : []);
       }
+
+      // Initialize challenges from trade
+      const tradeChallenges = Array.isArray(trade.challenges) ? trade.challenges : [];
+      setSelectedChallenges(tradeChallenges);
+
+      // Set default comment based on alert type (matching desktop)
+      let defaultComment = "";
+      if (alertType === "update" && alertOptions?.updateKind === "trim") {
+        defaultComment = "Trimming here to lock profit.";
+      } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
+        defaultComment = "Updating stop loss.";
+      } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
+        defaultComment = "Quick update on this position.";
+      } else if (alertType === "trail_stop") {
+        defaultComment = "Enabling trailing stop on this position.";
+      } else if (alertType === "add") {
+        defaultComment = "Adding to position here.";
+      } else if (alertType === "exit") {
+        defaultComment = "Exiting position here.";
+      }
+      setComment(defaultComment);
+
+      // Set default field visibility based on alert type (matching desktop exactly)
+      if (alertType === "enter") {
+        setShowEntry(true);
+        setShowCurrent(true);
+        setShowTarget(true);
+        setShowStopLoss(true);
+        setShowPnL(false);
+      } else if (alertType === "update" && alertOptions?.updateKind === "trim") {
+        setShowEntry(false);
+        setShowCurrent(true);
+        setShowTarget(false);
+        setShowStopLoss(false);
+        setShowPnL(true);
+      } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
+        setShowEntry(false);
+        setShowCurrent(false);
+        setShowTarget(false);
+        setShowStopLoss(true);
+        setShowPnL(false);
+      } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
+        setShowEntry(false);
+        setShowCurrent(true);
+        setShowTarget(false);
+        setShowStopLoss(false);
+        setShowPnL(false);
+      } else if (alertType === "trail_stop") {
+        setShowEntry(false);
+        setShowCurrent(false);
+        setShowTarget(false);
+        setShowStopLoss(true);
+        setShowPnL(false);
+      } else if (alertType === "add") {
+        setShowEntry(false);
+        setShowCurrent(true);
+        setShowTarget(false);
+        setShowStopLoss(false);
+        setShowPnL(true);
+      } else if (alertType === "exit") {
+        setShowEntry(false);
+        setShowCurrent(true);
+        setShowTarget(false);
+        setShowStopLoss(false);
+        setShowPnL(true);
+      } else if (alertType === "load") {
+        setShowEntry(false);
+        setShowCurrent(false);
+        setShowTarget(false);
+        setShowStopLoss(false);
+        setShowPnL(false);
+      }
     }
-  }, [open, trade, channels, defaultMessage]);
+  }, [open, trade, channels, alertType, alertOptions]);
+
+  // Generate alert message (matching desktop format)
+  const getAlertMessage = useMemo(() => {
+    if (!trade) return "";
+    const { ticker, contract, entryPrice, currentPrice, movePercent, tradeType } = trade;
+    if (!contract) return "";
+
+    const strikeStr = `$${contract.strike}${contract.type}`;
+    const expiryStr = contract.expiry;
+
+    let message = `**${ticker} ${strikeStr} ${expiryStr}** (${tradeType})\n`;
+
+    if (alertType === "load") {
+      message += `\nLoaded for review`;
+    } else if (alertType === "enter" && entryPrice) {
+      if (showEntry) message += `\nEntry: $${entryPrice.toFixed(2)}`;
+      if (showTarget && trade.targetPrice) message += `\nTarget: $${trade.targetPrice.toFixed(2)}`;
+      if (showStopLoss && trade.stopLoss) message += `\nStop: $${trade.stopLoss.toFixed(2)}`;
+    } else if (currentPrice) {
+      if (showCurrent) message += `\nCurrent: $${currentPrice.toFixed(2)}`;
+      if (showPnL && movePercent !== undefined) {
+        const sign = movePercent >= 0 ? "+" : "";
+        message += `\nP&L: ${sign}${movePercent.toFixed(1)}%`;
+      }
+      if (showStopLoss && trade.stopLoss) message += `\nStop: $${trade.stopLoss.toFixed(2)}`;
+    }
+
+    if (comment.trim()) {
+      message += `\n\n${comment}`;
+    }
+
+    return message;
+  }, [trade, alertType, comment, showEntry, showCurrent, showTarget, showStopLoss, showPnL]);
 
   const toggleChannel = (channelId: string) => {
     setSelectedChannels((prev) =>
@@ -85,123 +204,268 @@ export function MobileAlertSheet({
     );
   };
 
+  const toggleChallenge = (challengeId: string) => {
+    setSelectedChallenges((prev) =>
+      prev.includes(challengeId) ? prev.filter((id) => id !== challengeId) : [...prev, challengeId]
+    );
+  };
+
   const handleSend = () => {
-    onSend(selectedChannels, [], comment || undefined);
+    onSend(selectedChannels, selectedChallenges, comment.trim() || undefined);
   };
 
   if (!trade) return null;
 
-  const contract = trade.contract;
-  const pnl = trade.movePercent || 0;
-  const isProfit = pnl >= 0;
+  const buttonLabel = alertType === "load" ? "Load and Alert" : "Send Alert";
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="bg-[var(--surface-1)] border-[var(--border-hairline)]">
-        <DrawerHeader className="text-center pb-2">
-          <DrawerTitle className="text-[var(--text-high)]">{alertTitle}</DrawerTitle>
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <span className="text-[var(--text-med)]">
-              {trade.ticker} {contract?.strike}
-              {contract?.type?.[0]}
-            </span>
-            {trade.movePercent !== undefined && (
-              <span
-                className={cn(
-                  "font-semibold",
-                  isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
-                )}
-              >
-                {isProfit ? "+" : ""}
-                {pnl.toFixed(1)}%
-              </span>
-            )}
-          </div>
-        </DrawerHeader>
+    <Drawer.Root open={open} onOpenChange={onOpenChange}>
+      <Drawer.Portal>
+        <Drawer.Overlay className="fixed inset-0 bg-black/60 z-50" />
+        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-base)] rounded-t-2xl max-h-[90vh]">
+          <div className="mx-auto w-12 h-1.5 bg-[var(--border-hairline)] rounded-full my-3" />
 
-        <div className="px-4 py-2 space-y-4">
-          {/* Comment textarea */}
-          <div>
-            <label className="text-xs text-[var(--text-muted)] uppercase tracking-wide block mb-2">
-              Message
-            </label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Add a comment..."
-              className="w-full px-3 py-3 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)] text-[var(--text-high)] text-sm resize-none min-h-[80px] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/50"
-            />
-          </div>
+          <div className="px-4 pb-safe overflow-y-auto max-h-[calc(90vh-24px)]">
+            {/* Header */}
+            <div className="border-b border-[var(--border-hairline)] pb-3 mb-4">
+              <h2 className="text-[var(--text-high)] text-xs uppercase tracking-wide text-center">
+                Alert Preview
+              </h2>
+            </div>
 
-          {/* Channel selector */}
-          <div>
-            <button
-              onClick={() => setShowChannels(!showChannels)}
-              className="w-full flex items-center justify-between px-3 py-3 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)]"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-                  Channels
-                </span>
-                <span className="text-sm text-[var(--text-high)]">
-                  {selectedChannels.length > 0
-                    ? `${selectedChannels.length} selected`
-                    : "None selected"}
-                </span>
+            {/* Alert Preview Box (matching desktop) */}
+            <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-4 mb-4">
+              <div className="text-[var(--brand-primary)] text-xs uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <span>{getAlertEmoji()}</span>
+                <span>{getAlertTitle()}</span>
               </div>
-              <ChevronDown
-                className={cn(
-                  "w-4 h-4 text-[var(--text-muted)] transition-transform",
-                  showChannels && "rotate-180"
-                )}
-              />
-            </button>
+              <div className="text-[var(--text-high)] text-sm whitespace-pre-line font-mono">
+                {getAlertMessage}
+              </div>
+            </div>
 
-            {showChannels && (
-              <div className="mt-2 space-y-1">
-                {channels.map((channel) => (
+            {/* Field Toggles (only show for non-load alerts) */}
+            {alertType !== "load" && (
+              <div className="mb-4">
+                <label className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-2">
+                  Include Fields
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {(alertType === "enter" || alertType === "add") && (
+                    <button
+                      onClick={() => setShowEntry(!showEntry)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                        showEntry
+                          ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                          : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
+                      )}
+                    >
+                      Entry
+                    </button>
+                  )}
                   <button
-                    key={channel.id}
-                    onClick={() => toggleChannel(channel.id)}
+                    onClick={() => setShowCurrent(!showCurrent)}
                     className={cn(
-                      "w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors",
-                      selectedChannels.includes(channel.id)
-                        ? "bg-[var(--brand-primary)]/10 border border-[var(--brand-primary)]/30"
-                        : "bg-[var(--surface-2)] border border-transparent"
+                      "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                      showCurrent
+                        ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                        : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
                     )}
                   >
-                    <span className="text-sm text-[var(--text-high)]">#{channel.name}</span>
-                    {selectedChannels.includes(channel.id) && (
-                      <Check className="w-4 h-4 text-[var(--brand-primary)]" />
-                    )}
+                    Current
                   </button>
-                ))}
+                  {(alertType === "enter" || alertType === "add") && (
+                    <button
+                      onClick={() => setShowTarget(!showTarget)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                        showTarget
+                          ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                          : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
+                      )}
+                    >
+                      Target
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowStopLoss(!showStopLoss)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                      showStopLoss
+                        ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                        : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
+                    )}
+                  >
+                    Stop Loss
+                  </button>
+                  <button
+                    onClick={() => setShowPnL(!showPnL)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                      showPnL
+                        ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                        : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
+                    )}
+                  >
+                    P&L
+                  </button>
+                </div>
               </div>
             )}
-          </div>
-        </div>
 
-        <DrawerFooter className="pt-2">
-          <button
-            onClick={handleSend}
-            disabled={selectedChannels.length === 0}
-            className={cn(
-              "w-full py-4 rounded-xl font-semibold text-base transition-colors min-h-[56px]",
-              selectedChannels.length > 0
-                ? "bg-[var(--brand-primary)] text-black hover:bg-[var(--brand-primary)]/90"
-                : "bg-[var(--surface-2)] text-[var(--text-muted)] cursor-not-allowed"
-            )}
-          >
-            Send Alert {selectedChannels.length > 0 && `(${selectedChannels.length})`}
-          </button>
-          <button
-            onClick={() => onOpenChange(false)}
-            className="w-full py-3 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-high)] transition-colors min-h-[48px]"
-          >
-            Cancel
-          </button>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+            {/* Discord Channels */}
+            <div className="mb-4">
+              <button
+                onClick={() => setShowChannels(!showChannels)}
+                className="w-full flex items-center justify-between py-2"
+              >
+                <span className="text-[var(--text-muted)] text-xs uppercase tracking-wide">
+                  Discord Channels
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--text-med)] text-xs">
+                    {selectedChannels.length > 0 ? `${selectedChannels.length} selected` : "None"}
+                  </span>
+                  {showChannels ? (
+                    <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                  )}
+                </div>
+              </button>
+
+              {showChannels && (
+                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] divide-y divide-[var(--border-hairline)]">
+                  {channels.length === 0 ? (
+                    <p className="text-[var(--text-muted)] text-sm p-3">No channels configured</p>
+                  ) : (
+                    channels.map((channel) => (
+                      <button
+                        key={channel.id}
+                        onClick={() => toggleChannel(channel.id)}
+                        className="w-full flex items-center justify-between p-3"
+                      >
+                        <span className="text-sm text-[var(--text-high)]">#{channel.name}</span>
+                        <div
+                          className={cn(
+                            "w-5 h-5 rounded-[var(--radius)] border flex items-center justify-center transition-colors",
+                            selectedChannels.includes(channel.id)
+                              ? "bg-[var(--brand-primary)] border-[var(--brand-primary)]"
+                              : "bg-transparent border-[var(--border-hairline)]"
+                          )}
+                        >
+                          {selectedChannels.includes(channel.id) && (
+                            <Check className="w-3 h-3 text-black" />
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Challenges */}
+            <div className="mb-4">
+              <button
+                onClick={() => setShowChallenges(!showChallenges)}
+                className="w-full flex items-center justify-between py-2"
+              >
+                <span className="text-[var(--text-muted)] text-xs uppercase tracking-wide">
+                  Challenges
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--text-med)] text-xs">
+                    {selectedChallenges.length > 0
+                      ? `${selectedChallenges.length} selected`
+                      : "None"}
+                  </span>
+                  {showChallenges ? (
+                    <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                  )}
+                </div>
+              </button>
+
+              {showChallenges && (
+                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] divide-y divide-[var(--border-hairline)]">
+                  {challenges.length === 0 ? (
+                    <p className="text-[var(--text-muted)] text-sm p-3">No active challenges</p>
+                  ) : (
+                    challenges.map((challenge) => (
+                      <button
+                        key={challenge.id}
+                        onClick={() => toggleChallenge(challenge.id)}
+                        className="w-full flex items-center justify-between p-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-[var(--text-high)]">{challenge.name}</span>
+                          {challenge.scope === "honeydrip-wide" && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-[var(--radius)] bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] uppercase tracking-wide font-medium">
+                              HD
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={cn(
+                            "w-5 h-5 rounded-[var(--radius)] border flex items-center justify-center transition-colors",
+                            selectedChallenges.includes(challenge.id)
+                              ? "bg-[var(--brand-primary)] border-[var(--brand-primary)]"
+                              : "bg-transparent border-[var(--border-hairline)]"
+                          )}
+                        >
+                          {selectedChallenges.includes(challenge.id) && (
+                            <Check className="w-3 h-3 text-black" />
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Comment */}
+            <div className="mb-4">
+              <label className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-2">
+                Comment
+              </label>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Add additional context..."
+                className="w-full px-3 py-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] text-sm resize-none min-h-[80px] focus:outline-none focus:ring-1 focus:ring-[var(--brand-primary)]/50"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pb-4">
+              <button
+                onClick={handleSend}
+                disabled={selectedChannels.length === 0}
+                className={cn(
+                  "w-full py-3.5 rounded-[var(--radius)] font-medium text-sm transition-colors min-h-[48px]",
+                  selectedChannels.length > 0
+                    ? "bg-[var(--brand-primary)] text-black"
+                    : "bg-[var(--surface-2)] text-[var(--text-muted)] cursor-not-allowed"
+                )}
+              >
+                {buttonLabel}
+              </button>
+              <button
+                onClick={() => onOpenChange(false)}
+                className="w-full py-3 text-[var(--text-muted)] text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="h-4" />
+          </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }

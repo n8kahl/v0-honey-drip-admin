@@ -6,6 +6,7 @@ import { generateEntryAlert, SmartAlertResult } from "../lib/services/smartAlert
 import { useWhisperVoice } from "./useWhisperVoice";
 import { useUserSettings } from "./useUserSettings";
 import { trackCommand } from "../lib/services/commandTracking";
+import { parseVoiceWithOpenAI, isOpenAIAvailable } from "../lib/openai/voiceParser";
 
 // Web Speech API types
 interface SpeechRecognitionType {
@@ -942,7 +943,7 @@ export function useVoiceCommands({
 
   // Process voice input with wake word detection
   const processVoiceInput = useCallback(
-    (text: string) => {
+    async (text: string) => {
       setTranscript(text);
 
       // If awaiting trade selection, handle that first
@@ -952,8 +953,19 @@ export function useVoiceCommands({
       }
 
       console.warn("[v0] processVoiceInput:", text);
-      const action = parseVoiceCommand(text);
-      console.warn("[v0] Parsed action:", action);
+
+      // Try OpenAI first if available, fall back to regex parsing
+      let action: ParsedVoiceAction;
+      if (isOpenAIAvailable()) {
+        console.warn("[v0] Using OpenAI for parsing...");
+        const openAIAction = await parseVoiceWithOpenAI(text);
+        action = openAIAction || parseVoiceCommand(text);
+        console.warn("[v0] OpenAI parsed action:", action);
+      } else {
+        console.warn("[v0] Using regex parsing (OpenAI not available)");
+        action = parseVoiceCommand(text);
+        console.warn("[v0] Regex parsed action:", action);
+      }
 
       // Track command
       trackCommand({

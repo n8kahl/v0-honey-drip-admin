@@ -11,6 +11,7 @@ interface MobileContractSheetProps {
   symbol: string;
   contracts: Contract[];
   onSelect: (contract: Contract) => void;
+  loading?: boolean;
 }
 
 export function MobileContractSheet({
@@ -19,6 +20,7 @@ export function MobileContractSheet({
   symbol,
   contracts,
   onSelect,
+  loading = false,
 }: MobileContractSheetProps) {
   const [selectedType, setSelectedType] = useState<OptionType>("C");
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
@@ -119,7 +121,7 @@ export function MobileContractSheet({
             </div>
 
             {/* Best Contract Suggestion */}
-            {bestContract && (
+            {!loading && bestContract && (
               <div className="mb-4 p-3 bg-[var(--brand-primary)]/10 border border-[var(--brand-primary)]/30 rounded-lg">
                 <div className="text-xs text-[var(--brand-primary)] uppercase tracking-wide mb-1">
                   Recommended
@@ -136,7 +138,12 @@ export function MobileContractSheet({
 
             {/* Contract List */}
             <div className="space-y-2 mb-4">
-              {filteredContracts.length === 0 ? (
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2">
+                  <div className="w-6 h-6 border-2 border-[var(--brand-primary)] border-t-transparent rounded-full animate-spin" />
+                  <p className="text-[var(--text-muted)] text-sm">Loading contracts...</p>
+                </div>
+              ) : filteredContracts.length === 0 ? (
                 <p className="text-[var(--text-muted)] text-center py-8">No contracts available</p>
               ) : (
                 filteredContracts.map((contract) => {

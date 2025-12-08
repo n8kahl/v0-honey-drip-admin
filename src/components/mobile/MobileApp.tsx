@@ -7,12 +7,14 @@ import { MobileReviewScreen } from "./screens/MobileReviewScreen";
 import { MobileSettingsScreen } from "./screens/MobileSettingsScreen";
 import { MobileVoiceHUD } from "./common/MobileVoiceHUD";
 import { MobileAlertSheet } from "./sheets/MobileAlertSheet";
+import { MobileContractSheet } from "./sheets/MobileContractSheet";
 
 import { useTradeStore, useMarketStore, useSettingsStore } from "../../stores";
 import { useVoiceCommands } from "../../hooks/useVoiceCommands";
 import { useDiscord } from "../../hooks/useDiscord";
 import { useAuth } from "../../contexts/AuthContext";
-import { Trade, AlertType } from "../../types";
+import { Trade, AlertType, Contract, Ticker } from "../../types";
+import { inferTradeTypeByDTE } from "../../lib/riskEngine";
 import { toast } from "sonner";
 
 interface MobileAppProps {
@@ -28,6 +30,12 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const [alertTrade, setAlertTrade] = useState<Trade | null>(null);
   const [alertType, setAlertType] = useState<AlertType>("update");
   const [alertOptions, setAlertOptions] = useState<{ updateKind?: "trim" | "generic" | "sl" }>({});
+
+  // Contract sheet state
+  const [contractSheetOpen, setContractSheetOpen] = useState(false);
+  const [contractSheetTicker, setContractSheetTicker] = useState<Ticker | null>(null);
+  const [contractsForTicker, setContractsForTicker] = useState<Contract[]>([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
 
   // Stores
   const { activeTrades, historyTrades, loadTrades, updateTrade } = useTradeStore();
@@ -116,6 +124,62 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     setAlertSheetOpen(true);
   };
 
+  // Handle Load button - fetch contracts and open contract sheet
+  const handleLoadTicker = async (ticker: Ticker) => {
+    setContractSheetTicker(ticker);
+    setContractsLoading(true);
+    setContractSheetOpen(true);
+
+    try {
+      const response = await fetch(`/api/options/chain?symbol=${ticker.symbol}&window=10`);
+      if (!response.ok) throw new Error("Failed to fetch options chain");
+      const data = await response.json();
+      setContractsForTicker(data.contracts || []);
+    } catch (error) {
+      console.error("[Mobile] Failed to load contracts:", error);
+      toast.error("Failed to load options chain");
+      setContractSheetOpen(false);
+    } finally {
+      setContractsLoading(false);
+    }
+  };
+
+  // Handle contract selection - create LOADED trade and open alert sheet
+  const handleContractSelect = (contract: Contract) => {
+    if (!contractSheetTicker || !user) return;
+
+    // Calculate TP/SL based on trade type
+    const tradeType = inferTradeTypeByDTE(contract.expiry);
+    const tpMultiplier = tradeType === "Scalp" ? 1.3 : tradeType === "Day" ? 1.5 : 2.0;
+    const slMultiplier = tradeType === "Scalp" ? 0.7 : tradeType === "Day" ? 0.5 : 0.3;
+
+    // Create trade in LOADED state
+    const newTrade: Trade = {
+      id: crypto.randomUUID(),
+      ticker: contractSheetTicker.symbol,
+      state: "LOADED",
+      contract,
+      tradeType,
+      targetPrice: contract.mid * tpMultiplier,
+      stopLoss: contract.mid * slMultiplier,
+      currentPrice: contract.mid,
+      discordChannels: [],
+      challenges: [],
+      updates: [],
+    };
+
+    // Add to active trades
+    useTradeStore.getState().addTrade(newTrade);
+
+    // Close contract sheet and open alert sheet
+    setContractSheetOpen(false);
+    setContractSheetTicker(null);
+    setContractsForTicker([]);
+
+    // Open alert sheet for load alert
+    openAlertSheet(newTrade, "load");
+  };
+
   // Handle sending alert
   const handleSendAlert = async (channels: string[], challengeIds: string[], comment?: string) => {
     if (!alertTrade) return;
@@ -199,11 +263,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
               // Remove from loaded trades
               useTradeStore.getState().deleteTrade(trade.id);
             }}
-            onLoad={(ticker) => {
-              // Navigate to contract selection - for now, just log
-              console.log("[Mobile] Load ticker:", ticker.symbol);
-              // TODO: Open contract sheet
-            }}
+            onLoad={handleLoadTicker}
           />
         )}
 
@@ -253,6 +313,16 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         channels={discordChannels}
         challenges={challenges}
         onSend={handleSendAlert}
+      />
+
+      {/* Contract sheet */}
+      <MobileContractSheet
+        open={contractSheetOpen}
+        onOpenChange={setContractSheetOpen}
+        symbol={contractSheetTicker?.symbol || ""}
+        contracts={contractsForTicker}
+        onSelect={handleContractSelect}
+        loading={contractsLoading}
       />
     </div>
   );

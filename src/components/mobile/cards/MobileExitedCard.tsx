@@ -1,4 +1,5 @@
 import { Trade } from "../../../types";
+import { HDTagTradeType } from "../../hd/common/HDTagTradeType";
 import { cn, formatPrice } from "../../../lib/utils";
 import { Share2, Trophy } from "lucide-react";
 
@@ -20,64 +21,72 @@ export function MobileExitedCard({ trade, onShare }: MobileExitedCardProps) {
     : null;
 
   return (
-    <div className="bg-[var(--surface-1)] rounded-xl border border-[var(--border-hairline)] overflow-hidden">
-      {/* Main content */}
-      <div className="px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-[var(--text-high)] font-semibold">{trade.ticker}</span>
-            <span className="text-[var(--text-muted)] text-sm">
-              {contract?.strike}
-              {contract?.type?.[0]}
-            </span>
-            {exitTime && <span className="text-[var(--text-muted)] text-xs">{exitTime}</span>}
-          </div>
-          <span
-            className={cn(
-              "text-lg font-bold tabular-nums",
-              isWin ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
-            )}
-          >
-            {isWin ? "+" : ""}
-            {pnlPercent.toFixed(1)}%
+    <div
+      className={cn(
+        // Match HDRowLoadedTrade styling - flat row with bottom border
+        "w-full p-3 border-b border-[var(--border-hairline)] min-h-[52px]",
+        "hover:bg-[var(--surface-2)] transition-colors duration-150"
+      )}
+    >
+      {/* Main row: Contract info + P&L */}
+      <div className="flex items-center justify-between">
+        {/* Left: Ticker, Trade Type, Contract, Time */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[var(--text-high)] font-medium">{trade.ticker}</span>
+          <HDTagTradeType type={trade.tradeType} />
+          <span className="text-[var(--text-muted)] text-xs">
+            {contract?.strike}
+            {contract?.type}
           </span>
+          {exitTime && <span className="text-[var(--text-muted)] text-xs">{exitTime}</span>}
         </div>
 
-        {/* Price details */}
-        <div className="flex items-center gap-2 mt-1 text-sm text-[var(--text-muted)]">
-          <span className="tabular-nums">${formatPrice(entryPrice)}</span>
+        {/* Right: P&L */}
+        <span
+          className={cn(
+            "font-mono text-sm font-semibold tabular-nums min-w-[60px] text-right",
+            isWin ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+          )}
+        >
+          {isWin ? "+" : ""}
+          {pnlPercent.toFixed(1)}%
+        </span>
+      </div>
+
+      {/* Price detail row */}
+      <div className="flex items-center justify-between mt-1">
+        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <span className="font-mono">${formatPrice(entryPrice)}</span>
           <span>→</span>
           <span
             className={cn(
-              "tabular-nums",
+              "font-mono",
               isWin ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
             )}
           >
             ${formatPrice(exitPrice)}
           </span>
         </div>
-      </div>
 
-      {/* Share button */}
-      <div className="border-t border-[var(--border-hairline)]">
+        {/* Share button - inline */}
         <button
           onClick={onShare}
           className={cn(
-            "w-full flex items-center justify-center gap-2 py-3 transition-colors min-h-[48px]",
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium transition-colors min-h-[32px]",
             isWin
-              ? "text-[var(--accent-positive)] hover:bg-[var(--accent-positive)]/10"
-              : "text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+              ? "text-[var(--accent-positive)] bg-[var(--accent-positive)]/10 hover:bg-[var(--accent-positive)]/20 border border-[var(--accent-positive)]/30"
+              : "text-[var(--text-muted)] bg-[var(--surface-1)] hover:bg-[var(--surface-2)] border border-[var(--border-hairline)]"
           )}
         >
           {isWin ? (
             <>
-              <Trophy className="w-4 h-4" />
-              <span className="text-sm font-medium">Share Win</span>
+              <Trophy className="w-3 h-3" />
+              Share
             </>
           ) : (
             <>
-              <Share2 className="w-4 h-4" />
-              <span className="text-sm font-medium">Share</span>
+              <Share2 className="w-3 h-3" />
+              Share
             </>
           )}
         </button>
