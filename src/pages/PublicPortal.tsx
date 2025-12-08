@@ -72,13 +72,13 @@ export function PublicPortal() {
         .from("trades")
         .select("*")
         .eq("show_on_public", true)
-        .in("state", ["entered", "loaded"])
+        .in("status", ["entered", "loaded"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      const entered = data?.filter((t) => t.state === "entered") || [];
-      const loaded = data?.filter((t) => t.state === "loaded") || [];
+      const entered = data?.filter((t) => t.status === "entered") || [];
+      const loaded = data?.filter((t) => t.status === "loaded") || [];
 
       setActiveTrades(entered);
       setLoadedTrades(loaded);

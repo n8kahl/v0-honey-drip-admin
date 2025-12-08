@@ -15,14 +15,14 @@ ADD COLUMN IF NOT EXISTS public_comment TEXT;
 
 -- Create index for public trade queries
 CREATE INDEX IF NOT EXISTS idx_trades_public_visible
-ON trades(user_id, show_on_public, state)
-WHERE show_on_public = true AND state IN ('entered', 'loaded');
+ON trades(user_id, show_on_public, status)
+WHERE show_on_public = true AND status IN ('entered', 'loaded');
 
 -- Create RLS policy allowing anonymous users to view public trades
 CREATE POLICY "trades_public_select" ON trades
   FOR SELECT
   TO anon
-  USING (show_on_public = true AND state IN ('entered', 'loaded'));
+  USING (show_on_public = true AND status IN ('entered', 'loaded'));
 
 -- Comment on columns for documentation
 COMMENT ON COLUMN profiles.is_super_admin IS 'Super admin flag - can control public portal visibility';
