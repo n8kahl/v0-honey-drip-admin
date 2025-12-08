@@ -1,7 +1,7 @@
-export type RiskMode = 'percent' | 'calculated';
-export type TrailMode = 'none' | 'fixed' | 'atr';
-export type StopType = 'fixed' | 'breakeven' | 'trailing';
-export type TradeType = 'SCALP' | 'DAY' | 'SWING' | 'LEAP';
+export type RiskMode = "percent" | "calculated";
+export type TrailMode = "none" | "fixed" | "atr";
+export type StopType = "fixed" | "breakeven" | "trailing";
+export type TradeType = "SCALP" | "DAY" | "SWING" | "LEAP";
 
 export interface AdminRiskDefaults {
   mode: RiskMode;
@@ -68,13 +68,18 @@ export interface RiskCalculationResult {
   targetPremium2?: number;
   stopLossPremium?: number;
   riskRewardRatio: number;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   reasoning: string;
   calculatedAt: number;
   usedLevels: string[];
   tradeType?: TradeType;
   profile?: string;
   dte?: number;
+  // Underlying price context for TP/SL display (Format C)
+  targetUnderlyingPrice?: number;
+  targetUnderlyingPrice2?: number;
+  stopUnderlyingPrice?: number;
+  currentUnderlyingPrice?: number;
 }
 
 export interface Bar {
@@ -102,20 +107,20 @@ export interface MacroContext {
   };
   vix: {
     price: number;
-    level: 'low' | 'normal' | 'elevated' | 'high';
+    level: "low" | "normal" | "elevated" | "high";
   };
   ndx: {
     price: number;
     change: number;
     changePercent: number;
   };
-  regime: 'bull' | 'bear' | 'choppy';
-  bias: 'bullish' | 'bearish' | 'neutral';
+  regime: "bull" | "bear" | "choppy";
+  bias: "bullish" | "bearish" | "neutral";
   updatedAt: number;
 }
 
 // Added for liquidity quality
 export interface LiquidityQuality {
-  quality: 'excellent' | 'good' | 'fair' | 'poor';
+  quality: "excellent" | "good" | "fair" | "poor";
   warnings: string[];
 }

@@ -440,4 +440,65 @@
   .animate-disc-pulse {
     animation: disc-update-pulse 0.6s ease-out;
   }
+
+  /* Three-column animated layout transitions */
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-out-right {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes collapse-left {
+    from {
+      width: 50%;
+      opacity: 1;
+    }
+    to {
+      width: 140px;
+      opacity: 1;
+    }
+  }
+
+  @keyframes expand-left {
+    from {
+      width: 140px;
+      opacity: 1;
+    }
+    to {
+      width: 50%;
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in-right {
+    animation: slide-in-right 0.3s ease-out forwards;
+  }
+
+  .animate-slide-out-right {
+    animation: slide-out-right 0.3s ease-in forwards;
+  }
+
+  .animate-collapse-left {
+    animation: collapse-left 0.3s ease-in-out forwards;
+  }
+
+  .animate-expand-left {
+    animation: expand-left 0.3s ease-in-out forwards;
+  }
 }

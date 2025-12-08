@@ -1,6 +1,6 @@
 import React from "react";
 import { Trade, TradeState, AlertType, DiscordChannel, Challenge } from "../../types";
-import { HDAlertComposer } from "../hd/alerts/HDAlertComposer";
+import { HDAlertComposer, PriceOverrides } from "../hd/alerts/HDAlertComposer";
 import { HDQuickActions } from "../hd/common/HDQuickActions";
 
 interface ActiveTradesPanelProps {
@@ -11,12 +11,17 @@ interface ActiveTradesPanelProps {
   alertOptions: { updateKind?: "trim" | "generic" | "sl" };
   channels: DiscordChannel[];
   challenges: Challenge[];
-  onSendAlert: (channelIds: string[], challengeIds: string[], comment?: string) => void;
+  onSendAlert: (
+    channelIds: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
   onEnterAndAlert: (
     channelIds: string[],
     challengeIds: string[],
     comment?: string,
-    entryPrice?: number
+    priceOverrides?: PriceOverrides
   ) => void;
   onCancelAlert: () => void;
   onUnload: () => void;

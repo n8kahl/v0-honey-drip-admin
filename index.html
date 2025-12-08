@@ -3,13 +3,37 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>HoneyDrip Admin Trading Dashboard</title>
-      <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-      <link rel="apple-touch-icon" href="/favicon.svg" />
+      <title>%VITE_APP_NAME% Trading Dashboard</title>
+      <link id="favicon" rel="icon" type="image/svg+xml" href="%VITE_FAVICON_URL%" />
+      <link rel="apple-touch-icon" href="%VITE_FAVICON_URL%" />
     </head>
 
     <body>
       <div id="root"></div>
       <script type="module" src="/src/main.tsx"></script>
+      
+      <!-- Dynamic branding injection -->
+      <script>
+        // Apply branding from environment variables at runtime
+        (function() {
+          const appName = import.meta.env.VITE_APP_NAME || 'Honey Drip';
+          const faviconUrl = import.meta.env.VITE_FAVICON_URL || '/favicon.svg';
+          const brandColor = import.meta.env.VITE_BRAND_PRIMARY_COLOR || '#f59e0b';
+          
+          // Update title
+          document.title = `${appName} Trading Dashboard`;
+          
+          // Update favicon
+          const favicon = document.getElementById('favicon');
+          if (favicon && faviconUrl) {
+            favicon.href = faviconUrl;
+          }
+          
+          // Apply brand color as CSS variable
+          if (brandColor) {
+            document.documentElement.style.setProperty('--brand-primary', brandColor);
+          }
+        })();
+      </script>
     </body>
   </html>

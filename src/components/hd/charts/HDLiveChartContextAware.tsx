@@ -3,8 +3,8 @@
  * Automatically detects and applies optimal configuration for day traders
  *
  * Detects 3 modes:
- * - BROWSE: Symbol selected, no trade loaded (5m, minimal indicators)
- * - LOADED: Contract selected, ready to enter (1m + 5m, key levels)
+ * - BROWSE: Symbol selected, no trade loaded (1m chart, minimal indicators)
+ * - LOADED: Contract selected, ready to enter (1m chart with TP/SL levels, contract metrics panel)
  * - ENTERED: Position active (1m focused, P&L panel)
  */
 
@@ -12,8 +12,10 @@ import React, { useMemo } from "react";
 import { HDLiveChart } from "./HDLiveChart";
 import { HDChartContainer } from "./HDChartContainer";
 import { TradeMetricsPanel } from "./TradeMetricsPanel";
+import { HDContractMetricsPanel } from "../panels/HDContractMetricsPanel";
 import type { Trade, TradeState, Ticker } from "../../../types";
 import type { ChartLevel } from "../../../types/tradeLevels";
+import type { KeyLevels } from "../../../lib/riskEngine/types";
 
 // Chart mode detection (inline - no longer using chartStateDetector)
 type ChartMode = "BROWSE" | "LOADED" | "ENTERED";
@@ -56,8 +58,11 @@ interface HDLiveChartContextAwareProps {
   activeTicker: Ticker | null;
   hasLoadedContract: boolean;
   levels?: ChartLevel[];
+  keyLevels?: Partial<KeyLevels>;
   height?: number;
   className?: string;
+  /** Show single chart (Phase 3) instead of dual 1m+5m */
+  singleChart?: boolean;
 }
 
 export function HDLiveChartContextAware({
@@ -67,8 +72,10 @@ export function HDLiveChartContextAware({
   activeTicker,
   hasLoadedContract,
   levels = [],
+  keyLevels,
   height = 400,
   className = "",
+  singleChart = false,
 }: HDLiveChartContextAwareProps) {
   // Extract underlying symbol from options ticker
   // When viewing options, we show the underlying's chart (has historical data)
@@ -114,6 +121,53 @@ export function HDLiveChartContextAware({
     return chartHeight;
   }, [mode, chartHeight]);
 
+  // Single chart mode: 1m chart with contract metrics panel
+  if (singleChart) {
+    return (
+      <div className={className}>
+        {/* Single 1m underlying chart with TP/SL levels */}
+        <HDChartContainer title="📊 Chart" defaultExpanded={true}>
+          <div className="w-full p-4">
+            <HDLiveChart
+              ticker={chartTicker}
+              initialTimeframe="1"
+              indicators={indicatorConfig}
+              events={[]}
+              levels={showKeyLevels ? levels : []}
+              height={finalChartHeight}
+              className="w-full"
+              showControls={false}
+              showHeader={true}
+              loadDelay={0}
+            />
+          </div>
+        </HDChartContainer>
+
+        {/* Contract Metrics Panel for LOADED/WATCHING state */}
+        {(mode === "LOADED" || mode === "BROWSE") && currentTrade?.contract && (
+          <HDContractMetricsPanel
+            contract={currentTrade.contract}
+            trade={currentTrade}
+            underlyingPrice={activeTicker?.last}
+            keyLevels={keyLevels}
+            className="mt-4"
+          />
+        )}
+
+        {/* Trade Metrics Panel for ENTERED state (P&L tracking) */}
+        {mode === "ENTERED" && currentTrade && currentTrade.contract && (
+          <TradeMetricsPanel
+            trade={currentTrade}
+            contract={currentTrade.contract}
+            currentPrice={currentPrice}
+            isExpanded={false}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Default: Dual 1m+5m side-by-side view
   return (
     <div className={className}>
       {/* Dual 1m+5m side-by-side view for day trading */}

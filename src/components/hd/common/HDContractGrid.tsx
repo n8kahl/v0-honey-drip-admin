@@ -22,6 +22,8 @@ interface HDContractGridProps {
   className?: string;
   /** Optional contract recommendation from strategy-aware scoring */
   recommendation?: ContractRecommendation | null;
+  /** Collapsed mode for narrow display (strikes only) */
+  collapsed?: boolean;
 }
 
 export function HDContractGrid({
@@ -32,6 +34,7 @@ export function HDContractGrid({
   onContractSelect,
   className,
   recommendation,
+  collapsed = false,
 }: HDContractGridProps) {
   // Show loading skeleton while fetching contracts
   if (isLoading) {
@@ -245,6 +248,95 @@ export function HDContractGrid({
   }, [sortedDates, groupedByDate, expandedDate, getContractStatus, ticker, currentPrice]);
 
   // (Virtualization scaffolding removed; not currently used)
+
+  // Collapsed view - shows only strikes in a narrow column
+  if (collapsed) {
+    return (
+      <div
+        className={cn("flex flex-col h-full bg-[var(--surface-1)]", className)}
+        data-testid="options-chain-panel-collapsed"
+      >
+        {/* Compact Calls/Puts Toggle */}
+        <div className="flex gap-1 p-2 border-b border-[var(--border-hairline)] bg-[var(--surface-2)]">
+          <button
+            onClick={() => setOptionType("C")}
+            className={cn(
+              "flex-1 h-6 text-[10px] font-medium rounded transition-all",
+              optionType === "C"
+                ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-high)]"
+            )}
+          >
+            C
+          </button>
+          <button
+            onClick={() => setOptionType("P")}
+            className={cn(
+              "flex-1 h-6 text-[10px] font-medium rounded transition-all",
+              optionType === "P"
+                ? "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-high)]"
+            )}
+          >
+            P
+          </button>
+        </div>
+
+        {/* Collapsed Strike List */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {sortedDates.map((dateKey) => {
+            const contracts = groupedByDate[dateKey];
+            const isExpanded = expandedDate === dateKey;
+            const firstContract = contracts[0];
+
+            return (
+              <div key={dateKey}>
+                {/* Compact Date Header */}
+                <button
+                  className="w-full px-2 py-1 bg-[var(--surface-2)] border-b border-[var(--border-hairline)] text-[10px] text-[var(--text-high)] hover:bg-[var(--surface-3)] transition-colors font-medium flex items-center justify-between"
+                  onClick={() => setExpandedDate(isExpanded ? null : dateKey)}
+                >
+                  <span>{firstContract.daysToExpiry}D</span>
+                  {isExpanded ? (
+                    <ChevronDown size={10} className="text-[var(--text-muted)]" />
+                  ) : (
+                    <ChevronRight size={10} className="text-[var(--text-muted)]" />
+                  )}
+                </button>
+
+                {isExpanded && (
+                  <div className="flex flex-col">
+                    {contracts.map((contract) => {
+                      const status = getContractStatus(contract, dateKey);
+                      const isSelected = contract.id === selectedId;
+                      const isRec = recommendedIds.has(contract.id);
+
+                      return (
+                        <button
+                          key={contract.id}
+                          onClick={() => handleSelect(contract)}
+                          className={cn(
+                            "px-2 py-1.5 text-[11px] text-center border-b border-[var(--border-hairline)] transition-colors",
+                            status === "atm" && "bg-[var(--surface-2)] font-semibold",
+                            status === "itm" && "text-[var(--text-muted)]",
+                            isSelected && "bg-[var(--accent-muted)]/20 text-[var(--accent)]",
+                            isRec && "bg-amber-500/10 text-amber-400",
+                            !isSelected && !isRec && "hover:bg-[var(--surface-3)]"
+                          )}
+                        >
+                          ${contract.strike}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

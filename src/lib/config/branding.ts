@@ -29,6 +29,11 @@ export const branding = {
   logoUrl: import.meta.env.VITE_APP_LOGO_URL || DEFAULT_LOGO_URL,
 
   /**
+   * Favicon URL
+   */
+  faviconUrl: import.meta.env.VITE_FAVICON_URL || "/favicon.svg",
+
+  /**
    * Short app name for compact displays
    */
   shortName: import.meta.env.VITE_APP_NAME?.split(" ")[0] || "HD",
@@ -37,6 +42,16 @@ export const branding = {
    * Full application title for browser tab
    */
   title: `${import.meta.env.VITE_APP_NAME || "Honey Drip"} Trading Dashboard`,
+
+  /**
+   * Support email for customer inquiries
+   */
+  supportEmail: import.meta.env.VITE_SUPPORT_EMAIL || "support@honeydrip.com",
+
+  /**
+   * Brand primary color (hex format)
+   */
+  brandPrimaryColor: import.meta.env.VITE_BRAND_PRIMARY_COLOR || "#f59e0b",
 } as const;
 
 /**

@@ -157,6 +157,11 @@ export interface Trade {
   ivAtEntry?: number; // IV at time of entry (detect IV crush)
   deltaAtEntry?: number; // Delta at entry
   underlyingAtEntry?: number; // Underlying price at entry
+  // Underlying price context for TP/SL display (Format C)
+  targetUnderlyingPrice?: number;
+  targetUnderlyingPrice2?: number;
+  stopUnderlyingPrice?: number;
+  underlyingPriceAtLoad?: number;
   // Setup conditions snapshot for thesis validation
   setupConditions?: SetupConditions;
   originalSignalScore?: number; // Composite signal score at entry

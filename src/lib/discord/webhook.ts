@@ -123,6 +123,9 @@ class DiscordWebhookClient {
       iv?: number;
       underlyingPrice?: number;
       setupType?: string;
+      // Format C: Underlying price context for TP/SL display
+      targetUnderlyingPrice?: number;
+      stopUnderlyingPrice?: number;
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
@@ -154,12 +157,19 @@ class DiscordWebhookClient {
 
     fields.push({ name: "Current Price", value: `$${data.price.toFixed(2)}`, inline: true });
 
+    // Format C: Contract: $X.XX | TICKER @ $Y.YY
     if (data.targetPrice) {
-      fields.push({ name: "🎯 Target", value: `$${data.targetPrice.toFixed(2)}`, inline: true });
+      const targetValue = data.targetUnderlyingPrice
+        ? `$${data.targetPrice.toFixed(2)} | ${data.ticker} @ $${data.targetUnderlyingPrice.toFixed(2)}`
+        : `$${data.targetPrice.toFixed(2)}`;
+      fields.push({ name: "🎯 Target", value: targetValue, inline: true });
     }
 
     if (data.stopLoss) {
-      fields.push({ name: "🛡️ Stop Loss", value: `$${data.stopLoss.toFixed(2)}`, inline: true });
+      const stopValue = data.stopUnderlyingPrice
+        ? `$${data.stopLoss.toFixed(2)} | ${data.ticker} @ $${data.stopUnderlyingPrice.toFixed(2)}`
+        : `$${data.stopLoss.toFixed(2)}`;
+      fields.push({ name: "🛡️ Stop Loss", value: stopValue, inline: true });
     }
 
     // Risk/Reward ratio
@@ -231,6 +241,9 @@ class DiscordWebhookClient {
       iv?: number;
       underlyingPrice?: number;
       setupType?: string;
+      // Underlying price context for TP/SL (Format C display)
+      targetUnderlyingPrice?: number;
+      stopUnderlyingPrice?: number;
       // Challenge context
       challengeInfo?: {
         name: string;
@@ -266,12 +279,19 @@ class DiscordWebhookClient {
 
     fields.push({ name: "✅ Entry Price", value: `$${data.entryPrice.toFixed(2)}`, inline: true });
 
+    // Format C: Contract: $X.XX | TICKER @ $Y.YY
     if (data.targetPrice) {
-      fields.push({ name: "🎯 Target", value: `$${data.targetPrice.toFixed(2)}`, inline: true });
+      const targetValue = data.targetUnderlyingPrice
+        ? `$${data.targetPrice.toFixed(2)} | ${data.ticker} @ $${data.targetUnderlyingPrice.toFixed(2)}`
+        : `$${data.targetPrice.toFixed(2)}`;
+      fields.push({ name: "🎯 Target", value: targetValue, inline: true });
     }
 
     if (data.stopLoss) {
-      fields.push({ name: "🛡️ Stop Loss", value: `$${data.stopLoss.toFixed(2)}`, inline: true });
+      const stopValue = data.stopUnderlyingPrice
+        ? `$${data.stopLoss.toFixed(2)} | ${data.ticker} @ $${data.stopUnderlyingPrice.toFixed(2)}`
+        : `$${data.stopLoss.toFixed(2)}`;
+      fields.push({ name: "🛡️ Stop Loss", value: stopValue, inline: true });
     }
 
     // Risk/Reward ratio

@@ -15,6 +15,9 @@ export interface PriceOverrides {
   currentPrice?: number;
   targetPrice?: number;
   stopLoss?: number;
+  // Underlying price context for Format C display
+  targetUnderlyingPrice?: number;
+  stopUnderlyingPrice?: number;
 }
 
 interface HDAlertComposerProps {

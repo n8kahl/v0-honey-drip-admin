@@ -18,7 +18,7 @@ import { ActiveTradesPanel } from "./trading/ActiveTradesPanel";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import { Contract, OptionType } from "../types";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
-import honeyDripLogo from "../assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png";
+import { branding } from "../lib/config/branding";
 
 // Default confluence object to prevent undefined errors in child components
 const DEFAULT_CONFLUENCE = {
@@ -230,13 +230,15 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             <div className="flex-1 relative flex items-center justify-center bg-[#0a0a0a]">
               <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
                 <img
-                  src={honeyDripLogo}
-                  alt="Honey Drip"
+                  src={branding.logoUrl}
+                  alt={branding.appName}
                   className="w-auto h-[50vh] max-w-[60vw] object-contain"
                 />
               </div>
               <div className="relative z-10 text-center space-y-4 max-w-md">
-                <h3 className="text-xl lg:text-2xl font-semibold text-white">Honey Drip Admin</h3>
+                <h3 className="text-xl lg:text-2xl font-semibold text-white">
+                  {branding.appName} Admin
+                </h3>
                 <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">
                   Select a Ticker from the Watchlist or Loaded Trades to begin
                 </p>
@@ -272,6 +274,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 tradeState={tradeState}
                 showAlert={showAlert}
                 alertType={alertType}
+                alertOptions={alertOptions}
                 onContractSelect={(contract) => actions.handleContractSelect(contract)}
                 onEnterTrade={actions.handleEnterTrade}
                 onDiscard={actions.handleDiscard}
@@ -282,6 +285,14 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
                 onAdd={() => actions.handleAdd()}
                 onExit={() => actions.handleExit()}
                 compositeSignals={compositeSignals}
+                // Enable three-column animated layout with integrated alert composer
+                useAnimatedLayout={true}
+                channels={channels}
+                challenges={challenges}
+                onSendAlert={actions.handleSendAlert}
+                onEnterAndAlert={actions.handleEnterAndAlert}
+                onCancelAlert={actions.handleCancelAlert}
+                onUnload={actions.handleUnloadTrade}
               />
             )}
         </div>

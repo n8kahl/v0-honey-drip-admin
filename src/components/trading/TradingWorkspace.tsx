@@ -1,8 +1,17 @@
 import React from "react";
-import { Ticker, Contract, Trade, TradeState, AlertType } from "../../types";
+import {
+  Ticker,
+  Contract,
+  Trade,
+  TradeState,
+  AlertType,
+  DiscordChannel,
+  Challenge,
+} from "../../types";
 import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDLoadedLayout } from "./HDLoadedLayout";
+import { HDAnimatedTradeLayout } from "./HDAnimatedTradeLayout";
 import { HDEnteredTradeCard } from "../hd/cards/HDEnteredTradeCard";
 import { HDActiveTradePanel } from "../hd/dashboard/HDActiveTradePanel";
 import { HDPanelFocusedTrade } from "../hd/dashboard/HDPanelFocusedTrade";
@@ -14,6 +23,7 @@ import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
 import type { KeyLevels } from "../../lib/riskEngine/types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
 import { useContractRecommendation } from "../../hooks/useContractRecommendation";
+import type { PriceOverrides } from "../hd/alerts/HDAlertComposer";
 import honeyDripLogo from "../../assets/1ccfd6d57f7ce66b9991f55ed3e9ec600aadd57a.png";
 
 interface TradingWorkspaceProps {
@@ -24,6 +34,7 @@ interface TradingWorkspaceProps {
   tradeState: TradeState;
   showAlert: boolean;
   alertType: AlertType;
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
   onContractSelect: (c: Contract) => void;
   onEnterTrade: () => void;
   onDiscard: () => void;
@@ -36,6 +47,25 @@ interface TradingWorkspaceProps {
   onExit?: () => void;
   // Composite signals for contract recommendation
   compositeSignals?: CompositeSignal[];
+  // Alert composer props for three-column animated layout
+  channels?: DiscordChannel[];
+  challenges?: Challenge[];
+  onSendAlert?: (
+    channelIds: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
+  onEnterAndAlert?: (
+    channelIds: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
+  onCancelAlert?: () => void;
+  onUnload?: () => void;
+  /** Use three-column animated layout (desktop only, requires alert props) */
+  useAnimatedLayout?: boolean;
 }
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
@@ -46,6 +76,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   tradeState,
   showAlert,
   alertType,
+  alertOptions,
   onContractSelect,
   onEnterTrade,
   onDiscard,
@@ -56,6 +87,14 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onAdd,
   onExit,
   compositeSignals,
+  // Alert composer props for animated layout
+  channels,
+  challenges,
+  onSendAlert,
+  onEnterAndAlert,
+  onCancelAlert,
+  onUnload,
+  useAnimatedLayout,
 }) => {
   const currentPrice = activeTicker
     ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
@@ -192,8 +231,10 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
                   ? enteredChartLevels
                   : []
             }
+            keyLevels={computedKeyLevels || undefined}
             height={chartHeight}
             className="pointer-events-auto"
+            singleChart={useAnimatedLayout}
           />
         </div>
       )}
@@ -211,49 +252,98 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
           />
         </div>
       )}
-      {/* Two-column layout: Show for WATCHING (symbol selected) and LOADED states */}
+      {/* Layout for WATCHING (symbol selected) and LOADED states */}
       {(tradeState === "WATCHING" || tradeState === "LOADED") && activeTicker && (
-        <HDLoadedLayout
-          trade={
-            currentTrade || {
-              id: "",
-              userId: "",
-              ticker: activeTicker.symbol,
-              tradeType: "Day",
-              state: "WATCHING",
-              contract: contracts[0] || {
-                id: "",
-                symbol: activeTicker.symbol,
-                type: "C",
-                strike: 0,
-                expiry: new Date().toISOString(),
-                bid: 0,
-                ask: 0,
-                mid: currentPrice,
-                volume: 0,
-                openInterest: 0,
-                impliedVolatility: 0,
-                daysToExpiry: 0,
-              },
-              entryPrice: undefined,
-              targetPrice: undefined,
-              stopLoss: undefined,
-              discordChannels: [],
-              challenges: [],
-              updates: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            }
-          }
-          contracts={contracts}
-          currentPrice={currentPrice}
-          ticker={activeTicker.symbol}
-          activeTicker={activeTicker}
-          onContractSelect={onContractSelect}
-          onEnter={onEnterTrade}
-          onDiscard={onDiscard}
-          recommendation={recommendation}
-        />
+        <>
+          {/* Use animated three-column layout when enabled and alert props available */}
+          {useAnimatedLayout && channels && onSendAlert && onCancelAlert ? (
+            <HDAnimatedTradeLayout
+              trade={
+                currentTrade || {
+                  id: "",
+                  ticker: activeTicker.symbol,
+                  tradeType: "Day",
+                  state: "WATCHING",
+                  contract: contracts[0] || {
+                    id: "",
+                    type: "C",
+                    strike: 0,
+                    expiry: new Date().toISOString(),
+                    expiryDate: new Date(),
+                    bid: 0,
+                    ask: 0,
+                    mid: currentPrice,
+                    volume: 0,
+                    openInterest: 0,
+                    daysToExpiry: 0,
+                  },
+                  entryPrice: undefined,
+                  targetPrice: undefined,
+                  stopLoss: undefined,
+                  discordChannels: [],
+                  challenges: [],
+                  updates: [],
+                }
+              }
+              contracts={contracts}
+              currentPrice={currentPrice}
+              ticker={activeTicker.symbol}
+              activeTicker={activeTicker}
+              showAlert={showAlert}
+              alertType={alertType}
+              alertOptions={alertOptions}
+              channels={channels}
+              challenges={challenges || []}
+              onContractSelect={onContractSelect}
+              onSendAlert={onSendAlert}
+              onEnterAndAlert={onEnterAndAlert}
+              onCancelAlert={onCancelAlert}
+              onUnload={onUnload}
+              onEnter={onEnterTrade}
+              onDiscard={onDiscard}
+              recommendation={recommendation}
+            />
+          ) : (
+            /* Fallback to two-column layout */
+            <HDLoadedLayout
+              trade={
+                currentTrade || {
+                  id: "",
+                  ticker: activeTicker.symbol,
+                  tradeType: "Day",
+                  state: "WATCHING",
+                  contract: contracts[0] || {
+                    id: "",
+                    type: "C",
+                    strike: 0,
+                    expiry: new Date().toISOString(),
+                    expiryDate: new Date(),
+                    bid: 0,
+                    ask: 0,
+                    mid: currentPrice,
+                    volume: 0,
+                    openInterest: 0,
+                    daysToExpiry: 0,
+                  },
+                  entryPrice: undefined,
+                  targetPrice: undefined,
+                  stopLoss: undefined,
+                  discordChannels: [],
+                  challenges: [],
+                  updates: [],
+                }
+              }
+              contracts={contracts}
+              currentPrice={currentPrice}
+              ticker={activeTicker.symbol}
+              activeTicker={activeTicker}
+              onContractSelect={onContractSelect}
+              onEnter={onEnterTrade}
+              onDiscard={onDiscard}
+              recommendation={recommendation}
+            />
+          )}
+        </>
       )}
       {!currentTrade && !activeTicker && (
         <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">

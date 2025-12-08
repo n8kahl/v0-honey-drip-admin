@@ -298,6 +298,10 @@ export function useTradeStateMachine({
         // Base defaults
         let targetPrice = contract.mid * 1.5;
         let stopLoss = contract.mid * 0.5;
+        // Underlying price context for Format C display
+        const underlyingPrice = activeTicker.last;
+        let targetUnderlyingPrice: number | undefined;
+        let stopUnderlyingPrice: number | undefined;
 
         try {
           const tradeType = inferTradeTypeByDTE(
@@ -318,7 +322,7 @@ export function useTradeStateMachine({
 
           const risk = calculateRisk({
             entryPrice: contract.mid,
-            currentUnderlyingPrice: contract.mid,
+            currentUnderlyingPrice: underlyingPrice,
             currentOptionMid: contract.mid,
             keyLevels: {
               preMarketHigh: 0,
@@ -349,6 +353,9 @@ export function useTradeStateMachine({
           });
           if (risk.targetPrice) targetPrice = risk.targetPrice;
           if (risk.stopLoss) stopLoss = risk.stopLoss;
+          // Capture underlying prices from risk calculation if available
+          if (risk.targetUnderlyingPrice) targetUnderlyingPrice = risk.targetUnderlyingPrice;
+          if (risk.stopUnderlyingPrice) stopUnderlyingPrice = risk.stopUnderlyingPrice;
         } catch {
           /* fallback silently */
         }
@@ -381,6 +388,10 @@ export function useTradeStateMachine({
           // Rich confluence data from context engines
           confluence: initialConfluence || undefined,
           confluenceUpdatedAt: initialConfluence ? new Date() : undefined,
+          // Underlying price context for Format C display
+          underlyingPriceAtLoad: underlyingPrice,
+          targetUnderlyingPrice,
+          stopUnderlyingPrice,
         };
 
         // Set as currentTrade for UI display (Trade Details, Analysis, etc.)
@@ -487,7 +498,21 @@ export function useTradeStateMachine({
             } as any);
           } else if (channels.length > 0) {
             try {
-              await discord.sendLoadAlert(channels, loadedTrade);
+              // Pass price overrides to Discord alert for Format C display
+              // This ensures user-edited values flow through to Discord
+              await discord.sendLoadAlert(
+                channels,
+                loadedTrade,
+                undefined, // notes
+                {
+                  targetPrice: effectiveTargetPrice,
+                  stopLoss: effectiveStopLoss,
+                  targetUnderlyingPrice:
+                    priceOverrides?.targetUnderlyingPrice ?? loadedTrade.targetUnderlyingPrice,
+                  stopUnderlyingPrice:
+                    priceOverrides?.stopUnderlyingPrice ?? loadedTrade.stopUnderlyingPrice,
+                }
+              );
               console.log("[Discord] LOAD alert sent successfully");
             } catch (error) {
               console.error("[Discord] Failed to send LOAD alert:", error);
@@ -776,7 +801,23 @@ export function useTradeStateMachine({
 
             switch (alertType) {
               case "enter":
-                results = await discord.sendEntryAlert(channels, newTrade, comment);
+                // Pass price overrides to Discord alert for Format C display
+                results = await discord.sendEntryAlert(
+                  channels,
+                  newTrade,
+                  comment,
+                  undefined, // imageUrl
+                  undefined, // challengeInfo
+                  {
+                    entryPrice: priceOverrides?.entryPrice ?? newTrade.entryPrice,
+                    targetPrice: priceOverrides?.targetPrice ?? newTrade.targetPrice,
+                    stopLoss: priceOverrides?.stopLoss ?? newTrade.stopLoss,
+                    targetUnderlyingPrice:
+                      priceOverrides?.targetUnderlyingPrice ?? newTrade.targetUnderlyingPrice,
+                    stopUnderlyingPrice:
+                      priceOverrides?.stopUnderlyingPrice ?? newTrade.stopUnderlyingPrice,
+                  }
+                );
                 console.log("[Discord] ENTER alert sent successfully");
                 break;
               case "trim":
@@ -1166,7 +1207,23 @@ export function useTradeStateMachine({
           } as any);
         } else {
           try {
-            const results = await discord.sendEntryAlert(channels, enteredTrade, comment);
+            // Pass price overrides to Discord alert for Format C display
+            const results = await discord.sendEntryAlert(
+              channels,
+              enteredTrade,
+              comment,
+              undefined, // imageUrl
+              undefined, // challengeInfo
+              {
+                entryPrice: priceOverrides?.entryPrice ?? enteredTrade.entryPrice,
+                targetPrice: priceOverrides?.targetPrice ?? enteredTrade.targetPrice,
+                stopLoss: priceOverrides?.stopLoss ?? enteredTrade.stopLoss,
+                targetUnderlyingPrice:
+                  priceOverrides?.targetUnderlyingPrice ?? enteredTrade.targetUnderlyingPrice,
+                stopUnderlyingPrice:
+                  priceOverrides?.stopUnderlyingPrice ?? enteredTrade.stopUnderlyingPrice,
+              }
+            );
             console.log("[Discord] ENTER alert sent successfully");
 
             // Record alert history

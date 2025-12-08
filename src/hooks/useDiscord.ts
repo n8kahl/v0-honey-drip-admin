@@ -14,10 +14,28 @@ export function useDiscord() {
     }
   };
 
-  const sendLoadAlert = async (channels: DiscordChannel[], trade: Trade, notes?: string) => {
+  const sendLoadAlert = async (
+    channels: DiscordChannel[],
+    trade: Trade,
+    notes?: string,
+    priceOverrides?: {
+      targetPrice?: number;
+      stopLoss?: number;
+      targetUnderlyingPrice?: number;
+      stopUnderlyingPrice?: number;
+    }
+  ) => {
     setSending(true);
     try {
       const webhookUrls = channels.map((ch) => ch.webhookUrl);
+      // Use price overrides if provided (user-edited values), otherwise fall back to trade values
+      const effectiveTargetPrice = priceOverrides?.targetPrice ?? trade.targetPrice;
+      const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
+      const effectiveTargetUnderlying =
+        priceOverrides?.targetUnderlyingPrice ?? trade.targetUnderlyingPrice;
+      const effectiveStopUnderlying =
+        priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice;
+
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendLoadAlert(url, {
           ticker: trade.ticker,
@@ -26,9 +44,18 @@ export function useDiscord() {
           type: trade.contract.type,
           tradeType: trade.tradeType,
           price: trade.contract.mid,
-          targetPrice: trade.targetPrice,
-          stopLoss: trade.stopLoss,
+          targetPrice: effectiveTargetPrice,
+          stopLoss: effectiveStopLoss,
           notes,
+          // Format C: Underlying price context for TP/SL display
+          underlyingPrice: trade.underlyingPriceAtLoad,
+          targetUnderlyingPrice: effectiveTargetUnderlying,
+          stopUnderlyingPrice: effectiveStopUnderlying,
+          // Enhanced fields
+          dte: trade.contract.daysToExpiry,
+          delta: trade.contract.delta,
+          iv: trade.contract.iv,
+          setupType: trade.setupType,
         })
       );
       return results;
@@ -42,11 +69,27 @@ export function useDiscord() {
     trade: Trade,
     notes?: string,
     imageUrl?: string,
-    challengeInfo?: { name: string }
+    challengeInfo?: { name: string },
+    priceOverrides?: {
+      entryPrice?: number;
+      targetPrice?: number;
+      stopLoss?: number;
+      targetUnderlyingPrice?: number;
+      stopUnderlyingPrice?: number;
+    }
   ) => {
     setSending(true);
     try {
       const webhookUrls = channels.map((ch) => ch.webhookUrl);
+      // Use price overrides if provided (user-edited values), otherwise fall back to trade values
+      const effectiveEntryPrice = priceOverrides?.entryPrice ?? trade.entryPrice!;
+      const effectiveTargetPrice = priceOverrides?.targetPrice ?? trade.targetPrice;
+      const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
+      const effectiveTargetUnderlying =
+        priceOverrides?.targetUnderlyingPrice ?? trade.targetUnderlyingPrice;
+      const effectiveStopUnderlying =
+        priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice;
+
       const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
         client.sendEntryAlert(url, {
           ticker: trade.ticker,
@@ -54,12 +97,21 @@ export function useDiscord() {
           expiry: trade.contract.expiry,
           type: trade.contract.type,
           tradeType: trade.tradeType,
-          entryPrice: trade.entryPrice!,
-          targetPrice: trade.targetPrice,
-          stopLoss: trade.stopLoss,
+          entryPrice: effectiveEntryPrice,
+          targetPrice: effectiveTargetPrice,
+          stopLoss: effectiveStopLoss,
           notes,
           imageUrl,
           challengeInfo,
+          // Format C: Underlying price context for TP/SL display
+          underlyingPrice: trade.underlyingPriceAtLoad ?? trade.underlyingAtEntry,
+          targetUnderlyingPrice: effectiveTargetUnderlying,
+          stopUnderlyingPrice: effectiveStopUnderlying,
+          // Enhanced fields
+          dte: trade.contract.daysToExpiry,
+          delta: trade.contract.delta,
+          iv: trade.contract.iv,
+          setupType: trade.setupType,
         })
       );
       return results;
