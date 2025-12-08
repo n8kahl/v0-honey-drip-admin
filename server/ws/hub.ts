@@ -88,7 +88,6 @@ export class MassiveHub {
           client.ws.send(textData);
         } catch (err) {
           console.warn(`${logPrefix} Failed to send to client:`, err);
-          console.error(`${logPrefix} Send failed:`, err);
         }
       }
 
@@ -96,14 +95,9 @@ export class MassiveHub {
         const arr = JSON.parse(textData);
         console.log(`${logPrefix} Received upstream message:`, JSON.stringify(arr).slice(0, 200));
 
-        const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === 'status') : undefined;
-        if (statusMsg?.status === 'auth_success') {
-          console.log(`${logPrefix} ✅ Authentication successful!`);
-        console.warn(`${logPrefix} Received upstream message:`, JSON.stringify(arr).slice(0, 200));
-
         const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === "status") : undefined;
         if (statusMsg?.status === "auth_success") {
-          console.warn(`${logPrefix} ✅ Authentication successful!`);
+          console.log(`${logPrefix} ✅ Authentication successful!`);
           this.upstreamAuthd = true;
           this.flushQueuedTopics();
         }
@@ -112,7 +106,6 @@ export class MassiveHub {
         if (process.env.DEBUG_WS) {
           console.warn(`${logPrefix} Failed to parse message:`, err);
         }
-        console.error(`${logPrefix} Parse error:`, err);
       }
     });
 

@@ -148,6 +148,24 @@ export interface Greeks {
   source: "massive" | "cached" | "fallback";
 }
 
+export interface FlowMetrics {
+  callVolume: number;
+  putVolume: number;
+  callPremium: number;
+  putPremium: number;
+  netDelta: number;
+  netGamma: number;
+}
+
+export interface StrategySignal {
+  id: string;
+  type: string;
+  direction: "bullish" | "bearish" | "neutral";
+  strength: number;
+  message: string;
+  timestamp: number;
+}
+
 export interface SymbolData {
   symbol: string;
 
@@ -165,6 +183,21 @@ export interface SymbolData {
 
   // Greeks for tracked contract (if monitoring one)
   greeks?: Greeks;
+
+  // Price data (convenience accessors)
+  price?: number;
+  lastPrice?: number;
+  change?: number;
+  changePercent?: number;
+
+  // Raw bars for chart rendering
+  bars?: Candle[];
+
+  // Strategy signals
+  strategySignals?: StrategySignal[];
+
+  // Options flow metrics
+  flowMetrics?: FlowMetrics;
 
   // Metadata
   lastUpdated: number;
