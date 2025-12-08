@@ -21,6 +21,10 @@ export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPagePro
   const { profile } = useUserSettings();
   const isSuperAdmin = profile?.isSuperAdmin ?? false;
 
+  // Debug logging
+  console.log("[v0] SettingsPage - profile:", profile);
+  console.log("[v0] SettingsPage - isSuperAdmin:", isSuperAdmin);
+
   const handleSaveAll = () => {
     toast.success("Settings saved successfully");
     if (onClose) {

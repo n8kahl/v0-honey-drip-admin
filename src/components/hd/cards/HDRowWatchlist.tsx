@@ -130,7 +130,7 @@ export function HDRowWatchlist({
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-full border",
+            "inline-flex items-center justify-center gap-1 px-1.5 py-[3px] text-[9px] leading-none font-semibold rounded-full border self-center",
             confluenceStatus.tone === "success" &&
               "bg-emerald-500/15 text-emerald-200 border-emerald-500/60",
             confluenceStatus.tone === "warn" &&
@@ -143,7 +143,7 @@ export function HDRowWatchlist({
           {confluenceStatus.label === "Setup" && <Zap className="w-3 h-3" />}
           {confluenceStatus.label === "Confluence" && <Zap className="w-3 h-3" />}
           {confluenceStatus.label === "Stale" && <Wifi className="w-3 h-3" />}
-          <span>{confluenceStatus.label}</span>
+          <span className="leading-none">{confluenceStatus.label}</span>
           {typeof confluenceStatus.score === "number" && (
             <span className="font-mono text-[10px] opacity-80">
               {Math.round(confluenceStatus.score)}
