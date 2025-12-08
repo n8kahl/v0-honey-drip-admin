@@ -467,10 +467,10 @@ class HistoricalDataIngestionWorker {
       INGESTION_INTERVALS.gamma
     );
 
-    // IV percentile & market regime - check every hour if market just closed
+    // IV percentile & market regime - check every 5 minutes to catch the 10-minute market close window
     this.intervals.daily = setInterval(
       () => this.checkAndRunDailyTasks(),
-      60 * 60 * 1000 // Every hour
+      5 * 60 * 1000 // Every 5 minutes
     );
   }
 

@@ -1,9 +1,8 @@
 import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../../../stores";
 import { HDRowWatchlist } from "../cards/HDRowWatchlist";
 import { HDRowLoadedTrade } from "../cards/HDRowLoadedTrade";
+import { HDActiveTradeRow } from "../cards/HDActiveTradeRow";
 import { HDMacroPanel } from "../dashboard/HDMacroPanel";
-import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
-import { HDTagTradeType } from "../common/HDTagTradeType";
 import { HDDialogEditChallenge } from "../forms/HDDialogEditChallenge";
 import { HDChallengeDetailSheet } from "../forms/HDChallengeDetailSheet";
 import { HDChallengeShare } from "../forms/HDChallengeShare";
@@ -219,90 +218,26 @@ export function HDWatchlistRail({
           </div>
         )}
 
-        {/* Active Trades Section */}
+        {/* Active Trades Section - with live P&L tracking */}
         {enteredTrades.length > 0 && (
           <div className="mt-4">
             <SectionHeader title="Active" />
             <div className="divide-y divide-[var(--border-hairline)]">
               {enteredTrades.map((trade) => {
                 const currentTrade = useTradeStore.getState().currentTrade;
-                const movePercent = trade.movePercent ?? 0;
-                const isProfit = movePercent >= 0;
-
                 return (
-                  <div
+                  <HDActiveTradeRow
                     key={trade.id}
-                    className={cn(
-                      "w-full flex items-center justify-between p-3 border-b border-[var(--border-hairline)] group min-h-[52px]",
-                      "cursor-pointer hover:bg-[var(--surface-2)] transition-colors duration-150 ease-out touch-manipulation",
-                      currentTrade?.id === trade.id &&
-                        "bg-blue-500/10 border-l-2 border-l-blue-500 shadow-sm"
-                    )}
+                    trade={trade}
+                    active={currentTrade?.id === trade.id}
                     onClick={() => {
-                      // Use callback if provided, otherwise fallback to direct store mutation
                       if (onActiveTradeClick) {
                         onActiveTradeClick(trade);
                       } else {
                         useTradeStore.setState({ currentTrade: trade, tradeState: trade.state });
                       }
                     }}
-                    data-testid={`active-trade-${trade.id}`}
-                  >
-                    <div className="flex-1 flex items-center justify-between text-left gap-3">
-                      {/* Left: Contract Details */}
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[var(--text-high)] font-medium">
-                            {trade.ticker}
-                          </span>
-                          <HDTagTradeType type={trade.tradeType} />
-                        </div>
-                        <div className="text-xs text-[var(--text-muted)]">
-                          {trade.contract.strike}
-                          {trade.contract.type} · {trade.contract.daysToExpiry}
-                          <span className="ml-1 font-semibold text-green-500">DTE</span>
-                        </div>
-                      </div>
-
-                      {/* Right: P&L */}
-                      <div className="flex flex-col items-end gap-1">
-                        <span
-                          className={cn(
-                            "text-[var(--text-high)] font-mono text-sm font-medium",
-                            isProfit
-                              ? "text-[var(--accent-positive)]"
-                              : "text-[var(--accent-negative)]"
-                          )}
-                        >
-                          {isProfit ? "+" : ""}
-                          {movePercent.toFixed(2)}%
-                        </span>
-                        <span
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[9px] uppercase tracking-wide border",
-                            isProfit
-                              ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)] border-[var(--accent-positive)]/30"
-                              : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border-[var(--accent-negative)]/30"
-                          )}
-                        >
-                          {isProfit ? "✓ Profit" : "✗ Loss"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Remove Button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // For active trades, call the remove callback if provided
-                        // This will allow the parent to handle exiting the trade
-                      }}
-                      className="ml-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
-                      title="View active trade details"
-                    >
-                      ⚡
-                    </button>
-                  </div>
+                  />
                 );
               })}
             </div>

@@ -125,10 +125,12 @@ export async function snapshotGammaExposure(
 
     // Extract underlying price from first contract's underlying_asset (Massive.com API format)
     // The underlying_price is NOT at the top level, it's in each contract's underlying_asset.price
+    // Note: For indices (SPX, NDX), the API returns `value` instead of `price`
     const firstContract = chain.contracts[0];
     const underlyingPrice =
       chain.underlying_price ??
       firstContract?.underlying_asset?.price ??
+      firstContract?.underlying_asset?.value ?? // For indices (SPX, NDX) - API returns value, not price
       firstContract?.underlying_asset?.last_updated_price ??
       null;
 
