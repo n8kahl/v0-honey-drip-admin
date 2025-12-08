@@ -96,16 +96,8 @@ function validateTradeInput(trade: any): { valid: boolean; error?: string } {
  * Helper: Validate trade update input
  */
 function validateTradeUpdateInput(update: any): { valid: boolean; error?: string } {
-  const validActions = [
-    "entry",
-    "trim",
-    "add",
-    "exit",
-    "stop_update",
-    "update-sl",
-    "trail-stop",
-    "tp_near",
-  ];
+  // Valid types must match the database CHECK constraint
+  const validActions = ["enter", "trim", "update", "update-sl", "trail-stop", "add", "exit"];
   if (!update.action || !validActions.includes(update.action)) {
     return { valid: false, error: `Invalid action. Must be one of: ${validActions.join(", ")}` };
   }
@@ -393,6 +385,10 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
 
     if (!tradeId) {
       return res.status(400).json({ error: "Missing trade ID" });
+    }
+
+    if (!type) {
+      return res.status(400).json({ error: "Missing type field" });
     }
 
     // Validate input
