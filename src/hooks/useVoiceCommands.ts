@@ -360,6 +360,7 @@ export function useVoiceCommands({
           case "enter-trade": {
             if (!action.ticker) {
               setError("No ticker specified");
+              setHudState("error");
               speak("Which ticker do you want to enter?");
               return;
             }
@@ -374,6 +375,7 @@ export function useVoiceCommands({
 
             if (!entryAlert) {
               setError(`No suitable contracts found for ${action.ticker}`);
+              setHudState("error");
               speak(`No suitable contracts found for ${action.ticker}`);
               return;
             }
@@ -393,6 +395,7 @@ export function useVoiceCommands({
 
             if (!trade) {
               setError("No active trade found");
+              setHudState("error");
               speak("No active trade to trim");
               return;
             }
@@ -413,6 +416,7 @@ export function useVoiceCommands({
 
             if (!trade) {
               setError("No active trade found");
+              setHudState("error");
               speak("No active trade to update");
               return;
             }
@@ -433,6 +437,7 @@ export function useVoiceCommands({
 
             if (!trade) {
               setError("No active trade found");
+              setHudState("error");
               speak("No active trade to exit");
               return;
             }
