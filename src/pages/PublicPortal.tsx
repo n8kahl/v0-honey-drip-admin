@@ -451,7 +451,9 @@ function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
 }
 
 function ChallengeCard({ challenge }: { challenge: Challenge }) {
-  const progress = (challenge.current_pnl / challenge.target_amount) * 100;
+  const currentPnl = challenge.current_pnl ?? 0;
+  const targetAmount = challenge.target_amount ?? 0;
+  const progress = targetAmount > 0 ? (currentPnl / targetAmount) * 100 : 0;
   const daysLeft = Math.ceil(
     (new Date(challenge.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   );
@@ -461,8 +463,8 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
       <h3 className="font-bold text-[var(--text-high)] mb-2">{challenge.name}</h3>
       <div className="mb-2">
         <div className="flex justify-between text-sm mb-1">
-          <span className="text-[var(--text-muted)]">${challenge.current_pnl.toFixed(0)}</span>
-          <span className="text-[var(--text-muted)]">${challenge.target_amount.toFixed(0)}</span>
+          <span className="text-[var(--text-muted)]">${currentPnl.toFixed(0)}</span>
+          <span className="text-[var(--text-muted)]">${targetAmount.toFixed(0)}</span>
         </div>
         <div className="h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
           <div
