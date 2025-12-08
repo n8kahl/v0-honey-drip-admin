@@ -16,6 +16,7 @@ export function VoiceCommandsSettings() {
   // Local state for optimistic UI
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
+  const [voiceAudioFeedback, setVoiceAudioFeedback] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   // Sync with profile when loaded
@@ -23,6 +24,7 @@ export function VoiceCommandsSettings() {
     if (profile) {
       setVoiceEnabled(profile.voiceEnabled);
       setVoiceRequireConfirmation(profile.voiceRequireConfirmation);
+      setVoiceAudioFeedback(profile.voiceAudioFeedback);
     }
   }, [profile]);
 
@@ -32,7 +34,7 @@ export function VoiceCommandsSettings() {
     setIsSaving(true);
     try {
       await updateProfile({ voiceEnabled: checked });
-    } catch (err) {
+    } catch {
       // Revert on error
       setVoiceEnabled(!checked);
       toast.error('Failed to save setting');
@@ -46,7 +48,7 @@ export function VoiceCommandsSettings() {
     setIsSaving(true);
     try {
       await updateProfile({ voiceRequireConfirmation: checked });
-    } catch (err) {
+    } catch {
       // Revert on error
       setVoiceRequireConfirmation(!checked);
       toast.error('Failed to save setting');
@@ -55,11 +57,52 @@ export function VoiceCommandsSettings() {
     }
   };
 
+  const handleAudioFeedbackChange = async (checked: boolean) => {
+    setVoiceAudioFeedback(checked);
+    setIsSaving(true);
+    try {
+      await updateProfile({ voiceAudioFeedback: checked });
+    } catch {
+      // Revert on error
+      setVoiceAudioFeedback(!checked);
+      toast.error('Failed to save setting');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const exampleCommands = [
-    '"Buy call on AAPL" – Enter a call option trade',
-    '"Sell half" – Close 50% of the current trade',
-    '"Exit" – Close the entire trade position',
-    '"Add to watchlist SPY" – Add SPY to your watchlist',
+    { category: 'Wake Word', examples: ['"Hey Honey" – Activate voice listening mode'] },
+    {
+      category: 'Entry Alerts',
+      examples: [
+        '"Enter QQQ" – Search best contract and generate entry alert',
+        '"Enter SPY at 15 dollars" – Generate alert with specified price',
+        '"Go long AAPL" – Generate call entry alert',
+      ],
+    },
+    {
+      category: 'Exit & Trims',
+      examples: [
+        '"Exit SPY" – Generate exit alert for active trade',
+        '"Trim current trade" – Generate trim alert (default 30-50%)',
+        '"Take profits on QQQ" – Generate profit-taking alert',
+      ],
+    },
+    {
+      category: 'Position Management',
+      examples: [
+        '"Update stop loss" – Generate stop loss update alert',
+        '"Add to position" – Add to existing trade',
+      ],
+    },
+    {
+      category: 'Watchlist',
+      examples: [
+        '"Add TSLA to watchlist" – Add ticker to watchlist',
+        '"Remove SPY from watchlist" – Remove ticker',
+      ],
+    },
   ];
 
   if (isLoading) {
@@ -136,18 +179,82 @@ export function VoiceCommandsSettings() {
                 </p>
               </div>
             </label>
+
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={voiceAudioFeedback}
+                onChange={(e) => handleAudioFeedbackChange(e.target.checked)}
+                disabled={!voiceEnabled}
+                className="w-4 h-4 mt-0.5 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+              <div className="flex-1">
+                <span
+                  className={`text-sm group-hover:text-[var(--brand-primary)] transition-colors ${
+                    voiceEnabled ? 'text-[var(--text-high)]' : 'text-[var(--text-muted)]'
+                  }`}
+                >
+                  Enable audio feedback (TTS)
+                </span>
+                <p className="text-[var(--text-muted)] text-xs mt-0.5">
+                  Voice reads back commands and confirmations
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* Browser Compatibility */}
+          <div className="pt-3 border-t border-[var(--border-hairline)]">
+            <div className="flex items-start gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface-1)]">
+              <span className="text-xs text-[var(--text-muted)]">
+                ℹ️ <strong>Browser Support:</strong> Voice commands require Chrome, Edge, or Safari with
+                microphone permissions. Press <kbd className="px-1.5 py-0.5 bg-[var(--surface-2)] rounded text-[10px]">M</kbd> to
+                toggle listening, or say <strong>"Hey Honey"</strong> to activate.
+              </span>
+            </div>
           </div>
 
           {/* Example Commands */}
           <div className="pt-3 border-t border-[var(--border-hairline)]">
-            <h3 className="text-[var(--text-high)] text-sm mb-2">Example Commands</h3>
-            <div className="space-y-1.5">
-              {exampleCommands.map((command, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-xs">
-                  <span className="text-[var(--text-muted)] min-w-[4px]">•</span>
-                  <span className="text-[var(--text-muted)]">{command}</span>
+            <h3 className="text-[var(--text-high)] text-sm mb-3">Command Reference</h3>
+            <div className="space-y-4">
+              {exampleCommands.map((section, idx) => (
+                <div key={idx}>
+                  <h4 className="text-[var(--brand-primary)] text-xs font-medium mb-1.5">
+                    {section.category}
+                  </h4>
+                  <div className="space-y-1">
+                    {section.examples.map((command, cmdIdx) => (
+                      <div key={cmdIdx} className="flex items-start gap-2 text-xs pl-2">
+                        <span className="text-[var(--text-muted)] min-w-[4px]">•</span>
+                        <span className="text-[var(--text-muted)]">{command}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* How It Works */}
+          <div className="pt-3 border-t border-[var(--border-hairline)]">
+            <h3 className="text-[var(--text-high)] text-sm mb-2">How It Works</h3>
+            <div className="space-y-2 text-xs text-[var(--text-muted)]">
+              <p>
+                <strong className="text-[var(--text-high)]">1. Activate:</strong> Say "Hey Honey" or press M key
+              </p>
+              <p>
+                <strong className="text-[var(--text-high)]">2. Command:</strong> Speak naturally - the system understands context
+              </p>
+              <p>
+                <strong className="text-[var(--text-high)]">3. Smart Search:</strong> For entries, automatically searches best contracts with reasoning
+              </p>
+              <p>
+                <strong className="text-[var(--text-high)]">4. Confirmation:</strong> Reviews alert with voice readback before sending
+              </p>
+              <p>
+                <strong className="text-[var(--text-high)]">5. Send:</strong> Confirms and sends to your default Discord channels
+              </p>
             </div>
           </div>
         </div>
