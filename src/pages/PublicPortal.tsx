@@ -18,6 +18,7 @@ import { ExternalLink, Zap, Calendar, Play, Trophy, TrendingUp } from "lucide-re
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useMemberStatus } from "@/hooks/useMemberStatus";
+import { branding } from "@/lib/config/branding";
 
 // Components
 import { DailyScorecard, type DailyStats, type AdminStats } from "@/components/public/DailyScorecard";
@@ -93,7 +94,7 @@ async function fetchChallenges(): Promise<{ challenges: any[] }> {
 // ============================================================================
 
 export function PublicPortal() {
-  const { isMember } = useMemberStatus();
+  const { isMember, setIsMember } = useMemberStatus();
   const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
 
   // State
@@ -229,8 +230,13 @@ export function PublicPortal() {
       <header className="sticky top-0 z-50 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--bg-base)]/80">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <img
+              src={branding.logoUrl}
+              alt={branding.appName}
+              className="w-8 h-8 rounded object-contain"
+            />
             <h1 className="text-xl font-bold text-[var(--text-high)]">
-              <span className="text-[var(--brand-primary)]">HONEYDRIP</span> LIVE
+              <span className="text-[var(--brand-primary)]">{branding.appName.toUpperCase()}</span> LIVE
             </h1>
             <div className="flex items-center gap-2">
               <div
@@ -246,7 +252,7 @@ export function PublicPortal() {
           </div>
 
           <div className="flex items-center gap-3">
-            <DemoViewToggle />
+            <DemoViewToggle isMember={isMember} setIsMember={setIsMember} />
             <Button
               onClick={() => window.open(DISCORD_INVITE_URL, "_blank")}
               className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-black font-semibold"

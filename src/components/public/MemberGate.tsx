@@ -86,9 +86,12 @@ function GatedContentPlaceholder() {
 // Demo View Toggle (Header Component)
 // ============================================================================
 
-export function DemoViewToggle() {
-  const { isMember, setIsMember } = useMemberStatus();
+interface DemoViewToggleProps {
+  isMember: boolean;
+  setIsMember: (value: boolean) => void;
+}
 
+export function DemoViewToggle({ isMember, setIsMember }: DemoViewToggleProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
