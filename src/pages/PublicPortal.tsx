@@ -76,9 +76,6 @@ export function PublicPortal() {
   const [earnings, setEarnings] = useState<EarningsEvent[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const DISCORD_INVITE_URL =
-    import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
-
   // Fetch public trades
   const fetchPublicTrades = async () => {
     try {
