@@ -35,6 +35,7 @@ import {
   type EconomicEvent,
   type EarningsEvent,
 } from "../lib/calendar/EconomicCalendar";
+import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
@@ -417,7 +418,10 @@ export function PublicPortal() {
 
 // Trade card components
 function PublicTradeCard({ trade }: { trade: PublicTrade }) {
-  const pnl = ((trade.current_price - trade.entry_price) / trade.entry_price) * 100;
+  const entryPrice = trade.entry_price ?? 0;
+  const currentPrice = trade.current_price ?? 0;
+  const strike = trade.strike ?? 0;
+  const pnl = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
   const pnlColor = pnl >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]";
 
   return (
@@ -426,7 +430,7 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
         <div>
           <h3 className="text-xl font-bold text-[var(--text-high)]">{trade.symbol}</h3>
           <p className="text-sm text-[var(--text-muted)]">
-            ${trade.strike} {trade.contract_type.toUpperCase()}
+            ${strike} {trade.contract_type?.toUpperCase() ?? ""}
           </p>
         </div>
         <div className={cn("text-right", pnlColor)}>
@@ -441,13 +445,13 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
         <div>
           <span className="text-[var(--text-faint)]">Entry:</span>
           <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${trade.entry_price.toFixed(2)}
+            ${entryPrice.toFixed(2)}
           </span>
         </div>
         <div>
           <span className="text-[var(--text-faint)]">Current:</span>
           <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${trade.current_price.toFixed(2)}
+            ${currentPrice.toFixed(2)}
           </span>
         </div>
       </div>
@@ -462,11 +466,12 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
 }
 
 function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
+  const strike = trade.strike ?? 0;
   return (
     <div className="p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
       <h4 className="font-bold text-[var(--text-high)]">{trade.symbol}</h4>
       <p className="text-xs text-[var(--text-muted)]">
-        ${trade.strike} {trade.contract_type.toUpperCase()}
+        ${strike} {trade.contract_type?.toUpperCase() ?? ""}
       </p>
       {trade.public_comment && (
         <p className="text-xs text-[var(--text-muted)] mt-2 italic line-clamp-2">
