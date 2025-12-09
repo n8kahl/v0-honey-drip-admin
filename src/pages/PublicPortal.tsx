@@ -39,18 +39,23 @@ import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
-// Types
+// Types - matching actual database schema
 interface PublicTrade {
   id: string;
-  symbol: string;
-  contract_type: "call" | "put";
-  strike: number;
-  expiration_iso: string;
-  entry_price: number;
-  current_price: number;
-  quantity: number;
-  state: "entered" | "loaded";
+  ticker: string;
+  contract: {
+    strike?: number;
+    type?: "C" | "P";
+    expiry?: string;
+  } | null;
+  trade_type: string;
+  state: string;
+  entry_price: number | null;
+  current_price: number | null;
+  target_price: number | null;
+  stop_loss: number | null;
   public_comment: string | null;
+  admin_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,18 +87,18 @@ export function PublicPortal() {
     try {
       const { data, error } = await supabase
         .from("trades")
-        .select("*")
+        .select("id, ticker, contract, trade_type, state, entry_price, current_price, target_price, stop_loss, public_comment, admin_name, created_at, updated_at")
         .eq("show_on_public", true)
-        .in("state", ["entered", "loaded"])
+        .in("state", ["ENTERED", "LOADED"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      const entered = data?.filter((t) => t.state === "entered") || [];
-      const loaded = data?.filter((t) => t.state === "loaded") || [];
+      const entered = data?.filter((t) => t.state === "ENTERED") || [];
+      const loaded = data?.filter((t) => t.state === "LOADED") || [];
 
-      setActiveTrades(entered);
-      setLoadedTrades(loaded);
+      setActiveTrades(entered as PublicTrade[]);
+      setLoadedTrades(loaded as PublicTrade[]);
       setLastUpdated(new Date());
     } catch (error) {
       console.error("[v0] Error fetching public trades:", error);
@@ -241,22 +246,24 @@ export function PublicPortal() {
           </div>
 
           {/* Animated ticker tape */}
-          <div className="mt-8 overflow-hidden">
-            <div className="flex gap-4 animate-scroll whitespace-nowrap">
-              {activeTrades.concat(activeTrades).map((trade, i) => (
-                <div
-                  key={`${trade.id}-${i}`}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]"
-                >
-                  <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
-                  <span className="font-bold text-[var(--text-high)]">{trade.symbol}</span>
-                  <span className="text-xs text-[var(--text-muted)]">
-                    ${trade.strike} {trade.contract_type.toUpperCase()}
-                  </span>
-                </div>
-              ))}
+          {activeTrades.length > 0 && (
+            <div className="mt-8 overflow-hidden">
+              <div className="flex gap-4 animate-scroll whitespace-nowrap">
+                {activeTrades.concat(activeTrades).map((trade, i) => (
+                  <div
+                    key={`${trade.id}-${i}`}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]"
+                  >
+                    <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
+                    <span className="font-bold text-[var(--text-high)]">{trade.ticker}</span>
+                    <span className="text-xs text-[var(--text-muted)]">
+                      ${trade.contract?.strike ?? 0} {trade.contract?.type === "C" ? "CALL" : "PUT"}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </header>
 
@@ -419,8 +426,9 @@ export function PublicPortal() {
 // Trade card components
 function PublicTradeCard({ trade }: { trade: PublicTrade }) {
   const entryPrice = trade.entry_price ?? 0;
-  const currentPrice = trade.current_price ?? 0;
-  const strike = trade.strike ?? 0;
+  const currentPrice = trade.current_price ?? entryPrice; // Fall back to entry if no current
+  const strike = trade.contract?.strike ?? 0;
+  const contractType = trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
   const pnl = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
   const pnlColor = pnl >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]";
 
@@ -428,13 +436,16 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
     <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] hover:scale-[1.02] transition-transform">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h3 className="text-xl font-bold text-[var(--text-high)]">{trade.symbol}</h3>
+          <h3 className="text-xl font-bold text-[var(--text-high)]">{trade.ticker}</h3>
           <p className="text-sm text-[var(--text-muted)]">
-            ${strike} {trade.contract_type?.toUpperCase() ?? ""}
+            ${strike} {contractType}
           </p>
+          {trade.admin_name && (
+            <p className="text-xs text-[var(--text-faint)]">by {trade.admin_name}</p>
+          )}
         </div>
         <div className={cn("text-right", pnlColor)}>
-          <p className="text-5xl font-bold font-mono">
+          <p className="text-3xl font-bold font-mono">
             {pnl >= 0 ? "+" : ""}
             {pnl.toFixed(1)}%
           </p>
@@ -448,12 +459,14 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
             ${entryPrice.toFixed(2)}
           </span>
         </div>
-        <div>
-          <span className="text-[var(--text-faint)]">Current:</span>
-          <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${currentPrice.toFixed(2)}
-          </span>
-        </div>
+        {trade.target_price && (
+          <div>
+            <span className="text-[var(--text-faint)]">Target:</span>
+            <span className="ml-1 font-mono text-[var(--accent-positive)]">
+              ${trade.target_price.toFixed(2)}
+            </span>
+          </div>
+        )}
       </div>
 
       {trade.public_comment && (
@@ -466,13 +479,17 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
 }
 
 function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
-  const strike = trade.strike ?? 0;
+  const strike = trade.contract?.strike ?? 0;
+  const contractType = trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
   return (
     <div className="p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-      <h4 className="font-bold text-[var(--text-high)]">{trade.symbol}</h4>
+      <h4 className="font-bold text-[var(--text-high)]">{trade.ticker}</h4>
       <p className="text-xs text-[var(--text-muted)]">
-        ${strike} {trade.contract_type?.toUpperCase() ?? ""}
+        ${strike} {contractType}
       </p>
+      {trade.admin_name && (
+        <p className="text-xs text-[var(--text-faint)]">by {trade.admin_name}</p>
+      )}
       {trade.public_comment && (
         <p className="text-xs text-[var(--text-muted)] mt-2 italic line-clamp-2">
           {trade.public_comment}
