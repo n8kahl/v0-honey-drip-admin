@@ -390,7 +390,11 @@ export function useTradeStateMachine({
         // Capture initial confluence data from context engines
         // This runs in background and may complete after UI update
         const direction: "LONG" | "SHORT" = contract.type === "C" ? "LONG" : "SHORT";
-        const initialConfluence = await getInitialConfluence(ticker.symbol, direction, keyLevels || null);
+        const initialConfluence = await getInitialConfluence(
+          ticker.symbol,
+          direction,
+          keyLevels || null
+        );
         console.log("[v0] Initial confluence captured:", initialConfluence?.score);
 
         // Create trade locally for UI display only
@@ -492,6 +496,7 @@ export function useTradeStateMachine({
           const dbTrade = await createTradeApi(userId, {
             ticker: currentTrade.ticker,
             contract: currentTrade.contract,
+            tradeType: currentTrade.tradeType, // Required NOT NULL field in database
             targetPrice: effectiveTargetPrice,
             stopLoss: effectiveStopLoss,
             status: "loaded", // DB status for LOADED state

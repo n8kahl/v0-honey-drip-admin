@@ -188,11 +188,26 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     // Note: Client sends camelCase, we normalize to snake_case for database
     // The database has a constraint called 'trades_status_check' but column is 'state'
     const contract = trade.contract || {};
+
+    // Infer trade_type from DTE if not provided
+    let tradeType = trade.tradeType || trade.trade_type;
+    if (!tradeType && contract.daysToExpiry !== undefined) {
+      const dte = contract.daysToExpiry;
+      if (dte < 1) tradeType = "Scalp";
+      else if (dte < 5) tradeType = "Day";
+      else if (dte < 30) tradeType = "Swing";
+      else tradeType = "LEAP";
+    }
+    // Final fallback
+    if (!tradeType) tradeType = "Day";
+
     const tradeData: Record<string, any> = {
       user_id: userId,
       ticker: trade.ticker,
       // Column is 'state' with CHECK constraint for uppercase: WATCHING, LOADED, ENTERED, EXITED
       state: (trade.state || trade.status || "LOADED").toUpperCase(),
+      // Trade type (required NOT NULL field)
+      trade_type: tradeType,
       // Contract details as separate columns (legacy schema)
       strike: contract.strike || null,
       expiration: contract.expiry || contract.expiration || null,
