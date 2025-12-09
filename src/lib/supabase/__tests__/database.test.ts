@@ -81,9 +81,9 @@ describe("database - trades", () => {
 
       await getTrades("user-123", { status: "entered" });
 
-      // Should call eq twice: once for user_id, once for status
+      // Should call eq twice: once for user_id, once for state
       expect(mockSupabaseClient.eq).toHaveBeenCalledWith("user_id", "user-123");
-      expect(mockSupabaseClient.eq).toHaveBeenCalledWith("status", "entered");
+      expect(mockSupabaseClient.eq).toHaveBeenCalledWith("state", "entered");
     });
 
     it("returns empty array when no trades found", async () => {
@@ -128,7 +128,7 @@ describe("database - trades", () => {
       mockSupabaseClient.eq
         .mockReturnValueOnce(mockSupabaseClient) // First call: user_id (chainable)
         .mockResolvedValueOnce({
-          // Second call: status (final)
+          // Second call: state (final)
           count: 10,
           error: null,
         });
@@ -136,7 +136,7 @@ describe("database - trades", () => {
       await getTradesCount("user-123", "entered");
 
       expect(mockSupabaseClient.eq).toHaveBeenCalledWith("user_id", "user-123");
-      expect(mockSupabaseClient.eq).toHaveBeenCalledWith("status", "entered");
+      expect(mockSupabaseClient.eq).toHaveBeenCalledWith("state", "entered");
     });
 
     it("returns 0 when count is null", async () => {

@@ -1,16 +1,10 @@
 /**
- * PublicPortal.tsx - Public-facing Engagement Page (Redesigned)
+ * PublicPortal.tsx - Public-facing engagement page
  *
- * High-energy showcase of real-time admin trades, daily performance,
- * challenges, and alerts to drive Discord membership signups.
+ * High-energy showcase of real-time admin trades, challenges, pre-market analysis,
+ * and economic calendar to drive Discord membership signups.
  *
- * Features:
- * - Daily group performance scorecard with admin leaderboard
- * - Live trades grouped by type (Scalps, Day, Swing, LEAP)
- * - Alert feed with member gating
- * - Recent big wins carousel
- * - Challenge progress
- * - Demo toggle for public/member view
+ * No authentication required.
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -34,64 +28,40 @@ import {
   getWatchUrl,
   formatPublishedDate,
   type PremarketVideo,
-} from "@/lib/youtube/client";
+} from "../lib/youtube/client";
 import {
   fetchEconomicCalendar,
+  fetchEarningsCalendar,
   type EconomicEvent,
-} from "@/lib/calendar/EconomicCalendar";
+  type EarningsEvent,
+} from "../lib/calendar/EconomicCalendar";
 
-// ============================================================================
-// API Functions
-// ============================================================================
+const supabase = createClient();
 
-const API_BASE = "/api/public";
-
-async function fetchActiveTrades(): Promise<{
-  trades: PublicTrade[];
-  grouped: { scalps: PublicTrade[]; day_trades: PublicTrade[]; swings: PublicTrade[]; leaps: PublicTrade[] };
-  total: number;
-}> {
-  const res = await fetch(`${API_BASE}/trades/active`);
-  if (!res.ok) throw new Error("Failed to fetch trades");
-  return res.json();
+// Types
+interface PublicTrade {
+  id: string;
+  symbol: string;
+  contract_type: "call" | "put";
+  strike: number;
+  expiration_iso: string;
+  entry_price: number;
+  current_price: number;
+  quantity: number;
+  state: "entered" | "loaded";
+  public_comment: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-async function fetchTodayStats(): Promise<DailyStats> {
-  const res = await fetch(`${API_BASE}/stats/today`);
-  if (!res.ok) throw new Error("Failed to fetch stats");
-  return res.json();
+interface Challenge {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_pnl: number;
+  start_date: string;
+  end_date: string;
 }
-
-async function fetchLeaderboard(): Promise<{ leaderboard: AdminStats[] }> {
-  const res = await fetch(`${API_BASE}/stats/leaderboard`);
-  if (!res.ok) throw new Error("Failed to fetch leaderboard");
-  return res.json();
-}
-
-async function fetchRecentAlerts(isMember: boolean): Promise<{
-  alerts: TradeAlert[];
-  has_more: boolean;
-}> {
-  const res = await fetch(`${API_BASE}/alerts/recent?member=${isMember}`);
-  if (!res.ok) throw new Error("Failed to fetch alerts");
-  return res.json();
-}
-
-async function fetchRecentWins(): Promise<{ wins: PublicTrade[] }> {
-  const res = await fetch(`${API_BASE}/wins/recent`);
-  if (!res.ok) throw new Error("Failed to fetch wins");
-  return res.json();
-}
-
-async function fetchChallenges(): Promise<{ challenges: any[] }> {
-  const res = await fetch(`${API_BASE}/challenges/active`);
-  if (!res.ok) throw new Error("Failed to fetch challenges");
-  return res.json();
-}
-
-// ============================================================================
-// Main Component
-// ============================================================================
 
 export function PublicPortal() {
   const { isMember, setIsMember } = useMemberStatus();
@@ -99,130 +69,139 @@ export function PublicPortal() {
 
   // State
   const [activeTrades, setActiveTrades] = useState<PublicTrade[]>([]);
-  const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
-  const [leaderboard, setLeaderboard] = useState<AdminStats[]>([]);
-  const [alerts, setAlerts] = useState<TradeAlert[]>([]);
-  const [alertsHasMore, setAlertsHasMore] = useState(false);
-  const [recentWins, setRecentWins] = useState<PublicTrade[]>([]);
-  const [challenges, setChallenges] = useState<any[]>([]);
+  const [loadedTrades, setLoadedTrades] = useState<PublicTrade[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [premarketVideo, setPremarketVideo] = useState<PremarketVideo | null>(null);
   const [economicEvents, setEconomicEvents] = useState<EconomicEvent[]>([]);
-
-  const [isLoading, setIsLoading] = useState(true);
+  const [earnings, setEarnings] = useState<EarningsEvent[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Trade detail modal state
-  const [selectedTrade, setSelectedTrade] = useState<PublicTrade | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const DISCORD_INVITE_URL =
+    import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
 
-  const handleViewDetails = (trade: PublicTrade) => {
-    setSelectedTrade(trade);
-    setIsDetailModalOpen(true);
-  };
-
-  const handleCloseDetailModal = () => {
-    setIsDetailModalOpen(false);
-    setSelectedTrade(null);
-  };
-
-  // Fetch all data
-  const fetchAllData = useCallback(async () => {
+  // Fetch public trades
+  const fetchPublicTrades = async () => {
     try {
-      const [tradesData, statsData, leaderboardData, alertsData, winsData, challengesData] =
-        await Promise.allSettled([
-          fetchActiveTrades(),
-          fetchTodayStats(),
-          fetchLeaderboard(),
-          fetchRecentAlerts(isMember),
-          fetchRecentWins(),
-          fetchChallenges(),
-        ]);
+      const { data, error } = await supabase
+        .from("trades")
+        .select("*")
+        .eq("show_on_public", true)
+        .in("state", ["entered", "loaded"])
+        .order("created_at", { ascending: false });
 
-      if (tradesData.status === "fulfilled") {
-        setActiveTrades(tradesData.value.trades);
-      }
-      if (statsData.status === "fulfilled") {
-        setDailyStats(statsData.value);
-      }
-      if (leaderboardData.status === "fulfilled") {
-        setLeaderboard(leaderboardData.value.leaderboard);
-      }
-      if (alertsData.status === "fulfilled") {
-        setAlerts(alertsData.value.alerts);
-        setAlertsHasMore(alertsData.value.has_more);
-      }
-      if (winsData.status === "fulfilled") {
-        setRecentWins(winsData.value.wins);
-      }
-      if (challengesData.status === "fulfilled") {
-        setChallenges(challengesData.value.challenges);
-      }
+      if (error) throw error;
 
+      const entered = data?.filter((t) => t.state === "entered") || [];
+      const loaded = data?.filter((t) => t.state === "loaded") || [];
+
+      setActiveTrades(entered);
+      setLoadedTrades(loaded);
       setLastUpdated(new Date());
     } catch (error) {
-      console.error("[PublicPortal] Error fetching data:", error);
-    } finally {
-      setIsLoading(false);
+      console.error("[v0] Error fetching public trades:", error);
     }
-  }, [isMember]);
+  };
 
-  // Fetch pre-market and calendar
-  const fetchSidebarData = useCallback(async () => {
+  // Fetch active challenges
+  const fetchChallenges = async () => {
     try {
-      const [premarketData, calendarData] = await Promise.allSettled([
-        fetchLatestPremarket(),
-        (async () => {
-          const now = new Date();
-          const startOfWeek = new Date(now);
-          startOfWeek.setDate(now.getDate() - now.getDay());
-          const endOfWeek = new Date(startOfWeek);
-          endOfWeek.setDate(startOfWeek.getDate() + 7);
-          return fetchEconomicCalendar(startOfWeek, endOfWeek);
-        })(),
+      const { data, error } = await supabase
+        .from("challenges")
+        .select("*")
+        .eq("is_active", true)
+        .is("archived_at", null)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setChallenges(data || []);
+    } catch (error) {
+      console.error("[v0] Error fetching challenges:", error);
+    }
+  };
+
+  // Fetch pre-market video
+  const fetchPremarket = async () => {
+    const video = await fetchLatestPremarket();
+    setPremarketVideo(video);
+  };
+
+  // Fetch calendar data
+  const fetchCalendarData = async () => {
+    try {
+      // Get current week date range
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 7); // Next Sunday
+
+      const [econ, earn] = await Promise.all([
+        fetchEconomicCalendar(startOfWeek, endOfWeek),
+        fetchEarningsCalendar(now, new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)),
       ]);
 
-      if (premarketData.status === "fulfilled") {
-        setPremarketVideo(premarketData.value);
-      }
-      if (calendarData.status === "fulfilled") {
-        const highImpact = calendarData.value.filter((e) =>
-          ["medium", "high"].includes(e.impact.toLowerCase())
-        );
-        setEconomicEvents(highImpact.slice(0, 8));
-      }
+      // Filter medium+ impact events for current week
+      const highImpactEvents = econ.filter((e) =>
+        ["medium", "high"].includes(e.impact.toLowerCase())
+      );
+      setEconomicEvents(highImpactEvents.slice(0, 10));
+
+      // Get next 3 days of earnings
+      const upcomingEarnings = earn.slice(0, 8);
+      setEarnings(upcomingEarnings);
     } catch (error) {
-      console.error("[PublicPortal] Error fetching sidebar data:", error);
+      console.error("[v0] Error fetching calendar data:", error);
     }
+  };
+
+  // Setup real-time subscription
+  useEffect(() => {
+    // Initial fetch
+    fetchPublicTrades();
+    fetchChallenges();
+    fetchPremarket();
+    fetchCalendarData();
+
+    // Setup subscription for trades
+    const tradesChannel = supabase
+      .channel("public-trades")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "trades",
+          filter: "show_on_public=eq.true",
+        },
+        () => {
+          fetchPublicTrades();
+        }
+      )
+      .subscribe();
+
+    // Refresh calendar every 30 minutes
+    const calendarInterval = setInterval(fetchCalendarData, 30 * 60 * 1000);
+
+    // Refresh pre-market every 15 minutes
+    const premarketInterval = setInterval(fetchPremarket, 15 * 60 * 1000);
+
+    return () => {
+      tradesChannel.unsubscribe();
+      clearInterval(calendarInterval);
+      clearInterval(premarketInterval);
+    };
   }, []);
 
-  // Initial fetch
-  useEffect(() => {
-    fetchAllData();
-    fetchSidebarData();
+  // Check staleness (5 second threshold)
+  const isStale = Date.now() - lastUpdated.getTime() > 5000;
 
-    // Poll for updates every 30 seconds
-    const pollInterval = setInterval(fetchAllData, 30000);
-
-    return () => clearInterval(pollInterval);
-  }, [fetchAllData, fetchSidebarData]);
-
-  // Refetch alerts when member status changes
-  useEffect(() => {
-    fetchRecentAlerts(isMember).then((data) => {
-      setAlerts(data.alerts);
-      setAlertsHasMore(data.has_more);
-    });
-  }, [isMember]);
-
-  // Time since last update
+  // Calculate time since last update
   const getTimeSinceUpdate = () => {
     const seconds = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
     if (seconds < 60) return `${seconds}s ago`;
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m ago`;
   };
-
-  const isStale = Date.now() - lastUpdated.getTime() > 60000; // 1 minute
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)] overflow-x-hidden">
@@ -254,234 +233,277 @@ export function PublicPortal() {
           <div className="flex items-center gap-3">
             <DemoViewToggle isMember={isMember} setIsMember={setIsMember} />
             <Button
+              size="lg"
               onClick={() => window.open(DISCORD_INVITE_URL, "_blank")}
-              className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-black font-semibold"
+              className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--bg-base)] font-bold text-lg px-8 py-6 shadow-glow-lg animate-pulse"
             >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Join Discord
+              <ExternalLink className="w-5 h-5 mr-2" />
+              Join Discord for Live Alerts
             </Button>
+          </div>
+
+          {/* Animated ticker tape */}
+          <div className="mt-8 overflow-hidden">
+            <div className="flex gap-4 animate-scroll whitespace-nowrap">
+              {activeTrades.concat(activeTrades).map((trade, i) => (
+                <div
+                  key={`${trade.id}-${i}`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]"
+                >
+                  <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
+                  <span className="font-bold text-[var(--text-high)]">{trade.symbol}</span>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    ${trade.strike} {trade.contract_type.toUpperCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Daily Scorecard */}
-        <section className="mb-8">
-          <DailyScorecard
-            stats={dailyStats}
-            leaderboard={leaderboard}
-            isLoading={isLoading}
-          />
-        </section>
+      {/* Main Content Grid */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Staleness indicator */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "w-2 h-2 rounded-full",
+                isStale ? "bg-amber-400 animate-pulse" : "bg-[var(--accent-positive)] animate-pulse"
+              )}
+            />
+            <span className="text-sm text-[var(--text-muted)]">
+              {isStale ? "Reconnecting..." : "Live"} · Last updated {getTimeSinceUpdate()}
+            </span>
+          </div>
+        </div>
 
-        {/* Main Grid: Trades + Sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Trades Section - 8 cols */}
-          <div className="lg:col-span-8 space-y-6">
-            {/* Live Now Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-[var(--accent-positive)]" />
-                <h2 className="text-xl font-bold text-[var(--text-high)]">Live Now</h2>
-                <span className="text-sm text-[var(--text-muted)]">
-                  {activeTrades.length} Active
-                </span>
+          {/* Active Trades - Span 4 */}
+          <section className="lg:col-span-4 space-y-4">
+            <h2 className="text-2xl font-bold text-[var(--text-high)] flex items-center gap-2">
+              <Zap className="w-6 h-6 text-[var(--accent-positive)]" />
+              Active Trades
+              <span className="text-sm font-normal text-[var(--text-muted)]">
+                ({activeTrades.length})
+              </span>
+            </h2>
+            {activeTrades.length === 0 ? (
+              <div className="p-8 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                <p className="text-[var(--text-muted)]">
+                  No active trades right now. Check back soon!
+                </p>
               </div>
+            ) : (
+              activeTrades.map((trade) => <PublicTradeCard key={trade.id} trade={trade} />)
+            )}
+          </section>
+
+          {/* Loaded Trades - Span 3 */}
+          <section className="lg:col-span-3 space-y-4">
+            <h2 className="text-2xl font-bold text-[var(--text-high)]">
+              Queued Setups
+              <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
+                ({loadedTrades.length})
+              </span>
+            </h2>
+            {loadedTrades.length === 0 ? (
+              <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                <p className="text-sm text-[var(--text-muted)]">No queued setups</p>
+              </div>
+            ) : (
+              loadedTrades.map((trade) => <LoadedTradeCard key={trade.id} trade={trade} />)
+            )}
+          </section>
+
+          {/* Challenges + Calendar - Span 3 */}
+          <section className="lg:col-span-3 space-y-6">
+            {/* Challenges */}
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-[var(--text-high)]">Active Challenges</h2>
+              {challenges.length === 0 ? (
+                <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                  <p className="text-sm text-[var(--text-muted)]">No active challenges</p>
+                </div>
+              ) : (
+                challenges.map((challenge) => (
+                  <ChallengeCard key={challenge.id} challenge={challenge} />
+                ))
+              )}
             </div>
 
-            {/* Trades by Type */}
-            <TradeTypeSection
-              trades={activeTrades}
-              onViewDetails={handleViewDetails}
-              onShare={(trade) => {
-                // TODO: Open share modal
-                console.log("Share trade:", trade.id);
-              }}
-            />
-
-            {/* Alert Feed */}
-            <section className="mt-6">
-              <AlertFeed
-                alerts={alerts}
-                isMember={isMember}
-                hasMore={alertsHasMore}
-                onJoinDiscord={() => window.open(DISCORD_INVITE_URL, "_blank")}
-              />
-            </section>
-
-            {/* Recent Big Wins */}
-            {recentWins.length > 0 && (
-              <section className="mt-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Trophy className="w-5 h-5 text-[var(--brand-primary)]" />
-                  <h2 className="text-xl font-bold text-[var(--text-high)]">Recent Big Wins</h2>
-                  <span className="text-sm text-[var(--text-muted)]">Last 7 Days</span>
-                </div>
-                <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-thin scrollbar-thumb-[var(--surface-2)] scrollbar-track-transparent">
-                  {recentWins.map((trade) => (
-                    <BigWinCard key={trade.id} trade={trade} />
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-
-          {/* Sidebar - 4 cols */}
-          <aside className="lg:col-span-4 space-y-6">
-            {/* Active Challenges */}
-            {challenges.length > 0 && (
-              <section>
-                <h3 className="text-lg font-semibold text-[var(--text-high)] mb-3 flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-[var(--brand-primary)]" />
-                  Active Challenges
-                </h3>
-                <div className="space-y-3">
-                  {challenges.map((challenge) => (
-                    <ChallengeCard key={challenge.id} challenge={challenge} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 30-Day Performance - Gated for non-members */}
-            {!isMember ? (
-              <GatedSection
-                title="30-Day Performance"
-                description="Members see detailed performance breakdowns by trade type"
-              />
-            ) : (
-              <section>
-                <h3 className="text-lg font-semibold text-[var(--text-high)] mb-3">
-                  30-Day Performance
-                </h3>
-                {/* TODO: Add PerformanceByType component */}
-                <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] text-center text-sm text-[var(--text-muted)]">
-                  Performance stats coming soon
-                </div>
-              </section>
-            )}
-
-            {/* Pre-Market Video */}
-            {premarketVideo?.available && (
-              <section>
-                <h3 className="text-lg font-semibold text-[var(--text-high)] mb-3 flex items-center gap-2">
-                  <Play className="w-5 h-5" />
-                  Pre-Market Analysis
-                </h3>
-                <a
-                  href={getWatchUrl(premarketVideo.videoId!)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block group"
-                >
-                  <div className="relative rounded-lg overflow-hidden border border-[var(--border-hairline)] hover:border-[var(--brand-primary)] transition-all">
-                    <img
-                      src={premarketVideo.thumbnail}
-                      alt={premarketVideo.title}
-                      className="w-full aspect-video object-cover group-hover:scale-105 transition-transform"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                    <div className="absolute bottom-2 left-2 right-2">
-                      <p className="text-xs text-white font-medium line-clamp-2">
-                        {premarketVideo.title}
-                      </p>
-                    </div>
-                  </div>
-                </a>
-                <p className="text-xs text-[var(--text-faint)] mt-2">
-                  {formatPublishedDate(premarketVideo.publishedAt!)}
-                </p>
-              </section>
-            )}
-
             {/* Economic Calendar */}
-            {economicEvents.length > 0 && (
-              <section>
-                <h3 className="text-lg font-semibold text-[var(--text-high)] mb-3 flex items-center gap-2">
-                  <Calendar className="w-5 h-5" />
-                  This Week
-                </h3>
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[var(--text-high)] flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                This Week
+              </h2>
+              <div className="space-y-2">
+                {economicEvents.slice(0, 5).map((event, i) => (
+                  <EconomicEventCard key={i} event={event} />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Pre-Market + Earnings - Span 2 */}
+          <section className="lg:col-span-2 space-y-6">
+            {/* Pre-Market Video */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[var(--text-high)] flex items-center gap-2">
+                <Play className="w-5 h-5" />
+                Pre-Market
+              </h2>
+              {premarketVideo?.available ? (
                 <div className="space-y-2">
-                  {economicEvents.map((event, i) => (
-                    <EconomicEventCard key={i} event={event} />
-                  ))}
+                  <a
+                    href={getWatchUrl(premarketVideo.videoId!)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block group"
+                  >
+                    <div className="relative rounded-lg overflow-hidden border border-[var(--border-hairline)] hover:border-[var(--brand-primary)] transition-all">
+                      <img
+                        src={premarketVideo.thumbnail}
+                        alt={premarketVideo.title}
+                        className="w-full aspect-video object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                      <div className="absolute bottom-2 left-2 right-2">
+                        <p className="text-xs text-white font-medium line-clamp-2">
+                          {premarketVideo.title}
+                        </p>
+                      </div>
+                    </div>
+                  </a>
+                  <p className="text-xs text-[var(--text-faint)]">
+                    {formatPublishedDate(premarketVideo.publishedAt!)}
+                  </p>
                 </div>
-              </section>
-            )}
-          </aside>
+              ) : (
+                <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Pre-market analysis posted daily by 9am ET
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Upcoming Earnings */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[var(--text-high)]">Earnings</h2>
+              <div className="space-y-2">
+                {earnings.slice(0, 6).map((event, i) => (
+                  <EarningsCard key={i} event={event} />
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
       </main>
 
-      {/* Fixed CTA (mobile) */}
-      <div className="fixed bottom-4 left-4 right-4 lg:hidden z-50">
+      {/* Fixed CTA Button */}
+      <div className="fixed bottom-6 right-6 z-50">
         <Button
+          size="lg"
           onClick={() => window.open(DISCORD_INVITE_URL, "_blank")}
-          className="w-full bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-black font-bold shadow-glow-lg"
+          className="bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-[var(--bg-base)] font-bold shadow-glow-lg animate-pulse"
         >
           <ExternalLink className="w-5 h-5 mr-2" />
-          Join Discord for Live Alerts
+          Join Discord
         </Button>
       </div>
-
-      {/* Trade Detail Modal */}
-      <TradeDetailModal
-        trade={selectedTrade}
-        isOpen={isDetailModalOpen}
-        onClose={handleCloseDetailModal}
-      />
     </div>
   );
 }
 
-// ============================================================================
-// Helper Components
-// ============================================================================
-
-function BigWinCard({ trade }: { trade: PublicTrade }) {
-  const pnl = trade.pnl_percent ?? 0;
-  const contract = trade.contract;
-  const contractDisplay = contract
-    ? `$${contract.strike}${contract.type === "call" ? "C" : "P"}`
-    : "";
+// Trade card components
+function PublicTradeCard({ trade }: { trade: PublicTrade }) {
+  const pnl = ((trade.current_price - trade.entry_price) / trade.entry_price) * 100;
+  const pnlColor = pnl >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]";
 
   return (
-    <div className="flex-shrink-0 w-40 p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] hover:scale-[1.02] transition-transform">
-      <div className="font-bold text-[var(--text-high)]">{trade.ticker}</div>
-      <div className="text-xs text-[var(--text-muted)]">{contractDisplay}</div>
-      <div className="text-2xl font-bold font-mono text-[var(--accent-positive)] mt-1">
-        +{pnl.toFixed(0)}%
+    <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] hover:scale-[1.02] transition-transform">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h3 className="text-xl font-bold text-[var(--text-high)]">{trade.symbol}</h3>
+          <p className="text-sm text-[var(--text-muted)]">
+            ${trade.strike} {trade.contract_type.toUpperCase()}
+          </p>
+        </div>
+        <div className={cn("text-right", pnlColor)}>
+          <p className="text-5xl font-bold font-mono">
+            {pnl >= 0 ? "+" : ""}
+            {pnl.toFixed(1)}%
+          </p>
+        </div>
       </div>
-      <div className="text-xs text-[var(--text-faint)] mt-1">
-        {trade.admin_name || "Admin"} · {trade.trade_type}
+
+      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+        <div>
+          <span className="text-[var(--text-faint)]">Entry:</span>
+          <span className="ml-1 font-mono text-[var(--text-high)]">
+            ${trade.entry_price.toFixed(2)}
+          </span>
+        </div>
+        <div>
+          <span className="text-[var(--text-faint)]">Current:</span>
+          <span className="ml-1 font-mono text-[var(--text-high)]">
+            ${trade.current_price.toFixed(2)}
+          </span>
+        </div>
       </div>
+
+      {trade.public_comment && (
+        <div className="mt-3 p-3 bg-[var(--surface-2)] rounded border-l-2 border-[var(--brand-primary)]">
+          <p className="text-sm text-[var(--text-muted)] italic">{trade.public_comment}</p>
+        </div>
+      )}
     </div>
   );
 }
 
-function ChallengeCard({ challenge }: { challenge: any }) {
-  const progress = Math.min(100, Math.max(0, challenge.progress_percent || 0));
+function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
+  return (
+    <div className="p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+      <h4 className="font-bold text-[var(--text-high)]">{trade.symbol}</h4>
+      <p className="text-xs text-[var(--text-muted)]">
+        ${trade.strike} {trade.contract_type.toUpperCase()}
+      </p>
+      {trade.public_comment && (
+        <p className="text-xs text-[var(--text-muted)] mt-2 italic line-clamp-2">
+          {trade.public_comment}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChallengeCard({ challenge }: { challenge: Challenge }) {
+  const currentPnl = challenge.current_pnl ?? 0;
+  const targetAmount = challenge.target_amount ?? 0;
+  const progress = targetAmount > 0 ? (currentPnl / targetAmount) * 100 : 0;
+  const daysLeft = Math.ceil(
+    (new Date(challenge.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
 
   return (
     <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-      <h4 className="font-semibold text-[var(--text-high)] mb-2">{challenge.name}</h4>
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-[var(--text-muted)]">
-          ${(challenge.current_pnl || 0).toFixed(0)}
-        </span>
-        <span className="text-[var(--text-muted)]">
-          ${(challenge.target_amount || 0).toFixed(0)}
-        </span>
+      <h3 className="font-bold text-[var(--text-high)] mb-2">{challenge.name}</h3>
+      <div className="mb-2">
+        <div className="flex justify-between text-sm mb-1">
+          <span className="text-[var(--text-muted)]">${currentPnl.toFixed(0)}</span>
+          <span className="text-[var(--text-muted)]">${targetAmount.toFixed(0)}</span>
+        </div>
+        <div className="h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-[var(--accent-positive)] transition-all"
+            style={{ width: `${Math.min(100, progress)}%` }}
+          />
+        </div>
       </div>
-      <div className="h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
-        <div
-          className="h-full bg-[var(--accent-positive)] transition-all"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <p className="text-xs text-[var(--text-faint)] mt-2">
-        {challenge.days_remaining} days remaining · {progress.toFixed(0)}% complete
-      </p>
+      <p className="text-xs text-[var(--text-faint)]">{daysLeft} days remaining</p>
     </div>
   );
 }
@@ -495,18 +517,33 @@ function EconomicEventCard({ event }: { event: EconomicEvent }) {
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm text-[var(--text-high)] flex-1 line-clamp-1">{event.name}</p>
         <span className={cn("text-xs font-bold", impactColor)}>
-          {event.impact === "HIGH" || event.impact === "CRITICAL" ? "HIGH" : "MED"}
+          {event.impact === "HIGH" || event.impact === "CRITICAL" ? "🔴" : "🟡"}
         </span>
       </div>
       <p className="text-xs text-[var(--text-faint)] mt-1">
         {event.datetime.toLocaleDateString("en-US", {
-          weekday: "short",
           month: "short",
           day: "numeric",
           hour: "numeric",
           minute: "2-digit",
         })}
       </p>
+    </div>
+  );
+}
+
+function EarningsCard({ event }: { event: EarningsEvent }) {
+  return (
+    <div className="p-2 bg-[var(--surface-1)] rounded border border-[var(--border-hairline)]">
+      <div className="flex items-center justify-between">
+        <span className="font-bold text-[var(--text-high)]">{event.symbol}</span>
+        <span className="text-xs text-[var(--text-muted)]">
+          {event.datetime.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+        </span>
+      </div>
+      {event.estimate && (
+        <p className="text-xs text-[var(--text-faint)] mt-1">Est: ${event.estimate}</p>
+      )}
     </div>
   );
 }
