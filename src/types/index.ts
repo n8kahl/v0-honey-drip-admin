@@ -125,6 +125,7 @@ export interface TradeConfluence {
     vwapPosition?: ConfluenceFactor;
     volumeProfile?: ConfluenceFactor;
   };
+  keyLevels?: import("../lib/riskEngine/types").KeyLevels; // Real-time key levels for TP/SL calculations and metric display
   updatedAt: Date;
   isStale?: boolean; // True if data is >60s old
 }

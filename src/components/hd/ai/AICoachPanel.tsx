@@ -1,11 +1,8 @@
 /**
- * AICoachPanel - Main AI Trade Coach panel component
+ * AICoachPanel - AI Trade Coach panel
  *
- * Displays:
- * - Live metrics (R-multiple, time in trade, ATR to stop)
- * - AI coaching summary and recommendations
- * - Risk flags and warnings
- * - "Ask Honey" input for questions
+ * Collapsed (default): 1-liner summary bar with expand button
+ * Expanded: Full panel with summary, recommendations, risk flags, ask input
  */
 
 import { useState } from "react";
@@ -26,6 +23,8 @@ import {
   MessageCircle,
   Send,
   Loader2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
@@ -50,63 +49,33 @@ interface AICoachPanelProps {
   voiceEnabled?: boolean;
   onToggleVoice?: () => void;
   className?: string;
+  defaultExpanded?: boolean;
 }
 
-// Quick questions for the "Ask Honey" section
-const QUICK_QUESTIONS = ["Breakeven?", "Risk?", "Valid?", "Scale?", "Trail stop?"];
+const QUICK_QUESTIONS = ["Risk?", "Valid?", "Scale?", "Trail?"];
 
-// Risk flag display config
 const RISK_FLAG_CONFIG: Record<RiskFlag, { label: string; color: string }> = {
-  extended_move: { label: "Extended Move", color: "text-amber-400" },
+  extended_move: { label: "Extended", color: "text-amber-400" },
   approaching_stop: { label: "Near Stop", color: "text-red-400" },
-  volume_fading: { label: "Volume Fading", color: "text-amber-400" },
-  theta_decay: { label: "Theta Decay", color: "text-orange-400" },
+  volume_fading: { label: "Vol Fading", color: "text-amber-400" },
+  theta_decay: { label: "Theta", color: "text-orange-400" },
   spread_widening: { label: "Wide Spread", color: "text-amber-400" },
-  event_imminent: { label: "Event Soon", color: "text-purple-400" },
-  iv_elevated: { label: "IV Elevated", color: "text-orange-400" },
-  momentum_divergence: { label: "Momentum Div", color: "text-amber-400" },
-  regime_unfavorable: { label: "Regime Risk", color: "text-red-400" },
+  event_imminent: { label: "Event", color: "text-purple-400" },
+  iv_elevated: { label: "IV High", color: "text-orange-400" },
+  momentum_divergence: { label: "Divergence", color: "text-amber-400" },
+  regime_unfavorable: { label: "Regime", color: "text-red-400" },
 };
 
-// Action type display config
 const ACTION_CONFIG: Record<ActionType, { label: string; color: string; icon: typeof Target }> = {
-  scale_out: {
-    label: "Scale Out",
-    color: "bg-green-500/20 text-green-400 border-green-500/30",
-    icon: TrendingUp,
-  },
-  trail_stop: {
-    label: "Trail Stop",
-    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    icon: Shield,
-  },
-  move_to_be: {
-    label: "Move to BE",
-    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    icon: Shield,
-  },
+  scale_out: { label: "Scale Out", color: "bg-green-500/20 text-green-400 border-green-500/30", icon: TrendingUp },
+  trail_stop: { label: "Trail Stop", color: "bg-blue-500/20 text-blue-400 border-blue-500/30", icon: Shield },
+  move_to_be: { label: "Move BE", color: "bg-blue-500/20 text-blue-400 border-blue-500/30", icon: Shield },
   hold: { label: "Hold", color: "bg-gray-500/20 text-gray-400 border-gray-500/30", icon: Clock },
-  take_profit: {
-    label: "Take Profit",
-    color: "bg-green-500/20 text-green-400 border-green-500/30",
-    icon: Target,
-  },
-  watch_level: {
-    label: "Watch Level",
-    color: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    icon: Activity,
-  },
-  reduce_size: {
-    label: "Reduce Size",
-    color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    icon: TrendingDown,
-  },
+  take_profit: { label: "Take Profit", color: "bg-green-500/20 text-green-400 border-green-500/30", icon: Target },
+  watch_level: { label: "Watch", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: Activity },
+  reduce_size: { label: "Reduce", color: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: TrendingDown },
   exit: { label: "Exit", color: "bg-red-500/20 text-red-400 border-red-500/30", icon: X },
-  add_position: {
-    label: "Add",
-    color: "bg-green-500/20 text-green-400 border-green-500/30",
-    icon: TrendingUp,
-  },
+  add_position: { label: "Add", color: "bg-green-500/20 text-green-400 border-green-500/30", icon: TrendingUp },
   wait: { label: "Wait", color: "bg-gray-500/20 text-gray-400 border-gray-500/30", icon: Clock },
 };
 
@@ -128,7 +97,9 @@ export function AICoachPanel({
   voiceEnabled = false,
   onToggleVoice,
   className,
+  defaultExpanded = false,
 }: AICoachPanelProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [question, setQuestion] = useState("");
 
   const handleAsk = () => {
@@ -138,204 +109,192 @@ export function AICoachPanel({
     }
   };
 
-  const handleQuickQuestion = (q: string) => {
-    onAsk(q);
+  const sessionDuration = startTime ? Math.floor((Date.now() - startTime) / 1000 / 60) : 0;
+  const estimatedCost = ((tokensUsed / 1000) * 0.01).toFixed(2);
+
+  // Generate 1-liner summary
+  const getSummaryOneLiner = (): string => {
+    if (error) return "Coach error";
+    if (isLoading && !latestResponse) return "Analyzing...";
+    if (!latestResponse) return "No analysis yet";
+
+    // Use first recommendation or summary excerpt
+    const firstRec = latestResponse.recommendations[0];
+    if (firstRec) {
+      const config = ACTION_CONFIG[firstRec.action];
+      return config?.label || firstRec.action.replace(/_/g, " ");
+    }
+
+    // Truncate summary to ~40 chars
+    const summary = latestResponse.summary || "";
+    return summary.length > 40 ? summary.slice(0, 37) + "..." : summary;
   };
 
-  // Calculate session duration
-  const sessionDuration = startTime ? Math.floor((Date.now() - startTime) / 1000 / 60) : 0;
+  // Collapsed view: 1-liner summary bar
+  if (!expanded) {
+    return (
+      <div className={cn("flex items-center gap-2 px-3 py-2 bg-[var(--surface-2)] rounded", className)}>
+        <Brain className="w-4 h-4 text-[var(--brand-primary)] shrink-0" />
+        <span className="text-xs text-[var(--text-muted)] truncate flex-1">
+          {getSummaryOneLiner()}
+        </span>
 
-  // Estimate cost (~$0.01 per 1000 tokens for GPT-4 Turbo)
-  const estimatedCost = ((tokensUsed / 1000) * 0.01).toFixed(3);
+        {/* Risk flag indicators */}
+        {latestResponse?.riskFlags && latestResponse.riskFlags.length > 0 && (
+          <span className="flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3 text-amber-400" />
+            <span className="text-[10px] text-amber-400">{latestResponse.riskFlags.length}</span>
+          </span>
+        )}
 
+        {/* Compact stats */}
+        <span className="text-[10px] text-[var(--text-faint)] tabular-nums shrink-0">
+          {updateCount > 0 && `${updateCount}↻`}
+        </span>
+
+        {/* Actions */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRefresh}
+          disabled={isProcessing}
+          className="h-6 w-6 p-0"
+        >
+          <RefreshCw className={cn("w-3 h-3", isProcessing && "animate-spin")} />
+        </Button>
+
+        <button
+          onClick={() => setExpanded(true)}
+          className="flex items-center text-[10px] text-[var(--text-faint)] hover:text-[var(--text-muted)]"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  // Expanded view: full panel
   return (
-    <div className={cn("flex flex-col max-h-[600px] bg-[var(--surface-2)]", className)}>
+    <div className={cn("flex flex-col max-h-[400px] bg-[var(--surface-2)] rounded", className)}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-hairline)]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-hairline)]">
         <div className="flex items-center gap-2">
-          <Brain className="w-5 h-5 text-[var(--brand-primary)]" />
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text-high)]">AI Trade Coach</h3>
-            <p className="text-[10px] text-[var(--text-muted)]">
-              {trade.ticker} · {coachingMode?.toUpperCase()} Mode
-            </p>
-          </div>
+          <Brain className="w-4 h-4 text-[var(--brand-primary)]" />
+          <span className="text-xs font-medium text-[var(--text-high)]">AI Coach</span>
+          <span className="text-[10px] text-[var(--text-muted)]">{coachingMode}</span>
         </div>
         <div className="flex items-center gap-1">
           {onToggleVoice && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleVoice}
-              className="h-7 w-7 p-0"
-              title={voiceEnabled ? "Disable voice" : "Enable voice"}
-            >
-              {voiceEnabled ? (
-                <Volume2 className="w-4 h-4" />
-              ) : (
-                <VolumeX className="w-4 h-4 text-[var(--text-muted)]" />
-              )}
+            <Button variant="ghost" size="sm" onClick={onToggleVoice} className="h-6 w-6 p-0">
+              {voiceEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isProcessing}
-            className="h-7 w-7 p-0"
-            title="Refresh analysis"
-          >
-            <RefreshCw className={cn("w-4 h-4", isProcessing && "animate-spin")} />
+          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={isProcessing} className="h-6 w-6 p-0">
+            <RefreshCw className={cn("w-3.5 h-3.5", isProcessing && "animate-spin")} />
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-7 w-7 p-0" title="Close">
-            <X className="w-4 h-4" />
+          <button onClick={() => setExpanded(false)} className="p-1 text-[var(--text-faint)] hover:text-[var(--text-muted)]">
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-6 w-6 p-0">
+            <X className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>
 
-      {/* Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Error State */}
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {error && (
-          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-[var(--radius)] text-sm text-red-400">
+          <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400">
             {error}
           </div>
         )}
 
-        {/* Loading State */}
         {isLoading && !latestResponse && (
-          <div className="flex flex-col items-center justify-center py-8 gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[var(--brand-primary)]" />
-            <p className="text-sm text-[var(--text-muted)]">Analyzing trade...</p>
+          <div className="flex items-center justify-center py-4 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-[var(--brand-primary)]" />
+            <span className="text-xs text-[var(--text-muted)]">Analyzing...</span>
           </div>
         )}
 
-        {/* AI Summary */}
         {latestResponse && (
           <>
-            <div className="p-4 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)]">
-              <div className="flex items-start gap-2 mb-2">
-                <Brain className="w-4 h-4 text-[var(--brand-primary)] mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-[var(--text-high)] uppercase tracking-wide">
-                      Honey Coach
-                    </span>
-                    {latestResponse.confidence && (
-                      <span className="text-[10px] text-[var(--text-muted)]">
-                        {latestResponse.confidence}% confidence
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-[var(--text-high)] leading-relaxed">
-                    {latestResponse.summary}
-                  </p>
-                  <div className="mt-2 text-[10px] text-[var(--text-muted)]">
-                    Updated {new Date(latestResponse.timestamp).toLocaleTimeString()}
-                    {latestResponse.trigger && (
-                      <span className="ml-2 px-1.5 py-0.5 bg-[var(--surface-2)] rounded">
-                        {latestResponse.trigger.replace(/_/g, " ")}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+            {/* Summary */}
+            <div className="p-2.5 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded">
+              <p className="text-xs text-[var(--text-high)] leading-relaxed">
+                {latestResponse.summary}
+              </p>
+              {latestResponse.confidence && (
+                <span className="text-[10px] text-[var(--text-faint)]">
+                  {latestResponse.confidence}% confidence
+                </span>
+              )}
             </div>
 
             {/* Recommendations */}
             {latestResponse.recommendations.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-medium text-[var(--text-high)] uppercase tracking-wide">
-                  Suggestions
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                  {latestResponse.recommendations.map((rec, idx) => {
-                    const config = ACTION_CONFIG[rec.action];
-                    const Icon = config?.icon || Target;
-                    return (
-                      <div
-                        key={idx}
-                        className={cn(
-                          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] border text-xs",
-                          config?.color ||
-                            "bg-[var(--surface-1)] text-[var(--text-med)] border-[var(--border-hairline)]"
-                        )}
-                        title={rec.reason}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span className="font-medium">{config?.label || rec.action}</span>
-                        {rec.urgency >= 4 && (
-                          <span className="ml-1 w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="flex flex-wrap gap-1.5">
+                {latestResponse.recommendations.map((rec, idx) => {
+                  const config = ACTION_CONFIG[rec.action];
+                  const Icon = config?.icon || Target;
+                  return (
+                    <div
+                      key={idx}
+                      className={cn("flex items-center gap-1 px-2 py-1 rounded border text-[10px]", config?.color)}
+                      title={rec.reason}
+                    >
+                      <Icon className="w-3 h-3" />
+                      <span className="font-medium">{config?.label || rec.action}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             {/* Risk Flags */}
             {latestResponse.riskFlags.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-medium text-[var(--text-high)] uppercase tracking-wide flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  Risk Flags
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {latestResponse.riskFlags.map((flag) => {
-                    const config = RISK_FLAG_CONFIG[flag];
-                    return (
-                      <span
-                        key={flag}
-                        className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--surface-1)]",
-                          config?.color || "text-[var(--text-muted)]"
-                        )}
-                      >
-                        {config?.label || flag}
-                      </span>
-                    );
-                  })}
-                </div>
+              <div className="flex flex-wrap gap-1">
+                {latestResponse.riskFlags.map((flag) => {
+                  const config = RISK_FLAG_CONFIG[flag];
+                  return (
+                    <span
+                      key={flag}
+                      className={cn("px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--surface-1)]", config?.color)}
+                    >
+                      {config?.label || flag}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </>
         )}
 
-        {/* Ask Honey Section */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-medium text-[var(--text-high)] uppercase tracking-wide flex items-center gap-1.5">
-            <MessageCircle className="w-3.5 h-3.5" />
-            Ask Honey
-          </h4>
-          <div className="flex gap-2">
+        {/* Ask Honey */}
+        <div className="space-y-1.5">
+          <div className="flex gap-1.5">
             <Input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAsk()}
-              placeholder="Ask a question..."
-              className="flex-1 h-9 bg-[var(--surface-1)] border-[var(--border-hairline)] text-sm"
+              placeholder="Ask..."
+              className="flex-1 h-7 bg-[var(--surface-1)] border-[var(--border-hairline)] text-xs"
               disabled={isProcessing || !sessionId}
             />
             <Button
               onClick={handleAsk}
               disabled={!question.trim() || isProcessing || !sessionId}
-              className="h-9 px-3 bg-[var(--brand-primary)] text-[var(--bg-base)]"
+              className="h-7 px-2 bg-[var(--brand-primary)] text-[var(--bg-base)]"
             >
-              {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
+              {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
             </Button>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {QUICK_QUESTIONS.map((q) => (
               <button
                 key={q}
-                onClick={() => handleQuickQuestion(q)}
+                onClick={() => onAsk(q)}
                 disabled={isProcessing || !sessionId}
-                className="px-2 py-1 text-[10px] bg-[var(--surface-1)] hover:bg-[var(--surface-2)] border border-[var(--border-hairline)] rounded text-[var(--text-med)] transition-colors disabled:opacity-50"
+                className="px-1.5 py-0.5 text-[9px] bg-[var(--surface-1)] hover:bg-[var(--surface-2)] border border-[var(--border-hairline)] rounded text-[var(--text-med)] disabled:opacity-50"
               >
                 {q}
               </button>
@@ -344,18 +303,9 @@ export function AICoachPanel({
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-2 border-t border-[var(--border-hairline)] bg-[var(--surface-1)]">
-        <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
-          <span>
-            Session: {updateCount} updates · {tokensUsed.toLocaleString()} tokens · ~$
-            {estimatedCost}
-          </span>
-          <span>{sessionDuration}m elapsed</span>
-        </div>
-        <p className="mt-1 text-[9px] text-[var(--text-faint)]">
-          Experimental. Not financial advice.
-        </p>
+      {/* Footer - compact */}
+      <div className="px-3 py-1.5 border-t border-[var(--border-hairline)] text-[9px] text-[var(--text-faint)]">
+        {updateCount}↻ · {(tokensUsed / 1000).toFixed(1)}K◆ · ${estimatedCost} · {sessionDuration}m
       </div>
     </div>
   );

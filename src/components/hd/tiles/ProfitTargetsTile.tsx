@@ -1,24 +1,23 @@
 /**
- * HDDynamicProfitTargets - Smart multi-level profit targets
+ * ProfitTargetsTile - Contract-aware profit targets tile
  *
- * Compact chip display showing T1/T2/T3 and SL with price and %.
- * Full details (progress bars, strategy reasoning) behind toggle.
+ * Default view: T1/T2/SL chips with price + % + R:R badge
+ * Expanded view: Progress bars + strategy hint
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "../../../lib/utils";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { Target, ChevronDown, ChevronUp } from "lucide-react";
 import { TargetChip } from "../common/StatusChip";
 import type { Contract } from "../../../types";
 
-interface HDDynamicProfitTargetsProps {
-  contract: Contract;
-  entryPrice: number;
+interface ProfitTargetsTileProps {
+  contract: Contract | null;
+  entryPrice?: number;
   stopLoss?: number;
   currentPrice?: number;
   tradeType?: "Scalp" | "Day" | "Swing" | "LEAP";
   className?: string;
-  compact?: boolean;
   defaultExpanded?: boolean;
 }
 
@@ -52,8 +51,7 @@ function calculateTargets(
   };
 
   // DTE multiplier
-  const dteMultiplier =
-    dte === 0 ? 0.6 : dte === 1 ? 0.75 : dte <= 3 ? 0.9 : 1.0;
+  const dteMultiplier = dte === 0 ? 0.6 : dte === 1 ? 0.75 : dte <= 3 ? 0.9 : 1.0;
 
   const styleTargets = baseTargets[tradeType] || baseTargets.Day;
 
@@ -103,42 +101,96 @@ function calculateTargets(
   return { targets, stopPrice: effectiveStop, stopPct, rrRatio };
 }
 
-export function HDDynamicProfitTargets({
+function getStrategyHint(dte: number, tradeType: string): string {
+  if (dte === 0) return "0DTE: Take quick profits at T1";
+  if (dte === 1) return "1DTE: Lock gains early, avoid overnight theta";
+  if (tradeType === "Scalp") return "Scalp: Quick exits at T1";
+  if (tradeType === "Day") return "Day: Balance T1/T2 exits";
+  if (tradeType === "Swing") return "Swing: Let winners run to T3";
+  if (tradeType === "LEAP") return "LEAP: Long-term hold to T3";
+  return "Balance risk/reward across targets";
+}
+
+export function ProfitTargetsTile({
   contract,
   entryPrice,
   stopLoss,
   currentPrice,
   tradeType = "Day",
   className,
-  compact = false,
   defaultExpanded = false,
-}: HDDynamicProfitTargetsProps) {
+}: ProfitTargetsTileProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const { targets, stopPrice, stopPct, rrRatio } = calculateTargets(
-    entryPrice,
-    stopLoss,
-    currentPrice,
-    contract,
-    tradeType
-  );
 
-  // Mobile/compact: just R:R badge
-  if (compact) {
+  // Calculate targets only if we have a contract and entry price
+  const { targets, stopPrice, stopPct, rrRatio, strategyHint } = useMemo(() => {
+    if (!contract || !entryPrice) {
+      return {
+        targets: [],
+        stopPrice: 0,
+        stopPct: 0,
+        rrRatio: "—",
+        strategyHint: "",
+      };
+    }
+
+    const result = calculateTargets(entryPrice, stopLoss, currentPrice, contract, tradeType);
+    const hint = getStrategyHint(contract.daysToExpiry ?? 0, tradeType);
+
+    return {
+      ...result,
+      strategyHint: hint,
+    };
+  }, [contract, entryPrice, stopLoss, currentPrice, tradeType]);
+
+  // No contract state
+  if (!contract || !entryPrice) {
     return (
-      <div className={cn("flex items-center gap-2", className)}>
-        <span className="text-[10px] text-[var(--text-muted)]">R:R</span>
-        <span className="text-xs font-medium text-[var(--brand-primary)] tabular-nums">
-          1:{rrRatio}
-        </span>
+      <div
+        className={cn(
+          "p-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)]",
+          className
+        )}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Target className="w-4 h-4 text-[var(--text-muted)]" />
+          <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+            Targets
+          </span>
+        </div>
+        <div className="text-xs text-[var(--text-faint)]">
+          Select contract for targets
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={cn("space-y-2", className)}>
-      {/* Chips row */}
+    <div
+      className={cn(
+        "p-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)]",
+        className
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4 text-[var(--text-muted)]" />
+          <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+            Targets
+          </span>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-[var(--text-faint)] hover:text-[var(--text-muted)] transition-colors"
+        >
+          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* Compact View: Target Chips */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        {targets.map((t) => (
+        {targets.slice(0, 2).map((t) => (
           <TargetChip
             key={t.level}
             level={t.level}
@@ -153,26 +205,24 @@ export function HDDynamicProfitTargets({
         <span className="ml-auto px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[10px] font-medium text-[var(--text-muted)] tabular-nums">
           R:R 1:{rrRatio}
         </span>
-
-        {/* Toggle */}
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1 text-[10px] text-[var(--text-faint)] hover:text-[var(--text-muted)] transition-colors"
-        >
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-        </button>
       </div>
 
-      {/* Expanded: progress bars */}
+      {/* Expanded: Progress bars + T3 */}
       {expanded && (
-        <div className="space-y-1.5 pt-1.5 border-t border-[var(--border-hairline)] animate-fade-in-up">
+        <div className="mt-3 pt-3 border-t border-[var(--border-hairline)] space-y-2 animate-fade-in-up">
+          {/* Progress bars for all targets */}
           {targets.map((t) => (
             <div key={t.level} className="flex items-center gap-2">
-              <span className={cn(
-                "w-6 text-[10px] font-medium",
-                t.hit ? "text-[var(--accent-positive)]" : "text-[var(--text-muted)]"
-              )}>
+              <span
+                className={cn(
+                  "w-6 text-[10px] font-medium",
+                  t.hit ? "text-[var(--accent-positive)]" : "text-[var(--text-muted)]"
+                )}
+              >
                 {t.level}
+              </span>
+              <span className="w-14 text-[10px] text-[var(--text-muted)] tabular-nums">
+                ${t.price.toFixed(2)}
               </span>
               <div className="flex-1 h-1.5 bg-[var(--surface-3)] rounded-full overflow-hidden">
                 <div
@@ -181,31 +231,28 @@ export function HDDynamicProfitTargets({
                     t.hit
                       ? "bg-[var(--accent-positive)]"
                       : t.level === "T1"
-                      ? "bg-blue-500"
-                      : t.level === "T2"
-                      ? "bg-amber-500"
-                      : "bg-purple-500"
+                        ? "bg-blue-500"
+                        : t.level === "T2"
+                          ? "bg-amber-500"
+                          : "bg-purple-500"
                   )}
                   style={{ width: `${t.progress}%` }}
                 />
               </div>
-              <span className="w-10 text-[10px] text-[var(--text-muted)] tabular-nums text-right">
-                {t.progress.toFixed(0)}%
+              <span className="w-12 text-[10px] text-[var(--text-muted)] tabular-nums text-right">
+                +{t.percentGain.toFixed(0)}%
               </span>
             </div>
           ))}
 
           {/* Strategy hint */}
           <div className="pt-1 text-[10px] text-[var(--text-faint)]">
-            {contract.daysToExpiry === 0 && "0DTE: Take quick profits at T1"}
-            {contract.daysToExpiry === 1 && "1DTE: Lock gains early, avoid overnight theta"}
-            {(contract.daysToExpiry ?? 0) > 1 && tradeType === "Scalp" && "Scalp: Quick exits at T1"}
-            {(contract.daysToExpiry ?? 0) > 1 && tradeType === "Day" && "Day: Balance T1/T2 exits"}
-            {(contract.daysToExpiry ?? 0) > 1 && tradeType === "Swing" && "Swing: Let winners run to T3"}
-            {(contract.daysToExpiry ?? 0) > 1 && tradeType === "LEAP" && "LEAP: Long-term hold to T3"}
+            {strategyHint}
           </div>
         </div>
       )}
     </div>
   );
 }
+
+export default ProfitTargetsTile;

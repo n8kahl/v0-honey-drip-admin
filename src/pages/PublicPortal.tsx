@@ -457,6 +457,13 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
           <span className="text-[var(--text-faint)]">Entry:</span>
           <span className="ml-1 font-mono text-[var(--text-high)]">
             ${entryPrice.toFixed(2)}
+            ${(trade.entry_price ?? 0).toFixed(2)}
+          </span>
+        </div>
+        <div>
+          <span className="text-[var(--text-faint)]">Current:</span>
+          <span className="ml-1 font-mono text-[var(--text-high)]">
+            ${(trade.current_price ?? 0).toFixed(2)}
           </span>
         </div>
         {trade.target_price && (

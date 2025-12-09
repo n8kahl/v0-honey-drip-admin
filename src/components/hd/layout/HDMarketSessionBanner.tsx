@@ -31,10 +31,10 @@ export function HDMarketSessionBanner({
   return (
     <div className={cn(
       "flex items-center gap-2 px-3 py-2 rounded-lg border",
-      session === 'OPEN' && "bg-green-500/10 border-green-500/20",
+      session === 'OPEN' && "bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/20",
       session === 'PRE' && "bg-yellow-500/10 border-yellow-500/20",
-      session === 'POST' && "bg-blue-500/10 border-blue-500/20",
-      session === 'CLOSED' && "bg-red-500/10 border-red-500/20",
+      session === 'POST' && "bg-[var(--accent-info)]/10 border-[var(--accent-info)]/20",
+      session === 'CLOSED' && "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/20",
       className
     )}>
       <div className={cn("flex items-center gap-2 flex-1")}>

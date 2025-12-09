@@ -109,7 +109,7 @@ export function HDHeader({
             <span
               className={cn(
                 "text-xs font-medium",
-                spxQuote.changePercent > 0 ? "text-green-500" : "text-red-500"
+                spxQuote.changePercent > 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
               )}
             >
               {spxQuote.changePercent > 0 ? "+" : ""}
@@ -143,8 +143,8 @@ export function HDHeader({
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 rounded-full border",
             connectionStatus.color === "yellow" && "bg-yellow-500/10 border-yellow-500/20",
-            connectionStatus.color === "red" && "bg-red-500/10 border-red-500/20",
-            connectionStatus.color === "green" && "bg-green-500/10 border-green-500/20"
+            connectionStatus.color === "red" && "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/20",
+            connectionStatus.color === "green" && "bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/20"
           )}
           title={connectionStatus.tooltip}
         >
@@ -152,16 +152,16 @@ export function HDHeader({
             className={cn(
               "w-3 h-3",
               connectionStatus.color === "yellow" && "text-yellow-500",
-              connectionStatus.color === "red" && "text-red-500",
-              connectionStatus.color === "green" && "text-green-500"
+              connectionStatus.color === "red" && "text-[var(--accent-negative)]",
+              connectionStatus.color === "green" && "text-[var(--accent-positive)]"
             )}
           />
           <span
             className={cn(
               "text-[10px] font-medium hidden lg:inline",
               connectionStatus.color === "yellow" && "text-yellow-500",
-              connectionStatus.color === "red" && "text-red-500",
-              connectionStatus.color === "green" && "text-green-500"
+              connectionStatus.color === "red" && "text-[var(--accent-negative)]",
+              connectionStatus.color === "green" && "text-[var(--accent-positive)]"
             )}
           >
             {connectionStatus.label}

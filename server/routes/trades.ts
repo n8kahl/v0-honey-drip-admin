@@ -191,8 +191,8 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     const tradeData: Record<string, any> = {
       user_id: userId,
       ticker: trade.ticker,
-      // Column is 'state', but constraint checks for lowercase values: loaded, entered, exited
-      state: (trade.state || trade.status || "LOADED").toLowerCase(),
+      // Column is 'state' with CHECK constraint for uppercase: WATCHING, LOADED, ENTERED, EXITED
+      state: (trade.state || trade.status || "LOADED").toUpperCase(),
       // Contract details as separate columns (legacy schema)
       strike: contract.strike || null,
       expiration: contract.expiry || contract.expiration || null,
@@ -302,14 +302,15 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
     console.log(`[Trades API] Updating trade ${tradeId}:`, Object.keys(updates));
 
     // Validate input
-    if (updates.status && !["loaded", "entered", "exited"].includes(updates.status)) {
+    const upperStatus = updates.status?.toUpperCase();
+    if (upperStatus && !["LOADED", "ENTERED", "EXITED", "WATCHING"].includes(upperStatus)) {
       return res.status(400).json({ error: "Invalid status value" });
     }
 
     // Update trade
     // NOTE: Client sends 'status' field, but database column is 'state'
     const updateData: TradeUpdate = {
-      state: updates.status,
+      state: upperStatus,
       entry_price: updates.entry_price,
       entry_time: updates.entry_time,
       exit_price: updates.exit_price,
@@ -787,9 +788,9 @@ router.get("/api/trades/admin/stale-loaded", async (req: Request, res: Response)
 
     const { data, error } = await getSupabaseClient()
       .from("trades")
-      .select("id, ticker, created_at, status")
+      .select("id, ticker, created_at, state")
       .eq("user_id", userId)
-      .eq("status", "loaded")
+      .eq("state", "LOADED")
       .lt("created_at", oneDayAgo.toISOString())
       .order("created_at", { ascending: false });
 
@@ -834,7 +835,7 @@ router.delete("/api/trades/admin/cleanup-stale", async (req: Request, res: Respo
       .from("trades")
       .delete()
       .eq("user_id", userId)
-      .eq("status", "loaded")
+      .eq("state", "LOADED")
       .lt("created_at", cutoffDate.toISOString())
       .select("id, ticker");
 

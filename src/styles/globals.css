@@ -76,6 +76,17 @@
     /* Data freshness */
     --data-stale: #FBBF24;
 
+    /* Trade State Colors */
+    --state-watching: #6B7280;
+    --state-loaded: #F59E0B;
+    --state-entered: #22C55E;
+    --state-exited: #8B5CF6;
+    --state-invalid: #EF4444;
+
+    /* Info accent */
+    --accent-info: #3B82F6;
+    --accent-info-bg: rgba(59, 130, 246, 0.08);
+
     /* Spacing - 8px grid system */
     --space-1: 4px;
     --space-2: 8px;
@@ -607,5 +618,177 @@
       opacity: 1;
       transform: translateX(0);
     }
+  }
+
+  /* ============================================
+   * NowPanel / ActionRail Animations
+   * ============================================ */
+
+  /* Collapse/expand transitions */
+  .transition-collapse {
+    transition: height 0.25s ease-out, opacity 0.2s ease-out, max-height 0.25s ease-out;
+    overflow: hidden;
+  }
+
+  .transition-collapse-fast {
+    transition: height 0.15s ease-out, opacity 0.15s ease-out, max-height 0.15s ease-out;
+    overflow: hidden;
+  }
+
+  /* Loading skeleton shimmer */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--surface-2) 25%,
+      var(--surface-3) 50%,
+      var(--surface-2) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Subtle pulse for loading states */
+  @keyframes subtle-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  .animate-subtle-pulse {
+    animation: subtle-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* Metric tick animation - scale bump on value change */
+  @keyframes metric-tick {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+
+  .animate-metric-tick {
+    animation: metric-tick 0.3s ease-out;
+  }
+
+  /* Metric tick with background flash */
+  @keyframes metric-tick-flash {
+    0% { transform: scale(1); background-color: transparent; }
+    30% { transform: scale(1.03); background-color: var(--brand-primary-pressed); }
+    100% { transform: scale(1); background-color: transparent; }
+  }
+
+  .animate-metric-tick-flash {
+    animation: metric-tick-flash 0.4s ease-out;
+  }
+
+  /* Symbol/panel change crossfade */
+  @keyframes crossfade {
+    0% { opacity: 0; transform: translateX(8px); }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+
+  .animate-crossfade {
+    animation: crossfade 0.2s ease-out;
+  }
+
+  /* Crossfade with scale */
+  @keyframes crossfade-scale {
+    0% { opacity: 0; transform: scale(0.98) translateY(4px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .animate-crossfade-scale {
+    animation: crossfade-scale 0.25s ease-out;
+  }
+
+  /* Card/chip hover lift */
+  .hover-lift {
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Subtle hover lift for chips */
+  .hover-lift-sm {
+    transition: transform 0.1s ease-out;
+  }
+
+  .hover-lift-sm:hover {
+    transform: translateY(-1px);
+  }
+
+  /* Chart load animation - line draw effect */
+  @keyframes chart-line-draw {
+    0% {
+      opacity: 0;
+      clip-path: inset(0 100% 0 0);
+    }
+    100% {
+      opacity: 1;
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  .animate-chart-draw {
+    animation: chart-line-draw 0.6s ease-out forwards;
+  }
+
+  /* Fade in up - for panel content */
+  @keyframes fade-in-up {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.2s ease-out forwards;
+  }
+
+  /* State badge pulse */
+  @keyframes state-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+    50% { box-shadow: 0 0 0 4px currentColor; }
+  }
+
+  .animate-state-pulse {
+    animation: state-pulse 2s ease-in-out infinite;
+  }
+
+  /* Action button press */
+  .btn-press {
+    transition: transform 0.1s ease-out;
+  }
+
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Smooth height transition for collapsible sections */
+  .collapsible-section {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.25s ease-out;
+  }
+
+  .collapsible-section[data-expanded="true"] {
+    grid-template-rows: 1fr;
+  }
+
+  .collapsible-section > div {
+    overflow: hidden;
+  }
+
+  /* Focus ring for actionable items */
+  .focus-ring:focus-visible {
+    outline: none;
+    ring: 2px;
+    ring-color: var(--brand-primary);
+    ring-offset: 2px;
+    ring-offset-color: var(--bg-base);
   }
 }

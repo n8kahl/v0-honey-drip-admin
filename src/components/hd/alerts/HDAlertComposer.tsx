@@ -23,7 +23,7 @@ export interface PriceOverrides {
 interface HDAlertComposerProps {
   trade: Trade;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
   availableChannels: DiscordChannel[];
   challenges: Challenge[];
   onSend: (

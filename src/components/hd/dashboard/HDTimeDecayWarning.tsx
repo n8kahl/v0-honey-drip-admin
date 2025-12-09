@@ -1,17 +1,14 @@
 /**
- * HDTimeDecayWarning - Time-based warnings for DTE and theta decay
+ * HDTimeDecayWarning - Time-based DTE and theta warnings
  *
- * Shows contextual warnings based on:
- * - DTE urgency (0DTE, 1DTE, etc.)
- * - Time of day (approaching close)
- * - Theta acceleration
- * - Session timing guidance
- * - Upcoming economic events (via Alpha Vantage)
+ * Compact display: DTE chip + 1-liner + optional theta chip
+ * Full details (theta impact, events) behind toggle.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "../../../lib/utils";
-import { Clock, AlertTriangle, Timer, Sun, Sunset, Moon, Calendar, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Calendar, AlertTriangle, Loader2 } from "lucide-react";
+import { DTEChip, ThetaChip } from "../common/StatusChip";
 import type { Contract } from "../../../types";
 
 interface EconomicEvent {
@@ -19,8 +16,6 @@ interface EconomicEvent {
   name: string;
   datetime: string;
   impact: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-  category: string;
-  affectsSymbols: string[];
 }
 
 interface HDTimeDecayWarningProps {
@@ -28,163 +23,47 @@ interface HDTimeDecayWarningProps {
   ticker?: string;
   className?: string;
   compact?: boolean;
+  defaultExpanded?: boolean;
 }
 
-interface TimeContext {
-  session:
-    | "pre_market"
-    | "opening_drive"
-    | "morning_momentum"
-    | "lunch_chop"
-    | "afternoon"
-    | "power_hour"
-    | "after_hours";
-  sessionLabel: string;
-  minutesToClose: number;
-  hoursToClose: number;
-  isNearClose: boolean;
-  sessionIcon: React.ReactNode;
-  guidance: string;
+// DTE one-liners
+const DTE_ONELINERS: Record<string, string> = {
+  "0": "Rapid decay, tight stops",
+  "1": "Decay accelerating",
+  "2-3": "Manage overnight risk",
+  "4-7": "Normal theta",
+  "8+": "Low decay, can hold",
+};
+
+function getDTEOneLiner(dte: number): string {
+  if (dte === 0) return DTE_ONELINERS["0"];
+  if (dte === 1) return DTE_ONELINERS["1"];
+  if (dte <= 3) return DTE_ONELINERS["2-3"];
+  if (dte <= 7) return DTE_ONELINERS["4-7"];
+  return DTE_ONELINERS["8+"];
 }
 
-function getTimeContext(): TimeContext {
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-  const totalMinutes = hours * 60 + minutes;
-
-  // Market hours: 9:30 AM - 4:00 PM ET (in minutes: 570 - 960)
-  const marketOpen = 9 * 60 + 30;
-  const marketClose = 16 * 60;
-  const minutesToClose = Math.max(0, marketClose - totalMinutes);
-  const hoursToClose = Math.floor(minutesToClose / 60);
-  const isNearClose = minutesToClose <= 60;
-
-  let session: TimeContext["session"];
-  let sessionLabel: string;
-  let sessionIcon: React.ReactNode;
-  let guidance: string;
-
-  if (totalMinutes < marketOpen) {
-    session = "pre_market";
-    sessionLabel = "Pre-Market";
-    sessionIcon = <Moon className="w-3.5 h-3.5" />;
-    guidance = "Wait for market open for better fills and liquidity";
-  } else if (totalMinutes < marketOpen + 30) {
-    session = "opening_drive";
-    sessionLabel = "Opening Drive";
-    sessionIcon = <Sun className="w-3.5 h-3.5" />;
-    guidance = "High volatility window - best for momentum plays";
-  } else if (totalMinutes < 11 * 60 + 30) {
-    session = "morning_momentum";
-    sessionLabel = "Morning Momentum";
-    sessionIcon = <Sun className="w-3.5 h-3.5" />;
-    guidance = "Good liquidity and follow-through on trends";
-  } else if (totalMinutes < 14 * 60) {
-    session = "lunch_chop";
-    sessionLabel = "Lunch Chop";
-    sessionIcon = <Timer className="w-3.5 h-3.5" />;
-    guidance = "Lower volume, choppy action - be patient";
-  } else if (totalMinutes < 15 * 60) {
-    session = "afternoon";
-    sessionLabel = "Afternoon Session";
-    sessionIcon = <Sunset className="w-3.5 h-3.5" />;
-    guidance = "Volume returning - watch for trend continuation";
-  } else if (totalMinutes < marketClose) {
-    session = "power_hour";
-    sessionLabel = "Power Hour";
-    sessionIcon = <Sunset className="w-3.5 h-3.5" />;
-    guidance = "High volume, potential for strong moves - watch theta!";
-  } else {
-    session = "after_hours";
-    sessionLabel = "After Hours";
-    sessionIcon = <Moon className="w-3.5 h-3.5" />;
-    guidance = "Reduced liquidity - wider spreads expected";
-  }
-
-  return {
-    session,
-    sessionLabel,
-    minutesToClose,
-    hoursToClose,
-    isNearClose,
-    sessionIcon,
-    guidance,
-  };
-}
-
-interface DTEContext {
-  dte: number;
-  urgency: "critical" | "high" | "moderate" | "low";
-  thetaMultiplier: number;
-  warning: string;
-  advice: string;
-}
-
-function getDTEContext(contract: Contract): DTEContext {
-  const dte = contract.daysToExpiry ?? 0;
-  const timeContext = getTimeContext();
-  const theta = Math.abs(contract.theta ?? 0);
-
-  let urgency: DTEContext["urgency"];
-  let thetaMultiplier: number;
-  let warning: string;
-  let advice: string;
-
+function getDTEDetails(dte: number, theta: number | undefined): string {
   if (dte === 0) {
-    // 0DTE - Most critical
-    if (timeContext.minutesToClose <= 60) {
-      urgency = "critical";
-      thetaMultiplier = 4.0;
-      warning = "FINAL HOUR: Extreme theta decay";
-      advice = "Close or trail stop tight. Every minute costs premium.";
-    } else if (timeContext.minutesToClose <= 120) {
-      urgency = "critical";
-      thetaMultiplier = 3.0;
-      warning = "0DTE: Accelerated decay active";
-      advice = "Take profits aggressively. Theta eating premium fast.";
-    } else {
-      urgency = "high";
-      thetaMultiplier = 2.0;
-      warning = "0DTE: Same-day expiration";
-      advice = "Quick scalps only. Set tight stops and targets.";
-    }
-  } else if (dte === 1) {
-    if (timeContext.session === "power_hour" || timeContext.session === "afternoon") {
-      urgency = "high";
-      thetaMultiplier = 1.8;
-      warning = "1DTE: Tomorrow expiration";
-      advice = "Consider closing before EOD to avoid overnight theta.";
-    } else {
-      urgency = "moderate";
-      thetaMultiplier = 1.5;
-      warning = "1DTE: Short-term contract";
-      advice = "Watch for overnight holds if market close approaches.";
-    }
-  } else if (dte <= 3) {
-    urgency = "moderate";
-    thetaMultiplier = 1.2;
-    warning = `${dte}DTE: Elevated theta`;
-    advice = "Active management required. Theta visible on daily.";
-  } else if (dte <= 7) {
-    urgency = "low";
-    thetaMultiplier = 1.0;
-    warning = `${dte}DTE: Standard decay`;
-    advice = "Normal theta profile. Focus on delta/direction.";
-  } else {
-    urgency = "low";
-    thetaMultiplier = 0.8;
-    warning = `${dte}DTE: Longer-dated`;
-    advice = "Theta less urgent. More time for thesis to play out.";
+    return "Theta eating premium every minute. Quick scalps only - take profits fast, cut losses faster.";
   }
+  if (dte === 1) {
+    return "Consider closing before EOD to avoid overnight theta decay. Set clear exit rules.";
+  }
+  if (dte <= 3) {
+    return "Elevated theta visible on daily P&L. Active management required.";
+  }
+  if (dte <= 7) {
+    return "Standard decay profile. Focus on delta/direction over theta concerns.";
+  }
+  return "Theta less urgent. More time for thesis to play out. Watch vega more than theta.";
+}
 
-  return {
-    dte,
-    urgency,
-    thetaMultiplier,
-    warning,
-    advice,
-  };
+function calculateThetaPerHour(theta: number | undefined, dte: number): number | null {
+  if (!theta) return null;
+  // Theta accelerates as DTE decreases
+  const multiplier = dte === 0 ? 3.0 : dte === 1 ? 1.8 : dte <= 3 ? 1.2 : 1.0;
+  return Math.abs(theta * multiplier) / 6.5; // 6.5 hours in trading day
 }
 
 export function HDTimeDecayWarning({
@@ -192,16 +71,21 @@ export function HDTimeDecayWarning({
   ticker,
   className,
   compact = false,
+  defaultExpanded = false,
 }: HDTimeDecayWarningProps) {
-  const timeContext = getTimeContext();
-  const dteContext = getDTEContext(contract);
-  const [upcomingEvents, setUpcomingEvents] = useState<EconomicEvent[]>([]);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [events, setEvents] = useState<EconomicEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
 
-  const isUrgent = dteContext.urgency === "critical" || dteContext.urgency === "high";
+  const dte = contract.daysToExpiry ?? 0;
+  const thetaPerHour = calculateThetaPerHour(contract.theta, dte);
+  const oneLiner = getDTEOneLiner(dte);
+  const details = getDTEDetails(dte, contract.theta);
+  const isUrgent = dte <= 1;
 
-  // Fetch economic events relevant to this contract's timeframe
-  const fetchRelevantEvents = useCallback(async () => {
+  // Fetch economic events
+  const fetchEvents = useCallback(async () => {
+    if (!expanded) return;
     try {
       setEventsLoading(true);
       const response = await fetch("/api/calendar/events?impact=CRITICAL,HIGH");
@@ -211,272 +95,119 @@ export function HDTimeDecayWarning({
       if (!data.success || !data.events) return;
 
       const now = new Date();
-      const expiryDate = contract.expirationDate
-        ? new Date(contract.expirationDate)
-        : new Date(now.getTime() + (contract.daysToExpiry || 0) * 24 * 60 * 60 * 1000);
+      const expiryDate = new Date(now.getTime() + dte * 24 * 60 * 60 * 1000);
 
-      // Filter events that fall within the contract's DTE window
       const relevantEvents = (data.events as EconomicEvent[])
         .filter((event) => {
           const eventDate = new Date(event.datetime);
-          // Event must be before expiry and after now
-          if (eventDate < now || eventDate > expiryDate) return false;
-
-          // If ticker specified, check if it affects this symbol
-          if (ticker) {
-            // Major indices affect everything
-            if (
-              event.category === "Federal Reserve" ||
-              event.category === "Employment" ||
-              event.category === "Inflation"
-            ) {
-              return true;
-            }
-            // Otherwise check affectsSymbols
-            return event.affectsSymbols?.some((s) => s.toUpperCase() === ticker.toUpperCase());
-          }
-          return true;
+          return eventDate > now && eventDate < expiryDate;
         })
-        .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime())
-        .slice(0, 3); // Show up to 3 events
+        .slice(0, 3);
 
-      setUpcomingEvents(relevantEvents);
-    } catch (err) {
-      console.error("[HDTimeDecayWarning] Error fetching events:", err);
+      setEvents(relevantEvents);
+    } catch {
+      // Silent fail
     } finally {
       setEventsLoading(false);
     }
-  }, [contract.expirationDate, contract.daysToExpiry, ticker]);
+  }, [expanded, dte]);
 
   useEffect(() => {
-    fetchRelevantEvents();
-  }, [fetchRelevantEvents]);
+    fetchEvents();
+  }, [fetchEvents]);
 
+  // Mobile/compact: just DTE chip
   if (compact) {
-    // Compact mode - single line with icon
     return (
-      <div
-        className={cn(
-          "flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius)] border text-[10px]",
-          isUrgent
-            ? "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/30 text-[var(--accent-negative)]"
-            : "bg-amber-500/10 border-amber-500/30 text-amber-400",
-          className
+      <div className={cn("flex items-center gap-2", className)}>
+        <DTEChip dte={dte} />
+        {thetaPerHour !== null && thetaPerHour > 0.05 && (
+          <ThetaChip value={thetaPerHour} />
         )}
-      >
-        <Clock className="w-3 h-3" />
-        <span>{dteContext.dte}DTE</span>
-        {timeContext.isNearClose && <span>• {timeContext.minutesToClose}m to close</span>}
       </div>
     );
   }
 
   return (
-    <div className={cn("space-y-3", className)}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h4 className="text-xs text-[var(--text-high)] font-semibold uppercase tracking-wide flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5" />
-          Time Analysis
-        </h4>
-        <div
-          className={cn(
-            "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium",
-            isUrgent
-              ? "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]"
-              : "bg-amber-500/10 text-amber-400"
-          )}
-        >
-          {timeContext.sessionIcon}
-          <span>{timeContext.sessionLabel}</span>
-        </div>
-      </div>
-
-      {/* DTE Warning */}
-      <div
-        className={cn(
-          "p-2.5 rounded-[var(--radius)] border",
-          dteContext.urgency === "critical"
-            ? "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/30"
-            : dteContext.urgency === "high"
-              ? "bg-amber-500/10 border-amber-500/30"
-              : "bg-[var(--surface-2)] border-[var(--border-hairline)]"
+    <div className={cn("space-y-1.5", className)}>
+      {/* Chips + 1-liner */}
+      <div className="flex items-center gap-2">
+        <DTEChip dte={dte} />
+        {thetaPerHour !== null && thetaPerHour > 0.03 && (
+          <ThetaChip value={thetaPerHour} />
         )}
-      >
-        <div className="flex items-start gap-2">
-          {isUrgent && (
-            <AlertTriangle
-              className={cn(
-                "w-4 h-4 flex-shrink-0 mt-0.5",
-                dteContext.urgency === "critical"
-                  ? "text-[var(--accent-negative)]"
-                  : "text-amber-400"
-              )}
-            />
-          )}
-          <div className="flex-1 min-w-0">
-            <div
-              className={cn(
-                "text-xs font-medium",
-                dteContext.urgency === "critical"
-                  ? "text-[var(--accent-negative)]"
-                  : dteContext.urgency === "high"
-                    ? "text-amber-400"
-                    : "text-[var(--text-high)]"
-              )}
-            >
-              {dteContext.warning}
-            </div>
-            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{dteContext.advice}</p>
-          </div>
-          <div className="flex flex-col items-end text-right">
-            <div
-              className={cn(
-                "text-lg font-bold tabular-nums",
-                dteContext.urgency === "critical"
-                  ? "text-[var(--accent-negative)]"
-                  : dteContext.urgency === "high"
-                    ? "text-amber-400"
-                    : "text-[var(--text-high)]"
-              )}
-            >
-              {dteContext.dte}
-            </div>
-            <div className="text-[9px] text-[var(--text-muted)] uppercase">DTE</div>
-          </div>
-        </div>
+        <span className={cn(
+          "text-xs truncate",
+          isUrgent ? "text-[var(--accent-negative)]" : "text-[var(--text-muted)]"
+        )}>
+          {oneLiner}
+        </span>
+
+        {/* Toggle */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="ml-auto flex items-center text-[10px] text-[var(--text-faint)] hover:text-[var(--text-muted)] transition-colors"
+        >
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </button>
       </div>
 
-      {/* Session Timing */}
-      <div className="p-2.5 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] text-[var(--text-muted)] uppercase">Market Session</span>
-          {timeContext.minutesToClose > 0 && timeContext.session !== "after_hours" && (
-            <span
-              className={cn(
-                "text-[10px] font-medium",
-                timeContext.isNearClose
-                  ? "text-[var(--accent-negative)]"
-                  : "text-[var(--text-muted)]"
-              )}
-            >
-              {timeContext.hoursToClose > 0 ? `${timeContext.hoursToClose}h ` : ""}
-              {timeContext.minutesToClose % 60}m to close
-            </span>
-          )}
-        </div>
-        <p className="text-[10px] text-[var(--text-med)]">{timeContext.guidance}</p>
-      </div>
+      {/* Expanded details */}
+      {expanded && (
+        <div className="pt-1.5 border-t border-[var(--border-hairline)] animate-fade-in-up space-y-2">
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">{details}</p>
 
-      {/* Theta Impact (if critical) */}
-      {dteContext.urgency === "critical" && contract.theta && (
-        <div className="p-2.5 bg-[var(--accent-negative)]/10 rounded-[var(--radius)] border border-[var(--accent-negative)]/30">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--text-muted)] uppercase">Theta Impact</span>
-            <span className="text-xs font-medium text-[var(--accent-negative)]">
-              {dteContext.thetaMultiplier}x accelerated
-            </span>
-          </div>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-lg font-bold text-[var(--accent-negative)] tabular-nums">
-              ${Math.abs(contract.theta * dteContext.thetaMultiplier).toFixed(3)}
-            </span>
-            <span className="text-[10px] text-[var(--text-muted)]">
-              per contract per hour (estimated)
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Economic Events During Contract Life */}
-      {(upcomingEvents.length > 0 || eventsLoading) && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] uppercase">
-            <Calendar className="w-3 h-3" />
-            <span>Events Before Expiry</span>
-          </div>
-
-          {eventsLoading ? (
-            <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Loading events...</span>
+          {/* Theta impact for urgent DTEs */}
+          {isUrgent && thetaPerHour !== null && (
+            <div className={cn(
+              "px-2 py-1.5 rounded text-[11px]",
+              "bg-[var(--accent-negative)]/10"
+            )}>
+              <span className="text-[var(--accent-negative)] font-medium">
+                Theta: -${thetaPerHour.toFixed(3)}/hr
+              </span>
+              <span className="text-[var(--text-muted)]"> per contract (estimated)</span>
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              {upcomingEvents.map((event) => {
-                const eventDate = new Date(event.datetime);
-                const now = new Date();
-                const hoursUntil = Math.floor(
-                  (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60)
-                );
-                const isImminent = hoursUntil < 24;
+          )}
 
-                return (
-                  <div
-                    key={event.id}
-                    className={cn(
-                      "flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius)] border",
-                      event.impact === "CRITICAL"
-                        ? "bg-red-500/10 border-red-500/30"
-                        : "bg-amber-500/10 border-amber-500/30"
-                    )}
-                  >
-                    <AlertTriangle
-                      className={cn(
-                        "w-3 h-3 flex-shrink-0",
-                        event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400",
-                        isImminent && "animate-pulse"
-                      )}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span
-                        className={cn(
-                          "text-[10px] font-medium",
-                          event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400"
-                        )}
-                      >
-                        {event.name}
-                      </span>
-                      <div className="text-[9px] text-[var(--text-muted)]">
-                        {eventDate.toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                        {isImminent && (
-                          <span
-                            className={cn(
-                              "ml-1 font-medium",
-                              event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400"
-                            )}
-                          >
-                            ({hoursUntil}h away)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "text-[8px] px-1 py-0.5 rounded uppercase font-bold",
-                        event.impact === "CRITICAL"
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-amber-500/20 text-amber-400"
-                      )}
+          {/* Economic events */}
+          {(events.length > 0 || eventsLoading) && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-[10px] text-[var(--text-faint)]">
+                <Calendar className="w-3 h-3" />
+                <span>Events before expiry</span>
+              </div>
+
+              {eventsLoading ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Loading...
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {events.map((event) => (
+                    <div
+                      key={event.id}
+                      className="flex items-center gap-1.5 text-[10px]"
                     >
-                      {event.impact}
-                    </span>
-                  </div>
-                );
-              })}
+                      <AlertTriangle className={cn(
+                        "w-3 h-3",
+                        event.impact === "CRITICAL" ? "text-red-400" : "text-amber-400"
+                      )} />
+                      <span className="text-[var(--text-muted)] truncate">{event.name}</span>
+                      <span className={cn(
+                        "shrink-0 px-1 py-0.5 rounded text-[8px] font-medium uppercase",
+                        event.impact === "CRITICAL"
+                          ? "bg-red-500/10 text-red-400"
+                          : "bg-amber-500/10 text-amber-400"
+                      )}>
+                        {event.impact}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-
-          {upcomingEvents.length > 0 && (
-            <p className="text-[9px] text-[var(--text-muted)] italic">
-              High-impact events may cause volatility spikes and affect premium.
-            </p>
           )}
         </div>
       )}

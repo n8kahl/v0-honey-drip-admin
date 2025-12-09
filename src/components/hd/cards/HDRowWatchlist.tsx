@@ -75,12 +75,12 @@ export function HDRowWatchlist({
   const currentPrice = ticker.last;
   const changePercent = ticker.changePercent || 0;
 
-  // Determine price direction color
+  // Determine price direction color using semantic variables
   const priceColor =
     changePercent > 0
-      ? "text-green-500"
+      ? "text-[var(--accent-positive)]"
       : changePercent < 0
-        ? "text-red-500"
+        ? "text-[var(--accent-negative)]"
         : "text-[var(--text-high)]";
 
   // Data freshness and status
@@ -244,7 +244,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "w-1.5 h-1.5 rounded-full transition-all duration-300",
                         confluenceScore >= 70
-                          ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)] animate-pulse"
+                          ? "bg-[var(--accent-positive)] shadow-[0_0_6px_var(--accent-positive)] animate-pulse"
                           : confluenceScore >= 40
                             ? "bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.5)] animate-pulse"
                             : "bg-zinc-500 animate-pulse"
@@ -254,7 +254,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "text-[10px] font-mono font-bold tabular-nums",
                         confluenceScore >= 70
-                          ? "text-green-500"
+                          ? "text-[var(--accent-positive)]"
                           : confluenceScore >= 40
                             ? "text-yellow-500"
                             : "text-zinc-500"
@@ -271,7 +271,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
                         symbolData?.confluence?.components?.trendAlignment
-                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
                           : "bg-zinc-700/40 text-zinc-600"
                       )}
                     >
@@ -283,7 +283,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
                         symbolData?.confluence?.components?.rsiConfirm
-                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
                           : "bg-zinc-700/40 text-zinc-600"
                       )}
                     >
@@ -295,7 +295,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
                         symbolData?.confluence?.components?.volumeConfirm
-                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
                           : "bg-zinc-700/40 text-zinc-600"
                       )}
                     >
@@ -307,7 +307,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
                         symbolData?.confluence?.components?.aboveVWAP
-                          ? "bg-green-500/25 text-green-400 border border-green-500/40"
+                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
                           : "bg-zinc-700/40 text-zinc-600"
                       )}
                     >
@@ -326,7 +326,7 @@ export function HDRowWatchlist({
                       <span
                         className={
                           symbolData?.confluence?.components?.trendAlignment
-                            ? "text-green-500"
+                            ? "text-[var(--accent-positive)]"
                             : "text-zinc-500"
                         }
                       >
@@ -338,7 +338,7 @@ export function HDRowWatchlist({
                       <span
                         className={
                           symbolData?.confluence?.components?.rsiConfirm
-                            ? "text-green-500"
+                            ? "text-[var(--accent-positive)]"
                             : "text-zinc-500"
                         }
                       >
@@ -350,7 +350,7 @@ export function HDRowWatchlist({
                       <span
                         className={
                           symbolData?.confluence?.components?.volumeConfirm
-                            ? "text-green-500"
+                            ? "text-[var(--accent-positive)]"
                             : "text-zinc-500"
                         }
                       >
@@ -362,7 +362,7 @@ export function HDRowWatchlist({
                       <span
                         className={
                           symbolData?.confluence?.components?.aboveVWAP
-                            ? "text-green-500"
+                            ? "text-[var(--accent-positive)]"
                             : "text-zinc-500"
                         }
                       >
@@ -385,8 +385,8 @@ export function HDRowWatchlist({
                       className={cn(
                         "px-1.5 py-0.5 rounded font-mono font-medium",
                         flowSummary.netPremium > 0
-                          ? "bg-green-500/20 text-green-500"
-                          : "bg-red-500/20 text-red-500"
+                          ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
+                          : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
                       )}
                     >
                       {flowSummary.netPremium > 0 ? "F+" : "F-"}
@@ -414,7 +414,7 @@ export function HDRowWatchlist({
                       className={cn(
                         "px-1.5 py-0.5 rounded font-mono font-medium",
                         gammaData.netGamma > 0
-                          ? "bg-blue-500/20 text-blue-500"
+                          ? "bg-[var(--accent-info)]/20 text-[var(--accent-info)]"
                           : "bg-orange-500/20 text-orange-500"
                       )}
                     >
@@ -448,7 +448,7 @@ export function HDRowWatchlist({
                           ? "bg-red-500/20 text-red-500"
                           : ivData.iv_percentile >= 40
                             ? "bg-yellow-500/20 text-yellow-500"
-                            : "bg-green-500/20 text-green-500"
+                            : "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
                       )}
                     >
                       IV{Math.round(ivData.iv_percentile)}

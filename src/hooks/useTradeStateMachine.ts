@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Trade,
   Ticker,
@@ -10,6 +10,7 @@ import {
   SetupType,
 } from "../types";
 import type { PriceOverrides } from "../components/hd/alerts/HDAlertComposer";
+import type { KeyLevels } from "../lib/riskEngine/types";
 import { calculateRisk } from "../lib/riskEngine/calculator";
 import {
   inferTradeTypeByDTE,
@@ -32,6 +33,20 @@ import {
 import { getTrades, recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
+
+// ============================================================================
+// Focus Target Type - Single source of truth for what CENTER panel shows
+// ============================================================================
+
+/**
+ * FocusTarget represents what the NowPanel should display.
+ * - kind: "symbol" → Show symbol analysis (chart, options chain, best pick)
+ * - kind: "trade" → Show trade details (based on trade state)
+ */
+export type FocusTarget =
+  | { kind: "symbol"; symbol: string }
+  | { kind: "trade"; tradeId: string }
+  | null;
 
 // Helper to get risk defaults from TP settings store
 function getRiskDefaultsFromStore() {
@@ -57,6 +72,7 @@ interface UseTradeStateMachineProps {
     volatility?: string;
     liquidity?: string;
   };
+  keyLevels?: KeyLevels | null;
 }
 
 interface TradeStateMachineState {
@@ -68,6 +84,8 @@ interface TradeStateMachineState {
   alertOptions: { updateKind?: "trim" | "generic" | "sl" };
   showAlert: boolean;
   activeTrades: Trade[];
+  /** Focus target for NowPanel - determines what center panel shows */
+  focus: FocusTarget;
 }
 
 interface TradeStateMachineActions {
@@ -121,6 +139,7 @@ export function useTradeStateMachine({
   focusedTrade,
   onMobileTabChange,
   confluence,
+  keyLevels,
 }: UseTradeStateMachineProps): TradeStateMachineState & { actions: TradeStateMachineActions } {
   const toast = useAppToast();
   const discord = useDiscord();
@@ -332,7 +351,7 @@ export function useTradeStateMachine({
             entryPrice: contract.mid,
             currentUnderlyingPrice: underlyingPrice,
             currentOptionMid: contract.mid,
-            keyLevels: {
+            keyLevels: keyLevels || {
               preMarketHigh: 0,
               preMarketLow: 0,
               orbHigh: 0,
@@ -371,7 +390,7 @@ export function useTradeStateMachine({
         // Capture initial confluence data from context engines
         // This runs in background and may complete after UI update
         const direction: "LONG" | "SHORT" = contract.type === "C" ? "LONG" : "SHORT";
-        const initialConfluence = await getInitialConfluence(ticker.symbol, direction);
+        const initialConfluence = await getInitialConfluence(ticker.symbol, direction, keyLevels || null);
         console.log("[v0] Initial confluence captured:", initialConfluence?.score);
 
         // Create trade locally for UI display only
@@ -1468,6 +1487,23 @@ export function useTradeStateMachine({
     openAlertComposer("exit");
   }, [currentTrade, openAlertComposer]);
 
+  // ============================================================================
+  // Computed Focus Target
+  // ============================================================================
+  // Derive focus from existing state - single source of truth for NowPanel
+  const focus: FocusTarget = useMemo(() => {
+    // If we have a current trade in LOADED/ENTERED/EXITED state, focus on it
+    if (currentTrade && ["LOADED", "ENTERED", "EXITED"].includes(tradeState)) {
+      return { kind: "trade", tradeId: currentTrade.id };
+    }
+    // If we have an active ticker selected, focus on the symbol
+    if (activeTicker) {
+      return { kind: "symbol", symbol: activeTicker.symbol };
+    }
+    // No focus - empty state
+    return null;
+  }, [currentTrade, tradeState, activeTicker]);
+
   return {
     // State
     activeTicker,
@@ -1478,6 +1514,7 @@ export function useTradeStateMachine({
     alertOptions,
     showAlert,
     activeTrades,
+    focus,
     // Actions
     actions: {
       handleTickerClick,

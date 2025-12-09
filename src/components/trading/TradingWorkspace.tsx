@@ -35,6 +35,7 @@ interface TradingWorkspaceProps {
   showAlert: boolean;
   alertType: AlertType;
   alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
+  keyLevels?: import("../../lib/riskEngine/types").KeyLevels | null;
   onContractSelect: (c: Contract) => void;
   onEnterTrade: () => void;
   onDiscard: () => void;
@@ -66,6 +67,8 @@ interface TradingWorkspaceProps {
   onUnload?: () => void;
   /** Use three-column animated layout (desktop only, requires alert props) */
   useAnimatedLayout?: boolean;
+  /** Callback to pass computed key levels back to parent */
+  onKeyLevelsChange?: (keyLevels: import("../../lib/riskEngine/types").KeyLevels | null) => void;
 }
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
@@ -75,6 +78,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   currentTrade,
   tradeState,
   showAlert,
+  keyLevels: propKeyLevels,
   onContractSelect,
   onEnterTrade,
   onDiscard,
@@ -86,6 +90,7 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   onExit,
   compositeSignals,
   useAnimatedLayout,
+  onKeyLevelsChange,
 }) => {
   const currentPrice = activeTicker
     ? watchlist.find((t) => t.symbol === activeTicker.symbol)?.last || activeTicker.last
@@ -112,6 +117,13 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
         (tradeState === "WATCHING" || tradeState === "LOADED" || tradeState === "ENTERED")
     ),
   });
+
+  // Notify parent when keyLevels change
+  React.useEffect(() => {
+    if (onKeyLevelsChange) {
+      onKeyLevelsChange(computedKeyLevels);
+    }
+  }, [computedKeyLevels, onKeyLevelsChange]);
   const [chartHeight, setChartHeight] = React.useState(360);
   React.useEffect(() => {
     const update = () => setChartHeight(window.innerWidth < 768 ? 260 : 360);
