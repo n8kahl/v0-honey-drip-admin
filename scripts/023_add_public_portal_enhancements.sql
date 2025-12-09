@@ -7,8 +7,20 @@
 -- ============================================================================
 
 -- Trade type column (Scalp, Day, Swing, LEAP)
-ALTER TABLE trades ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT 'Scalp'
-  CHECK (trade_type IN ('Scalp', 'Day', 'Swing', 'LEAP'));
+-- Note: ADD COLUMN IF NOT EXISTS doesn't support inline CHECK constraints
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT 'Scalp';
+
+-- Add CHECK constraint separately (if not exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'trades_trade_type_check'
+  ) THEN
+    ALTER TABLE trades ADD CONSTRAINT trades_trade_type_check
+      CHECK (trade_type IN ('Scalp', 'Day', 'Swing', 'LEAP'));
+  END IF;
+END $$;
 
 -- Public visibility flag
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS show_on_public BOOLEAN DEFAULT true;
