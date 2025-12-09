@@ -262,88 +262,43 @@ export async function addToWatchlist(userId: string, symbol: string) {
 
   try {
     // Pre-check to avoid duplicate insert errors if state is stale
-    let existing: any[] | null = null;
-    let preErr: any = null;
-    // Try symbol column first
-    {
-      const { data, error } = await supabase
-        .from("watchlist")
-        .select("id, symbol")
-        .eq("user_id", userId)
-        .eq("symbol", norm);
-      existing = data as any[] | null;
-      preErr = error;
-    }
-    // Fallback to legacy 'ticker' column if 'symbol' is missing
-    if (
-      preErr &&
-      (preErr.code === "42703" || preErr.code === "PGRST204" || /symbol/.test(preErr.message || ""))
-    ) {
-      console.warn("[v0] addToWatchlist: falling back to legacy ticker column for pre-check");
-      const { data, error } = await supabase
-        .from("watchlist")
-        .select("id, ticker")
-        .eq("user_id", userId)
-        .eq("ticker", norm);
-      existing = data as any[] | null;
-      preErr = error;
-    }
+    const { data: existing, error: preErr } = await supabase
+      .from("watchlist")
+      .select("id, symbol")
+      .eq("user_id", userId)
+      .eq("symbol", norm)
+      .maybeSingle();
 
     if (preErr) {
       console.error("[v0] addToWatchlist pre-check error:", preErr);
       // continue to attempt insert
-    } else if (Array.isArray(existing) && existing.length > 0) {
-      console.log("[v0] addToWatchlist: symbol already exists, returning existing row");
-      return existing[0];
+    } else if (existing) {
+      return existing;
     }
 
-    // Try insert into 'symbol' column first
-    let insertData: any = null;
-    let insertErr: any = null;
-    {
-      const { data, error } = await supabase
-        .from("watchlist")
-        .insert({
-          user_id: userId,
-          symbol: norm,
-        })
-        .select()
-        .single();
-      insertData = data;
-      insertErr = error;
-    }
-
-    if (
-      insertErr &&
-      (insertErr.code === "42703" ||
-        insertErr.code === "PGRST204" ||
-        /symbol/.test(insertErr.message || ""))
-    ) {
-      console.warn("[v0] addToWatchlist: falling back to legacy ticker column for insert");
-      const { data, error } = await supabase
-        .from("watchlist")
-        .insert({
-          user_id: userId,
-          ticker: norm,
-        })
-        .select()
-        .single();
-      insertData = data;
-      insertErr = error;
-    }
+    // Insert new watchlist entry
+    const { data: insertData, error: insertErr } = await supabase
+      .from("watchlist")
+      .insert({
+        user_id: userId,
+        symbol: norm,
+      })
+      .select()
+      .single();
 
     if (insertErr) {
       console.error("[v0] addToWatchlist insert error:", {
-        message: (insertErr as any)?.message,
-        code: (insertErr as any)?.code,
-        details: (insertErr as any)?.details,
-        hint: (insertErr as any)?.hint,
+        message: insertErr.message,
+        code: insertErr.code,
+        details: insertErr.details,
+        hint: insertErr.hint,
       });
       throw insertErr;
     }
+
     return insertData;
-  } catch (err: any) {
-    console.error("[v0] addToWatchlist caught error:", err?.message || err);
+  } catch (err) {
+    console.error("[v0] addToWatchlist caught error:", (err as Error)?.message || err);
     throw err;
   }
 }
@@ -379,7 +334,7 @@ export async function getTrades(userId: string, options: GetTradesOptions = {}) 
     .eq("user_id", userId);
 
   if (status) {
-    query = query.eq("status", status);
+    query = query.eq("state", status);
   }
 
   const { data, error } = await query
@@ -400,7 +355,7 @@ export async function getTradesCount(userId: string, status?: string): Promise<n
     .eq("user_id", userId);
 
   if (status) {
-    query = query.eq("status", status);
+    query = query.eq("state", status);
   }
 
   const { count, error } = await query;
@@ -436,7 +391,7 @@ export async function createTrade(
       expiration: trade.expiration,
       quantity: trade.quantity,
       entry_price: trade.entry_price,
-      status: trade.status || "watching",
+      state: trade.status || "watching",
       notes: trade.notes,
       challenge_id: trade.challenge_id,
       contract: trade.contract || null, // Store full contract as JSONB

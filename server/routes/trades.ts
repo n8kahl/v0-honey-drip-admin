@@ -128,7 +128,7 @@ interface TradeInsert {
 }
 
 interface TradeUpdate {
-  status?: string;
+  state?: string; // Database column is 'state', not 'status'
   entry_price?: number;
   entry_time?: string;
   exit_price?: number;
@@ -186,26 +186,28 @@ router.post("/api/trades", async (req: Request, res: Response) => {
 
     // Create trade in database
     // Note: Client sends camelCase, we normalize to snake_case for database
-    const tradeData: TradeInsert = {
+    // The database has a constraint called 'trades_status_check' but column is 'state'
+    const contract = trade.contract || {};
+    const tradeData: Record<string, any> = {
       user_id: userId,
       ticker: trade.ticker,
-      contract_type: trade.contract?.type || null,
-      strike: trade.contract?.strike || null,
-      expiration: trade.contract?.expiry || null,
-      quantity: trade.quantity || 1,
-      status: trade.status || "loaded",
+      // Column is 'state', but constraint checks for lowercase values: loaded, entered, exited
+      state: (trade.state || trade.status || "LOADED").toLowerCase(),
+      // Contract details as separate columns (legacy schema)
+      strike: contract.strike || null,
+      expiration: contract.expiry || contract.expiration || null,
+      contract_type: contract.type || null,
+      quantity: trade.quantity || 1, // Default to 1 contract
+      // Also store full contract object as JSONB (migration 011)
+      contract: contract,
+      // Pricing fields
       entry_price: trade.entryPrice || trade.entry_price || null,
       target_price: trade.targetPrice || trade.target_price || null,
       stop_loss: trade.stopLoss || trade.stop_loss || null,
       entry_time: trade.entryTime || trade.entry_time || null,
-      notes: trade.notes || null,
-      contract: trade.contract || null, // Store full contract object as JSONB (includes bid, ask, volume, Greeks, etc.)
-      // Confluence and setup type from signal detection
-      setup_type: trade.setupType || null,
-      confluence: trade.confluence || null, // JSONB with score and factor breakdown
-      confluence_updated_at:
-        trade.confluenceUpdatedAt || (trade.confluence ? new Date().toISOString() : null),
-    } as any;
+    };
+
+    console.log("[Trades API] Inserting trade data:", JSON.stringify(tradeData, null, 2));
 
     const { data, error } = await getSupabaseClient()
       .from("trades")
@@ -214,8 +216,18 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       .single();
 
     if (error) {
-      console.error("[Trades API] Error creating trade:", error);
-      return res.status(500).json({ error: "Failed to create trade", details: error.message });
+      console.error("[Trades API] Error creating trade:", JSON.stringify(error, null, 2));
+      console.error(
+        "[Trades API] Error details - code:",
+        error.code,
+        "message:",
+        error.message,
+        "hint:",
+        error.hint
+      );
+      return res
+        .status(500)
+        .json({ error: "Failed to create trade", details: error.message, code: error.code });
     }
 
     if (!data) {
@@ -295,8 +307,9 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
     }
 
     // Update trade
+    // NOTE: Client sends 'status' field, but database column is 'state'
     const updateData: TradeUpdate = {
-      status: updates.status,
+      state: updates.status,
       entry_price: updates.entry_price,
       entry_time: updates.entry_time,
       exit_price: updates.exit_price,

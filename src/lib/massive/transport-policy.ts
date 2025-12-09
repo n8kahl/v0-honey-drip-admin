@@ -418,8 +418,48 @@ export class TransportPolicy {
       let data: any;
 
       if (this.config.isOption) {
-        const response = await massive.getOptionsSnapshot(this.config.symbol);
-        data = response.results?.[0];
+        // Options symbol is in OCC format: O:GOOGL250117C00315000
+        // Extract underlying ticker (GOOGL) for the snapshot API
+        const fullTicker = this.config.symbol;
+        const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+
+        if (underlying) {
+          const response = await massive.getOptionsSnapshot(underlying);
+          // Find the specific contract in the results by matching the full ticker
+          const contract = response?.results?.find(
+            (c: any) => c.details?.ticker === fullTicker || c.ticker === fullTicker
+          );
+
+          if (contract) {
+            // Extract price data from the contract's nested structure
+            // Massive API returns: { last_trade: { price, p }, last_quote: { bid, bp, ask, ap } }
+            data = {
+              symbol: fullTicker,
+              last:
+                contract.last_trade?.price ?? contract.last_trade?.p ?? contract.day?.close ?? 0,
+              bid: contract.last_quote?.bid ?? contract.last_quote?.bp ?? 0,
+              ask: contract.last_quote?.ask ?? contract.last_quote?.ap ?? 0,
+              volume: contract.day?.volume ?? 0,
+              change: contract.day?.change ?? 0,
+              changePercent: contract.day?.change_percent ?? 0,
+              open: contract.day?.open ?? 0,
+              high: contract.day?.high ?? 0,
+              low: contract.day?.low ?? 0,
+              timestamp:
+                contract.last_trade?.sip_timestamp ??
+                contract.last_quote?.sip_timestamp ??
+                Date.now(),
+            };
+          } else {
+            console.warn(
+              `[TransportPolicy] Contract ${fullTicker} not found in ${underlying} snapshot`
+            );
+          }
+        } else {
+          console.warn(
+            `[TransportPolicy] Could not extract underlying from options symbol: ${fullTicker}`
+          );
+        }
       } else if (this.config.isIndex) {
         data = await massive.getIndex(this.config.symbol);
       } else {
