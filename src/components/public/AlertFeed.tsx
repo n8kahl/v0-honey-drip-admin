@@ -175,8 +175,8 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
   const time = formatAlertTime(alert.created_at);
 
   // Format contract display
-  const contract = alert.trade.contract;
-  const contractDisplay = contract
+  const contract = alert.trade?.contract;
+  const contractDisplay = contract?.strike
     ? `$${contract.strike}${contract.type === "call" ? "C" : "P"}`
     : "";
 
@@ -219,7 +219,7 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
       </div>
 
       {/* P&L (if applicable) */}
-      {alert.pnl_percent !== null && (
+      {alert.pnl_percent != null && (
         <div
           className={cn(
             "flex-shrink-0 text-sm font-mono font-semibold",
@@ -257,22 +257,25 @@ function formatAlertMessage(alert: TradeAlert): string {
     return `"${alert.message}"`;
   }
 
+  // Format price safely
+  const priceStr = alert.price != null ? `$${alert.price.toFixed(2)}` : "";
+
   // Otherwise, generate a default message based on type
   switch (alert.type) {
     case "enter":
-      return `Entry at $${alert.price.toFixed(2)}`;
+      return priceStr ? `Entry at ${priceStr}` : "Entry";
     case "trim":
-      return `Trimmed ${alert.trim_percent || 50}% at $${alert.price.toFixed(2)}`;
+      return priceStr ? `Trimmed ${alert.trim_percent || 50}% at ${priceStr}` : `Trimmed ${alert.trim_percent || 50}%`;
     case "exit":
-      return `Closed at $${alert.price.toFixed(2)}`;
+      return priceStr ? `Closed at ${priceStr}` : "Closed";
     case "update-sl":
-      return `Stop moved to $${alert.price.toFixed(2)}`;
+      return priceStr ? `Stop moved to ${priceStr}` : "Stop moved";
     case "trail-stop":
-      return `Trailing stop at $${alert.price.toFixed(2)}`;
+      return priceStr ? `Trailing stop at ${priceStr}` : "Trailing stop";
     case "add":
-      return `Added at $${alert.price.toFixed(2)}`;
+      return priceStr ? `Added at ${priceStr}` : "Added";
     default:
-      return `Update at $${alert.price.toFixed(2)}`;
+      return priceStr ? `Update at ${priceStr}` : "Update";
   }
 }
 
