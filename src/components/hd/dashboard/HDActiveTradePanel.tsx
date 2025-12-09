@@ -17,6 +17,9 @@ import {
   XCircle,
   AlertCircle,
   Brain,
+  BarChart3,
+  HeartPulse,
+  FileCheck,
 } from "lucide-react";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { useKeyLevels } from "../../../hooks/useKeyLevels";
@@ -334,8 +337,9 @@ export function HDActiveTradePanel({
 
           {/* Position Health */}
           <div className="space-y-2">
-            <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              Position Health
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] uppercase tracking-wide">
+              <HeartPulse className="w-3 h-3" />
+              Health
             </div>
             <div className="flex items-center gap-2">
               <div
@@ -422,14 +426,15 @@ export function HDActiveTradePanel({
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          UNDERLYING LEVELS - For TradingView Users
+          UNDERLYING LEVELS
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="bg-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 className="w-4 h-4 text-[var(--text-muted)]" />
           <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide">
-            Underlying Levels ({trade.ticker})
+            Levels
           </h3>
-          <span className="text-xs text-[var(--text-muted)]">For TradingView</span>
+          <span className="text-[10px] text-[var(--text-faint)]">{trade.ticker}</span>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -510,23 +515,22 @@ export function HDActiveTradePanel({
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          THESIS VALIDATION - Is the original trade thesis still valid?
+          THESIS VALIDATION
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="bg-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
+            <FileCheck
+              className={cn(
+                "w-4 h-4",
+                thesisValidation.status === "valid" && "text-[var(--accent-positive)]",
+                thesisValidation.status === "degraded" && "text-yellow-500",
+                thesisValidation.status === "invalid" && "text-[var(--accent-negative)]"
+              )}
+            />
             <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide">
-              Thesis Validation
+              Thesis
             </h3>
-            {thesisValidation.status === "valid" && (
-              <CheckCircle className="w-4 h-4 text-[var(--accent-positive)]" />
-            )}
-            {thesisValidation.status === "degraded" && (
-              <AlertCircle className="w-4 h-4 text-yellow-500" />
-            )}
-            {thesisValidation.status === "invalid" && (
-              <XCircle className="w-4 h-4 text-[var(--accent-negative)]" />
-            )}
           </div>
           <div
             className={cn(
@@ -538,7 +542,7 @@ export function HDActiveTradePanel({
                 "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
             )}
           >
-            {thesisValidation.score}% Valid
+            {thesisValidation.score}%
           </div>
         </div>
 
@@ -630,9 +634,12 @@ export function HDActiveTradePanel({
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="bg-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] p-3">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide">
-            Quick Actions
-          </h3>
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-[var(--text-muted)]" />
+            <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide">
+              Actions
+            </h3>
+          </div>
           {/* AI Coach Button */}
           <button
             onClick={() => setShowCoach(!showCoach)}

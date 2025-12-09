@@ -391,7 +391,7 @@ export async function createTrade(
       expiration: trade.expiration,
       quantity: trade.quantity,
       entry_price: trade.entry_price,
-      state: trade.status || "watching",
+      state: (trade.status || "WATCHING").toUpperCase(),
       notes: trade.notes,
       challenge_id: trade.challenge_id,
       contract: trade.contract || null, // Store full contract as JSONB

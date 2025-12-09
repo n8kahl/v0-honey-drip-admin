@@ -5,6 +5,7 @@ import { Input } from "../../ui/input";
 import { Switch } from "../../ui/switch";
 import { Textarea } from "../../ui/textarea";
 import { HDButton } from "../common/HDButton";
+import { DetailsToggle } from "../common/DetailsToggle";
 import { DiscordChannel } from "../../../types";
 import { Trash2, Plus, Check, AlertCircle, Star, Pencil, X } from "lucide-react";
 import { useAppToast } from "../../../hooks/useAppToast";
@@ -681,17 +682,14 @@ export function HDDialogDiscordSettings({
           )}
         </div>
 
-        {/* Info Section */}
-        <div className="p-4 bg-blue-500/5 border border-blue-500/30 rounded-[var(--radius)] text-xs text-blue-400 space-y-2">
-          <p className="font-medium">💡 How to get a Discord webhook URL:</p>
-          <ol className="list-decimal list-inside space-y-1 text-blue-300 ml-2">
-            <li>Open your Discord server</li>
-            <li>Go to Server Settings → Integrations → Webhooks</li>
-            <li>Click "New Webhook" or select an existing one</li>
-            <li>Copy the webhook URL</li>
-            <li>Paste it above to add the channel</li>
+        {/* Webhook Help - Collapsed */}
+        <DetailsToggle summary="How to get a webhook URL">
+          <ol className="list-decimal list-inside space-y-1 text-[var(--text-muted)] pl-1">
+            <li>Server Settings → Integrations → Webhooks</li>
+            <li>Create or select a webhook</li>
+            <li>Copy URL and paste above</li>
           </ol>
-        </div>
+        </DetailsToggle>
       </div>
     </AppSheet>
   );

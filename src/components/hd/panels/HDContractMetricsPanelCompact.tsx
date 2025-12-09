@@ -223,9 +223,9 @@ export function HDContractMetricsPanelCompact({
           </>
         )}
 
-        {/* No key levels available */}
-        {!keyLevels?.vwap && !keyLevels?.orbHigh && !keyLevels?.priorDayHigh && (
-          <div className="text-[10px] text-[var(--text-muted)] italic">Loading levels...</div>
+        {/* No key levels available - show nothing if data unavailable (stocks plan not available) */}
+        {!keyLevels && (
+          <div className="text-[10px] text-[var(--text-faint)] italic">Levels unavailable</div>
         )}
       </div>
 

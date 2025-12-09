@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Bar } from '../lib/indicators';
 import { KeyLevels } from '../lib/riskEngine/types';
 import { computeKeyLevelsFromBars } from '../lib/riskEngine/computeKeyLevels';
-import { getOptionBars, getIndexBars, MassiveError } from '../lib/massive/proxy';
+import { getOptionBars, getIndexBars, getTradierStockBars, MassiveError } from '../lib/massive/proxy';
 
 const INDEX_TICKERS = new Set(['SPX', 'NDX', 'VIX', 'RUT']);
 
@@ -58,16 +58,20 @@ export function useKeyLevels(
       );
 
       const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
-      
-      if (!isOption && !isIndex) {
-        console.warn(`[useKeyLevels] Skipping ${ticker}: stocks plan not available (options+indices only)`);
-        setKeyLevels(null);
-        setBars([]);
-        setLoading(false);
-        return;
+      const isStock = !isOption && !isIndex;
+
+      let response;
+      if (isStock) {
+        // Use Tradier for stock bars
+        const tradierInterval = timeframe === '1' ? '1min'
+          : timeframe === '5' ? '5min'
+          : timeframe === '15' ? '15min'
+          : '15min'; // Default to 15min for 60
+        response = await getTradierStockBars(ticker, tradierInterval, fromDate, toDate);
+      } else {
+        const fetcher = isOption ? getOptionBars : getIndexBars;
+        response = await fetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
       }
-      const fetcher = isOption ? getOptionBars : getIndexBars;
-      const response = await fetcher(symbolParam, multiplier, timespan, fromDate, toDate, limit);
 
       const results = Array.isArray(response?.results)
         ? response.results

@@ -135,10 +135,17 @@ export function HDContractGrid({
 
   // Auto-expand nearest (first) expiration on ticker change only
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  // Show More states for ITM/OTM sections
+  const [showMoreOTM, setShowMoreOTM] = useState(false);
+  const [showMoreITM, setShowMoreITM] = useState(false);
+
   useEffect(() => {
     if (sortedDates.length > 0) {
       setExpandedDate(sortedDates[0]);
     }
+    // Reset Show More when ticker changes
+    setShowMoreOTM(false);
+    setShowMoreITM(false);
   }, [ticker]);
 
   // Auto-expand the expiry that contains the recommended contract
@@ -391,13 +398,17 @@ export function HDContractGrid({
           <div className="sticky left-0 z-10 w-[70px] lg:w-[80px] flex-shrink-0 px-3 py-2 text-micro text-[var(--text-faint)] uppercase tracking-wide font-medium bg-[var(--surface-1)] border-r border-[var(--border-hairline)]">
             Strike
           </div>
-          {/* Scrollable Headers */}
-          <div className="grid grid-cols-[60px_60px_60px_80px_80px] lg:grid-cols-[70px_70px_70px_90px_90px] gap-2 px-3 py-2 text-micro text-[var(--text-faint)] uppercase tracking-wide font-medium">
+          {/* Scrollable Headers - Bid/Ask/Last + Greeks (Δ/Γ/Θ/V) + OI/IV */}
+          <div className="grid grid-cols-[50px_50px_50px_40px_40px_40px_40px_65px_55px] lg:grid-cols-[55px_55px_55px_45px_45px_45px_45px_70px_60px] gap-1 px-3 py-2 text-micro text-[var(--text-faint)] uppercase tracking-wide font-medium">
             <div>Bid</div>
             <div>Ask</div>
             <div>Last</div>
-            <div>Open Int</div>
-            <div>Impl. Vol.</div>
+            <div>Δ</div>
+            <div>Γ</div>
+            <div>Θ</div>
+            <div>V</div>
+            <div>OI</div>
+            <div>IV</div>
           </div>
         </div>
       </div>
@@ -460,8 +471,8 @@ export function HDContractGrid({
                 else otmContracts.push(c);
               });
 
-              // Limit displayed strikes per spec: 10 OTM + 1 ATM + 10 ITM (nearest to ATM)
-              // We keep internal full arrays for potential future analytics but slice for UI density.
+              // Limit displayed strikes: 2 OTM + 1 ATM + 3 ITM (nearest to ATM)
+              // Users can expand to see more via "Show More" buttons
               const atmStrike = atmStrikes.get(dateKey);
               // Helper to select closest N by absolute distance to ATM strike
               const limitClosest = (arr: Contract[], limit: number) => {
@@ -472,8 +483,13 @@ export function HDContractGrid({
                   .sort((a, b) => a.strike - b.strike); // re-sort for ascending strike display
               };
 
-              const limitedOtm = limitClosest(otmContracts, 10);
-              const limitedItm = limitClosest(itmContracts, 10);
+              // Default limits: 2 OTM + ATM + 3 ITM; expand to all when user clicks "Show More"
+              const otmLimit = showMoreOTM ? otmContracts.length : 2;
+              const itmLimit = showMoreITM ? itmContracts.length : 3;
+              const limitedOtm = limitClosest(otmContracts, otmLimit);
+              const limitedItm = limitClosest(itmContracts, itmLimit);
+              const hiddenOtmCount = otmContracts.length - limitedOtm.length;
+              const hiddenItmCount = itmContracts.length - limitedItm.length;
               // ATM should only ever be a single strike; if multiple due to data quirks we take the one closest to current price.
               const limitedAtm =
                 atmContracts.length <= 1
@@ -510,7 +526,7 @@ export function HDContractGrid({
                   {/* Only show contracts if this date is expanded */}
                   {isExpanded && (
                     <>
-                      {/* OTM Contracts (limited to 10) */}
+                      {/* OTM Contracts (default: 2 nearest ATM) */}
                       {limitedOtm.map((contract) => {
                         const currentRow = rowIndex++;
                         const isRec = recommendedIds.has(contract.id);
@@ -527,6 +543,16 @@ export function HDContractGrid({
                           </div>
                         );
                       })}
+
+                      {/* Show More OTM button */}
+                      {hiddenOtmCount > 0 && (
+                        <button
+                          onClick={() => setShowMoreOTM(true)}
+                          className="sticky left-0 w-full px-3 py-1.5 text-[10px] text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors text-center border-b border-[var(--border-hairline)]"
+                        >
+                          Show {hiddenOtmCount} more OTM contracts
+                        </button>
+                      )}
 
                       {/* ATM Indicator - Full width, sticky to prevent horizontal scroll */}
                       {limitedAtm.length > 0 && (
@@ -577,7 +603,7 @@ export function HDContractGrid({
                         </div>
                       )}
 
-                      {/* ITM Contracts (limited to 10) */}
+                      {/* ITM Contracts (default: 3 nearest ATM) */}
                       {limitedItm.map((contract) => {
                         const currentRow = rowIndex++;
                         const isRec = recommendedIds.has(contract.id);
@@ -594,6 +620,16 @@ export function HDContractGrid({
                           </div>
                         );
                       })}
+
+                      {/* Show More ITM button */}
+                      {hiddenItmCount > 0 && (
+                        <button
+                          onClick={() => setShowMoreITM(true)}
+                          className="sticky left-0 w-full px-3 py-1.5 text-[10px] text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors text-center border-b border-[var(--border-hairline)]"
+                        >
+                          Show {hiddenItmCount} more ITM contracts
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -660,13 +696,17 @@ const ContractRow = memo(function ContractRow({
             <span>${contract.strike}</span>
           </div>
         </div>
-        {/* Scrollable Data Columns */}
-        <div className="grid grid-cols-[60px_60px_60px_80px_80px] lg:grid-cols-[70px_70px_70px_90px_90px] gap-2 px-3 py-2 text-xs">
-          <div className="text-[var(--accent-positive)]">{contract.bid.toFixed(2)}</div>
-          <div className="text-[var(--accent-negative)]">{contract.ask.toFixed(2)}</div>
-          <div className="text-[var(--text-high)]">{contract.mid.toFixed(2)}</div>
-          <div className="text-[var(--text-muted)]">{contract.openInterest.toLocaleString()}</div>
-          <div className="text-[var(--text-muted)]">{contract.iv?.toFixed(2)}%</div>
+        {/* Scrollable Data Columns - Bid/Ask/Last + Greeks (Δ/Γ/Θ/V) + OI/IV */}
+        <div className="grid grid-cols-[50px_50px_50px_40px_40px_40px_40px_65px_55px] lg:grid-cols-[55px_55px_55px_45px_45px_45px_45px_70px_60px] gap-1 px-3 py-2 text-xs">
+          <div className="text-[var(--accent-positive)] tabular-nums">{contract.bid.toFixed(2)}</div>
+          <div className="text-[var(--accent-negative)] tabular-nums">{contract.ask.toFixed(2)}</div>
+          <div className="text-[var(--text-high)] tabular-nums">{contract.mid.toFixed(2)}</div>
+          <div className="text-[var(--text-muted)] tabular-nums">{contract.delta?.toFixed(2) ?? "—"}</div>
+          <div className="text-[var(--text-muted)] tabular-nums">{contract.gamma ? (contract.gamma * 100).toFixed(2) : "—"}</div>
+          <div className="text-[var(--text-muted)] tabular-nums">{contract.theta?.toFixed(2) ?? "—"}</div>
+          <div className="text-[var(--text-muted)] tabular-nums">{contract.vega?.toFixed(2) ?? "—"}</div>
+          <div className="text-[var(--text-muted)] tabular-nums">{contract.openInterest.toLocaleString()}</div>
+          <div className="text-[var(--text-muted)] tabular-nums">{contract.iv ? `${(contract.iv * 100).toFixed(0)}%` : "—"}</div>
         </div>
         {/* Best Pick badge on the right */}
         {isRecommended && (

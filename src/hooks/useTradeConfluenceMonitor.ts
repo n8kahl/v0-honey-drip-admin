@@ -21,6 +21,7 @@ import {
   type RegimeContext,
 } from "../lib/engines/index";
 import type { Trade, TradeConfluence, ConfluenceFactor } from "../types";
+import type { KeyLevels } from "../lib/riskEngine/types";
 
 // Configuration
 const CONFLUENCE_UPDATE_INTERVAL = 60_000; // 60 seconds
@@ -52,7 +53,8 @@ function buildConfluenceFromContext(
   mtfContext: MTFContext | null,
   flowContext: FlowContext | null,
   gammaContext: GammaContext | null,
-  regimeContext: RegimeContext | null
+  regimeContext: RegimeContext | null,
+  keyLevels?: KeyLevels | null
 ): TradeConfluence {
   const factors: TradeConfluence["factors"] = {};
   let totalScore = 50; // Start at neutral
@@ -171,6 +173,7 @@ function buildConfluenceFromContext(
     score: normalizedScore,
     direction,
     factors,
+    keyLevels: keyLevels || undefined,
     updatedAt: new Date(),
     isStale: false,
   };
@@ -199,7 +202,8 @@ async function calculateTradeConfluence(trade: Trade): Promise<TradeConfluence |
       mtfContext,
       flowContext,
       gammaContext,
-      regimeContext
+      regimeContext,
+      trade.confluence?.keyLevels || null
     );
   } catch (error) {
     console.error("[ConfluenceMonitor] Failed to calculate confluence:", error);
@@ -421,7 +425,8 @@ export function useTradeConfluenceMonitor(): UseTradeConfluenceMonitorReturn {
  */
 export async function getInitialConfluence(
   ticker: string,
-  direction: "LONG" | "SHORT"
+  direction: "LONG" | "SHORT",
+  keyLevels?: KeyLevels | null
 ): Promise<TradeConfluence | null> {
   try {
     const [ivContext, mtfContext, flowContext, gammaContext, regimeContext] = await Promise.all([
@@ -438,7 +443,8 @@ export async function getInitialConfluence(
       mtfContext,
       flowContext,
       gammaContext,
-      regimeContext
+      regimeContext,
+      keyLevels || null
     );
   } catch (error) {
     console.error("[getInitialConfluence] Failed:", error);

@@ -35,6 +35,7 @@ import {
   type EconomicEvent,
   type EarningsEvent,
 } from "../lib/calendar/EconomicCalendar";
+import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
@@ -83,13 +84,13 @@ export function PublicPortal() {
         .from("trades")
         .select("*")
         .eq("show_on_public", true)
-        .in("state", ["entered", "loaded"])
+        .in("state", ["ENTERED", "LOADED"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      const entered = data?.filter((t) => t.state === "entered") || [];
-      const loaded = data?.filter((t) => t.state === "loaded") || [];
+      const entered = data?.filter((t) => t.state === "ENTERED") || [];
+      const loaded = data?.filter((t) => t.state === "LOADED") || [];
 
       setActiveTrades(entered);
       setLoadedTrades(loaded);
@@ -441,13 +442,13 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
         <div>
           <span className="text-[var(--text-faint)]">Entry:</span>
           <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${trade.entry_price.toFixed(2)}
+            ${(trade.entry_price ?? 0).toFixed(2)}
           </span>
         </div>
         <div>
           <span className="text-[var(--text-faint)]">Current:</span>
           <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${trade.current_price.toFixed(2)}
+            ${(trade.current_price ?? 0).toFixed(2)}
           </span>
         </div>
       </div>

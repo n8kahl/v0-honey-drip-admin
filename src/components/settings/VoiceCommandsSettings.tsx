@@ -1,13 +1,17 @@
 /**
  * VoiceCommandsSettings Component
- * Voice command preferences with database persistence
+ *
+ * Compact voice command preferences with database persistence.
+ * Full command reference moved to docs/VOICE_COMMANDS.md
  */
 
 import { useEffect, useState } from 'react';
-import { Mic, MicOff, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Loader2, ExternalLink } from 'lucide-react';
 import { HDCard } from '../hd/common/HDCard';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useAppToast } from '../../hooks/useAppToast';
+
+const EXAMPLE_COMMANDS = ['"Enter SPY"', '"Take profit"', '"Add NVDA"'];
 
 export function VoiceCommandsSettings() {
   const { profile, isLoading, updateProfile } = useUserSettings();
@@ -28,82 +32,23 @@ export function VoiceCommandsSettings() {
     }
   }, [profile]);
 
-  // Handle toggle with auto-save
-  const handleVoiceEnabledChange = async (checked: boolean) => {
-    setVoiceEnabled(checked);
+  // Generic toggle handler
+  const handleToggle = async (
+    field: 'voiceEnabled' | 'voiceRequireConfirmation' | 'voiceAudioFeedback',
+    checked: boolean,
+    setter: (v: boolean) => void
+  ) => {
+    setter(checked);
     setIsSaving(true);
     try {
-      await updateProfile({ voiceEnabled: checked });
+      await updateProfile({ [field]: checked });
     } catch {
-      // Revert on error
-      setVoiceEnabled(!checked);
+      setter(!checked);
       toast.error('Failed to save setting');
     } finally {
       setIsSaving(false);
     }
   };
-
-  const handleConfirmationChange = async (checked: boolean) => {
-    setVoiceRequireConfirmation(checked);
-    setIsSaving(true);
-    try {
-      await updateProfile({ voiceRequireConfirmation: checked });
-    } catch {
-      // Revert on error
-      setVoiceRequireConfirmation(!checked);
-      toast.error('Failed to save setting');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleAudioFeedbackChange = async (checked: boolean) => {
-    setVoiceAudioFeedback(checked);
-    setIsSaving(true);
-    try {
-      await updateProfile({ voiceAudioFeedback: checked });
-    } catch {
-      // Revert on error
-      setVoiceAudioFeedback(!checked);
-      toast.error('Failed to save setting');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const exampleCommands = [
-    { category: 'Wake Word', examples: ['"Hey Honey" – Activate voice listening mode'] },
-    {
-      category: 'Entry Alerts',
-      examples: [
-        '"Enter QQQ" – Search best contract and generate entry alert',
-        '"Enter SPY at 15 dollars" – Generate alert with specified price',
-        '"Go long AAPL" – Generate call entry alert',
-      ],
-    },
-    {
-      category: 'Exit & Trims',
-      examples: [
-        '"Exit SPY" – Generate exit alert for active trade',
-        '"Trim current trade" – Generate trim alert (default 30-50%)',
-        '"Take profits on QQQ" – Generate profit-taking alert',
-      ],
-    },
-    {
-      category: 'Position Management',
-      examples: [
-        '"Update stop loss" – Generate stop loss update alert',
-        '"Add to position" – Add to existing trade',
-      ],
-    },
-    {
-      category: 'Watchlist',
-      examples: [
-        '"Add TSLA to watchlist" – Add ticker to watchlist',
-        '"Remove SPY from watchlist" – Remove ticker',
-      ],
-    },
-  ];
 
   if (isLoading) {
     return (
@@ -121,144 +66,111 @@ export function VoiceCommandsSettings() {
     <section>
       <HDCard>
         <div className="space-y-4">
-          <div className="flex items-start gap-3">
+          {/* Header */}
+          <div className="flex items-center gap-3">
             {voiceEnabled ? (
-              <Mic className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
+              <Mic className="w-5 h-5 text-[var(--brand-primary)]" />
             ) : (
-              <MicOff className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0 mt-0.5" />
+              <MicOff className="w-5 h-5 text-[var(--text-muted)]" />
             )}
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-[var(--text-high)] mb-1">Voice Commands</h2>
-                {isSaving && (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--text-muted)]" />
-                )}
-              </div>
-              <p className="text-[var(--text-muted)] text-xs">
-                Enable hands-free trading with voice controls. Commands trigger the same flows as clicking.
-              </p>
+            <div className="flex-1 flex items-center gap-2">
+              <h2 className="text-[var(--text-high)]">Voice Commands</h2>
+              {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--text-muted)]" />}
             </div>
           </div>
 
-          <div className="space-y-3 pt-2">
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={voiceEnabled}
-                onChange={(e) => handleVoiceEnabledChange(e.target.checked)}
-                className="w-4 h-4 mt-0.5 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer"
-              />
-              <div className="flex-1">
-                <span className="text-[var(--text-high)] text-sm group-hover:text-[var(--brand-primary)] transition-colors">
-                  Enable voice commands
-                </span>
-                <p className="text-[var(--text-muted)] text-xs mt-0.5">
-                  Activate microphone for voice-activated trading controls
-                </p>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={voiceRequireConfirmation}
-                onChange={(e) => handleConfirmationChange(e.target.checked)}
-                disabled={!voiceEnabled}
-                className="w-4 h-4 mt-0.5 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              />
-              <div className="flex-1">
-                <span
-                  className={`text-sm group-hover:text-[var(--brand-primary)] transition-colors ${
-                    voiceEnabled ? 'text-[var(--text-high)]' : 'text-[var(--text-muted)]'
-                  }`}
-                >
-                  Require confirmation for trade actions
-                </span>
-                <p className="text-[var(--text-muted)] text-xs mt-0.5">
-                  Show confirmation dialog before executing voice-triggered trades
-                </p>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={voiceAudioFeedback}
-                onChange={(e) => handleAudioFeedbackChange(e.target.checked)}
-                disabled={!voiceEnabled}
-                className="w-4 h-4 mt-0.5 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              />
-              <div className="flex-1">
-                <span
-                  className={`text-sm group-hover:text-[var(--brand-primary)] transition-colors ${
-                    voiceEnabled ? 'text-[var(--text-high)]' : 'text-[var(--text-muted)]'
-                  }`}
-                >
-                  Enable audio feedback (TTS)
-                </span>
-                <p className="text-[var(--text-muted)] text-xs mt-0.5">
-                  Voice reads back commands and confirmations
-                </p>
-              </div>
-            </label>
+          {/* Toggles */}
+          <div className="space-y-2">
+            <Toggle
+              checked={voiceEnabled}
+              onChange={(c) => handleToggle('voiceEnabled', c, setVoiceEnabled)}
+              label="Enable voice commands"
+            />
+            <Toggle
+              checked={voiceRequireConfirmation}
+              onChange={(c) => handleToggle('voiceRequireConfirmation', c, setVoiceRequireConfirmation)}
+              disabled={!voiceEnabled}
+              label="Require confirmation"
+            />
+            <Toggle
+              checked={voiceAudioFeedback}
+              onChange={(c) => handleToggle('voiceAudioFeedback', c, setVoiceAudioFeedback)}
+              disabled={!voiceEnabled}
+              label="Audio feedback (TTS)"
+            />
           </div>
 
-          {/* Browser Compatibility */}
-          <div className="pt-3 border-t border-[var(--border-hairline)]">
-            <div className="flex items-start gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface-1)]">
-              <span className="text-xs text-[var(--text-muted)]">
-                ℹ️ <strong>Browser Support:</strong> Voice commands require Chrome, Edge, or Safari with
-                microphone permissions. Press <kbd className="px-1.5 py-0.5 bg-[var(--surface-2)] rounded text-[10px]">M</kbd> to
-                toggle listening, or say <strong>"Hey Honey"</strong> to activate.
+          {/* Activation hint */}
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+            <span>Say</span>
+            <kbd className="px-1.5 py-0.5 bg-[var(--surface-2)] rounded text-[10px] font-medium">
+              "Hey Honey"
+            </kbd>
+            <span>or press</span>
+            <kbd className="px-1.5 py-0.5 bg-[var(--surface-2)] rounded text-[10px] font-medium">M</kbd>
+          </div>
+
+          {/* Example commands */}
+          <div className="flex flex-wrap gap-1.5">
+            {EXAMPLE_COMMANDS.map((cmd) => (
+              <span
+                key={cmd}
+                className="px-2 py-1 rounded text-[10px] font-medium bg-[var(--surface-1)] text-[var(--text-muted)] border border-[var(--border-hairline)]"
+              >
+                {cmd}
               </span>
-            </div>
+            ))}
           </div>
 
-          {/* Example Commands */}
-          <div className="pt-3 border-t border-[var(--border-hairline)]">
-            <h3 className="text-[var(--text-high)] text-sm mb-3">Command Reference</h3>
-            <div className="space-y-4">
-              {exampleCommands.map((section, idx) => (
-                <div key={idx}>
-                  <h4 className="text-[var(--brand-primary)] text-xs font-medium mb-1.5">
-                    {section.category}
-                  </h4>
-                  <div className="space-y-1">
-                    {section.examples.map((command, cmdIdx) => (
-                      <div key={cmdIdx} className="flex items-start gap-2 text-xs pl-2">
-                        <span className="text-[var(--text-muted)] min-w-[4px]">•</span>
-                        <span className="text-[var(--text-muted)]">{command}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Link to full docs */}
+          <a
+            href="/docs/VOICE_COMMANDS.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-[var(--brand-primary)] hover:underline"
+          >
+            View all commands
+            <ExternalLink className="w-3 h-3" />
+          </a>
 
-          {/* How It Works */}
-          <div className="pt-3 border-t border-[var(--border-hairline)]">
-            <h3 className="text-[var(--text-high)] text-sm mb-2">How It Works</h3>
-            <div className="space-y-2 text-xs text-[var(--text-muted)]">
-              <p>
-                <strong className="text-[var(--text-high)]">1. Activate:</strong> Say "Hey Honey" or press M key
-              </p>
-              <p>
-                <strong className="text-[var(--text-high)]">2. Command:</strong> Speak naturally - the system understands context
-              </p>
-              <p>
-                <strong className="text-[var(--text-high)]">3. Smart Search:</strong> For entries, automatically searches best contracts with reasoning
-              </p>
-              <p>
-                <strong className="text-[var(--text-high)]">4. Confirmation:</strong> Reviews alert with voice readback before sending
-              </p>
-              <p>
-                <strong className="text-[var(--text-high)]">5. Send:</strong> Confirms and sends to your default Discord channels
-              </p>
-            </div>
-          </div>
+          {/* Browser compatibility */}
+          <p className="text-[10px] text-[var(--text-faint)]">
+            Requires Chrome, Edge, or Safari with microphone permissions.
+          </p>
         </div>
       </HDCard>
     </section>
+  );
+}
+
+/** Compact toggle component */
+function Toggle({
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer group">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        className="w-4 h-4 rounded bg-[var(--surface-1)] border-[var(--border-hairline)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+      />
+      <span
+        className={`text-xs ${
+          disabled ? 'text-[var(--text-muted)]' : 'text-[var(--text-high)] group-hover:text-[var(--brand-primary)]'
+        } transition-colors`}
+      >
+        {label}
+      </span>
+    </label>
   );
 }

@@ -1,29 +1,14 @@
 /**
  * HDSessionGuidance - Smart session-aware trading guidance
  *
- * Provides contextual trading advice based on:
- * - Current market session timing
- * - Trade type (Scalp/Day/Swing)
- * - DTE and theta considerations
- * - Direction (calls vs puts)
- * - Live market conditions
+ * Compact display: Session chip + 1-liner summary
+ * Full guidance available behind toggle.
  */
 
+import { useState } from "react";
 import { cn } from "../../../lib/utils";
-import {
-  Lightbulb,
-  Clock,
-  Sun,
-  Sunset,
-  Moon,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  CheckCircle2,
-  Zap,
-  Timer,
-  Coffee,
-} from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { SessionChip } from "../common/StatusChip";
 import type { Contract } from "../../../types";
 
 interface HDSessionGuidanceProps {
@@ -33,33 +18,44 @@ interface HDSessionGuidanceProps {
   tradeType?: "Scalp" | "Day" | "Swing";
   className?: string;
   compact?: boolean;
+  defaultExpanded?: boolean;
 }
 
 type MarketSession =
-  | "pre_market"
-  | "opening_drive"
-  | "morning_momentum"
-  | "lunch_chop"
-  | "afternoon"
-  | "power_hour"
-  | "after_hours";
+  | "PRE"
+  | "OPEN_DRIVE"
+  | "MORNING"
+  | "LUNCH"
+  | "AFTERNOON"
+  | "POWER_HOUR"
+  | "AFTER_HOURS";
 
 interface SessionInfo {
   session: MarketSession;
-  label: string;
-  icon: React.ReactNode;
   minutesToClose: number;
-  timeDescription: string;
 }
 
-interface GuidanceItem {
-  id: string;
-  priority: "critical" | "warning" | "info" | "tip";
-  icon: React.ReactNode;
-  title: string;
-  message: string;
-  action?: string;
-}
+// Session one-liners (max 40 chars)
+const SESSION_ONELINERS: Record<MarketSession, string> = {
+  PRE: "Set levels, wait for open",
+  OPEN_DRIVE: "Wide spreads, fast action",
+  MORNING: "Good liquidity, trends run",
+  LUNCH: "Low vol, high fakeouts",
+  AFTERNOON: "Moderate activity",
+  POWER_HOUR: "Volume spike, watch reversals",
+  AFTER_HOURS: "Review only, no trades",
+};
+
+// Full guidance text
+const SESSION_DETAILS: Record<MarketSession, string> = {
+  PRE: "Review news catalysts, set key levels. Spreads are wide - wait for the opening bell for better fills.",
+  OPEN_DRIVE: "First 30 minutes are volatile with widest spreads. Use smaller size, quick decisions. Prime scalping window.",
+  MORNING: "Liquidity is strong, trends tend to continue. Look for pullback entries with proper stops.",
+  LUNCH: "Volume drops, price action gets noisy. False breakouts are common. Consider sitting out or use wide stops.",
+  AFTERNOON: "Volume returning. Watch for continuation of morning trends or new setups forming.",
+  POWER_HOUR: "Strong moves possible. Theta accelerating for short-dated options. Take profits into close.",
+  AFTER_HOURS: "Market closed. Options don't trade AH. Review positions and plan for tomorrow.",
+};
 
 function getCurrentSession(): SessionInfo {
   const now = new Date();
@@ -67,225 +63,55 @@ function getCurrentSession(): SessionInfo {
   const minutes = now.getMinutes();
   const totalMinutes = hours * 60 + minutes;
 
-  // Market hours: 9:30 AM - 4:00 PM ET (in minutes: 570 - 960)
   const marketOpen = 9 * 60 + 30;
   const marketClose = 16 * 60;
   const minutesToClose = Math.max(0, marketClose - totalMinutes);
 
   let session: MarketSession;
-  let label: string;
-  let icon: React.ReactNode;
-  let timeDescription: string;
 
   if (totalMinutes < marketOpen) {
-    session = "pre_market";
-    label = "Pre-Market";
-    icon = <Moon className="w-4 h-4" />;
-    timeDescription = `${Math.floor((marketOpen - totalMinutes) / 60)}h ${(marketOpen - totalMinutes) % 60}m to open`;
+    session = "PRE";
   } else if (totalMinutes < marketOpen + 30) {
-    session = "opening_drive";
-    label = "Opening Drive";
-    icon = <Zap className="w-4 h-4" />;
-    timeDescription = "First 30 minutes of trading";
+    session = "OPEN_DRIVE";
   } else if (totalMinutes < 11 * 60 + 30) {
-    session = "morning_momentum";
-    label = "Morning Momentum";
-    icon = <Sun className="w-4 h-4" />;
-    timeDescription = "Prime trend-following window";
+    session = "MORNING";
   } else if (totalMinutes < 14 * 60) {
-    session = "lunch_chop";
-    label = "Lunch Chop";
-    icon = <Coffee className="w-4 h-4" />;
-    timeDescription = "Lower volume, choppy action";
+    session = "LUNCH";
   } else if (totalMinutes < 15 * 60) {
-    session = "afternoon";
-    label = "Afternoon Session";
-    icon = <Timer className="w-4 h-4" />;
-    timeDescription = "Volume returning";
+    session = "AFTERNOON";
   } else if (totalMinutes < marketClose) {
-    session = "power_hour";
-    label = "Power Hour";
-    icon = <Sunset className="w-4 h-4" />;
-    timeDescription = `${minutesToClose}m to close`;
+    session = "POWER_HOUR";
   } else {
-    session = "after_hours";
-    label = "After Hours";
-    icon = <Moon className="w-4 h-4" />;
-    timeDescription = "Market closed";
+    session = "AFTER_HOURS";
   }
 
-  return {
-    session,
-    label,
-    icon,
-    minutesToClose,
-    timeDescription,
-  };
+  return { session, minutesToClose };
 }
 
-function generateGuidance(
-  ticker: string,
-  direction: "call" | "put",
-  contract: Contract | undefined,
-  tradeType: "Scalp" | "Day" | "Swing",
-  session: SessionInfo
-): GuidanceItem[] {
-  const guidance: GuidanceItem[] = [];
-  const dte = contract?.daysToExpiry ?? 0;
-  const isCall = direction === "call";
+function getContextHints(
+  session: MarketSession,
+  dte: number,
+  tradeType: string,
+  direction: "call" | "put"
+): string[] {
+  const hints: string[] = [];
 
-  // Session-specific guidance
-  switch (session.session) {
-    case "pre_market":
-      guidance.push({
-        id: "pre_market",
-        priority: "info",
-        icon: <Moon className="w-3.5 h-3.5" />,
-        title: "Pre-Market Planning",
-        message:
-          "Set your levels, review news catalysts, and wait for the opening bell for better fills.",
-        action: "Review key levels and plan entries",
-      });
-      break;
-
-    case "opening_drive":
-      guidance.push({
-        id: "opening_drive",
-        priority: "warning",
-        icon: <Zap className="w-3.5 h-3.5" />,
-        title: "High Volatility Window",
-        message:
-          "Spreads are widest and price action is fastest. Use smaller size and quick decisions.",
-        action:
-          tradeType === "Scalp" ? "Prime scalping window" : "Wait for first 15-20 min to stabilize",
-      });
-      break;
-
-    case "morning_momentum":
-      guidance.push({
-        id: "morning_momentum",
-        priority: "tip",
-        icon: <TrendingUp className="w-3.5 h-3.5" />,
-        title: "Best Trading Window",
-        message: "Liquidity is strong and trends tend to continue. Look for pullback entries.",
-        action: "Follow the trend with proper stops",
-      });
-      break;
-
-    case "lunch_chop":
-      guidance.push({
-        id: "lunch_chop",
-        priority: "warning",
-        icon: <Coffee className="w-3.5 h-3.5" />,
-        title: "Caution: Choppy Session",
-        message: "Volume drops and price action gets noisy. False breakouts are common.",
-        action: tradeType === "Scalp" ? "Consider sitting out" : "Wide stops or wait for afternoon",
-      });
-      break;
-
-    case "afternoon":
-      guidance.push({
-        id: "afternoon",
-        priority: "info",
-        icon: <Timer className="w-3.5 h-3.5" />,
-        title: "Volume Returning",
-        message: "Institutional traders are back. Watch for trend continuation from morning.",
-        action: "Look for afternoon breakouts",
-      });
-      break;
-
-    case "power_hour":
-      guidance.push({
-        id: "power_hour",
-        priority: dte === 0 ? "critical" : "warning",
-        icon: <Sunset className="w-3.5 h-3.5" />,
-        title: "Power Hour Active",
-        message: "Strong moves possible, but theta is accelerating for short-dated options.",
-        action: dte === 0 ? "Close 0DTE positions soon" : "Take profits into close",
-      });
-      break;
-
-    case "after_hours":
-      guidance.push({
-        id: "after_hours",
-        priority: "info",
-        icon: <Moon className="w-3.5 h-3.5" />,
-        title: "Market Closed",
-        message: "Options don't trade after hours. Review your positions and plan for tomorrow.",
-        action: "Prepare overnight strategy",
-      });
-      break;
-  }
-
-  // DTE-specific guidance
+  // DTE hints
   if (dte === 0) {
-    guidance.push({
-      id: "dte_0",
-      priority: "critical",
-      icon: <AlertTriangle className="w-3.5 h-3.5" />,
-      title: "0DTE: Rapid Decay",
-      message: "Theta is eating premium every minute. Quick scalps only, don't hold losers.",
-      action: "Take profits fast, cut losses faster",
-    });
-  } else if (dte === 1) {
-    guidance.push({
-      id: "dte_1",
-      priority: "warning",
-      icon: <Clock className="w-3.5 h-3.5" />,
-      title: "1DTE: Elevated Theta",
-      message:
-        session.session === "afternoon" || session.session === "power_hour"
-          ? "Consider closing before EOD to avoid overnight decay."
-          : "Theta will accelerate into tomorrow. Plan your exit.",
-      action: "Set clear exit rules",
-    });
+    hints.push("0DTE: Quick scalps only, cut losses fast");
+  } else if (dte === 1 && (session === "AFTERNOON" || session === "POWER_HOUR")) {
+    hints.push("1DTE: Consider closing before EOD");
   }
 
-  // Trade style guidance
-  if (tradeType === "Scalp") {
-    guidance.push({
-      id: "scalp_style",
-      priority: "tip",
-      icon: <Zap className="w-3.5 h-3.5" />,
-      title: "Scalp Style Active",
-      message: "Focus on quick 10-20% gains. Cut losers at -30%. Don't let winners turn to losers.",
-      action: "Quick in, quick out",
-    });
-  } else if (tradeType === "Swing") {
-    if (dte < 7) {
-      guidance.push({
-        id: "swing_warning",
-        priority: "warning",
-        icon: <AlertTriangle className="w-3.5 h-3.5" />,
-        title: "Short DTE for Swing",
-        message: "Swing trades need time. Consider longer-dated options (7+ DTE) for this style.",
-        action: "Extend expiration or switch to day trade",
-      });
-    }
+  // Style hints
+  if (tradeType === "Scalp" && session === "LUNCH") {
+    hints.push("Scalp style: Consider sitting out lunch chop");
+  }
+  if (tradeType === "Swing" && dte < 7) {
+    hints.push("Swing: Short DTE, consider longer expiry");
   }
 
-  // Direction-specific guidance
-  if (isCall && session.session === "power_hour") {
-    guidance.push({
-      id: "call_power_hour",
-      priority: "info",
-      icon: <TrendingUp className="w-3.5 h-3.5" />,
-      title: "End-of-Day Call Setup",
-      message: "Calls often benefit from EOD institutional buying and short covering.",
-    });
-  } else if (!isCall && session.session === "opening_drive") {
-    guidance.push({
-      id: "put_opening",
-      priority: "info",
-      icon: <TrendingDown className="w-3.5 h-3.5" />,
-      title: "Opening Put Play",
-      message: "Morning gaps often fade. Puts can work on failed gap-up attempts.",
-    });
-  }
-
-  // Sort by priority
-  const priorityOrder = { critical: 0, warning: 1, info: 2, tip: 3 };
-  return guidance.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+  return hints;
 }
 
 export function HDSessionGuidance({
@@ -295,142 +121,75 @@ export function HDSessionGuidance({
   tradeType = "Day",
   className,
   compact = false,
+  defaultExpanded = false,
 }: HDSessionGuidanceProps) {
-  const session = getCurrentSession();
-  const guidance = generateGuidance(ticker, direction, contract, tradeType, session);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const { session, minutesToClose } = getCurrentSession();
+  const dte = contract?.daysToExpiry ?? 0;
+  const oneLiner = SESSION_ONELINERS[session];
+  const details = SESSION_DETAILS[session];
+  const hints = getContextHints(session, dte, tradeType, direction);
 
-  const getPriorityColor = (priority: GuidanceItem["priority"]) => {
-    switch (priority) {
-      case "critical":
-        return "text-[var(--accent-negative)]";
-      case "warning":
-        return "text-amber-400";
-      case "info":
-        return "text-blue-400";
-      case "tip":
-        return "text-[var(--accent-positive)]";
-    }
-  };
-
-  const getPriorityBg = (priority: GuidanceItem["priority"]) => {
-    switch (priority) {
-      case "critical":
-        return "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/30";
-      case "warning":
-        return "bg-amber-500/10 border-amber-500/30";
-      case "info":
-        return "bg-blue-500/10 border-blue-500/30";
-      case "tip":
-        return "bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/30";
-    }
-  };
-
+  // Mobile/compact: just chip
   if (compact) {
-    // Compact mode - just show session and top guidance
-    const topGuidance = guidance[0];
-
     return (
-      <div className={cn("space-y-1.5", className)}>
-        <div className="flex items-center justify-between text-[10px]">
-          <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-            {session.icon}
-            <span className="uppercase tracking-wide">{session.label}</span>
-          </div>
-          <span className="text-[var(--text-faint)]">{session.timeDescription}</span>
-        </div>
-        {topGuidance && (
-          <div
-            className={cn(
-              "px-2 py-1.5 rounded-[var(--radius)] border text-[10px]",
-              getPriorityBg(topGuidance.priority)
-            )}
-          >
-            <div
-              className={cn("flex items-center gap-1.5", getPriorityColor(topGuidance.priority))}
-            >
-              {topGuidance.icon}
-              <span className="font-medium">{topGuidance.title}</span>
-            </div>
-            {topGuidance.action && (
-              <p className="text-[var(--text-muted)] mt-0.5 pl-5">{topGuidance.action}</p>
-            )}
-          </div>
+      <div className={cn("flex items-center gap-2", className)}>
+        <SessionChip session={session} />
+        {session === "POWER_HOUR" && minutesToClose > 0 && (
+          <span className="text-[10px] text-[var(--text-faint)] tabular-nums">
+            {minutesToClose}m left
+          </span>
         )}
       </div>
     );
   }
 
   return (
-    <div className={cn("space-y-3", className)}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h4 className="text-xs text-[var(--text-high)] font-semibold uppercase tracking-wide flex items-center gap-1.5">
-          <Lightbulb className="w-3.5 h-3.5" />
-          Session Guidance
-        </h4>
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[var(--surface-2)] text-[10px] text-[var(--text-med)]">
-          {session.icon}
-          <span className="font-medium">{session.label}</span>
-          <span className="text-[var(--text-faint)]">• {session.timeDescription}</span>
-        </div>
+    <div className={cn("space-y-1.5", className)}>
+      {/* Chip + 1-liner */}
+      <div className="flex items-center gap-2">
+        <SessionChip session={session} />
+        <span className="text-xs text-[var(--text-muted)] truncate">{oneLiner}</span>
+
+        {/* Toggle */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="ml-auto flex items-center text-[10px] text-[var(--text-faint)] hover:text-[var(--text-muted)] transition-colors"
+        >
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </button>
       </div>
 
-      {/* Guidance Items */}
-      <div className="space-y-2">
-        {guidance.map((item) => (
-          <div
-            key={item.id}
-            className={cn(
-              "px-2.5 py-2 rounded-[var(--radius)] border",
-              getPriorityBg(item.priority)
-            )}
-          >
-            <div
-              className={cn(
-                "flex items-center gap-1.5 text-xs font-medium",
-                getPriorityColor(item.priority)
-              )}
-            >
-              {item.icon}
-              <span>{item.title}</span>
+      {/* Expanded details */}
+      {expanded && (
+        <div className="pt-1.5 border-t border-[var(--border-hairline)] animate-fade-in-up space-y-2">
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">{details}</p>
+
+          {/* Context hints */}
+          {hints.length > 0 && (
+            <div className="space-y-1">
+              {hints.map((hint, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-1.5 text-[10px] text-[var(--data-stale)]"
+                >
+                  <span className="shrink-0">•</span>
+                  <span>{hint}</span>
+                </div>
+              ))}
             </div>
-            <p className="text-[10px] text-[var(--text-med)] mt-1 pl-5">{item.message}</p>
-            {item.action && (
-              <div className="mt-1.5 pl-5 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3 h-3 text-[var(--text-muted)]" />
-                <span className="text-[9px] text-[var(--text-high)] font-medium">
-                  {item.action}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          )}
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--border-hairline)]">
-        <div className="text-center">
-          <div className="text-[9px] text-[var(--text-muted)] uppercase">Session</div>
-          <div className="text-xs text-[var(--text-high)] font-medium">{session.label}</div>
+          {/* Time to close */}
+          {session !== "PRE" && session !== "AFTER_HOURS" && (
+            <div className="text-[10px] text-[var(--text-faint)] tabular-nums">
+              {minutesToClose > 60
+                ? `${Math.floor(minutesToClose / 60)}h ${minutesToClose % 60}m to close`
+                : `${minutesToClose}m to close`}
+            </div>
+          )}
         </div>
-        <div className="text-center">
-          <div className="text-[9px] text-[var(--text-muted)] uppercase">Style</div>
-          <div className="text-xs text-[var(--text-high)] font-medium">{tradeType}</div>
-        </div>
-        <div className="text-center">
-          <div className="text-[9px] text-[var(--text-muted)] uppercase">Direction</div>
-          <div
-            className={cn(
-              "text-xs font-medium",
-              direction === "call"
-                ? "text-[var(--accent-positive)]"
-                : "text-[var(--accent-negative)]"
-            )}
-          >
-            {direction === "call" ? "Bullish" : "Bearish"}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -12,11 +12,11 @@ import { MobileWatermark } from "./MobileWatermark";
 import { useVoiceCommands } from "../hooks/useVoiceCommands";
 import { streamingManager } from "../lib/massive/streaming-manager";
 import { useTradeStateMachine } from "../hooks/useTradeStateMachine";
-import { TradingWorkspace } from "./trading/TradingWorkspace";
-import { ActiveTradesPanel } from "./trading/ActiveTradesPanel";
+import { useKeyLevels } from "../hooks/useKeyLevels";
+import { NowPanel } from "./trading/NowPanel";
+import { ActionRail } from "./trading/ActionRail";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
-import { branding } from "../lib/config/branding";
 import { useDiscord } from "../hooks/useDiscord";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useMarketStore } from "../stores/marketStore";
@@ -87,6 +87,16 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
 
   const { user } = useAuth();
 
+  // Compute keyLevels for active ticker in real-time
+  // This will be passed to useTradeStateMachine for persistence when creating/loading trades
+  const levelsTicker = focusedTrade?.ticker || "";
+  const { keyLevels: computedKeyLevels } = useKeyLevels(levelsTicker, {
+    timeframe: "5",
+    lookbackDays: 5,
+    orbWindow: 5,
+    enabled: Boolean(levelsTicker),
+  });
+
   const {
     activeTicker,
     contracts,
@@ -96,6 +106,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     alertOptions,
     showAlert,
     activeTrades,
+    focus,
     actions,
   } = useTradeStateMachine({
     hotTrades,
@@ -104,6 +115,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     focusedTrade,
     onMobileTabChange,
     confluence: undefined,
+    keyLevels: computedKeyLevels,
   });
 
   // Fetch options chain when activeTicker changes
@@ -354,99 +366,67 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             compositeSignals={compositeSignals}
           />
         </div>
-        {/* Options chain area */}
+        {/* CENTER: NowPanel - Single focus target display */}
         <div className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
-          {!activeTicker && (
-            <div className="flex-1 relative flex items-center justify-center bg-[#0a0a0a]">
-              <div className="absolute inset-0 flex items-center justify-center opacity-[0.08]">
-                <img
-                  src={branding.logoUrl}
-                  alt={branding.appName}
-                  className="w-auto h-[50vh] max-w-[60vw] object-contain"
-                />
-              </div>
-              <div className="relative z-10 text-center space-y-4 max-w-md">
-                <h3 className="text-xl lg:text-2xl font-semibold text-white">
-                  {branding.appName} Admin
-                </h3>
-                <p className="text-zinc-400 text-sm lg:text-base leading-relaxed">
-                  Select a Ticker from the Watchlist or Loaded Trades to begin
-                </p>
-              </div>
-            </div>
-          )}
+          {/* Loading/Error states */}
           {activeTicker && optionsLoading && (
             <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">
-              Loading options chain for {activeTicker.symbol}...
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 rounded-full border-2 border-[var(--brand-primary)] border-t-transparent animate-spin" />
+                Loading options chain for {activeTicker.symbol}...
+              </div>
             </div>
           )}
           {activeTicker && optionsError && (
-            <div className="flex-1 flex items-center justify-center text-[var(--text-danger)] text-sm">
+            <div className="flex-1 flex items-center justify-center text-[var(--accent-negative)] text-sm">
               Error loading options chain: {optionsError}
             </div>
           )}
           {/* Subtle, non-blocking stale badge */}
           {optionsStale && !optionsLoading && !optionsError && (
-            <div className="absolute top-2 right-2 z-10 text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+            <div className="absolute top-2 right-2 z-10 text-xs text-[var(--data-stale)] bg-[var(--data-stale)]/10 border border-[var(--data-stale)]/30 rounded px-2 py-1">
               Stale · {optionsAsOf ? new Date(optionsAsOf).toLocaleTimeString() : "unknown"}
             </div>
           )}
-          {activeTicker &&
-            !optionsLoading &&
-            !optionsError &&
-            streamingContracts &&
-            streamingContracts.length > 0 && (
-              <TradingWorkspace
-                watchlist={watchlist}
-                activeTicker={activeTicker}
-                contracts={contracts}
-                currentTrade={currentTrade}
-                tradeState={tradeState}
-                showAlert={showAlert}
-                alertType={alertType}
-                alertOptions={alertOptions}
-                onContractSelect={(contract) => actions.handleContractSelect(contract)}
-                onEnterTrade={actions.handleEnterTrade}
-                onDiscard={actions.handleDiscard}
-                onAutoTrim={() => actions.handleTrim()}
-                onTrim={() => actions.handleTrim()}
-                onTrailStop={() => actions.handleTrailStop()}
-                onMoveSL={() => actions.handleUpdateSL()}
-                onAdd={() => actions.handleAdd()}
-                onExit={() => actions.handleExit()}
-                compositeSignals={compositeSignals}
-                // Enable three-column animated layout with integrated alert composer
-                useAnimatedLayout={true}
-                channels={channels}
-                challenges={challenges}
-                onSendAlert={actions.handleSendAlert}
-                onEnterAndAlert={actions.handleEnterAndAlert}
-                onCancelAlert={actions.handleCancelAlert}
-                onUnload={actions.handleUnloadTrade}
-              />
-            )}
+          {/* NowPanel - handles empty, symbol, and trade focus states */}
+          {!optionsLoading && !optionsError && (
+            <NowPanel
+              focus={focus}
+              activeTicker={activeTicker}
+              currentTrade={currentTrade}
+              tradeState={tradeState}
+              contracts={contracts}
+              activeTrades={activeTrades}
+              onContractSelect={(contract) => actions.handleContractSelect(contract)}
+              compositeSignals={compositeSignals}
+              watchlist={watchlist}
+            />
+          )}
         </div>
-        <ActiveTradesPanel
-          tradeState={tradeState}
-          currentTrade={currentTrade}
-          showAlert={showAlert}
-          alertType={alertType}
-          alertOptions={alertOptions}
-          channels={channels}
-          challenges={challenges}
-          onSendAlert={actions.handleSendAlert}
-          onEnterAndAlert={actions.handleEnterAndAlert}
-          onCancelAlert={actions.handleCancelAlert}
-          onUnload={actions.handleUnloadTrade}
-          onEnter={actions.handleEnterTrade}
-          onTrim={actions.handleTrim}
-          onUpdate={actions.handleUpdate}
-          onUpdateSL={actions.handleUpdateSL}
-          onTrailStop={actions.handleTrailStop}
-          onAdd={actions.handleAdd}
-          onTakeProfit={actions.handleTakeProfit}
-          onExit={actions.handleExit}
-        />
+
+        {/* RIGHT: ActionRail - State-aware actions and Discord */}
+        <div className="hidden lg:flex">
+          <ActionRail
+            tradeState={tradeState}
+            currentTrade={currentTrade}
+            showAlert={showAlert}
+            alertType={alertType}
+            alertOptions={alertOptions}
+            channels={channels}
+            challenges={challenges}
+            onSendAlert={actions.handleSendAlert}
+            onEnterAndAlert={actions.handleEnterAndAlert}
+            onCancelAlert={actions.handleCancelAlert}
+            onUnload={actions.handleUnloadTrade}
+            onEnter={actions.handleEnterTrade}
+            onTrim={actions.handleTrim}
+            onMoveSL={actions.handleUpdateSL}
+            onTrailStop={actions.handleTrailStop}
+            onAdd={actions.handleAdd}
+            onTakeProfit={actions.handleTakeProfit}
+            onExit={actions.handleExit}
+          />
+        </div>
         <HDDialogChallengeDetail
           open={false}
           onOpenChange={() => {}}

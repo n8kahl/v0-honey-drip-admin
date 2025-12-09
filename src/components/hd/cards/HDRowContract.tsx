@@ -31,7 +31,7 @@ function getLiquidityStatus(contract: Contract): {
 
   if (spreadPercent < 5 || spread < 0.05) {
     return {
-      color: "bg-green-500",
+      color: "bg-[var(--accent-positive)]",
       label: "Tight",
       tooltip: `Spread: $${spread.toFixed(2)} (${spreadPercent.toFixed(1)}%) - Very liquid`,
     };
@@ -46,7 +46,7 @@ function getLiquidityStatus(contract: Contract): {
   }
 
   return {
-    color: "bg-red-500",
+    color: "bg-[var(--accent-negative)]",
     label: "Wide",
     tooltip: `Spread: $${spread.toFixed(2)} (${spreadPercent.toFixed(1)}%) - Poor liquidity`,
   };
