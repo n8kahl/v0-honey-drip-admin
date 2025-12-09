@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "../../../lib/utils";
 import { Clock, ChevronDown, ChevronUp, Calendar, AlertTriangle, Loader2 } from "lucide-react";
-import { DTEChip, ThetaChip } from "../common/StatusChip";
+import { DTEChip } from "../common/StatusChip";
 import type { Contract } from "../../../types";
 
 interface EconomicEvent {
@@ -133,9 +133,7 @@ export function TimeDecayThetaTile({
             Time Decay
           </span>
         </div>
-        <div className="text-xs text-[var(--text-faint)]">
-          Select contract for details
-        </div>
+        <div className="text-xs text-[var(--text-faint)]">Select contract for details</div>
       </div>
     );
   }
@@ -166,13 +164,16 @@ export function TimeDecayThetaTile({
       {/* Compact View: DTE + Theta + Risk */}
       <div className="flex items-center gap-2 flex-wrap">
         <DTEChip dte={dte} />
-        {thetaPerHour !== null && thetaPerHour > 0.03 && (
-          <ThetaChip value={thetaPerHour} />
+        {thetaPerHour !== null && thetaPerHour > 0.01 && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]">
+            θ: -${thetaPerHour.toFixed(2)}/hr
+          </span>
         )}
         <span
           className={cn(
             "px-1.5 py-0.5 rounded text-[10px] font-medium",
-            dteRisk.risk === "HIGH" && "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]",
+            dteRisk.risk === "HIGH" &&
+              "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]",
             dteRisk.risk === "MEDIUM" && "bg-yellow-500/10 text-yellow-500",
             dteRisk.risk === "LOW" && "bg-[var(--surface-3)] text-[var(--text-muted)]"
           )}
@@ -202,7 +203,10 @@ export function TimeDecayThetaTile({
               <span className="text-[11px] text-[var(--accent-negative)] font-medium">
                 Theta: -${thetaPerHour.toFixed(3)}/hr
               </span>
-              <span className="text-[11px] text-[var(--text-muted)]"> per contract (estimated)</span>
+              <span className="text-[11px] text-[var(--text-muted)]">
+                {" "}
+                per contract (estimated)
+              </span>
             </div>
           )}
 
@@ -226,7 +230,9 @@ export function TimeDecayThetaTile({
                       <AlertTriangle
                         className={cn(
                           "w-3 h-3",
-                          event.impact === "CRITICAL" ? "text-[var(--accent-negative)]" : "text-amber-400"
+                          event.impact === "CRITICAL"
+                            ? "text-[var(--accent-negative)]"
+                            : "text-amber-400"
                         )}
                       />
                       <span className="text-[var(--text-muted)] truncate">{event.name}</span>

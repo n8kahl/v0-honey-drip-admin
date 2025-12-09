@@ -7,14 +7,21 @@
 
 import React, { useState, useMemo, useCallback } from "react";
 import { cn } from "../../../lib/utils";
-import { ChevronDown, ChevronUp, ExternalLink, RefreshCw, Activity, BarChart3, Layers, LineChart } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  RefreshCw,
+  Activity,
+  BarChart3,
+  Layers,
+} from "lucide-react";
 import type { KeyLevels } from "../../../lib/riskEngine/types";
 import type { Candle, Indicators, MTFTrend, Timeframe } from "../../../stores/marketDataStore";
 
 import { DecisionVizSparkline } from "./DecisionVizSparkline";
 import { DecisionVizRange } from "./DecisionVizRange";
 import { DecisionVizMTF } from "./DecisionVizMTF";
-import { HDLiveChart } from "../charts/HDLiveChart";
 
 // ============================================================================
 // Types
@@ -31,6 +38,7 @@ export interface DecisionVizGridProps {
   dataHealth: DataHealth;
   onRetry?: () => void;
   currentPrice?: number;
+  changePercent?: number;
   defaultExpanded?: boolean;
 }
 
@@ -72,6 +80,7 @@ export function DecisionVizGrid({
   dataHealth,
   onRetry,
   currentPrice,
+  changePercent,
   defaultExpanded,
 }: DecisionVizGridProps) {
   const [expanded, setExpanded] = useState(() => {
@@ -142,13 +151,13 @@ export function DecisionVizGrid({
       {/* Header - Always Visible */}
       <div className="flex items-center justify-between px-4 py-2 bg-[var(--surface-1)]">
         {/* Left: Title + Health Badge */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide shrink-0">
             Decision Viz
           </span>
           <span
             className={cn(
-              "px-1.5 py-0.5 rounded text-[10px] font-medium",
+              "px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0",
               healthBadge.className
             )}
           >
@@ -157,11 +166,13 @@ export function DecisionVizGrid({
 
           {/* Collapsed summary */}
           {!expanded && (
-            <div className="flex items-center gap-2 ml-3 text-xs text-[var(--text-muted)]">
-              <span className={cn(
-                summary.trendSummary === "Bullish" && "text-[var(--accent-positive)]",
-                summary.trendSummary === "Bearish" && "text-[var(--accent-negative)]"
-              )}>
+            <div className="flex items-center gap-2 ml-3 text-xs text-[var(--text-muted)] truncate">
+              <span
+                className={cn(
+                  summary.trendSummary === "Bullish" && "text-[var(--accent-positive)]",
+                  summary.trendSummary === "Bearish" && "text-[var(--accent-negative)]"
+                )}
+              >
                 {summary.trendSummary}
               </span>
               {summary.rsiSummary && (
@@ -174,48 +185,36 @@ export function DecisionVizGrid({
           )}
         </div>
 
-        {/* Right: Actions */}
-        <div className="flex items-center gap-2">
+        {/* Right: Actions - use shrink-0 to prevent overlap */}
+        <div className="flex items-center gap-1 shrink-0 ml-2">
           {/* TradingView Button */}
           <a
             href={tradingViewUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors"
+            className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors"
             title="Open in TradingView"
           >
             <ExternalLink className="w-3 h-3" />
-            <span className="hidden sm:inline">TV</span>
           </a>
 
           {/* Retry Button (if stale) */}
           {dataHealth === "stale" && onRetry && (
             <button
               onClick={onRetry}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/10 transition-colors"
+              className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/10 transition-colors"
               title="Retry loading data"
             >
               <RefreshCw className="w-3 h-3" />
-              <span className="hidden sm:inline">Retry</span>
             </button>
           )}
 
           {/* Expand/Collapse Toggle */}
           <button
             onClick={handleToggle}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] transition-colors"
+            className="flex items-center gap-1 px-1.5 py-1 rounded text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] transition-colors"
           >
-            {expanded ? (
-              <>
-                <ChevronUp className="w-4 h-4" />
-                <span className="hidden sm:inline">Collapse</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-4 h-4" />
-                <span className="hidden sm:inline">Expand</span>
-              </>
-            )}
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -229,11 +228,7 @@ export function DecisionVizGrid({
               <Activity className="w-3 h-3" />
               <span>Sparkline</span>
             </div>
-            <DecisionVizSparkline
-              candles={candles}
-              keyLevels={keyLevels}
-              currentPrice={price}
-            />
+            <DecisionVizSparkline candles={candles} keyLevels={keyLevels} currentPrice={price} />
           </div>
 
           {/* Mode B: Range + ATR */}
@@ -256,29 +251,42 @@ export function DecisionVizGrid({
               <Layers className="w-3 h-3" />
               <span>MTF Ladder</span>
             </div>
-            <DecisionVizMTF
-              mtfTrend={mtfTrend}
-              indicators={indicators}
-              candles={candles}
-            />
+            <DecisionVizMTF mtfTrend={mtfTrend} indicators={indicators} candles={candles} />
           </div>
 
-          {/* Mode D: Mini Chart */}
-          <div className="p-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)] min-h-[200px]">
-            <div className="flex items-center gap-1.5 mb-2 text-[10px] font-medium text-[var(--text-muted)]">
-              <LineChart className="w-3 h-3" />
-              <span>1m Chart</span>
+          {/* Mode D: Symbol & Price Display */}
+          <div className="p-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-1)] min-h-[200px] flex flex-col justify-center items-center">
+            {/* Symbol */}
+            <div className="text-3xl font-bold text-[var(--text-high)] tracking-tight">
+              {symbol}
             </div>
-            <div className="h-[160px]">
-              <HDLiveChart
-                ticker={symbol}
-                initialTimeframe="1"
-                height={160}
-                showControls={false}
-                showHeader={false}
-                className="w-full"
-                loadDelay={0}
-              />
+
+            {/* Current Price */}
+            <div className="text-2xl font-semibold text-[var(--text-high)] tabular-nums mt-1">
+              ${price.toFixed(2)}
+            </div>
+
+            {/* Change Percent */}
+            {changePercent !== undefined && (
+              <div
+                className={cn(
+                  "text-lg font-medium tabular-nums mt-1",
+                  changePercent > 0 && "text-[var(--accent-positive)]",
+                  changePercent < 0 && "text-[var(--accent-negative)]",
+                  changePercent === 0 && "text-[var(--text-muted)]"
+                )}
+              >
+                {changePercent > 0 ? "+" : ""}
+                {changePercent.toFixed(2)}%
+              </div>
+            )}
+
+            {/* Data Health Indicator */}
+            <div className="flex items-center gap-1.5 mt-3 text-[10px] text-[var(--text-faint)]">
+              <Activity className="w-3 h-3" />
+              <span>
+                {dataHealth === "live" ? "Live" : dataHealth === "delayed" ? "Delayed" : "Stale"}
+              </span>
             </div>
           </div>
         </div>

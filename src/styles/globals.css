@@ -791,4 +791,216 @@
     ring-offset: 2px;
     ring-offset-color: var(--bg-base);
   }
+
+  /* ============================================
+   * Mode Transition Animations (Setup <-> Manage)
+   * ============================================ */
+
+  /* Mode enter - for switching TO a mode */
+  @keyframes mode-enter {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-mode-enter {
+    animation: mode-enter 0.3s ease-out forwards;
+  }
+
+  /* Mode exit - for switching FROM a mode */
+  @keyframes mode-exit {
+    0% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+  }
+
+  .animate-mode-exit {
+    animation: mode-exit 0.2s ease-in forwards;
+  }
+
+  /* Expand animation for collapsible panels */
+  @keyframes expand {
+    0% {
+      opacity: 0;
+      max-height: 0;
+      transform: translateY(-4px);
+    }
+    100% {
+      opacity: 1;
+      max-height: 500px;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-expand {
+    animation: expand 0.25s ease-out forwards;
+    overflow: hidden;
+  }
+
+  /* Collapse animation */
+  @keyframes collapse {
+    0% {
+      opacity: 1;
+      max-height: 500px;
+    }
+    100% {
+      opacity: 0;
+      max-height: 0;
+    }
+  }
+
+  .animate-collapse {
+    animation: collapse 0.2s ease-in forwards;
+    overflow: hidden;
+  }
+
+  /* Progress bar smooth fill */
+  .progress-bar-fill {
+    transition: width 0.5s ease-out;
+  }
+
+  /* Smooth value transitions for metrics */
+  .metric-value-transition {
+    transition: color 0.3s ease-out, transform 0.15s ease-out;
+  }
+
+  /* Level bar marker transitions */
+  .level-marker {
+    transition: left 0.3s ease-out, background-color 0.2s ease-out;
+  }
+
+  /* Trade tape event fade in */
+  @keyframes tape-event-enter {
+    0% {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-tape-event {
+    animation: tape-event-enter 0.3s ease-out forwards;
+  }
+
+  /* Live indicator pulse */
+  @keyframes live-pulse {
+    0%, 100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 var(--accent-negative);
+    }
+    50% {
+      opacity: 0.8;
+      box-shadow: 0 0 0 4px transparent;
+    }
+  }
+
+  .animate-live-pulse {
+    animation: live-pulse 2s ease-in-out infinite;
+  }
+
+  /* ATR bar fill animation */
+  @keyframes atr-fill {
+    0% {
+      width: 0;
+    }
+    100% {
+      width: var(--atr-consumed, 0%);
+    }
+  }
+
+  .animate-atr-fill {
+    animation: atr-fill 0.6s ease-out forwards;
+  }
+
+  /* Guidance recommendation highlight */
+  @keyframes guidance-highlight {
+    0% {
+      background-color: var(--brand-primary-pressed);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  .animate-guidance-highlight {
+    animation: guidance-highlight 1s ease-out forwards;
+  }
+
+  /* Quick action button feedback */
+  @keyframes action-success {
+    0% {
+      background-color: var(--accent-positive);
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+    100% {
+      background-color: var(--surface-3);
+      transform: scale(1);
+    }
+  }
+
+  .animate-action-success {
+    animation: action-success 0.5s ease-out forwards;
+  }
+
+  /* Subtle pulse for recommended contract highlighting */
+  @keyframes pulse-subtle {
+    0%, 100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3);
+    }
+    50% {
+      opacity: 0.95;
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+    }
+  }
+
+  .animate-pulse-subtle {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+
+  /* Tab content fade animation */
+  @keyframes tab-fade {
+    0% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-tab-fade {
+    animation: tab-fade 0.2s ease-out forwards;
+  }
+
+  /* Contract row highlight on selection */
+  @keyframes contract-select {
+    0% {
+      background-color: var(--brand-primary-pressed);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  .animate-contract-select {
+    animation: contract-select 0.4s ease-out forwards;
+  }
 }

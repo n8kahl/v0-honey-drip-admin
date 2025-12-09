@@ -1,13 +1,14 @@
 /**
- * DecisionVizSparkline - Mode A: Sparkline + Levels
+ * DecisionVizSparkline - Mode A: Price Position Bar
  *
- * Mini sparkline chart (no heavyweight library) with key level overlays.
- * Shows price context at a glance with VWAP, PDH/PDL, ORH/ORL markers.
+ * Simple, actionable visualization showing:
+ * - Current price position within session range
+ * - VWAP relationship (above/below)
+ * - Session high/low context
  */
 
 import React, { useMemo } from "react";
 import { cn } from "../../../lib/utils";
-import { fmtPrice } from "../../../ui/semantics";
 import type { KeyLevels } from "../../../lib/riskEngine/types";
 import type { Candle } from "../../../stores/marketDataStore";
 
@@ -21,30 +22,6 @@ interface DecisionVizSparklineProps {
   currentPrice: number;
 }
 
-interface LevelLine {
-  label: string;
-  value: number;
-  color: string;
-  dashed?: boolean;
-}
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-const CHART_WIDTH = 300;
-const CHART_HEIGHT = 60;
-const PADDING_LEFT = 10;
-const PADDING_RIGHT = 80; // Space for labels
-const PADDING_TOP = 5;
-const PADDING_BOTTOM = 5;
-
-const SPARKLINE_WIDTH = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
-const SPARKLINE_HEIGHT = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
-
-// Max candles to show (last N)
-const MAX_CANDLES = 60;
-
 // ============================================================================
 // Component
 // ============================================================================
@@ -54,246 +31,169 @@ export function DecisionVizSparkline({
   keyLevels,
   currentPrice,
 }: DecisionVizSparklineProps) {
-  // Get last N candles for sparkline
-  const sparklineData = useMemo(() => {
-    const slice = candles.slice(-MAX_CANDLES);
-    return slice.map((c) => c.close);
-  }, [candles]);
-
-  // Calculate price range
-  const { minPrice, maxPrice, priceRange } = useMemo(() => {
-    if (sparklineData.length === 0) {
-      return { minPrice: 0, maxPrice: 0, priceRange: 0 };
+  // Calculate session range from candles
+  const { sessionLow, sessionHigh, vwap, vwapDiff, positionPercent } = useMemo(() => {
+    if (candles.length === 0 || currentPrice === 0) {
+      return {
+        sessionLow: 0,
+        sessionHigh: 0,
+        vwap: keyLevels?.vwap || 0,
+        vwapDiff: 0,
+        positionPercent: 50,
+      };
     }
 
-    let min = Math.min(...sparklineData);
-    let max = Math.max(...sparklineData);
+    // Get session high/low from candles
+    let low = Math.min(...candles.map((c) => c.low));
+    let high = Math.max(...candles.map((c) => c.high));
 
-    // Include key levels in range calculation
-    if (keyLevels) {
-      const levels = [
-        keyLevels.vwap,
-        keyLevels.priorDayHigh,
-        keyLevels.priorDayLow,
-        keyLevels.orbHigh,
-        keyLevels.orbLow,
-      ].filter((v): v is number => v != null);
-
-      if (levels.length > 0) {
-        min = Math.min(min, ...levels);
-        max = Math.max(max, ...levels);
-      }
+    // Use key levels if available and extend range
+    if (keyLevels?.priorDayLow && keyLevels.priorDayLow < low) {
+      low = keyLevels.priorDayLow;
+    }
+    if (keyLevels?.priorDayHigh && keyLevels.priorDayHigh > high) {
+      high = keyLevels.priorDayHigh;
     }
 
-    // Include current price
-    if (currentPrice > 0) {
-      min = Math.min(min, currentPrice);
-      max = Math.max(max, currentPrice);
-    }
+    const vwapValue = keyLevels?.vwap || 0;
+    const range = high - low;
 
-    // Add 5% padding
-    const range = max - min;
-    const padding = range * 0.05;
+    // Calculate position as percentage (0-100)
+    const position = range > 0 ? ((currentPrice - low) / range) * 100 : 50;
+
+    // Calculate VWAP difference
+    const vwapDiffPct = vwapValue > 0 ? ((currentPrice - vwapValue) / vwapValue) * 100 : 0;
 
     return {
-      minPrice: min - padding,
-      maxPrice: max + padding,
-      priceRange: range + padding * 2,
+      sessionLow: low,
+      sessionHigh: high,
+      vwap: vwapValue,
+      vwapDiff: vwapDiffPct,
+      positionPercent: Math.max(0, Math.min(100, position)),
     };
-  }, [sparklineData, keyLevels, currentPrice]);
+  }, [candles, keyLevels, currentPrice]);
 
-  // Convert price to Y coordinate
-  const priceToY = (price: number): number => {
-    if (priceRange === 0) return CHART_HEIGHT / 2;
-    const normalized = (price - minPrice) / priceRange;
-    return CHART_HEIGHT - PADDING_BOTTOM - normalized * SPARKLINE_HEIGHT;
-  };
-
-  // Generate sparkline path
-  const sparklinePath = useMemo(() => {
-    if (sparklineData.length < 2) return "";
-
-    const points = sparklineData.map((price, i) => {
-      const x = PADDING_LEFT + (i / (sparklineData.length - 1)) * SPARKLINE_WIDTH;
-      const y = priceToY(price);
-      return `${x},${y}`;
-    });
-
-    return `M ${points.join(" L ")}`;
-  }, [sparklineData, priceToY]);
-
-  // Get key levels for display
-  const levelLines = useMemo((): LevelLine[] => {
-    const lines: LevelLine[] = [];
-
-    if (keyLevels?.vwap) {
-      lines.push({
-        label: "VWAP",
-        value: keyLevels.vwap,
-        color: "var(--brand-primary)",
-        dashed: true,
-      });
-    }
-
-    if (keyLevels?.priorDayHigh) {
-      lines.push({
-        label: "PDH",
-        value: keyLevels.priorDayHigh,
-        color: "var(--accent-positive)",
-        dashed: true,
-      });
-    }
-
-    if (keyLevels?.priorDayLow) {
-      lines.push({
-        label: "PDL",
-        value: keyLevels.priorDayLow,
-        color: "var(--accent-negative)",
-        dashed: true,
-      });
-    }
-
-    if (keyLevels?.orbHigh) {
-      lines.push({
-        label: "ORH",
-        value: keyLevels.orbHigh,
-        color: "var(--accent-positive)",
-      });
-    }
-
-    if (keyLevels?.orbLow) {
-      lines.push({
-        label: "ORL",
-        value: keyLevels.orbLow,
-        color: "var(--accent-negative)",
-      });
-    }
-
-    return lines;
-  }, [keyLevels]);
-
-  // Current price dot position
-  const currentPriceY = priceToY(currentPrice);
-  const currentPriceX = PADDING_LEFT + SPARKLINE_WIDTH;
+  // VWAP position on the bar
+  const vwapPositionPercent = useMemo(() => {
+    if (!vwap || sessionHigh === sessionLow) return null;
+    const range = sessionHigh - sessionLow;
+    const pos = ((vwap - sessionLow) / range) * 100;
+    return Math.max(0, Math.min(100, pos));
+  }, [vwap, sessionLow, sessionHigh]);
 
   // No data state
-  if (sparklineData.length < 2) {
+  if (candles.length < 2 || currentPrice === 0) {
     return (
-      <div className="h-[80px] flex items-center justify-center">
-        <span className="text-xs text-[var(--text-faint)]">
-          Insufficient data for sparkline
-        </span>
+      <div className="h-full flex items-center justify-center p-3">
+        <span className="text-xs text-[var(--text-faint)]">Loading price data...</span>
       </div>
     );
   }
 
+  const isAboveVwap = vwap > 0 && currentPrice > vwap;
+  const isBelowVwap = vwap > 0 && currentPrice < vwap;
+
   return (
-    <div className="flex flex-col gap-2">
-      {/* Sparkline Chart */}
-      <svg
-        width="100%"
-        height={CHART_HEIGHT}
-        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        preserveAspectRatio="xMidYMid meet"
-        className="overflow-visible"
-      >
-        {/* Level Lines */}
-        {levelLines.map((level) => {
-          const y = priceToY(level.value);
-          return (
-            <g key={level.label}>
-              <line
-                x1={PADDING_LEFT}
-                y1={y}
-                x2={PADDING_LEFT + SPARKLINE_WIDTH}
-                y2={y}
-                stroke={level.color}
-                strokeWidth={1}
-                strokeDasharray={level.dashed ? "3,3" : undefined}
-                opacity={0.5}
-              />
-              <text
-                x={PADDING_LEFT + SPARKLINE_WIDTH + 4}
-                y={y + 3}
-                fill={level.color}
-                fontSize={9}
-                fontFamily="monospace"
-              >
-                {level.label} {level.value.toFixed(2)}
-              </text>
-            </g>
-          );
-        })}
+    <div className="flex flex-col gap-3 p-2">
+      {/* Title */}
+      <div className="text-[10px] font-medium text-[var(--text-faint)] uppercase tracking-wide">
+        Price Position
+      </div>
 
-        {/* Sparkline Path */}
-        <path
-          d={sparklinePath}
-          fill="none"
-          stroke="var(--text-muted)"
-          strokeWidth={1.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* Current Price Dot */}
-        {currentPrice > 0 && (
-          <g>
-            {/* Pulse ring */}
-            <circle
-              cx={currentPriceX}
-              cy={currentPriceY}
-              r={6}
-              fill="var(--brand-primary)"
-              opacity={0.2}
-              className="animate-pulse"
+      {/* Range Bar */}
+      <div className="relative">
+        {/* Background Track */}
+        <div className="h-3 rounded-full bg-[var(--surface-3)] relative overflow-visible">
+          {/* VWAP Marker */}
+          {vwapPositionPercent !== null && (
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-[var(--brand-primary)] z-10"
+              style={{ left: `${vwapPositionPercent}%` }}
+              title={`VWAP: $${vwap.toFixed(2)}`}
             />
-            {/* Inner dot */}
-            <circle
-              cx={currentPriceX}
-              cy={currentPriceY}
-              r={3}
-              fill="var(--brand-primary)"
-              className="transition-all duration-300"
-            />
-          </g>
-        )}
-      </svg>
+          )}
 
-      {/* Level Labels Row */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] tabular-nums">
-        {keyLevels?.priorDayHigh && (
-          <span className="text-[var(--accent-positive)]">
-            PDH: {fmtPrice(keyLevels.priorDayHigh)}
+          {/* Current Price Marker */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[var(--brand-primary)] border-2 border-[var(--surface-1)] shadow-lg z-20 transition-all duration-300"
+            style={{ left: `calc(${positionPercent}% - 8px)` }}
+          />
+
+          {/* Progress fill to show position */}
+          <div
+            className={cn(
+              "absolute top-0 left-0 h-full rounded-full transition-all duration-300",
+              isAboveVwap ? "bg-[var(--accent-positive)]/30" : "bg-[var(--accent-negative)]/30"
+            )}
+            style={{ width: `${positionPercent}%` }}
+          />
+        </div>
+
+        {/* Range Labels */}
+        <div className="flex justify-between mt-1.5 text-[10px] tabular-nums">
+          <span className="text-[var(--accent-negative)]">${sessionLow.toFixed(2)}</span>
+          <span className="text-[var(--text-high)] font-semibold">${currentPrice.toFixed(2)}</span>
+          <span className="text-[var(--accent-positive)]">${sessionHigh.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {/* VWAP Context */}
+      <div className="flex items-center justify-between text-[11px]">
+        {vwap > 0 ? (
+          <>
+            <span className="text-[var(--text-muted)]">VWAP: ${vwap.toFixed(2)}</span>
+            <span
+              className={cn(
+                "font-medium",
+                isAboveVwap && "text-[var(--accent-positive)]",
+                isBelowVwap && "text-[var(--accent-negative)]",
+                !isAboveVwap && !isBelowVwap && "text-[var(--text-muted)]"
+              )}
+            >
+              {isAboveVwap ? "↑" : isBelowVwap ? "↓" : "="} {Math.abs(vwapDiff).toFixed(2)}%{" "}
+              {isAboveVwap ? "above" : isBelowVwap ? "below" : "at"} VWAP
+            </span>
+          </>
+        ) : (
+          <span className="text-[var(--text-faint)]">VWAP not available</span>
+        )}
+      </div>
+
+      {/* Quick Context Badges */}
+      <div className="flex flex-wrap gap-1.5">
+        {/* Position in range */}
+        <span
+          className={cn(
+            "px-1.5 py-0.5 rounded text-[9px] font-medium",
+            positionPercent > 70 && "bg-[var(--accent-positive)]/10 text-[var(--accent-positive)]",
+            positionPercent < 30 && "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]",
+            positionPercent >= 30 &&
+              positionPercent <= 70 &&
+              "bg-[var(--surface-3)] text-[var(--text-muted)]"
+          )}
+        >
+          {positionPercent > 70 ? "Near High" : positionPercent < 30 ? "Near Low" : "Mid-Range"}
+        </span>
+
+        {/* Key level context */}
+        {keyLevels?.priorDayHigh && currentPrice > keyLevels.priorDayHigh && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--accent-positive)]/10 text-[var(--accent-positive)]">
+            Above PDH
           </span>
         )}
-        {keyLevels?.orbHigh && (
-          <span className="text-[var(--accent-positive)]">
-            ORH: {fmtPrice(keyLevels.orbHigh)}
+        {keyLevels?.priorDayLow && currentPrice < keyLevels.priorDayLow && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]">
+            Below PDL
           </span>
         )}
-        {keyLevels?.vwap && (
-          <span className="text-[var(--brand-primary)]">
-            VWAP: {fmtPrice(keyLevels.vwap)}
+        {keyLevels?.orbHigh && currentPrice > keyLevels.orbHigh && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--accent-positive)]/10 text-[var(--accent-positive)]">
+            ORB ↑
           </span>
         )}
-        {keyLevels?.priorDayLow && (
-          <span className="text-[var(--accent-negative)]">
-            PDL: {fmtPrice(keyLevels.priorDayLow)}
-          </span>
-        )}
-        {keyLevels?.orbLow && (
-          <span className="text-[var(--accent-negative)]">
-            ORL: {fmtPrice(keyLevels.orbLow)}
-          </span>
-        )}
-        {keyLevels?.preMarketHigh && (
-          <span className="text-[var(--text-muted)]">
-            PMH: {fmtPrice(keyLevels.preMarketHigh)}
-          </span>
-        )}
-        {!keyLevels && (
-          <span className="text-[var(--text-faint)] italic">
-            Levels unavailable
+        {keyLevels?.orbLow && currentPrice < keyLevels.orbLow && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]">
+            ORB ↓
           </span>
         )}
       </div>
