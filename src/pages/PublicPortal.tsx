@@ -7,11 +7,22 @@
  * No authentication required.
  */
 
-import { useEffect, useState } from "react";
-import { createClient } from "../lib/supabase/client";
-import { ExternalLink, TrendingUp, Zap, Calendar, Play } from "lucide-react";
-import { cn } from "../lib/utils";
-import { Button } from "../components/ui/button";
+import { useEffect, useState, useCallback } from "react";
+import { ExternalLink, Zap, Calendar, Play, Trophy, TrendingUp } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { useMemberStatus } from "@/hooks/useMemberStatus";
+import { branding } from "@/lib/config/branding";
+
+// Components
+import { DailyScorecard, type DailyStats, type AdminStats } from "@/components/public/DailyScorecard";
+import { TradeTypeSection } from "@/components/public/TradeTypeSection";
+import { AlertFeed, type TradeAlert } from "@/components/public/AlertFeed";
+import { DemoViewToggle, GatedSection } from "@/components/public/MemberGate";
+import { TradeDetailModal } from "@/components/public/TradeDetailModal";
+import type { PublicTrade } from "@/components/public/LiveTradeCard";
+
+// Existing components
 import {
   fetchLatestPremarket,
   getWatchUrl,
@@ -53,6 +64,9 @@ interface Challenge {
 }
 
 export function PublicPortal() {
+  const { isMember, setIsMember } = useMemberStatus();
+  const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
+
   // State
   const [activeTrades, setActiveTrades] = useState<PublicTrade[]>([]);
   const [loadedTrades, setLoadedTrades] = useState<PublicTrade[]>([]);
@@ -191,17 +205,33 @@ export function PublicPortal() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)] overflow-x-hidden">
-      {/* Hero Section */}
-      <header className="relative border-b border-[var(--border-hairline)] bg-gradient-to-br from-[var(--brand-primary)]/10 via-[var(--bg-base)] to-[var(--bg-base)]">
-        <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16">
-          <div className="text-center">
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold text-[var(--text-high)] mb-4 tracking-tight">
-              <span className="text-[var(--brand-primary)]">Honeydrip</span> Live
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--bg-base)]/80">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img
+              src={branding.logoUrl}
+              alt={branding.appName}
+              className="w-8 h-8 rounded object-contain"
+            />
+            <h1 className="text-xl font-bold text-[var(--text-high)]">
+              <span className="text-[var(--brand-primary)]">{branding.appName.toUpperCase()}</span> LIVE
             </h1>
-            <p className="text-xl sm:text-2xl text-[var(--text-muted)] mb-8 font-medium">
-              Real Trades. Real Profits.{" "}
-              <span className="text-[var(--accent-positive)]">Real Time.</span>
-            </p>
+            <div className="flex items-center gap-2">
+              <div
+                className={cn(
+                  "w-2 h-2 rounded-full animate-pulse",
+                  isStale ? "bg-amber-400" : "bg-[var(--accent-positive)]"
+                )}
+              />
+              <span className="text-xs text-[var(--text-muted)]">
+                Updated {getTimeSinceUpdate()}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <DemoViewToggle isMember={isMember} setIsMember={setIsMember} />
             <Button
               size="lg"
               onClick={() => window.open(DISCORD_INVITE_URL, "_blank")}
