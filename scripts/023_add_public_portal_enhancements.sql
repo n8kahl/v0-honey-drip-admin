@@ -3,6 +3,20 @@
 -- Date: 2025-12-09
 
 -- ============================================================================
+-- 0. ENSURE REQUIRED COLUMNS EXIST (from migration 018)
+-- ============================================================================
+
+-- Trade type column (Scalp, Day, Swing, LEAP)
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT 'Scalp'
+  CHECK (trade_type IN ('Scalp', 'Day', 'Swing', 'LEAP'));
+
+-- Public visibility flag
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS show_on_public BOOLEAN DEFAULT true;
+
+-- Public comment for trade
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS public_comment TEXT;
+
+-- ============================================================================
 -- 1. ADD ADMIN ATTRIBUTION TO TRADES
 -- ============================================================================
 
