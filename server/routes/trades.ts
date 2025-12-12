@@ -81,8 +81,11 @@ function validateTradeInput(trade: any): { valid: boolean; error?: string } {
   if (trade.contract && typeof trade.contract !== "object") {
     return { valid: false, error: "Invalid contract object" };
   }
-  if (trade.status && !["loaded", "entered", "exited"].includes(trade.status)) {
-    return { valid: false, error: "Invalid status value" };
+  // Validate state/status - accept any case, will be normalized to lowercase
+  // (verified from production database: state IN ('loaded', 'entered', 'exited'))
+  const stateValue = (trade.state || trade.status || "").toLowerCase();
+  if (stateValue && !["loaded", "entered", "exited"].includes(stateValue)) {
+    return { valid: false, error: "Invalid status value. Must be: loaded, entered, or exited" };
   }
   if (trade.entry_price !== undefined && typeof trade.entry_price !== "number") {
     return { valid: false, error: "Invalid entry_price" };
@@ -109,6 +112,28 @@ function validateTradeUpdateInput(update: any): { valid: boolean; error?: string
 }
 
 /**
+ * Normalize trade_type to title case for database constraint
+ * Database accepts: 'Scalp', 'Day', 'Swing', 'LEAP'
+ * (verified from production database: trades_trade_type_check constraint)
+ */
+function normalizeTradeType(tradeType: string | undefined): string {
+  if (!tradeType) return "Day"; // Default
+  const upper = tradeType.toUpperCase();
+  switch (upper) {
+    case "SCALP":
+      return "Scalp";
+    case "DAY":
+      return "Day";
+    case "SWING":
+      return "Swing";
+    case "LEAP":
+      return "LEAP";
+    default:
+      return "Day";
+  }
+}
+
+/**
  * Type definitions for database operations
  * These bypass Supabase type inference limitations
  */
@@ -128,7 +153,7 @@ interface TradeInsert {
 }
 
 interface TradeUpdate {
-  state?: string; // Database column is 'state', not 'status'
+  state?: string; // Database column is 'state' with constraint trades_status_check for lowercase: loaded, entered, exited
   entry_price?: number;
   entry_time?: string;
   exit_price?: number;
@@ -204,10 +229,12 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     const tradeData: Record<string, any> = {
       user_id: userId,
       ticker: trade.ticker,
-      // Column is 'state' with CHECK constraint for uppercase: WATCHING, LOADED, ENTERED, EXITED
-      state: (trade.state || trade.status || "LOADED").toUpperCase(),
-      // Trade type (required NOT NULL field)
-      trade_type: tradeType,
+      // Column is 'state' with CHECK constraint 'trades_status_check' for lowercase: loaded, entered, exited
+      // (verified from production database schema query on 2025-12-10)
+      state: (trade.state || trade.status || "loaded").toLowerCase(),
+      // Trade type (required NOT NULL field) - normalized to title case for DB constraint
+      // (verified from production database: trades_trade_type_check accepts 'Scalp', 'Day', 'Swing', 'LEAP')
+      trade_type: normalizeTradeType(tradeType),
       // Contract details as separate columns (legacy schema)
       strike: contract.strike || null,
       expiration: contract.expiry || contract.expiration || null,
@@ -316,16 +343,19 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
 
     console.log(`[Trades API] Updating trade ${tradeId}:`, Object.keys(updates));
 
-    // Validate input
-    const upperStatus = updates.status?.toUpperCase();
-    if (upperStatus && !["LOADED", "ENTERED", "EXITED", "WATCHING"].includes(upperStatus)) {
-      return res.status(400).json({ error: "Invalid status value" });
+    // Validate input - normalize to lowercase for database constraint
+    // (verified from production database: state IN ('loaded', 'entered', 'exited'))
+    const lowerState = (updates.state || updates.status)?.toLowerCase();
+    if (lowerState && !["loaded", "entered", "exited"].includes(lowerState)) {
+      return res
+        .status(400)
+        .json({ error: "Invalid state value. Must be: loaded, entered, or exited" });
     }
 
     // Update trade
-    // NOTE: Client sends 'status' field, but database column is 'state'
+    // NOTE: Database column is 'state' with constraint 'trades_status_check' for lowercase values
     const updateData: TradeUpdate = {
-      state: upperStatus,
+      state: lowerState,
       entry_price: updates.entry_price,
       entry_time: updates.entry_time,
       exit_price: updates.exit_price,
@@ -358,6 +388,49 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
     res.json(data);
   } catch (error: any) {
     console.error("[Trades API] Unexpected error in PATCH /api/trades/:tradeId:", error);
+    res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+});
+
+// ============================================================================
+// DELETE /api/trades - Delete ALL trades for the current user (bulk delete)
+// ============================================================================
+router.delete("/api/trades", async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized: No user ID" });
+    }
+
+    console.log(`[Trades API] Bulk deleting ALL trades for user ${userId}`);
+
+    // First, count how many trades will be deleted
+    const { count, error: countError } = await getSupabaseClient()
+      .from("trades")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId);
+
+    if (countError) {
+      console.error("[Trades API] Error counting trades:", countError);
+      return res.status(500).json({ error: "Failed to count trades", details: countError.message });
+    }
+
+    // Delete all trades for this user (cascade deletes will remove links automatically)
+    const { error } = await getSupabaseClient().from("trades").delete().eq("user_id", userId);
+
+    if (error) {
+      console.error("[Trades API] Error bulk deleting trades:", error);
+      return res.status(500).json({ error: "Failed to delete trades", details: error.message });
+    }
+
+    console.log(`[Trades API] Successfully deleted ${count || 0} trades for user ${userId}`);
+    res.json({
+      success: true,
+      message: `Successfully deleted ${count || 0} trades`,
+      deletedCount: count || 0,
+    });
+  } catch (error: any) {
+    console.error("[Trades API] Unexpected error in DELETE /api/trades:", error);
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });

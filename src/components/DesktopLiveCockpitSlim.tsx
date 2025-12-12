@@ -20,8 +20,10 @@ import type { CompositeSignal } from "../lib/composite/CompositeSignal";
 import { useDiscord } from "../hooks/useDiscord";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useMarketStore } from "../stores/marketStore";
+import { useTradeStore } from "../stores/tradeStore";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
+import { deleteTradeApi } from "../lib/api/tradeApi";
 
 // Default confluence object to prevent undefined errors in child components
 const DEFAULT_CONFLUENCE = {
@@ -34,27 +36,22 @@ const DEFAULT_CONFLUENCE = {
 
 interface DesktopLiveCockpitSlimProps {
   watchlist: Ticker[];
-  hotTrades: Trade[];
   challenges: Challenge[];
   onTickerClick: (ticker: Ticker) => void;
-  onHotTradeClick: (trade: Trade) => void; // legacy placeholder
   onAddTicker?: () => void;
   onRemoveTicker?: (ticker: Ticker) => void;
   onAddChallenge?: () => void;
   onRemoveChallenge?: (challenge: Challenge) => void;
-  onTradesChange?: (trades: Trade[]) => void;
   onExitedTrade?: (trade: Trade) => void;
   channels: DiscordChannel[];
-  focusedTrade?: Trade | null;
   onMobileTabChange?: (tab: "live" | "active" | "history" | "settings") => void;
   onVoiceNavigate?: (
     destination: "live" | "active" | "history" | "settings" | "monitoring"
   ) => void;
-  updatedTradeIds?: Set<string>;
   onOpenActiveTrade?: (tradeId: string) => void;
   onOpenReviewTrade?: (tradeId: string) => void;
   activeTab?: "live" | "active" | "history" | "settings";
-  compositeSignals?: CompositeSignal[]; // Composite trade signals
+  compositeSignals?: CompositeSignal[];
   onVoiceStateChange?: (state: {
     isListening: boolean;
     isProcessing: boolean;
@@ -66,7 +63,6 @@ interface DesktopLiveCockpitSlimProps {
 export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
   const {
     watchlist,
-    hotTrades,
     challenges,
     onTickerClick,
     onAddTicker,
@@ -74,10 +70,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onAddChallenge,
     compositeSignals,
     onRemoveChallenge,
-    onTradesChange,
     onExitedTrade,
     channels,
-    focusedTrade,
     onMobileTabChange,
     onVoiceNavigate,
     onOpenActiveTrade,
@@ -87,9 +81,14 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
 
   const { user } = useAuth();
 
+  // Store access for direct state updates
+  const setCurrentTradeId = useTradeStore((s) => s.setCurrentTradeId);
+  const loadTrades = useTradeStore((s) => s.loadTrades);
+
   // Compute keyLevels for active ticker in real-time
-  // This will be passed to useTradeStateMachine for persistence when creating/loading trades
-  const levelsTicker = focusedTrade?.ticker || "";
+  // Get current trade from store to compute keyLevels
+  const storeCurrentTrade = useTradeStore((s) => s.getCurrentTrade());
+  const levelsTicker = storeCurrentTrade?.ticker || "";
   const { keyLevels: computedKeyLevels } = useKeyLevels(levelsTicker, {
     timeframe: "5",
     lookbackDays: 5,
@@ -109,12 +108,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     focus,
     actions,
   } = useTradeStateMachine({
-    hotTrades,
-    onTradesChange,
     onExitedTrade,
-    focusedTrade,
     onMobileTabChange,
-    confluence: undefined,
     keyLevels: computedKeyLevels,
   });
 
@@ -306,28 +301,26 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onAddTicker={onAddTicker}
             onRemoveTicker={onRemoveTicker}
             onLoadedTradeClick={(trade) => {
-              actions.setCurrentTrade(trade);
-              actions.setTradeState(trade.state);
-              // Show alert composer so user can enter/dismiss trade
-              // Note: We need to use the hook's method, not a direct action
-              // This will be handled by ensuring the trade state updates properly
-              // Set active ticker so middle column updates with contract data
-              const ticker = watchlist.find((w) => w.symbol === trade.ticker);
-              if (ticker) {
-                actions.setActiveTicker(ticker);
-              }
+              // Use the proper handler - this sets up focus and alertType
+              actions.handleActiveTradeClick(trade, watchlist);
             }}
             onActiveTradeClick={(trade) => {
               // Use the proper state machine handler for active trades
               // This ensures chart renders by setting activeTicker
               actions.handleActiveTradeClick(trade, watchlist);
             }}
-            onRemoveLoadedTrade={(trade) => {
-              actions.setActiveTrades((prev) => prev.filter((t) => t.id !== trade.id));
-              // If this was the current trade, clear it
-              if (currentTrade?.id === trade.id) {
-                actions.setCurrentTrade(null);
-                actions.setTradeState("WATCHING");
+            onRemoveLoadedTrade={async (trade) => {
+              // Delete from database and reload
+              const userId = user?.id || "00000000-0000-0000-0000-000000000001";
+              try {
+                await deleteTradeApi(userId, trade.id);
+                await loadTrades(userId);
+                // If this was the current trade, clear it
+                if (currentTrade?.id === trade.id) {
+                  setCurrentTradeId(null);
+                }
+              } catch (error) {
+                console.error("Failed to remove trade:", error);
               }
             }}
             activeTicker={activeTicker?.symbol}
@@ -349,18 +342,24 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             expandLoadedList={false}
             onTickerClick={handleTickerClick}
             onHotTradeClick={(trade) => {
-              actions.setCurrentTrade(trade);
-              actions.setTradeState(trade.state);
-              actions.setActiveTicker(watchlist.find((w) => w.symbol === trade.ticker) || null);
+              // Use the proper handler for trade clicks
+              actions.handleActiveTradeClick(trade, watchlist);
             }}
             onChallengeClick={() => {}}
             onAddTicker={onAddTicker}
             onAddChallenge={onAddChallenge}
             onRemoveChallenge={onRemoveChallenge}
             onRemoveTicker={onRemoveTicker}
-            onRemoveLoadedTrade={(trade: Trade) =>
-              actions.setActiveTrades((prev) => prev.filter((t) => t.id !== trade.id))
-            }
+            onRemoveLoadedTrade={async (trade: Trade) => {
+              // Delete from database and reload
+              const userId = user?.id || "00000000-0000-0000-0000-000000000001";
+              try {
+                await deleteTradeApi(userId, trade.id);
+                await loadTrades(userId);
+              } catch (error) {
+                console.error("Failed to remove trade:", error);
+              }
+            }}
             onOpenActiveTrade={onOpenActiveTrade}
             onOpenReviewTrade={onOpenReviewTrade}
             compositeSignals={compositeSignals}
@@ -425,6 +424,24 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onAdd={actions.handleAdd}
             onTakeProfit={actions.handleTakeProfit}
             onExit={actions.handleExit}
+            setupMode={
+              tradeState === "WATCHING" && activeTicker?.symbol
+                ? {
+                    focusedSymbol: activeTicker.symbol,
+                    activeContract: currentTrade?.contract ?? null,
+                    recommendedContract: null,
+                    contractSource: currentTrade?.contract ? "manual" : null,
+                    currentPrice: activeTicker.last ?? 0,
+                    tradeType: currentTrade?.tradeType ?? "Day",
+                    onLoadAndAlert: (channelIds, challengeIds) =>
+                      actions.handleLoadAndAlert(channelIds, challengeIds, undefined, undefined),
+                    onEnterAndAlert: (channelIds, challengeIds) =>
+                      actions.handleEnterAndAlert(channelIds, challengeIds, undefined, undefined),
+                    onDiscard: actions.handleDiscard,
+                    onRevertToRecommended: undefined,
+                  }
+                : undefined
+            }
           />
         </div>
         <HDDialogChallengeDetail
@@ -463,20 +480,22 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           <div className="hidden lg:flex">
             <HDActiveTradesPanel
               onTradeClick={(trade) => {
-                actions.setCurrentTrade(trade);
-                actions.setTradeState(trade.state);
-                actions.setActiveTicker(watchlist.find((w) => w.symbol === trade.ticker) || null);
+                // Use the proper handler for trade clicks
+                actions.handleActiveTradeClick(trade, watchlist);
               }}
               onTrimClick={(trade) => {
-                actions.setCurrentTrade(trade);
+                // Focus on trade first, then trigger trim
+                setCurrentTradeId(trade.id);
                 actions.handleTrim();
               }}
               onMoveSLClick={(trade) => {
-                actions.setCurrentTrade(trade);
+                // Focus on trade first, then trigger SL update
+                setCurrentTradeId(trade.id);
                 actions.handleUpdateSL();
               }}
               onExitClick={(trade) => {
-                actions.setCurrentTrade(trade);
+                // Focus on trade first, then trigger exit
+                setCurrentTradeId(trade.id);
                 actions.handleExit();
               }}
             />

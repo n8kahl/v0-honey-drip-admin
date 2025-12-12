@@ -9,22 +9,46 @@ import {
 } from "../lib/supabase/database";
 import { ensureArray } from "../lib/utils/validation";
 
+// ============================================================================
+// TRADE STORE - SINGLE SOURCE OF TRUTH
+// ============================================================================
+//
+// Architecture:
+// - Database is THE ultimate source of truth
+// - Store mirrors database state + provides derived selectors
+// - Components read from store, never maintain duplicate state
+// - All mutations go through store actions → database → reload
+//
+// Key concepts:
+// - currentTradeId: Which trade is focused (ID only)
+// - previewTrade: Temporary WATCHING trade being previewed (not yet in DB)
+// - activeTrades: LOADED + ENTERED trades (from DB)
+// - historyTrades: EXITED trades (from DB)
+// - Derived selectors compute values from these base states
+// ============================================================================
+
 interface TradeStore {
-  // State
-  activeTrades: Trade[];
-  historyTrades: Trade[];
-  currentTrade: Trade | null;
-  tradeState: TradeState;
+  // State - Single Source of Truth
+  activeTrades: Trade[]; // LOADED + ENTERED trades (from DB)
+  historyTrades: Trade[]; // EXITED trades (from DB)
+  currentTradeId: string | null; // ID of focused trade
+  previewTrade: Trade | null; // Temporary trade being previewed (WATCHING state, not yet in DB)
   contracts: Contract[];
   updatedTradeIds: Set<string>;
   isLoading: boolean;
   error: string | null;
 
-  // Actions
+  // Derived Selectors (computed from base state)
+  getCurrentTrade: () => Trade | null;
+  getTradeState: () => TradeState;
+  getLoadedTrades: () => Trade[];
+  getEnteredTrades: () => Trade[];
+
+  // Actions - State Setters
   setActiveTrades: (trades: Trade[]) => void;
   setHistoryTrades: (trades: Trade[]) => void;
-  setCurrentTrade: (trade: Trade | null) => void;
-  setTradeState: (state: TradeState) => void;
+  setCurrentTradeId: (id: string | null) => void;
+  setPreviewTrade: (trade: Trade | null) => void;
   setContracts: (contracts: Contract[]) => void;
   setUpdatedTradeIds: (ids: Set<string>) => void;
 
@@ -33,10 +57,6 @@ interface TradeStore {
   updateTrade: (tradeId: string, updates: Partial<Trade>) => Promise<void>;
   deleteTrade: (tradeId: string) => Promise<void>;
   loadTrades: (userId: string) => Promise<void>;
-
-  // NOTE: Old transitionToLoaded/transitionToEntered/transitionToExited removed
-  // These functions only updated memory and never persisted to database
-  // Use createTradeApi/updateTradeApi from useTradeStateMachine instead
 
   // Trade updates
   addTradeUpdate: (tradeId: string, update: TradeUpdate) => void;
@@ -55,8 +75,6 @@ interface TradeStore {
 
   // Utilities
   getTradeById: (tradeId: string) => Trade | undefined;
-  getLoadedTrades: () => Trade[];
-  getEnteredTrades: () => Trade[];
   markTradeAsUpdated: (tradeId: string) => void;
   clearUpdatedFlags: () => void;
 
@@ -82,25 +100,77 @@ const mapStatusToState = (status: string): TradeState => {
 export const useTradeStore = create<TradeStore>()(
   devtools(
     (set, get) => ({
-      // Initial state
+      // ========================================
+      // Initial State
+      // ========================================
       activeTrades: [],
       historyTrades: [],
-      currentTrade: null,
-      tradeState: "WATCHING",
+      currentTradeId: null,
+      previewTrade: null,
       contracts: [],
       updatedTradeIds: new Set(),
       isLoading: false,
       error: null,
 
-      // Simple setters
+      // ========================================
+      // Derived Selectors
+      // ========================================
+
+      // Get the currently focused trade (from activeTrades, historyTrades, or previewTrade)
+      getCurrentTrade: () => {
+        const { currentTradeId, activeTrades, historyTrades, previewTrade } = get();
+
+        // If we have a preview trade and it matches, return it
+        if (previewTrade && (!currentTradeId || previewTrade.id === currentTradeId)) {
+          return previewTrade;
+        }
+
+        if (!currentTradeId) return null;
+
+        // Look in active trades first
+        const activeTrade = activeTrades.find((t) => t.id === currentTradeId);
+        if (activeTrade) return activeTrade;
+
+        // Then check history
+        return historyTrades.find((t) => t.id === currentTradeId) || null;
+      },
+
+      // Get the state of the current trade
+      getTradeState: () => {
+        const { previewTrade } = get();
+        const currentTrade = get().getCurrentTrade();
+
+        // Preview trade is always WATCHING
+        if (previewTrade && currentTrade?.id === previewTrade.id) {
+          return "WATCHING";
+        }
+
+        return currentTrade?.state || "WATCHING";
+      },
+
+      // Get all LOADED trades
+      getLoadedTrades: () => {
+        return get().activeTrades.filter((t) => t.state === "LOADED");
+      },
+
+      // Get all ENTERED trades
+      getEnteredTrades: () => {
+        return get().activeTrades.filter((t) => t.state === "ENTERED");
+      },
+
+      // ========================================
+      // Simple Setters
+      // ========================================
       setActiveTrades: (trades) => set({ activeTrades: trades }),
       setHistoryTrades: (trades) => set({ historyTrades: trades }),
-      setCurrentTrade: (trade) => set({ currentTrade: trade }),
-      setTradeState: (state) => set({ tradeState: state }),
+      setCurrentTradeId: (id) => set({ currentTradeId: id }),
+      setPreviewTrade: (trade) => set({ previewTrade: trade }),
       setContracts: (contracts) => set({ contracts }),
       setUpdatedTradeIds: (ids) => set({ updatedTradeIds: ids }),
 
-      // CRUD operations
+      // ========================================
+      // CRUD Operations
+      // ========================================
       createTrade: async (userId, tradeData) => {
         set({ isLoading: true, error: null });
         try {
@@ -136,6 +206,8 @@ export const useTradeStore = create<TradeStore>()(
 
           set((state) => ({
             activeTrades: [...state.activeTrades, mappedTrade],
+            currentTradeId: mappedTrade.id, // Focus on the new trade
+            previewTrade: null, // Clear preview
             isLoading: false,
           }));
         } catch (error) {
@@ -156,15 +228,10 @@ export const useTradeStore = create<TradeStore>()(
             historyTrades: state.historyTrades.map((t) =>
               t.id === tradeId ? { ...t, ...updates } : t
             ),
-            currentTrade:
-              state.currentTrade?.id === tradeId
-                ? { ...state.currentTrade, ...updates }
-                : state.currentTrade,
             isLoading: false,
           }));
 
           // Filter updates to only include fields that exist in the database schema
-          // Exclude client-only fields like confluence, confluenceUpdatedAt, etc.
           const dbFields = [
             "entry_price",
             "exit_price",
@@ -197,13 +264,12 @@ export const useTradeStore = create<TradeStore>()(
               await dbUpdateTrade(tradeId, dbUpdates as any);
               console.warn(`[TradeStore] ✅ Trade ${tradeId} successfully updated in database`);
             } catch (dbError: any) {
-              // FAIL LOUDLY - don't silently swallow errors
               console.error(
                 `[TradeStore] ❌ CRITICAL: Failed to update trade ${tradeId} in database:`,
                 dbError
               );
               set({ error: `Failed to sync trade: ${dbError.message || "Unknown error"}` });
-              throw dbError; // Re-throw to prevent silent failures
+              throw dbError;
             }
           } else {
             console.warn(`[TradeStore] No database fields to update for trade ${tradeId}`);
@@ -211,18 +277,22 @@ export const useTradeStore = create<TradeStore>()(
         } catch (error) {
           console.error("[TradeStore] Failed to update trade:", error);
           set({ error: "Failed to update trade", isLoading: false });
-          throw error; // Re-throw for caller to handle
+          throw error;
         }
       },
 
       deleteTrade: async (tradeId) => {
         set({ isLoading: true, error: null });
         try {
+          // Clear currentTradeId if it matches
+          const { currentTradeId } = get();
+
           // First remove from local state
           set((state) => ({
             activeTrades: state.activeTrades.filter((t) => t.id !== tradeId),
             historyTrades: state.historyTrades.filter((t) => t.id !== tradeId),
-            currentTrade: state.currentTrade?.id === tradeId ? null : state.currentTrade,
+            currentTradeId: currentTradeId === tradeId ? null : currentTradeId,
+            previewTrade: state.previewTrade?.id === tradeId ? null : state.previewTrade,
             isLoading: false,
           }));
 
@@ -230,7 +300,7 @@ export const useTradeStore = create<TradeStore>()(
           try {
             await dbDeleteTrade(tradeId);
           } catch (dbError: any) {
-            // Only log if not a "not found" error (trade may be in-memory only)
+            // Only log if not a "not found" error
             if (!dbError?.message?.includes("No rows") && !dbError?.code?.includes("PGRST116")) {
               console.warn("[TradeStore] DB delete failed (trade may be in-memory only):", dbError);
             }
@@ -247,8 +317,9 @@ export const useTradeStore = create<TradeStore>()(
         try {
           const tradesData = await getTrades(userId);
           console.warn(`[TradeStore] Loaded ${tradesData.length} trades from database`);
+
           const mappedTrades: Trade[] = tradesData.map((t) => {
-            // Use stored contract if available, otherwise reconstruct from basic fields
+            // Use stored contract if available
             const storedContract = t.contract as any;
             const contract = storedContract || {
               id: `${t.ticker}-${t.strike}-${t.expiration}`,
@@ -267,19 +338,23 @@ export const useTradeStore = create<TradeStore>()(
             };
 
             // Extract discord channel IDs from junction table data
-            const discordChannelRows = (t as any).trades_discord_channels || [];
-            const discordChannels = discordChannelRows.map(
-              (row: { discord_channel_id: string }) => row.discord_channel_id
-            );
+            const discordChannelRows = Array.isArray((t as any).trades_discord_channels)
+              ? (t as any).trades_discord_channels
+              : [];
+            const discordChannels = discordChannelRows
+              .map((row: { discord_channel_id: string }) => row?.discord_channel_id)
+              .filter((id: string | undefined): id is string => typeof id === "string");
 
             // Extract challenge IDs from junction table data
-            const challengeRows = (t as any).trades_challenges || [];
-            const challenges = challengeRows.map(
-              (row: { challenge_id: string }) => row.challenge_id
-            );
+            const challengeRows = Array.isArray((t as any).trades_challenges)
+              ? (t as any).trades_challenges
+              : [];
+            const challenges = challengeRows
+              .map((row: { challenge_id: string }) => row?.challenge_id)
+              .filter((id: string | undefined): id is string => typeof id === "string");
 
-            // Map trade_updates from snake_case DB format to camelCase TradeUpdate interface
-            const rawUpdates = t.trade_updates || [];
+            // Map trade_updates from snake_case to camelCase
+            const rawUpdates = Array.isArray(t.trade_updates) ? t.trade_updates : [];
             const mappedUpdates: TradeUpdate[] = rawUpdates.map((u: any) => ({
               id: u.id,
               type: u.type,
@@ -289,8 +364,7 @@ export const useTradeStore = create<TradeStore>()(
               pnlPercent: u.pnl_percent ? parseFloat(u.pnl_percent) : undefined,
             }));
 
-            // Calculate movePercent from entry/exit prices if not stored in DB
-            // This handles legacy trades that were exited before we started storing move_percent
+            // Calculate movePercent
             let movePercent = (t as any).move_percent
               ? parseFloat((t as any).move_percent)
               : undefined;
@@ -322,7 +396,6 @@ export const useTradeStore = create<TradeStore>()(
               discordChannels,
               challenges:
                 challenges.length > 0 ? challenges : t.challenge_id ? [t.challenge_id] : [],
-              // Restore confluence and setup type from database
               setupType: (t as any).setup_type || undefined,
               confluence: (t as any).confluence || undefined,
               confluenceUpdatedAt: (t as any).confluence_updated_at
@@ -352,11 +425,9 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      // NOTE: Old transitionToLoaded/transitionToEntered/transitionToExited functions removed
-      // These only updated memory and never persisted to database
-      // Use createTradeApi/updateTradeApi from useTradeStateMachine instead
-
-      // Trade updates
+      // ========================================
+      // Trade Updates
+      // ========================================
       addTradeUpdate: (tradeId, update) => {
         set((state) => ({
           activeTrades: state.activeTrades.map((t) =>
@@ -365,7 +436,6 @@ export const useTradeStore = create<TradeStore>()(
         }));
       },
 
-      // Async: Create trade update in database
       addTradeUpdateToDb: async (userId, tradeId, update) => {
         try {
           const response = await fetch(`/api/trades/${tradeId}/updates`, {
@@ -387,47 +457,42 @@ export const useTradeStore = create<TradeStore>()(
           }
 
           // Update local state after successful DB insert
-          const { activeTrades, historyTrades } = get();
-          const trade = [...activeTrades, ...historyTrades].find((t) => t.id === tradeId);
-
-          if (trade) {
-            set((state) => ({
-              activeTrades: state.activeTrades.map((t) =>
-                t.id === tradeId
-                  ? {
-                      ...t,
-                      updates: [
-                        ...(t.updates || []),
-                        {
-                          id: crypto.randomUUID(),
-                          type: update.type!,
-                          timestamp: new Date(),
-                          price: update.price || 0,
-                          message: update.message || "",
-                        },
-                      ],
-                    }
-                  : t
-              ),
-              historyTrades: state.historyTrades.map((t) =>
-                t.id === tradeId
-                  ? {
-                      ...t,
-                      updates: [
-                        ...(t.updates || []),
-                        {
-                          id: crypto.randomUUID(),
-                          type: update.type!,
-                          timestamp: new Date(),
-                          price: update.price || 0,
-                          message: update.message || "",
-                        },
-                      ],
-                    }
-                  : t
-              ),
-            }));
-          }
+          set((state) => ({
+            activeTrades: state.activeTrades.map((t) =>
+              t.id === tradeId
+                ? {
+                    ...t,
+                    updates: [
+                      ...(t.updates || []),
+                      {
+                        id: crypto.randomUUID(),
+                        type: update.type!,
+                        timestamp: new Date(),
+                        price: update.price || 0,
+                        message: update.message || "",
+                      },
+                    ],
+                  }
+                : t
+            ),
+            historyTrades: state.historyTrades.map((t) =>
+              t.id === tradeId
+                ? {
+                    ...t,
+                    updates: [
+                      ...(t.updates || []),
+                      {
+                        id: crypto.randomUUID(),
+                        type: update.type!,
+                        timestamp: new Date(),
+                        price: update.price || 0,
+                        message: update.message || "",
+                      },
+                    ],
+                  }
+                : t
+            ),
+          }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to add trade update to DB:", error);
           set({ error: error.message });
@@ -435,15 +500,15 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      // Async: Link trade to Discord channels
+      // ========================================
+      // Discord/Challenge Linking
+      // ========================================
       linkTradeToChannels: async (tradeId, channelIds) => {
         try {
           const promises = channelIds.map((channelId) =>
             fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
               method: "POST",
-              headers: {
-                "x-user-id": "", // Will be set by hook
-              },
+              headers: { "x-user-id": "" },
             })
           );
 
@@ -467,18 +532,6 @@ export const useTradeStore = create<TradeStore>()(
                   }
                 : t
             ),
-            currentTrade:
-              state.currentTrade?.id === tradeId
-                ? {
-                    ...state.currentTrade,
-                    discordChannels: [
-                      ...new Set([
-                        ...ensureArray(state.currentTrade.discordChannels),
-                        ...channelIds,
-                      ]),
-                    ],
-                  }
-                : state.currentTrade,
           }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to link channels:", error);
@@ -487,14 +540,11 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      // Async: Unlink trade from Discord channel
       unlinkTradeFromChannel: async (tradeId, channelId) => {
         try {
           const response = await fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
             method: "DELETE",
-            headers: {
-              "x-user-id": "", // Will be set by hook
-            },
+            headers: { "x-user-id": "" },
           });
 
           if (!response.ok) {
@@ -511,15 +561,6 @@ export const useTradeStore = create<TradeStore>()(
                   }
                 : t
             ),
-            currentTrade:
-              state.currentTrade?.id === tradeId
-                ? {
-                    ...state.currentTrade,
-                    discordChannels: ensureArray(state.currentTrade.discordChannels).filter(
-                      (c) => c !== channelId
-                    ),
-                  }
-                : state.currentTrade,
           }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to unlink channel:", error);
@@ -528,15 +569,12 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      // Async: Link trade to challenges
       linkTradeToChallenges: async (tradeId, challengeIds) => {
         try {
           const promises = challengeIds.map((challengeId) =>
             fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
               method: "POST",
-              headers: {
-                "x-user-id": "", // Will be set by hook
-              },
+              headers: { "x-user-id": "" },
             })
           );
 
@@ -558,15 +596,6 @@ export const useTradeStore = create<TradeStore>()(
                   }
                 : t
             ),
-            currentTrade:
-              state.currentTrade?.id === tradeId
-                ? {
-                    ...state.currentTrade,
-                    challenges: [
-                      ...new Set([...ensureArray(state.currentTrade.challenges), ...challengeIds]),
-                    ],
-                  }
-                : state.currentTrade,
           }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to link challenges:", error);
@@ -575,14 +604,11 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      // Async: Unlink trade from challenge
       unlinkTradeFromChallenge: async (tradeId, challengeId) => {
         try {
           const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
             method: "DELETE",
-            headers: {
-              "x-user-id": "", // Will be set by hook
-            },
+            headers: { "x-user-id": "" },
           });
 
           if (!response.ok) {
@@ -599,15 +625,6 @@ export const useTradeStore = create<TradeStore>()(
                   }
                 : t
             ),
-            currentTrade:
-              state.currentTrade?.id === tradeId
-                ? {
-                    ...state.currentTrade,
-                    challenges: ensureArray(state.currentTrade.challenges).filter(
-                      (c) => c !== challengeId
-                    ),
-                  }
-                : state.currentTrade,
           }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to unlink challenge:", error);
@@ -636,10 +653,6 @@ export const useTradeStore = create<TradeStore>()(
             activeTrades: state.activeTrades.map((t) =>
               t.id === tradeId ? { ...t, challenges: challengeIds } : t
             ),
-            currentTrade:
-              state.currentTrade?.id === tradeId
-                ? { ...state.currentTrade, challenges: challengeIds }
-                : state.currentTrade,
           }));
         } catch (error: any) {
           console.error("[TradeStore] Failed to update trade challenges:", error);
@@ -648,18 +661,13 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
+      // ========================================
       // Utilities
+      // ========================================
       getTradeById: (tradeId) => {
-        const { activeTrades, historyTrades } = get();
+        const { activeTrades, historyTrades, previewTrade } = get();
+        if (previewTrade?.id === tradeId) return previewTrade;
         return [...activeTrades, ...historyTrades].find((t) => t.id === tradeId);
-      },
-
-      getLoadedTrades: () => {
-        return get().activeTrades.filter((t) => t.state === "LOADED");
-      },
-
-      getEnteredTrades: () => {
-        return get().activeTrades.filter((t) => t.state === "ENTERED");
       },
 
       markTradeAsUpdated: (tradeId) => {
@@ -674,13 +682,15 @@ export const useTradeStore = create<TradeStore>()(
         set({ updatedTradeIds: new Set() });
       },
 
+      // ========================================
       // Reset
+      // ========================================
       reset: () =>
         set({
           activeTrades: [],
           historyTrades: [],
-          currentTrade: null,
-          tradeState: "WATCHING",
+          currentTradeId: null,
+          previewTrade: null,
           contracts: [],
           updatedTradeIds: new Set(),
           isLoading: false,

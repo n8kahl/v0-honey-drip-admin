@@ -138,6 +138,14 @@ export function ActionRail({
   // Track if Discord composer is expanded
   const [discordExpanded, setDiscordExpanded] = useState(false);
 
+  // Auto-expand Discord composer when showAlert is true (e.g., after contract selection)
+  // This ensures the alert is editable immediately
+  useEffect(() => {
+    if (showAlert) {
+      setDiscordExpanded(true);
+    }
+  }, [showAlert]);
+
   // Determine which mode we're in
   const isSetupMode = tradeState === "WATCHING" && setupMode?.focusedSymbol;
   const isManageMode = tradeState === "ENTERED" && currentTrade;
@@ -503,7 +511,15 @@ function SetupModeContent({ setupMode, channels, challenges }: SetupModeContentP
         <div className="p-3 mt-auto space-y-2">
           {/* Load and Alert - Primary */}
           <button
-            onClick={() => onLoadAndAlert(selectedChannels, selectedChallenges)}
+            onClick={() => {
+              console.warn("[ActionRail] Load and Alert clicked", {
+                selectedChannels,
+                selectedChallenges,
+                hasChannelsSelected,
+                activeContract: activeContract?.id,
+              });
+              onLoadAndAlert(selectedChannels, selectedChallenges);
+            }}
             disabled={!hasChannelsSelected}
             className={cn(
               "w-full flex items-center justify-center gap-2 py-2.5 rounded font-medium text-sm transition-all btn-press",

@@ -381,19 +381,15 @@ export default function App() {
         {(activeTab === "live" || activeTab === "active") && (
           <DesktopLiveCockpitSlim
             watchlist={watchlist}
-            hotTrades={activeTrades}
             challenges={challenges}
             onTickerClick={() => {}}
-            onHotTradeClick={() => {}}
             onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
             onRemoveTicker={(ticker) => useMarketStore.getState().removeTicker(ticker.id)}
             onAddChallenge={() => useUIStore.getState().setShowAddChallengeDialog(true)}
             onRemoveChallenge={(challenge) =>
               useSettingsStore.getState().removeChallenge(challenge.id)
             }
-            onTradesChange={() => {}} // Not needed anymore, store handles it
             channels={discordChannels}
-            focusedTrade={focusedTrade}
             onVoiceNavigate={handleVoiceNavigate}
             onMobileTabChange={(tab) => {
               // Map tab names to routes
@@ -403,7 +399,6 @@ export default function App() {
               else if (tab === "settings") navigate("/settings");
               else if (tab === "monitoring") navigate("/monitoring");
             }}
-            updatedTradeIds={updatedTradeIds}
             onOpenActiveTrade={(tradeId) => {
               const trade = activeTrades.find((t) => t.id === tradeId);
               if (trade) focusTradeInLive(trade);

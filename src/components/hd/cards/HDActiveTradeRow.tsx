@@ -48,7 +48,8 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
     if (onClick) {
       onClick();
     } else {
-      useTradeStore.setState({ currentTrade: trade, tradeState: trade.state });
+      // Focus on this trade by setting its ID in the store
+      useTradeStore.getState().setCurrentTradeId(trade.id);
     }
   };
 

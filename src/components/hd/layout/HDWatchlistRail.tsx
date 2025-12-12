@@ -55,9 +55,35 @@ export function HDWatchlistRail({
   const watchlist = useMarketStore((state) => state.watchlist);
   // Use prop if provided, otherwise fall back to store (for backward compatibility)
   const storeActiveTrades = useTradeStore((state) => state.activeTrades);
-  const activeTrades = propActiveTrades ?? storeActiveTrades;
+  const rawActiveTrades = propActiveTrades ?? storeActiveTrades;
   const challenges = useSettingsStore((state) => state.challenges);
   const discordChannels = useSettingsStore((state) => state.discordChannels);
+
+  // Deduplicate trades by ID - if same ID appears multiple times with different states,
+  // keep the one with the most advanced state (WATCHING < LOADED < ENTERED < EXITED)
+  const activeTrades = useMemo(() => {
+    const stateOrder: Record<string, number> = {
+      WATCHING: 0,
+      LOADED: 1,
+      ENTERED: 2,
+      EXITED: 3,
+    };
+    const map = new Map<string, Trade>();
+    for (const trade of rawActiveTrades) {
+      const existing = map.get(trade.id);
+      if (!existing) {
+        map.set(trade.id, trade);
+      } else {
+        // Keep the one with more advanced state
+        const existingOrder = stateOrder[existing.state] ?? 0;
+        const currentOrder = stateOrder[trade.state] ?? 0;
+        if (currentOrder > existingOrder) {
+          map.set(trade.id, trade);
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [rawActiveTrades]);
   const removeChallenge = useSettingsStore((state) => state.removeChallenge);
   const updateChallengeSettings = useSettingsStore((state) => state.updateChallengeSettings);
   const setShowAddChallengeDialog = useUIStore((state) => state.setShowAddChallengeDialog);
@@ -168,60 +194,9 @@ export function HDWatchlistRail({
           <HDMacroPanel />
         </div>
 
-        {/* Watchlist Section */}
-        <div>
-          <SectionHeader title="Watchlist" onAdd={onAddTicker} />
-          <div className="divide-y divide-[var(--border-hairline)]">
-            {watchlist.length === 0 ? (
-              <div className="p-8 text-center">
-                <p className="text-sm text-[var(--text-muted)] mb-3">No tickers in watchlist</p>
-                <button
-                  onClick={onAddTicker}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-primary)] text-[var(--bg-base)] text-sm font-medium hover:bg-[var(--brand-primary)]/90 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Ticker
-                </button>
-              </div>
-            ) : (
-              watchlist.map((ticker, index) => (
-                <HDRowWatchlist
-                  key={ticker.id}
-                  ticker={ticker}
-                  active={activeTicker === ticker.symbol}
-                  onClick={() => onTickerClick?.(ticker)}
-                  onRemove={() => onRemoveTicker?.(ticker)}
-                  animationDelay={index * 40}
-                />
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Loaded Trades Section */}
-        {loadedTrades.length > 0 && (
-          <div className="mt-4">
-            <SectionHeader title="Loaded" />
-            <div className="divide-y divide-[var(--border-hairline)]">
-              {loadedTrades.map((trade) => {
-                const currentTrade = useTradeStore.getState().currentTrade;
-                return (
-                  <HDRowLoadedTrade
-                    key={trade.id}
-                    trade={trade}
-                    active={currentTrade?.id === trade.id}
-                    onClick={() => onLoadedTradeClick?.(trade)}
-                    onRemove={() => onRemoveLoadedTrade?.(trade)}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Active Trades Section - with live P&L tracking */}
+        {/* Active Trades Section - FIRST (highest priority) */}
         {enteredTrades.length > 0 && (
-          <div className="mt-4">
+          <div>
             <SectionHeader title="Active" />
             <div className="divide-y divide-[var(--border-hairline)]">
               {enteredTrades.map((trade) => {
@@ -244,6 +219,57 @@ export function HDWatchlistRail({
             </div>
           </div>
         )}
+
+        {/* Loaded Trades Section - SECOND */}
+        {loadedTrades.length > 0 && (
+          <div className={enteredTrades.length > 0 ? "mt-4" : ""}>
+            <SectionHeader title="Loaded" />
+            <div className="divide-y divide-[var(--border-hairline)]">
+              {loadedTrades.map((trade) => {
+                const currentTrade = useTradeStore.getState().currentTrade;
+                return (
+                  <HDRowLoadedTrade
+                    key={trade.id}
+                    trade={trade}
+                    active={currentTrade?.id === trade.id}
+                    onClick={() => onLoadedTradeClick?.(trade)}
+                    onRemove={() => onRemoveLoadedTrade?.(trade)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Watchlist Section - THIRD */}
+        <div className={enteredTrades.length > 0 || loadedTrades.length > 0 ? "mt-4" : ""}>
+          <SectionHeader title="Watchlist" onAdd={onAddTicker} />
+          <div className="divide-y divide-[var(--border-hairline)]">
+            {watchlist.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-sm text-[var(--text-muted)] mb-3">No tickers in watchlist</p>
+                <button
+                  onClick={onAddTicker}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-primary)] text-[var(--bg-base)] text-sm font-medium hover:bg-[var(--brand-primary)]/90 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Ticker
+                </button>
+              </div>
+            ) : (
+              watchlist.map((ticker, index) => (
+                <HDRowWatchlist
+                  key={ticker.id}
+                  ticker={ticker}
+                  active={activeTicker === ticker.symbol}
+                  onClick={() => onTickerClick?.(ticker)}
+                  onRemove={onRemoveTicker ? () => onRemoveTicker(ticker) : undefined}
+                  animationDelay={index * 40}
+                />
+              ))
+            )}
+          </div>
+        </div>
 
         {/* Challenges Section */}
         <div className="mt-4">
