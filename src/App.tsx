@@ -16,6 +16,7 @@ import { Toaster } from "./components/ui/sonner";
 import { useAuth } from "./contexts/AuthContext";
 import { AuthPage } from "./pages/AuthPage";
 import { PublicPortal } from "./pages/PublicPortal";
+import { WinsPage } from "./pages/WinsPage";
 import { useQuotes } from "./hooks/useMassiveData";
 import { useDiscord } from "./hooks/useDiscord";
 import { useCompositeSignals } from "./hooks/useCompositeSignals";
@@ -257,9 +258,13 @@ export default function App() {
     };
   }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
 
-  // Public portal route (no auth required)
+  // Public routes (no auth required)
   if (location.pathname === "/public") {
     return <PublicPortal />;
+  }
+
+  if (location.pathname === "/wins") {
+    return <WinsPage />;
   }
 
   if (loading) {

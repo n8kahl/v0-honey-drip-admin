@@ -114,7 +114,9 @@ export async function getTradeThreads(options?: {
 /**
  * Get a single trade thread by ID
  */
-export async function getTradeThread(threadId: string): Promise<TradeThread & { memberCount: number }> {
+export async function getTradeThread(
+  threadId: string
+): Promise<TradeThread & { memberCount: number }> {
   const headers = await getAuthHeaders();
   const response = await fetch(`/api/trade-threads/${threadId}`, { headers });
 
@@ -152,6 +154,32 @@ export async function addThreadUpdate(
   }
 
   return response.json();
+}
+
+/**
+ * Add an update to a trade thread by symbol (looks up the active thread)
+ * This is useful when you don't have the threadId but know the symbol
+ */
+export async function addThreadUpdateBySymbol(
+  symbol: string,
+  type: TradeThreadUpdateType,
+  message?: string,
+  payload?: TradeThreadUpdatePayload
+): Promise<{ update: TradeThreadUpdate; threadClosed: boolean } | null> {
+  try {
+    // First, find the active thread for this symbol
+    const threads = await getTradeThreads({ symbol, status: "open", limit: 1 });
+    if (threads.length === 0) {
+      console.warn(`[TradeThreadApi] No active thread found for symbol: ${symbol}`);
+      return null;
+    }
+
+    const threadId = threads[0].id;
+    return addThreadUpdate(threadId, type, message, payload);
+  } catch (error) {
+    console.warn(`[TradeThreadApi] Failed to add update for ${symbol}:`, error);
+    return null;
+  }
 }
 
 /**

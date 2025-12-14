@@ -28,6 +28,8 @@ import {
   deleteTradeApi,
   addTradeUpdateApi,
 } from "../lib/api/tradeApi";
+import { createTradeThread, addThreadUpdateBySymbol } from "../lib/api/tradeThreadApi";
+import type { TradeThreadUpdateType, TradeThreadUpdatePayload } from "../types/tradeThreads";
 import { recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
@@ -514,7 +516,31 @@ export function useTradeStateMachine({
           log.warn("Background loadTrades failed", { error: err?.message });
         });
 
-        // 4. SEND DISCORD ALERT
+        // 4. CREATE TRADE THREAD FOR MEMBER SUBSCRIPTIONS
+        try {
+          await createTradeThread({
+            symbol: trade.ticker,
+            contractId:
+              trade.contract.id ||
+              `${trade.ticker}_${trade.contract.strike}_${trade.contract.type}_${trade.contract.expiry}`,
+            contract: {
+              strike: trade.contract.strike,
+              type: trade.contract.type,
+              expiry: trade.contract.expiry,
+            },
+            entryPrice: trade.contract.mid,
+            targetPrice: effectiveTargetPrice,
+            stopLoss: effectiveStopLoss,
+            tradeType: trade.tradeType,
+            message: comment,
+          });
+          log.info("TradeThread created for member subscriptions", { ticker: trade.ticker });
+        } catch (error) {
+          // Don't fail the whole operation if TradeThread creation fails
+          log.warn("Failed to create TradeThread (non-blocking)", { error, ticker: trade.ticker });
+        }
+
+        // 5. SEND DISCORD ALERT
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
@@ -893,6 +919,86 @@ export function useTradeStateMachine({
           await addTradeUpdateApi(userId, trade.id, updateType, basePrice, message).catch(
             console.warn
           );
+        }
+
+        // Send TradeThread update for member subscribers (non-blocking)
+        try {
+          let threadUpdateType: TradeThreadUpdateType | null = null;
+          let threadPayload: TradeThreadUpdatePayload = {};
+
+          switch (alertType) {
+            case "trim":
+              threadUpdateType = "TRIM";
+              threadPayload = {
+                trimPercent: 50, // Default 50% trim
+                message: message || "Position trimmed",
+              };
+              break;
+            case "update":
+              if (alertOptions.updateKind === "sl") {
+                threadUpdateType = "STOP_MOVE";
+                threadPayload = {
+                  stopPrice: priceOverrides?.stopLoss ?? trade.stopLoss,
+                  message: message || "Stop loss updated",
+                };
+              } else if (alertOptions.updateKind === "take-profit") {
+                threadUpdateType = "TRIM";
+                threadPayload = {
+                  exitPrice: basePrice,
+                  pnlPercent: trade.movePercent || 0,
+                  message: message || "Taking profit",
+                };
+              } else {
+                threadUpdateType = "UPDATE";
+                threadPayload = { message: message || "General update" };
+              }
+              break;
+            case "update-sl":
+              threadUpdateType = "STOP_MOVE";
+              threadPayload = {
+                stopPrice: priceOverrides?.stopLoss ?? trade.stopLoss,
+                message: message || "Stop loss updated",
+              };
+              break;
+            case "trail-stop":
+              threadUpdateType = "STOP_MOVE";
+              threadPayload = {
+                stopPrice: trade.stopLoss,
+                message: "Trailing stop activated",
+              };
+              break;
+            case "add":
+              threadUpdateType = "UPDATE";
+              threadPayload = { message: message || "Added to position" };
+              break;
+            case "exit": {
+              threadUpdateType = "EXIT";
+              const exitPnlPercent = trade.entryPrice
+                ? ((basePrice - trade.entryPrice) / trade.entryPrice) * 100
+                : 0;
+              threadPayload = {
+                exitPrice: basePrice,
+                pnlPercent: exitPnlPercent,
+                message: message || `Exit at $${basePrice.toFixed(2)}`,
+              };
+              break;
+            }
+          }
+
+          if (threadUpdateType) {
+            addThreadUpdateBySymbol(trade.ticker, threadUpdateType, message, threadPayload)
+              .then((result) => {
+                if (result) {
+                  log.info("TradeThread update sent", {
+                    ticker: trade.ticker,
+                    type: threadUpdateType,
+                  });
+                }
+              })
+              .catch(console.warn);
+          }
+        } catch (err) {
+          log.warn("Failed to send TradeThread update (non-blocking)", { error: err });
         }
 
         // Handle exit - clear state BEFORE reloading to prevent race condition

@@ -105,14 +105,16 @@ router.post("/api/trade-threads", async (req: Request, res: Response) => {
       .select("*")
       .single();
 
-    if (threadError) {
+    if (threadError || !thread) {
       console.error("[TradeThreads] Error creating thread:", threadError);
-      return res.status(500).json({ error: "Failed to create thread", details: threadError.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to create thread", details: threadError?.message });
     }
 
     // Create the OPEN update
     const updateData = {
-      trade_thread_id: thread.id,
+      trade_thread_id: (thread as any).id,
       admin_id: userId,
       type: "OPEN",
       message: message || `Trade thread opened for ${symbol}`,
@@ -133,7 +135,7 @@ router.post("/api/trade-threads", async (req: Request, res: Response) => {
       console.warn("[TradeThreads] Error creating OPEN update:", updateError);
     }
 
-    console.log(`[TradeThreads] Thread created: ${thread.id}`);
+    console.log(`[TradeThreads] Thread created: ${(thread as any).id}`);
     res.status(201).json({ thread, openUpdate });
   } catch (error: any) {
     console.error("[TradeThreads] Unexpected error in POST /api/trade-threads:", error);
@@ -208,9 +210,9 @@ router.get("/api/trade-threads/:threadId", async (req: Request, res: Response) =
       .eq("trade_thread_id", threadId);
 
     res.json({
-      ...data,
+      ...(data as any),
       memberCount: count || 0,
-      memberTrade: userId ? data.member_trades?.[0] : null,
+      memberTrade: userId ? (data as any)?.member_trades?.[0] : null,
     });
   } catch (error: any) {
     console.error("[TradeThreads] Unexpected error in GET /api/trade-threads/:threadId:", error);
@@ -238,7 +240,9 @@ router.post("/api/trade-threads/:threadId/updates", async (req: Request, res: Re
 
     const validTypes = ["OPEN", "UPDATE", "STOP_MOVE", "TRIM", "EXIT", "NOTE"];
     if (!validTypes.includes(type)) {
-      return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
+      return res
+        .status(400)
+        .json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
     }
 
     console.log(`[TradeThreads] Adding ${type} update to thread ${threadId}`);
@@ -255,7 +259,7 @@ router.post("/api/trade-threads/:threadId/updates", async (req: Request, res: Re
       return res.status(404).json({ error: "Thread not found or unauthorized" });
     }
 
-    if (thread.status === "closed" && type !== "NOTE") {
+    if ((thread as any).status === "closed" && type !== "NOTE") {
       return res.status(400).json({ error: "Cannot add updates to a closed thread" });
     }
 
@@ -276,14 +280,16 @@ router.post("/api/trade-threads/:threadId/updates", async (req: Request, res: Re
 
     if (updateError) {
       console.error("[TradeThreads] Error creating update:", updateError);
-      return res.status(500).json({ error: "Failed to create update", details: updateError.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to create update", details: updateError.message });
     }
 
     // If EXIT, close the thread
     let threadClosed = false;
     if (type === "EXIT") {
       const exitPrice = payload?.exitPrice;
-      const entryPrice = thread.entry_price;
+      const entryPrice = (thread as any).entry_price;
       let pnlPercent = 0;
       if (entryPrice && exitPrice) {
         pnlPercent = ((exitPrice - entryPrice) / entryPrice) * 100;
@@ -291,28 +297,33 @@ router.post("/api/trade-threads/:threadId/updates", async (req: Request, res: Re
 
       const outcome = pnlPercent > 0.5 ? "win" : pnlPercent < -0.5 ? "loss" : "breakeven";
 
-      const { error: closeError } = await getSupabaseClient()
-        .from("trade_threads")
-        .update({
-          status: "closed",
-          closed_at: new Date().toISOString(),
-          exit_price: exitPrice,
-          final_pnl_percent: pnlPercent,
-          outcome,
-        } as any)
+      const closeData = {
+        status: "closed",
+        closed_at: new Date().toISOString(),
+        exit_price: exitPrice,
+        final_pnl_percent: pnlPercent,
+        outcome,
+      };
+      const { error: closeError } = await (getSupabaseClient().from("trade_threads") as any)
+        .update(closeData)
         .eq("id", threadId);
 
       if (closeError) {
         console.warn("[TradeThreads] Error closing thread:", closeError);
       } else {
         threadClosed = true;
-        console.log(`[TradeThreads] Thread ${threadId} closed with ${outcome} (${pnlPercent.toFixed(1)}%)`);
+        console.log(
+          `[TradeThreads] Thread ${threadId} closed with ${outcome} (${pnlPercent.toFixed(1)}%)`
+        );
       }
     }
 
     res.status(201).json({ update, threadClosed });
   } catch (error: any) {
-    console.error("[TradeThreads] Unexpected error in POST /api/trade-threads/:threadId/updates:", error);
+    console.error(
+      "[TradeThreads] Unexpected error in POST /api/trade-threads/:threadId/updates:",
+      error
+    );
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });
@@ -332,8 +343,15 @@ router.post("/api/member-trades", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { tradeThreadId, entryPrice, sizeContracts, stopPrice, targets, notes, useAdminStopTargets } =
-      req.body;
+    const {
+      tradeThreadId,
+      entryPrice,
+      sizeContracts,
+      stopPrice,
+      targets,
+      notes,
+      useAdminStopTargets,
+    } = req.body;
 
     if (!tradeThreadId || !entryPrice) {
       return res.status(400).json({ error: "Missing required fields: tradeThreadId, entryPrice" });
@@ -352,13 +370,17 @@ router.post("/api/member-trades", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Trade thread not found" });
     }
 
-    if (thread.status === "closed") {
+    if ((thread as any).status === "closed") {
       return res.status(400).json({ error: "Cannot subscribe to a closed trade" });
     }
 
     // Use admin stop/targets if requested (default behavior)
-    const finalStopPrice = useAdminStopTargets !== false ? stopPrice || thread.stop_loss : stopPrice;
-    const finalTargets = useAdminStopTargets !== false ? targets || (thread.target_price ? [thread.target_price] : null) : targets;
+    const finalStopPrice =
+      useAdminStopTargets !== false ? stopPrice || (thread as any).stop_loss : stopPrice;
+    const finalTargets =
+      useAdminStopTargets !== false
+        ? targets || ((thread as any).target_price ? [(thread as any).target_price] : null)
+        : targets;
 
     // Create member trade (idempotent - UNIQUE constraint handles duplicates)
     const memberTradeData = {
@@ -380,10 +402,12 @@ router.post("/api/member-trades", async (req: Request, res: Response) => {
 
     if (memberError) {
       console.error("[TradeThreads] Error creating member trade:", memberError);
-      return res.status(500).json({ error: "Failed to subscribe to trade", details: memberError.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to subscribe to trade", details: memberError.message });
     }
 
-    console.log(`[TradeThreads] Member trade created: ${memberTrade.id}`);
+    console.log(`[TradeThreads] Member trade created: ${(memberTrade as any).id}`);
     res.status(201).json({ memberTrade, thread });
   } catch (error: any) {
     console.error("[TradeThreads] Unexpected error in POST /api/member-trades:", error);
@@ -421,7 +445,9 @@ router.get("/api/member-trades", async (req: Request, res: Response) => {
 
     if (error) {
       console.error("[TradeThreads] Error fetching member trades:", error);
-      return res.status(500).json({ error: "Failed to fetch member trades", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch member trades", details: error.message });
     }
 
     res.json({ memberTrades: data || [] });
@@ -463,7 +489,7 @@ router.patch("/api/member-trades/:memberTradeId/exit", async (req: Request, res:
       return res.status(404).json({ error: "Member trade not found" });
     }
 
-    if (existing.status === "exited") {
+    if ((existing as any).status === "exited") {
       return res.status(400).json({ error: "Trade already exited" });
     }
 
@@ -475,12 +501,15 @@ router.patch("/api/member-trades/:memberTradeId/exit", async (req: Request, res:
     };
 
     if (notes) {
-      updateData.notes = existing.notes ? `${existing.notes}\n\nExit notes: ${notes}` : notes;
+      updateData.notes = (existing as any).notes
+        ? `${(existing as any).notes}\n\nExit notes: ${notes}`
+        : notes;
     }
 
-    const { data: updated, error: updateError } = await getSupabaseClient()
-      .from("member_trades")
-      .update(updateData as any)
+    const { data: updated, error: updateError } = await (
+      getSupabaseClient().from("member_trades") as any
+    )
+      .update(updateData)
       .eq("id", memberTradeId)
       .select("*")
       .single();
@@ -491,12 +520,16 @@ router.patch("/api/member-trades/:memberTradeId/exit", async (req: Request, res:
     }
 
     // Calculate P/L
-    const pnlPercent = ((exitPrice - existing.entry_price) / existing.entry_price) * 100;
+    const pnlPercent =
+      ((exitPrice - (existing as any).entry_price) / (existing as any).entry_price) * 100;
 
     console.log(`[TradeThreads] Member trade exited: ${memberTradeId} (${pnlPercent.toFixed(1)}%)`);
     res.json({ memberTrade: updated, pnlPercent });
   } catch (error: any) {
-    console.error("[TradeThreads] Unexpected error in PATCH /api/member-trades/:memberTradeId/exit:", error);
+    console.error(
+      "[TradeThreads] Unexpected error in PATCH /api/member-trades/:memberTradeId/exit:",
+      error
+    );
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });
@@ -524,9 +557,8 @@ router.patch("/api/member-trades/:memberTradeId", async (req: Request, res: Resp
       return res.status(400).json({ error: "No fields to update" });
     }
 
-    const { data, error } = await getSupabaseClient()
-      .from("member_trades")
-      .update(updateData as any)
+    const { data, error } = await (getSupabaseClient().from("member_trades") as any)
+      .update(updateData)
       .eq("id", memberTradeId)
       .eq("user_id", userId)
       .select("*")
@@ -539,7 +571,10 @@ router.patch("/api/member-trades/:memberTradeId", async (req: Request, res: Resp
 
     res.json({ memberTrade: data });
   } catch (error: any) {
-    console.error("[TradeThreads] Unexpected error in PATCH /api/member-trades/:memberTradeId:", error);
+    console.error(
+      "[TradeThreads] Unexpected error in PATCH /api/member-trades/:memberTradeId:",
+      error
+    );
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });
@@ -615,27 +650,28 @@ router.post("/api/trade-threads/:threadId/publish", async (req: Request, res: Re
       return res.status(404).json({ error: "Thread not found or unauthorized" });
     }
 
-    if (thread.status !== "closed") {
+    if ((thread as any).status !== "closed") {
       return res.status(400).json({ error: "Cannot publish an open thread. Close it first." });
     }
 
     console.log(`[TradeThreads] Publishing thread ${threadId} to public wins`);
 
     // Create public outcome
+    const t = thread as any;
     const outcomeData = {
       trade_thread_id: threadId,
-      symbol: thread.symbol,
-      contract_id: thread.contract_id,
-      trade_type: thread.trade_type,
-      outcome: thread.outcome,
-      pnl_percent: thread.final_pnl_percent,
-      admin_id: thread.admin_id,
-      admin_name: thread.admin_name,
+      symbol: t.symbol,
+      contract_id: t.contract_id,
+      trade_type: t.trade_type,
+      outcome: t.outcome,
+      pnl_percent: t.final_pnl_percent,
+      admin_id: t.admin_id,
+      admin_name: t.admin_name,
       admin_avatar_url: adminAvatarUrl || null,
       entry_price_masked: true,
       public_comment: publicComment || null,
-      trade_opened_at: thread.created_at,
-      trade_closed_at: thread.closed_at,
+      trade_opened_at: t.created_at,
+      trade_closed_at: t.closed_at,
     };
 
     const { data: outcome, error: outcomeError } = await getSupabaseClient()
@@ -652,7 +688,10 @@ router.post("/api/trade-threads/:threadId/publish", async (req: Request, res: Re
     console.log(`[TradeThreads] Thread ${threadId} published to public wins`);
     res.status(201).json({ outcome });
   } catch (error: any) {
-    console.error("[TradeThreads] Unexpected error in POST /api/trade-threads/:threadId/publish:", error);
+    console.error(
+      "[TradeThreads] Unexpected error in POST /api/trade-threads/:threadId/publish:",
+      error
+    );
     res.status(500).json({ error: "Internal server error", details: error.message });
   }
 });
@@ -686,7 +725,9 @@ router.post("/api/admin/publish-eod", async (req: Request, res: Response) => {
 
     if (threadsError) {
       console.error("[TradeThreads] Error fetching threads for EOD:", threadsError);
-      return res.status(500).json({ error: "Failed to fetch threads", details: threadsError.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch threads", details: threadsError.message });
     }
 
     if (!threads || threads.length === 0) {
