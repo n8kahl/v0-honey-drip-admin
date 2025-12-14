@@ -29,6 +29,9 @@ const ProfilePage = lazy(() =>
  * - /history → Trade History view
  * - /settings → Settings page
  * - /monitoring → Monitoring view
+ * - /public → Public portal
+ * - /wins → Public wins/losses feed (no auth)
+ * - /member → Member dashboard (auth required)
  * - /profile → User profile page
  * - /radar → Composite Signal Radar (legacy)
  * - /plan → Plan tab (Mission Playbook)
@@ -57,6 +60,14 @@ export const router = createBrowserRouter([
   },
   {
     path: "/public",
+    element: <App />,
+  },
+  {
+    path: "/wins",
+    element: <App />,
+  },
+  {
+    path: "/member",
     element: <App />,
   },
   {
