@@ -485,17 +485,34 @@ export function useTradeStateMachine({
           confluenceUpdatedAt: trade.confluenceUpdatedAt?.toISOString(),
         });
 
-        // 2. RELOAD TRADES FROM DATABASE (ensures store matches DB)
-        await loadTrades(userId);
+        // 2. OPTIMISTIC UPDATE - Immediately update local state so UI transitions
+        // This prevents the race condition where tradeState stays "WATCHING" because
+        // loadTrades() is async and activeTrades hasn't been updated yet
+        const loadedTrade: Trade = {
+          ...trade,
+          id: dbTrade.id,
+          state: "LOADED",
+          discordChannels: channelIds,
+          challenges: challengeIds,
+          targetPrice: effectiveTargetPrice,
+          stopLoss: effectiveStopLoss,
+        };
 
-        // 3. FOCUS ON NEW TRADE - Atomic update to prevent race conditions
-        useTradeStore.setState({
+        useTradeStore.setState((state) => ({
+          activeTrades: [...state.activeTrades, loadedTrade],
           previewTrade: null,
           currentTradeId: dbTrade.id,
-        });
+        }));
+
         setAlertType("enter");
         setShowAlert(false);
         setContracts([]);
+
+        // 3. BACKGROUND RELOAD - Refresh from DB to get any server-side computed data
+        // Fire and forget - the optimistic update already updated the UI
+        loadTrades(userId).catch((err) => {
+          log.warn("Background loadTrades failed", { error: err?.message });
+        });
 
         // 4. SEND DISCORD ALERT
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
@@ -956,9 +973,17 @@ export function useTradeStateMachine({
                   message || "Added to position"
                 );
                 break;
-              case "exit":
-                await discord.sendExitAlert(channels, trade, message);
+              case "exit": {
+                // Handle gains image if requested
+                let imageUrl: string | undefined;
+                if (priceOverrides?.includeGainsImage) {
+                  log.info("Gains image requested for exit alert", { tradeId: trade.id });
+                  // TODO: Implement image generation using html-to-image or server-side rendering
+                  // For now, imageUrl remains undefined
+                }
+                await discord.sendExitAlert(channels, trade, message, imageUrl);
                 break;
+              }
             }
           } catch (error) {
             console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);

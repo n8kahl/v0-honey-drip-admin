@@ -18,6 +18,8 @@ export interface PriceOverrides {
   // Underlying price context for Format C display
   targetUnderlyingPrice?: number;
   stopUnderlyingPrice?: number;
+  // For exit alerts - include gains image with Discord message
+  includeGainsImage?: boolean;
 }
 
 interface HDAlertComposerProps {
@@ -733,24 +735,43 @@ export function HDAlertComposer({
                 </div>
               )}
 
-              {/* Gains Image - Only for Exit alerts */}
+              {/* Gains Image - Only for Exit alerts - Collapsible with preview */}
               {alertType === "exit" && (
-                <div className="flex items-center justify-between p-3 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id="field-gains-image"
-                      checked={showGainsImage}
-                      onCheckedChange={(checked) => setShowGainsImage(checked as boolean)}
-                    />
-                    <label
-                      htmlFor="field-gains-image"
-                      className="text-xs text-[var(--text-high)] cursor-pointer"
+                <details className="group" open={showGainsImage}>
+                  <summary className="cursor-pointer flex items-center justify-between p-2 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors list-none">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="field-gains-image"
+                        checked={showGainsImage}
+                        onCheckedChange={(checked) => setShowGainsImage(checked as boolean)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <label
+                        htmlFor="field-gains-image"
+                        className="text-xs text-[var(--text-high)] cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Include Gains Image
+                      </label>
+                    </div>
+                    <svg
+                      className="w-4 h-4 text-[var(--text-muted)] transition-transform group-open:rotate-180"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
                     >
-                      Gains Image
-                    </label>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </summary>
+                  <div className="mt-2 p-2 rounded-[var(--radius)] bg-[var(--bg-base)] border border-[var(--border-hairline)]">
+                    <HDTradeShareCard trade={trade} includeWatermark={true} />
                   </div>
-                  <div className="text-[var(--text-muted)] text-xs">Screenshot</div>
-                </div>
+                </details>
               )}
 
               {/* Confluence Metrics - Optional */}
@@ -1083,25 +1104,6 @@ export function HDAlertComposer({
             </div>
           </details>
         </div>
-
-        {/* Gains Image Preview - Only for Exit alerts when enabled */}
-        {alertType === "exit" && showGainsImage && (
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide">
-                Gains Image Preview
-              </Label>
-              <span className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide">
-                Will be attached to Discord alert
-              </span>
-            </div>
-            <div className="flex items-center justify-center p-4 rounded-[var(--radius)] bg-[var(--bg-base)] border border-[var(--border-hairline)]">
-              <div className="scale-75 origin-center">
-                <HDTradeShareCard trade={trade} includeWatermark={true} />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Footer Actions */}
@@ -1167,6 +1169,7 @@ export function HDAlertComposer({
                   currentPrice,
                   targetPrice,
                   stopLoss,
+                  includeGainsImage: showGainsImage,
                 });
                 persistChannelSelection();
                 onSend(selectedChannels, selectedChallenges, comment.trim() || undefined, {
@@ -1174,6 +1177,7 @@ export function HDAlertComposer({
                   currentPrice,
                   targetPrice,
                   stopLoss,
+                  includeGainsImage: alertType === "exit" ? showGainsImage : undefined,
                 });
               }}
               disabled={selectedChannels.length === 0}
