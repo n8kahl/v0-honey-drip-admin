@@ -46,6 +46,7 @@ interface TradeThreadStore {
   currentThread: TradeThread | null;
   notifications: TradeNotification[];
   unreadCount: number;
+  pollingInterval: ReturnType<typeof setInterval> | null;
 
   // Loading states
   isLoading: boolean;
@@ -163,6 +164,18 @@ interface TradeThreadStore {
    * Reset store state
    */
   reset: () => void;
+
+  // ============== POLLING ACTIONS ==============
+
+  /**
+   * Start polling for updates at specified interval (ms)
+   */
+  startPolling: (intervalMs?: number) => void;
+
+  /**
+   * Stop polling for updates
+   */
+  stopPolling: () => void;
 }
 
 // ============================================================================
@@ -170,16 +183,17 @@ interface TradeThreadStore {
 // ============================================================================
 
 const initialState = {
-  threads: [],
-  openThreads: [],
-  myTrades: [],
-  journalTrades: [],
-  currentThreadId: null,
-  currentThread: null,
-  notifications: [],
+  threads: [] as TradeThread[],
+  openThreads: [] as TradeThread[],
+  myTrades: [] as MemberTrade[],
+  journalTrades: [] as MemberTrade[],
+  currentThreadId: null as string | null,
+  currentThread: null as TradeThread | null,
+  notifications: [] as TradeNotification[],
   unreadCount: 0,
+  pollingInterval: null as ReturnType<typeof setInterval> | null,
   isLoading: false,
-  error: null,
+  error: null as string | null,
 };
 
 // ============================================================================
@@ -364,7 +378,9 @@ export const useTradeThreadStore = create<TradeThreadStore>()(
             journalTrades: [memberTrade, ...state.journalTrades],
           }));
 
-          console.log(`[TradeThreadStore] Exited trade: ${memberTradeId} (${pnlPercent.toFixed(1)}%)`);
+          console.log(
+            `[TradeThreadStore] Exited trade: ${memberTradeId} (${pnlPercent.toFixed(1)}%)`
+          );
 
           // Add notification
           const outcome = pnlPercent > 0 ? "WIN" : pnlPercent < 0 ? "LOSS" : "BREAKEVEN";
@@ -450,7 +466,77 @@ export const useTradeThreadStore = create<TradeThreadStore>()(
       },
 
       reset: () => {
+        const { pollingInterval } = get();
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+        }
         set(initialState);
+      },
+
+      // ============== POLLING ACTIONS ==============
+
+      startPolling: (intervalMs = 30000) => {
+        const { pollingInterval, loadOpenThreads, loadMyTrades } = get();
+
+        // Clear existing interval if any
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+        }
+
+        console.log(`[TradeThreadStore] Starting polling every ${intervalMs}ms`);
+
+        // Start new polling interval
+        const interval = setInterval(async () => {
+          try {
+            // Refresh data silently (don't set isLoading to avoid UI flicker)
+            const [threads, trades] = await Promise.all([
+              getTradeThreads({ status: "open" }),
+              getMyTrades({ status: "active", includeThread: true }),
+            ]);
+
+            const currentState = get();
+
+            // Check for new updates and add notifications
+            threads.forEach((thread) => {
+              const existingThread = currentState.openThreads.find((t) => t.id === thread.id);
+              if (existingThread) {
+                // Check if there are new updates
+                const existingUpdateCount = existingThread.updates?.length || 0;
+                const newUpdateCount = thread.updates?.length || 0;
+                if (newUpdateCount > existingUpdateCount) {
+                  const latestUpdate = thread.updates?.[thread.updates.length - 1];
+                  if (latestUpdate && currentState.isSubscribed(thread.id)) {
+                    get().addNotification({
+                      type: "admin_update",
+                      tradeThreadId: thread.id,
+                      title: `${thread.symbol} Update`,
+                      message: latestUpdate.message || `${latestUpdate.type} update`,
+                      read: false,
+                    });
+                  }
+                }
+              }
+            });
+
+            set({
+              openThreads: threads,
+              myTrades: trades,
+            });
+          } catch (error) {
+            console.warn("[TradeThreadStore] Polling error:", error);
+          }
+        }, intervalMs);
+
+        set({ pollingInterval: interval });
+      },
+
+      stopPolling: () => {
+        const { pollingInterval } = get();
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          console.log("[TradeThreadStore] Stopped polling");
+        }
+        set({ pollingInterval: null });
       },
     }),
     { name: "TradeThreadStore" }

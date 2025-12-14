@@ -26,20 +26,50 @@ import { useTradeThreadStore } from "@/stores/tradeThreadStore";
 import type { MemberTrade, TradeThread } from "@/types/tradeThreads";
 
 interface MemberExitSheetProps {
-  memberTrade: MemberTrade;
-  thread: TradeThread;
-  isOpen: boolean;
-  onClose: () => void;
+  /** The member trade to exit (can also be passed as `trade`) */
+  memberTrade?: MemberTrade;
+  /** Alias for memberTrade for simpler API */
+  trade?: MemberTrade;
+  /** Associated thread (optional if trade has embedded thread) */
+  thread?: TradeThread;
+  /** @deprecated use `open` instead */
+  isOpen?: boolean;
+  /** @deprecated use `onOpenChange` instead */
+  onClose?: () => void;
+  /** Controlled open state */
+  open?: boolean;
+  /** Callback when open state changes */
+  onOpenChange?: (open: boolean) => void;
+  /** Called on successful exit */
+  onSuccess?: () => void;
   currentPrice?: number;
 }
 
 export function MemberExitSheet({
   memberTrade,
+  trade,
   thread,
   isOpen,
   onClose,
+  open,
+  onOpenChange,
+  onSuccess,
   currentPrice,
 }: MemberExitSheetProps) {
+  // Support both APIs
+  const activeTrade = memberTrade ?? trade;
+  const isSheetOpen = open ?? isOpen ?? false;
+  const handleClose = () => {
+    onOpenChange?.(false);
+    onClose?.();
+  };
+
+  // Get thread from trade if not provided separately
+  const activeThread = thread ?? (activeTrade as any)?.tradeThread;
+
+  if (!activeTrade) {
+    return null;
+  }
   const { exitMemberTrade, isLoading } = useTradeThreadStore();
 
   // Form state
@@ -53,8 +83,8 @@ export function MemberExitSheet({
     const exit = parseFloat(exitPrice);
     if (isNaN(exit) || exit <= 0) return null;
 
-    const pnlPercent = ((exit - memberTrade.entryPrice) / memberTrade.entryPrice) * 100;
-    const pnlDollar = exit - memberTrade.entryPrice;
+    const pnlPercent = ((exit - activeTrade.entryPrice) / activeTrade.entryPrice) * 100;
+    const pnlDollar = exit - activeTrade.entryPrice;
     const isProfit = pnlPercent > 0;
     const isLoss = pnlPercent < 0;
 
@@ -65,11 +95,12 @@ export function MemberExitSheet({
       isLoss,
       outcome: isProfit ? "WIN" : isLoss ? "LOSS" : "BREAKEVEN",
     };
-  }, [exitPrice, memberTrade.entryPrice]);
+  }, [exitPrice, activeTrade.entryPrice]);
 
   // Contract info
-  const contractType = thread.contract?.type === "C" ? "Call" : "Put";
-  const strike = thread.contract?.strike || 0;
+  const contractType = activeThread?.contract?.type === "C" ? "Call" : "Put";
+  const strike = activeThread?.contract?.strike || 0;
+  const symbol = activeThread?.symbol || "Unknown";
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -82,17 +113,18 @@ export function MemberExitSheet({
 
     setIsSubmitting(true);
     try {
-      await exitMemberTrade(memberTrade.id, exit, notes || undefined);
-      onClose();
+      await exitMemberTrade(activeTrade.id, exit, notes || undefined);
+      handleClose();
+      onSuccess?.();
     } catch (err: any) {
       setError(err.message || "Failed to exit trade");
     } finally {
       setIsSubmitting(false);
     }
-  }, [exitPrice, notes, memberTrade.id, exitMemberTrade, onClose]);
+  }, [exitPrice, notes, activeTrade.id, exitMemberTrade, handleClose, onSuccess]);
 
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={isSheetOpen} onOpenChange={(openState) => !openState && handleClose()}>
       <SheetContent side="bottom" className="h-auto max-h-[90vh] rounded-t-2xl">
         <SheetHeader className="text-left">
           <SheetTitle className="flex items-center gap-2 text-xl">
@@ -100,7 +132,7 @@ export function MemberExitSheet({
             Exit Trade
           </SheetTitle>
           <SheetDescription>
-            Close your position in {thread.symbol} ${strike} {contractType}
+            Close your position in {symbol} ${strike} {contractType}
           </SheetDescription>
         </SheetHeader>
 
@@ -109,7 +141,7 @@ export function MemberExitSheet({
           <div className="p-4 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]">
             <div className="flex justify-between items-center">
               <div>
-                <h4 className="text-lg font-semibold text-[var(--text-high)]">{thread.symbol}</h4>
+                <h4 className="text-lg font-semibold text-[var(--text-high)]">{symbol}</h4>
                 <p className="text-sm text-[var(--text-muted)]">
                   ${strike} {contractType}
                 </p>
@@ -117,16 +149,16 @@ export function MemberExitSheet({
               <div className="text-right">
                 <div className="text-xs text-[var(--text-muted)]">Your Entry</div>
                 <div className="text-lg font-mono text-[var(--text-high)]">
-                  ${formatPrice(memberTrade.entryPrice)}
+                  ${formatPrice(activeTrade.entryPrice)}
                 </div>
               </div>
             </div>
 
-            {memberTrade.sizeContracts && (
+            {activeTrade.sizeContracts && (
               <div className="mt-2 pt-2 border-t border-[var(--border-hairline)] text-sm">
                 <span className="text-[var(--text-muted)]">Size:</span>{" "}
                 <span className="text-[var(--text-high)]">
-                  {memberTrade.sizeContracts} contract{memberTrade.sizeContracts > 1 ? "s" : ""}
+                  {activeTrade.sizeContracts} contract{activeTrade.sizeContracts > 1 ? "s" : ""}
                 </span>
               </div>
             )}
@@ -246,7 +278,7 @@ export function MemberExitSheet({
         <SheetFooter className="gap-3 sm:gap-3">
           <Button
             variant="outline"
-            onClick={onClose}
+            onClick={handleClose}
             className="flex-1 h-12 border-[var(--border-hairline)] text-[var(--text-muted)]"
           >
             Cancel

@@ -17,6 +17,7 @@ import { useAuth } from "./contexts/AuthContext";
 import { AuthPage } from "./pages/AuthPage";
 import { PublicPortal } from "./pages/PublicPortal";
 import { WinsPage } from "./pages/WinsPage";
+import { MemberDashboard } from "./pages/MemberDashboard";
 import { useQuotes } from "./hooks/useMassiveData";
 import { useDiscord } from "./hooks/useDiscord";
 import { useCompositeSignals } from "./hooks/useCompositeSignals";
@@ -265,6 +266,10 @@ export default function App() {
 
   if (location.pathname === "/wins") {
     return <WinsPage />;
+  }
+
+  if (location.pathname === "/member") {
+    return <MemberDashboard />;
   }
 
   if (loading) {

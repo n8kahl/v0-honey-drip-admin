@@ -27,12 +27,34 @@ import type { TradeThread } from "@/types/tradeThreads";
 
 interface ITookThisSheetProps {
   thread: TradeThread;
-  isOpen: boolean;
-  onClose: () => void;
+  /** @deprecated use `open` instead */
+  isOpen?: boolean;
+  /** @deprecated use `onOpenChange` instead */
+  onClose?: () => void;
+  /** Controlled open state */
+  open?: boolean;
+  /** Callback when open state changes */
+  onOpenChange?: (open: boolean) => void;
+  /** Called on successful subscription */
+  onSuccess?: () => void;
   currentPrice?: number; // Live price for reference
 }
 
-export function ITookThisSheet({ thread, isOpen, onClose, currentPrice }: ITookThisSheetProps) {
+export function ITookThisSheet({
+  thread,
+  isOpen,
+  onClose,
+  open,
+  onOpenChange,
+  onSuccess,
+  currentPrice,
+}: ITookThisSheetProps) {
+  // Support both old (isOpen/onClose) and new (open/onOpenChange) APIs
+  const isSheetOpen = open ?? isOpen ?? false;
+  const handleClose = () => {
+    onOpenChange?.(false);
+    onClose?.();
+  };
   const { takeTrade, isLoading } = useTradeThreadStore();
 
   // Form state
@@ -68,16 +90,26 @@ export function ITookThisSheet({ thread, isOpen, onClose, currentPrice }: ITookT
         notes: notes || undefined,
         useAdminStopTargets,
       });
-      onClose();
+      handleClose();
+      onSuccess?.();
     } catch (err: any) {
       setError(err.message || "Failed to take trade");
     } finally {
       setIsSubmitting(false);
     }
-  }, [entryPrice, sizeContracts, notes, useAdminStopTargets, thread.id, takeTrade, onClose]);
+  }, [
+    entryPrice,
+    sizeContracts,
+    notes,
+    useAdminStopTargets,
+    thread.id,
+    takeTrade,
+    handleClose,
+    onSuccess,
+  ]);
 
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={isSheetOpen} onOpenChange={(open) => !open && handleClose()}>
       <SheetContent side="bottom" className="h-auto max-h-[90vh] rounded-t-2xl">
         <SheetHeader className="text-left">
           <SheetTitle className="flex items-center gap-2 text-xl">
@@ -229,7 +261,7 @@ export function ITookThisSheet({ thread, isOpen, onClose, currentPrice }: ITookT
         <SheetFooter className="gap-3 sm:gap-3">
           <Button
             variant="outline"
-            onClick={onClose}
+            onClick={handleClose}
             className="flex-1 h-12 border-[var(--border-hairline)] text-[var(--text-muted)]"
           >
             Cancel
