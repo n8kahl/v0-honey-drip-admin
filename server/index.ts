@@ -13,6 +13,7 @@ import morgan from "morgan";
 import path from "path";
 import apiRouter from "./routes/api.js";
 import tradesRouter from "./routes/trades.js";
+import tradeThreadsRouter from "./routes/tradeThreads.js";
 import calendarRouter from "./routes/calendar.js";
 import youtubeRouter from "./routes/youtube.js";
 import aiRouter from "./routes/ai.js";
@@ -80,6 +81,7 @@ app.use("/api", (req, res, next) => {
 // ===== API routes =====
 app.use("/api", apiRouter);
 app.use(tradesRouter); // Trades router handles its own /api/trades* paths
+app.use(tradeThreadsRouter); // Trade Threads V1: Threads + Member subscriptions
 app.use("/api/calendar", calendarRouter); // Phase 2.4: Economic calendar routes
 app.use("/api/youtube", youtubeRouter); // YouTube pre-market video routes
 app.use("/api/ai", aiRouter); // Drip Coach AI trading assistant
