@@ -1,12 +1,14 @@
-import React from 'react';
-import { Ticker } from '../../types';
-import { useSymbolData, useCandles, useMarketDataStore } from '../../stores/marketDataStore';
-import { useUIStore } from '../../stores/uiStore';
-import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { HDStrategyMiniChart } from '../hd/charts/HDStrategyMiniChart';
-import { calculateEMA } from '../../lib/indicators';
-import { cardHover, colorTransition } from '../../lib/animations';
+import React from "react";
+import { Ticker } from "../../types";
+import { useSymbolData, useMarketDataStore } from "../../stores/marketDataStore";
+import { useUIStore } from "../../stores/uiStore";
+import { TrendingUp, TrendingDown } from "lucide-react";
+import { cn } from "../../lib/utils";
+import { HDStrategyMiniChart } from "../hd/charts/HDStrategyMiniChart";
+import { calculateEMA } from "../../lib/indicators";
+import { cardHover, colorTransition } from "../../lib/animations";
+import { HDConfluenceMeter } from "../hd/common/HDConfluenceMeter";
+import { HDSignalChips } from "../hd/common/HDSignalChips";
 
 interface MobileWatchlistProps {
   tickers: Ticker[];
@@ -37,10 +39,10 @@ const MiniSparkline: React.FC<{ data: number[] }> = ({ data }) => {
       const y = 40 - ((value - min) / range) * 40;
       return `${x},${y}`;
     })
-    .join(' ');
+    .join(" ");
 
   const isPositive = data[data.length - 1] >= data[0];
-  const color = isPositive ? 'var(--accent-positive)' : 'var(--accent-negative)';
+  const color = isPositive ? "var(--accent-positive)" : "var(--accent-negative)";
 
   return (
     <svg className="w-full h-12" viewBox="0 0 100 40" preserveAspectRatio="none">
@@ -60,7 +62,7 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
   const symbolData = useSymbolData(ticker.symbol);
   const marketData = useMarketDataStore((s) => s.symbols[ticker.symbol]);
   const strategySignals = symbolData?.strategySignals || [];
-  const activeSignals = strategySignals.filter((s) => s.status === 'ACTIVE');
+  const activeSignals = strategySignals.filter((s) => s.status === "ACTIVE");
   const confluence = symbolData?.confluence;
 
   // Calculate price change %
@@ -70,7 +72,7 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
 
   // Prepare chart data
   const chartData = React.useMemo(() => {
-    const bars = marketData?.bars?.['5m'] || [];
+    const bars = marketData?.bars?.["5m"] || [];
     if (bars.length < 20) return null;
 
     const closes = bars.map((b) => b.close);
@@ -80,9 +82,9 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
     const signals = strategySignals.map((sig) => ({
       time: new Date(sig.createdAt).getTime() / 1000,
       price: sig.payload?.entryPrice || currentPrice,
-      strategyName: sig.payload?.strategyName || 'Unknown',
+      strategyName: sig.payload?.strategyName || "Unknown",
       confidence: sig.confidence || 0,
-      side: (sig.payload?.side as 'long' | 'short') || 'long',
+      side: (sig.payload?.side as "long" | "short") || "long",
       entry: sig.payload?.entryPrice,
       stop: sig.payload?.stopLoss,
       targets: sig.payload?.targets,
@@ -103,29 +105,23 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
     return { bars, ema9, ema21, signals, flow };
   }, [marketData, strategySignals, currentPrice]);
 
-  // Confluence pills
-  const confluenceLabels = React.useMemo(() => {
-    const labels: string[] = [];
-    if (confluence?.components.supportResistance) labels.push('ORB');
-    if (confluence?.components.aboveVWAP) labels.push('VWAP');
-    if (confluence?.components.trendAlignment) labels.push('MTF↑');
-    return labels;
-  }, [confluence]);
+  // Confluence components for chips
+  const confluenceComponents = confluence?.components || {};
+  const confluenceScore = confluence?.overall || 0;
 
   return (
     <div
       onClick={onTap}
       className={cn(
-        'flex-shrink-0 w-64 h-80 rounded-2xl p-4 flex flex-col justify-between',
-        'bg-[var(--surface-2)]',
-        'border border-[var(--border-hairline)]',
-        'active:scale-95 cursor-pointer',
-        'relative overflow-hidden',
+        "flex-shrink-0 w-64 h-80 rounded-2xl p-4 flex flex-col justify-between",
+        "bg-[var(--surface-2)]",
+        "border border-[var(--border-hairline)]",
+        "active:scale-95 cursor-pointer",
+        "relative overflow-hidden",
         cardHover,
         colorTransition
       )}
     >
-
       {/* Top: Symbol + Active Badge */}
       <div className="relative z-10">
         <div className="flex items-start justify-between mb-2">
@@ -142,9 +138,14 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
           <div className="text-3xl font-semibold text-[var(--text-high)] mb-1">
             ${currentPrice.toFixed(2)}
           </div>
-          <div className={cn('flex items-center gap-1 text-sm font-medium', isPositive ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]')}>
+          <div
+            className={cn(
+              "flex items-center gap-1 text-sm font-medium",
+              isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+            )}
+          >
             {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            {isPositive ? '+' : ''}
+            {isPositive ? "+" : ""}
             {priceChangePercent.toFixed(2)}%
           </div>
         </div>
@@ -169,15 +170,10 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ ticker, onTap }) => {
         )}
       </div>
 
-      {/* Bottom: Confluence Pills */}
-      <div className="relative z-10">
-        {confluenceLabels.length > 0 ? (
-          <div className="text-xs text-zinc-400">
-            {confluenceLabels.join(' · ')}
-          </div>
-        ) : (
-          <div className="text-xs text-[var(--text-muted)] italic">No active setups</div>
-        )}
+      {/* Bottom: Confluence Meter + Signal Chips */}
+      <div className="relative z-10 flex items-center gap-2">
+        <HDConfluenceMeter score={confluenceScore} size="sm" symbol={ticker.symbol} />
+        <HDSignalChips components={confluenceComponents} max={2} />
       </div>
     </div>
   );
@@ -187,7 +183,7 @@ export const MobileWatchlist: React.FC<MobileWatchlistProps> = ({ tickers }) => 
   const setMainCockpitSymbol = useUIStore((s) => s.setMainCockpitSymbol);
 
   const handleCardTap = (ticker: Ticker) => {
-    console.log('[v0] MobileWatchlist: Card tapped:', ticker.symbol);
+    console.log("[v0] MobileWatchlist: Card tapped:", ticker.symbol);
     setMainCockpitSymbol(ticker.symbol);
   };
 

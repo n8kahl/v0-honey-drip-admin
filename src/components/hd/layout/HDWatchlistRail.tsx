@@ -9,7 +9,9 @@ import { HDChallengeShare } from "../forms/HDChallengeShare";
 import { Ticker, Trade, Challenge } from "../../../types";
 import { Plus, Trash2, Edit } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { useState, useMemo } from "react";
+import { ensureArray } from "../../../lib/utils/validation";
+import { getFullChallengeStats } from "../../../lib/challengeHelpers";
+import { useState, useMemo, useCallback } from "react";
 
 interface HDWatchlistRailProps {
   onTickerClick?: (ticker: Ticker) => void;
@@ -55,7 +57,13 @@ export function HDWatchlistRail({
   const watchlist = useMarketStore((state) => state.watchlist);
   // Use prop if provided, otherwise fall back to store (for backward compatibility)
   const storeActiveTrades = useTradeStore((state) => state.activeTrades);
+  const historyTrades = useTradeStore((state) => state.historyTrades);
   const rawActiveTrades = propActiveTrades ?? storeActiveTrades;
+
+  // Combine active and history trades for challenge stats (exited trades move to history)
+  const allTrades = useMemo(() => {
+    return [...rawActiveTrades, ...historyTrades];
+  }, [rawActiveTrades, historyTrades]);
   const challenges = useSettingsStore((state) => state.challenges);
   const discordChannels = useSettingsStore((state) => state.discordChannels);
 
@@ -94,6 +102,19 @@ export function HDWatchlistRail({
   const [showDetailSheet, setShowDetailSheet] = useState(false);
   const [sharingChallenge, setSharingChallenge] = useState<Challenge | null>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
+
+  // Watchlist expand state - use uiStore for consistency
+  const watchlistViewMode = useUIStore((state) => state.watchlistViewMode);
+  const expandedWatchlistRow = useUIStore((state) => state.expandedWatchlistRow);
+  const setExpandedWatchlistRow = useUIStore((state) => state.setExpandedWatchlistRow);
+
+  // Handle expand change for a watchlist row
+  const handleExpandChange = useCallback(
+    (symbol: string, expanded: boolean) => {
+      setExpandedWatchlistRow(expanded ? symbol : null);
+    },
+    [setExpandedWatchlistRow]
+  );
 
   // Filter trades by state
   const loadedTrades = activeTrades.filter((t) => t.state === "LOADED");
@@ -153,37 +174,16 @@ export function HDWatchlistRail({
       };
     }
 
-    const challengeTrades = activeTrades.filter((t) => t.challenges.includes(sharingChallenge.id));
-    const completedTrades = challengeTrades.filter((t) => t.state === "EXITED");
-    const activeCount = challengeTrades.filter(
-      (t) => t.state === "ENTERED" || t.state === "LOADED"
-    ).length;
-
-    const totalPnL = completedTrades.reduce((sum, t) => {
-      const pnl =
-        t.exitPrice && t.entryPrice
-          ? (t.exitPrice - t.entryPrice) * t.quantity * (t.contract.type === "CALL" ? 1 : -1)
-          : 0;
-      return sum + pnl;
-    }, 0);
-
-    const winners = completedTrades.filter((t) => {
-      const pnl =
-        t.exitPrice && t.entryPrice
-          ? (t.exitPrice - t.entryPrice) * t.quantity * (t.contract.type === "CALL" ? 1 : -1)
-          : 0;
-      return pnl > 0;
-    });
-    const winRate =
-      completedTrades.length > 0 ? (winners.length / completedTrades.length) * 100 : 0;
+    // Use allTrades to include exited trades from history
+    const stats = getFullChallengeStats(sharingChallenge.id, allTrades);
 
     return {
-      totalPnL,
-      winRate,
-      completedTrades: completedTrades.length,
-      activeTrades: activeCount,
+      totalPnL: stats.dollarPnL,
+      winRate: stats.winRate,
+      completedTrades: stats.completedTrades,
+      activeTrades: stats.activeTrades,
     };
-  }, [sharingChallenge, activeTrades]);
+  }, [sharingChallenge, allTrades]);
 
   return (
     <div className="w-full lg:w-80 lg:flex-shrink-0 border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
@@ -266,6 +266,9 @@ export function HDWatchlistRail({
                   onClick={() => onTickerClick?.(ticker)}
                   onRemove={onRemoveTicker ? () => onRemoveTicker(ticker) : undefined}
                   animationDelay={index * 40}
+                  viewMode={watchlistViewMode}
+                  isExpanded={expandedWatchlistRow === ticker.symbol}
+                  onExpandChange={(expanded) => handleExpandChange(ticker.symbol, expanded)}
                 />
               ))
             )}
@@ -278,11 +281,13 @@ export function HDWatchlistRail({
           {activeChallenges.length > 0 ? (
             <div className="p-3 space-y-2">
               {activeChallenges.map((challenge) => {
-                const completedTrades = activeTrades.filter(
-                  (t) => t.challenges.includes(challenge.id) && t.state === "EXITED"
-                ).length;
-                const totalTrades = 10; // Default target, can be enhanced later
-                const progress = totalTrades > 0 ? (completedTrades / totalTrades) * 100 : 0;
+                // Use centralized stats helper for consistency with detail sheet
+                // Pass allTrades (active + history) so exited trades are included
+                const stats = getFullChallengeStats(challenge.id, allTrades);
+
+                // Calculate dollar progress toward target goal
+                const targetGain = challenge.targetBalance - challenge.startingBalance;
+                const progress = targetGain > 0 ? (stats.dollarPnL / targetGain) * 100 : 0;
                 const isDeleting = deletingChallengeId === challenge.id;
 
                 return (
@@ -296,8 +301,15 @@ export function HDWatchlistRail({
                         {challenge.name}
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
-                          {completedTrades}/{totalTrades}
+                        <span
+                          className={cn(
+                            "text-xs whitespace-nowrap font-mono",
+                            stats.dollarPnL >= 0
+                              ? "text-[var(--accent-positive)]"
+                              : "text-[var(--accent-negative)]"
+                          )}
+                        >
+                          {stats.dollarPnL >= 0 ? "+" : ""}${stats.dollarPnL.toFixed(0)}
                         </span>
                         <button
                           onClick={(e) => {
@@ -368,7 +380,7 @@ export function HDWatchlistRail({
         open={showDetailSheet}
         onOpenChange={setShowDetailSheet}
         challenge={selectedChallenge}
-        trades={activeTrades}
+        trades={allTrades}
         onEdit={handleEditChallenge}
         onDelete={handleDeleteChallenge}
         onShare={handleShareChallenge}

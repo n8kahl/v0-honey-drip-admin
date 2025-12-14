@@ -510,7 +510,17 @@ export function useTradeStateMachine({
         setShowAlert(false);
         setContracts([]);
 
-        // 3. BACKGROUND RELOAD - Refresh from DB to get any server-side computed data
+        // 3. EXPLICIT CHALLENGE LINKING - Ensures junction table is populated
+        // This fixes race condition where server's async insert may not complete
+        if (challengeIds.length > 0) {
+          try {
+            await useTradeStore.getState().linkTradeToChallenges(dbTrade.id, challengeIds);
+          } catch (error) {
+            console.warn("[Trade] Failed to link challenges:", error);
+          }
+        }
+
+        // 4. BACKGROUND RELOAD - Refresh from DB to get any server-side computed data
         // Fire and forget - the optimistic update already updated the UI
         loadTrades(userId).catch((err) => {
           log.warn("Background loadTrades failed", { error: err?.message });
@@ -729,6 +739,19 @@ export function useTradeStateMachine({
 
         // RELOAD FROM DATABASE
         await loadTrades(userId);
+
+        // EXPLICIT CHALLENGE LINKING - Ensures junction table is populated
+        // This fixes race condition where server's async insert may not complete
+        // before loadTrades() runs, causing trades to not appear in challenges
+        if (challengeIds.length > 0 && dbTradeId) {
+          try {
+            await useTradeStore.getState().linkTradeToChallenges(dbTradeId, challengeIds);
+            // Reload again to get the updated challenges array
+            await loadTrades(userId);
+          } catch (error) {
+            console.warn("[Trade] Failed to link challenges:", error);
+          }
+        }
 
         // FOCUS ON TRADE - Use atomic update to prevent race conditions
         useTradeStore.setState({

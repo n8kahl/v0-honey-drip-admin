@@ -15,12 +15,15 @@ import { useMemberStatus } from "@/hooks/useMemberStatus";
 import { branding } from "@/lib/config/branding";
 
 // Components
-import { DailyScorecard, type DailyStats, type AdminStats } from "@/components/public/DailyScorecard";
+import {
+  DailyScorecard,
+  type DailyStats,
+  type AdminStats,
+} from "@/components/public/DailyScorecard";
 import { TradeTypeSection } from "@/components/public/TradeTypeSection";
 import { AlertFeed, type TradeAlert } from "@/components/public/AlertFeed";
 import { DemoViewToggle, GatedSection } from "@/components/public/MemberGate";
 import { TradeDetailModal } from "@/components/public/TradeDetailModal";
-import type { PublicTrade } from "@/components/public/LiveTradeCard";
 
 // Existing components
 import {
@@ -60,23 +63,33 @@ interface PublicTrade {
   updated_at: string;
 }
 
-interface Challenge {
+// Public Challenge interface - matches API response from /api/public/challenges/active
+interface PublicChallenge {
   id: string;
   name: string;
-  target_amount: number;
-  current_pnl: number;
+  description?: string;
+  starting_balance: number;
+  current_balance: number;
+  target_balance: number;
   start_date: string;
   end_date: string;
+  scope?: string;
+  progress_percent: number; // Pre-computed by API
+  current_pnl: number; // Computed: current_balance - starting_balance
+  days_elapsed: number;
+  days_remaining: number;
+  total_days: number;
 }
 
 export function PublicPortal() {
   const { isMember, setIsMember } = useMemberStatus();
-  const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
+  const DISCORD_INVITE_URL =
+    import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
 
   // State
   const [activeTrades, setActiveTrades] = useState<PublicTrade[]>([]);
   const [loadedTrades, setLoadedTrades] = useState<PublicTrade[]>([]);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [challenges, setChallenges] = useState<PublicChallenge[]>([]);
   const [premarketVideo, setPremarketVideo] = useState<PremarketVideo | null>(null);
   const [economicEvents, setEconomicEvents] = useState<EconomicEvent[]>([]);
   const [earnings, setEarnings] = useState<EarningsEvent[]>([]);
@@ -87,7 +100,9 @@ export function PublicPortal() {
     try {
       const { data, error } = await supabase
         .from("trades")
-        .select("id, ticker, contract, trade_type, state, entry_price, current_price, target_price, stop_loss, public_comment, admin_name, created_at, updated_at")
+        .select(
+          "id, ticker, contract, trade_type, state, entry_price, current_price, target_price, stop_loss, public_comment, admin_name, created_at, updated_at"
+        )
         .eq("show_on_public", true)
         .in("state", ["ENTERED", "LOADED"])
         .order("created_at", { ascending: false });
@@ -105,18 +120,15 @@ export function PublicPortal() {
     }
   };
 
-  // Fetch active challenges
+  // Fetch active challenges via public API (bypasses RLS)
   const fetchChallenges = async () => {
     try {
-      const { data, error } = await supabase
-        .from("challenges")
-        .select("*")
-        .eq("is_active", true)
-        .is("archived_at", null)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setChallenges(data || []);
+      const response = await fetch("/api/public/challenges/active");
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      setChallenges(data.challenges || []);
     } catch (error) {
       console.error("[v0] Error fetching challenges:", error);
     }
@@ -218,7 +230,8 @@ export function PublicPortal() {
               className="w-8 h-8 rounded object-contain"
             />
             <h1 className="text-xl font-bold text-[var(--text-high)]">
-              <span className="text-[var(--brand-primary)]">{branding.appName.toUpperCase()}</span> LIVE
+              <span className="text-[var(--brand-primary)]">{branding.appName.toUpperCase()}</span>{" "}
+              LIVE
             </h1>
             <div className="flex items-center gap-2">
               <div
@@ -428,7 +441,8 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
   const entryPrice = trade.entry_price ?? 0;
   const currentPrice = trade.current_price ?? entryPrice; // Fall back to entry if no current
   const strike = trade.contract?.strike ?? 0;
-  const contractType = trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
+  const contractType =
+    trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
   const pnl = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
   const pnlColor = pnl >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]";
 
@@ -456,8 +470,7 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
         <div>
           <span className="text-[var(--text-faint)]">Entry:</span>
           <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${entryPrice.toFixed(2)}
-            ${(trade.entry_price ?? 0).toFixed(2)}
+            ${entryPrice.toFixed(2)}${(trade.entry_price ?? 0).toFixed(2)}
           </span>
         </div>
         <div>
@@ -487,7 +500,8 @@ function PublicTradeCard({ trade }: { trade: PublicTrade }) {
 
 function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
   const strike = trade.contract?.strike ?? 0;
-  const contractType = trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
+  const contractType =
+    trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
   return (
     <div className="p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
       <h4 className="font-bold text-[var(--text-high)]">{trade.ticker}</h4>
@@ -506,30 +520,49 @@ function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
   );
 }
 
-function ChallengeCard({ challenge }: { challenge: Challenge }) {
+function ChallengeCard({ challenge }: { challenge: PublicChallenge }) {
+  // API pre-computes progress and P&L
   const currentPnl = challenge.current_pnl ?? 0;
-  const targetAmount = challenge.target_amount ?? 0;
-  const progress = targetAmount > 0 ? (currentPnl / targetAmount) * 100 : 0;
-  const daysLeft = Math.ceil(
-    (new Date(challenge.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
+  const targetGain = challenge.target_balance - challenge.starting_balance;
+  const progress = challenge.progress_percent ?? 0;
+  const daysLeft = challenge.days_remaining ?? 0;
+  const isProfit = currentPnl >= 0;
 
   return (
     <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-      <h3 className="font-bold text-[var(--text-high)] mb-2">{challenge.name}</h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-bold text-[var(--text-high)]">{challenge.name}</h3>
+        {challenge.scope === "honeydrip-wide" && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]">
+            HD
+          </span>
+        )}
+      </div>
       <div className="mb-2">
         <div className="flex justify-between text-sm mb-1">
-          <span className="text-[var(--text-muted)]">${currentPnl.toFixed(0)}</span>
-          <span className="text-[var(--text-muted)]">${targetAmount.toFixed(0)}</span>
+          <span
+            className={cn(
+              "font-mono",
+              isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+            )}
+          >
+            {isProfit ? "+" : ""}${currentPnl.toFixed(0)}
+          </span>
+          <span className="text-[var(--text-muted)]">/ ${targetGain.toFixed(0)} goal</span>
         </div>
         <div className="h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
           <div
-            className="h-full bg-[var(--accent-positive)] transition-all"
+            className={cn(
+              "h-full transition-all",
+              progress >= 100 ? "bg-[var(--accent-positive)]" : "bg-[var(--brand-primary)]"
+            )}
             style={{ width: `${Math.min(100, progress)}%` }}
           />
         </div>
       </div>
-      <p className="text-xs text-[var(--text-faint)]">{daysLeft} days remaining</p>
+      <p className="text-xs text-[var(--text-faint)]">
+        {daysLeft > 0 ? `${daysLeft} days remaining` : "Challenge ended"}
+      </p>
     </div>
   );
 }

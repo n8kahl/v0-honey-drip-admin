@@ -323,10 +323,7 @@ router.get("/stats/today", async (_req: Request, res: Response) => {
     };
 
     trades?.forEach((trade: PublicTrade) => {
-      const pnl = calculatePnl(
-        trade.entry_price,
-        trade.exit_price || trade.current_price
-      );
+      const pnl = calculatePnl(trade.entry_price, trade.exit_price || trade.current_price);
 
       if (pnl !== null) {
         stats.total_gain_percent += pnl;
@@ -414,10 +411,7 @@ router.get("/stats/leaderboard", async (_req: Request, res: Response) => {
       const stats = adminStats.get(adminId)!;
       stats.total_trades++;
 
-      const pnl = calculatePnl(
-        trade.entry_price,
-        trade.exit_price || trade.current_price
-      );
+      const pnl = calculatePnl(trade.entry_price, trade.exit_price || trade.current_price);
 
       if (pnl !== null) {
         stats.total_gain_percent += pnl;
@@ -427,8 +421,9 @@ router.get("/stats/leaderboard", async (_req: Request, res: Response) => {
     });
 
     // Sort by total gains
-    const leaderboard = Array.from(adminStats.values())
-      .sort((a, b) => b.total_gain_percent - a.total_gain_percent);
+    const leaderboard = Array.from(adminStats.values()).sort(
+      (a, b) => b.total_gain_percent - a.total_gain_percent
+    );
 
     res.json({
       leaderboard,
@@ -456,7 +451,8 @@ router.get("/alerts/recent", async (req: Request, res: Response) => {
     // Get recent updates for public trades
     const { data: updates, error } = await supabase
       .from("trade_updates")
-      .select(`
+      .select(
+        `
         *,
         trades!inner (
           id,
@@ -467,7 +463,8 @@ router.get("/alerts/recent", async (req: Request, res: Response) => {
           admin_name,
           show_on_public
         )
-      `)
+      `
+      )
       .eq("trades.show_on_public", true)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -568,7 +565,10 @@ router.get("/performance/30d", async (_req: Request, res: Response) => {
       Day: { total: 0, wins: 0, losses: 0, totalGain: 0, bestGain: 0 },
       Swing: { total: 0, wins: 0, losses: 0, totalGain: 0, bestGain: 0 },
       LEAP: { total: 0, wins: 0, losses: 0, totalGain: 0, bestGain: 0 },
-    } as Record<string, { total: number; wins: number; losses: number; totalGain: number; bestGain: number }>;
+    } as Record<
+      string,
+      { total: number; wins: number; losses: number; totalGain: number; bestGain: number }
+    >;
 
     trades?.forEach((trade: PublicTrade) => {
       const type = trade.trade_type;
@@ -624,21 +624,39 @@ router.get("/challenges/active", async (_req: Request, res: Response) => {
     if (error) throw error;
 
     // Enrich with progress calculations
+    // Database uses: starting_balance, current_balance, target_balance
+    // Progress = (current - starting) / (target - starting) * 100
     const enrichedChallenges = (challenges || []).map((challenge: any) => {
-      const progress = challenge.target_amount > 0
-        ? ((challenge.current_pnl || 0) / challenge.target_amount) * 100
-        : 0;
+      const startingBalance = challenge.starting_balance ?? 0;
+      const currentBalance = challenge.current_balance ?? startingBalance;
+      const targetBalance = challenge.target_balance ?? startingBalance;
+
+      // Progress is based on gains toward target
+      const targetGain = targetBalance - startingBalance;
+      const currentGain = currentBalance - startingBalance;
+      const progress = targetGain > 0 ? (currentGain / targetGain) * 100 : 0;
 
       const startDate = new Date(challenge.start_date);
       const endDate = new Date(challenge.end_date);
       const now = new Date();
-      const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const totalDays = Math.ceil(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
       const daysElapsed = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
       const daysRemaining = Math.max(0, totalDays - daysElapsed);
 
       return {
-        ...challenge,
+        id: challenge.id,
+        name: challenge.name,
+        description: challenge.description,
+        starting_balance: startingBalance,
+        current_balance: currentBalance,
+        target_balance: targetBalance,
+        start_date: challenge.start_date,
+        end_date: challenge.end_date,
+        scope: challenge.scope,
         progress_percent: Math.min(100, Math.max(0, progress)),
+        current_pnl: currentGain, // Computed: current - starting
         days_elapsed: daysElapsed,
         days_remaining: daysRemaining,
         total_days: totalDays,

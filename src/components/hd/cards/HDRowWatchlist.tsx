@@ -1,24 +1,35 @@
 /**
- * HDRowWatchlist - Watchlist row with sparkline and confluence
+ * HDRowWatchlist - Scanner-grade watchlist row with collapsible details
  *
- * Layout:
- * ┌─────────────────────────────────────────────────────────────┐
- * │ [Signal] SPY                    ▲ 605.23 +0.45%            │
- * │          ████████░░ sparkline   Live • Conf 78             │
- * └─────────────────────────────────────────────────────────────┘
+ * Layout (collapsed):
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │ [▶] [Signal] SPY    $605.23 +0.45%    ████░░ sparkline   78▓▓░  │
+ * │                                                [MTF][RSI][VOL]  │
+ * └─────────────────────────────────────────────────────────────────┘
+ *
+ * Layout (expanded):
+ * ├─────────────────────────────────────────────────────────────────┤
+ * │  ✓ Multi-Timeframe Trend Alignment                              │
+ * │  ✓ RSI Momentum Confirmation                                    │
+ * │  ○ Volume Confirmation                                          │
+ * │  ✓ Above VWAP                                                   │
+ * │  [Power mode: Flow details, Gamma details, IV details]          │
+ * └─────────────────────────────────────────────────────────────────┘
  */
 
 import { Ticker } from "../../../types";
 import { formatPrice, cn } from "../../../lib/utils";
-import { X, ChevronDown, ChevronUp } from "lucide-react";
+import { X, ChevronRight, ChevronDown } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useUIStore } from "../../../stores";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
+import { Collapsible, CollapsibleContent } from "../../ui/collapsible";
 import { useRef, useEffect, useState } from "react";
 import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 import { CompositeSignalBadge } from "../signals/CompositeSignalBadge";
 import { HDMiniSparkline, HDMiniSparklineSkeleton } from "../charts/HDMiniSparkline";
-import { HDLiveIndicator, HDConfluenceBadge, type DataStatus } from "../common/HDLiveIndicator";
+import { HDLiveIndicator, type DataStatus } from "../common/HDLiveIndicator";
+import { HDConfluenceMeter } from "../common/HDConfluenceMeter";
+import { HDSignalChips } from "../common/HDSignalChips";
 import { useWarehouseData } from "../../../hooks/useWarehouseData";
 
 interface HDRowWatchlistProps {
@@ -30,6 +41,12 @@ interface HDRowWatchlistProps {
   compositeSignals?: CompositeSignal[];
   /** Animation delay for stagger effect */
   animationDelay?: number;
+  /** View mode: clean (minimal) or power (full metrics) */
+  viewMode?: "clean" | "power";
+  /** Is this row expanded */
+  isExpanded?: boolean;
+  /** Callback when expansion changes */
+  onExpandChange?: (expanded: boolean) => void;
 }
 
 export function HDRowWatchlist({
@@ -39,18 +56,19 @@ export function HDRowWatchlist({
   onRemove,
   compositeSignals,
   animationDelay,
+  viewMode = "clean",
+  isExpanded = false,
+  onExpandChange,
 }: HDRowWatchlistProps) {
   // Get all data from marketDataStore (single source of truth)
   const symbolData = useSymbolData(ticker.symbol);
-  const setActiveTab = useUIStore((state) => state.setActiveTab);
-  const scrollChartToBar = useUIStore((state) => state.scrollChartToBar);
   const uiStore = useUIStore();
 
   // Local timestamp tracking based on price changes
   const lastUpdateRef = useRef<number>(Date.now());
   const prevPriceRef = useRef<number>(ticker.last);
 
-  // Warehouse data integration
+  // Warehouse data integration (only used in power mode)
   const { flowSummary, gammaData, ivData } = useWarehouseData(ticker.symbol);
 
   // Price flash animation state: 'up' | 'down' | null
@@ -85,7 +103,8 @@ export function HDRowWatchlist({
 
   // Data freshness and status
   const lastUpdated = symbolData?.lastUpdated || lastUpdateRef.current;
-  const confluenceScore = symbolData?.confluence?.overall;
+  const confluenceScore = symbolData?.confluence?.overall || 0;
+  const confluenceComponents = symbolData?.confluence?.components || {};
 
   // Determine data status
   const getDataStatus = (): DataStatus => {
@@ -108,10 +127,15 @@ export function HDRowWatchlist({
     if (!active) {
       onClick?.();
     }
-    setActiveTab("live");
     if (signal.barTimeKey) {
-      setTimeout(() => scrollChartToBar(signal.barTimeKey), 100);
+      setTimeout(() => uiStore.scrollChartToBar(signal.barTimeKey), 100);
     }
+  };
+
+  // Handle row click
+  const handleRowClick = () => {
+    onClick?.();
+    uiStore.setMainCockpitSymbol(ticker.symbol);
   };
 
   // Defensive: fallback for missing price
@@ -148,343 +172,283 @@ export function HDRowWatchlist({
   const activeSignalCount = activeSignals.length;
 
   return (
-    <>
+    <Collapsible open={isExpanded} onOpenChange={onExpandChange}>
       <div
         className={cn(
-          "w-full flex flex-col gap-1.5 px-3 py-2.5 border-b border-[var(--border-hairline)] group",
-          "cursor-pointer transition-all duration-150 ease-out touch-manipulation",
-          "hover:bg-[var(--surface-3)] hover:shadow-sm",
+          "relative w-full flex flex-col border-b border-[var(--border-hairline)] group",
+          "transition-all duration-150 ease-out",
           active && "bg-[var(--surface-2)] border-l-2 border-l-[var(--brand-primary)] shadow-sm",
           isStale && "opacity-60"
         )}
         style={animationDelay ? { animationDelay: `${animationDelay}ms` } : undefined}
-        data-testid={`watchlist-item-${ticker.symbol}`}
-        onClick={() => {
-          onClick?.();
-          uiStore.setMainCockpitSymbol(ticker.symbol);
-        }}
+        data-testid={`watchlist-row-${ticker.symbol}`}
       >
-        {/* Row 1: Signal + Symbol + Price */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Composite signals badge */}
-            {compositeSignals && compositeSignals.length > 0 && (
-              <CompositeSignalBadge
-                symbol={ticker.symbol}
-                signals={compositeSignals}
-                compact
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleBadgeClick(compositeSignals[0]);
-                }}
-              />
+        {/* Row header - horizontal layout with expand button separate from content */}
+        <div className="flex">
+          {/* Expand button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpandChange?.(!isExpanded);
+            }}
+            className="flex-shrink-0 w-8 h-full min-h-[40px] flex items-center justify-center text-zinc-500 hover:text-[var(--text-high)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+            data-testid={`watchlist-expand-${ticker.symbol}`}
+            aria-label={isExpanded ? "Collapse details" : "Expand details"}
+          >
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4 pointer-events-none" />
+            ) : (
+              <ChevronRight className="w-4 h-4 pointer-events-none" />
             )}
+          </button>
 
-            {/* Legacy signal count fallback */}
-            {(!compositeSignals || compositeSignals.length === 0) && activeSignalCount > 0 && (
-              <span
-                className={cn(
-                  "px-1.5 py-0.5 text-[10px] font-medium rounded",
-                  "bg-zinc-700 text-zinc-300"
+          {/* Main row content - clickable area */}
+          <div
+            className={cn(
+              "flex-1 flex flex-col gap-1.5 px-2 py-2.5",
+              "cursor-pointer touch-manipulation",
+              "hover:bg-[var(--surface-3)] hover:shadow-sm"
+            )}
+            onClick={handleRowClick}
+          >
+            {/* Row 1: Signal + Symbol + Price */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                {/* Composite signals badge */}
+                {compositeSignals && compositeSignals.length > 0 && (
+                  <CompositeSignalBadge
+                    symbol={ticker.symbol}
+                    signals={compositeSignals}
+                    compact
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBadgeClick(compositeSignals[0]);
+                    }}
+                  />
                 )}
-              >
-                {activeSignalCount}
-              </span>
-            )}
 
-            {/* Symbol */}
-            <span className="text-[var(--text-high)] font-semibold text-sm leading-tight truncate">
-              {ticker.symbol}
-            </span>
-          </div>
+                {/* Legacy signal count fallback */}
+                {(!compositeSignals || compositeSignals.length === 0) && activeSignalCount > 0 && (
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 text-[10px] font-medium rounded",
+                      "bg-zinc-700 text-zinc-300"
+                    )}
+                  >
+                    {activeSignalCount}
+                  </span>
+                )}
 
-          {/* Price + Change */}
-          <div className="flex items-baseline gap-1.5 flex-shrink-0">
-            <span
-              className={cn(
-                "font-mono text-sm font-medium tabular-nums transition-colors duration-150",
-                priceColor,
-                priceFlashClass
+                {/* Symbol */}
+                <span className="text-[var(--text-high)] font-semibold text-sm leading-tight truncate">
+                  {ticker.symbol}
+                </span>
+              </div>
+
+              {/* Price + Change */}
+              <div className="flex items-baseline gap-1.5 flex-shrink-0">
+                <span
+                  className={cn(
+                    "font-mono text-sm font-medium tabular-nums transition-colors duration-150",
+                    priceColor,
+                    priceFlashClass
+                  )}
+                >
+                  {priceDisplay}
+                </span>
+                {changePercent !== 0 && (
+                  <span
+                    className={cn("text-[10px] font-mono font-medium tabular-nums", priceColor)}
+                  >
+                    {changePercent > 0 ? "+" : ""}
+                    {changePercent.toFixed(2)}%
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Row 2: Sparkline + Confluence Meter + Signal Chips */}
+            <div className="flex items-center gap-2">
+              {/* Sparkline - takes most of the space */}
+              <div className="flex-1 min-w-0">
+                {hasCandles ? (
+                  <HDMiniSparkline symbol={ticker.symbol} height={28} />
+                ) : (
+                  <HDMiniSparklineSkeleton height={28} />
+                )}
+              </div>
+
+              {/* Status indicators - compact right side */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {/* Live indicator */}
+                <HDLiveIndicator status={dataStatus} lastUpdate={lastUpdated} showLabel={false} />
+
+                {/* Confluence meter (replaces old tooltip-based beacon) */}
+                <HDConfluenceMeter score={confluenceScore} size="sm" symbol={ticker.symbol} />
+
+                {/* Signal chips (collapsed mode: max 3 passing chips) */}
+                <HDSignalChips components={confluenceComponents} max={3} />
+
+                {/* Power mode badges (Flow/Gamma/IV) - only in power mode */}
+                {viewMode === "power" && (
+                  <div className="flex items-center gap-1 text-[10px]">
+                    {/* Flow indicator */}
+                    {flowSummary && (
+                      <div
+                        className={cn(
+                          "px-1.5 py-0.5 rounded font-mono font-medium",
+                          flowSummary.netPremium > 0
+                            ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
+                            : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
+                        )}
+                        title={`Options Flow: Net $${(flowSummary.netPremium / 1e6).toFixed(1)}M`}
+                        data-testid={`flow-badge-${ticker.symbol}`}
+                      >
+                        {flowSummary.netPremium > 0 ? "F+" : "F-"}
+                      </div>
+                    )}
+
+                    {/* Gamma indicator */}
+                    {gammaData && (
+                      <div
+                        className={cn(
+                          "px-1.5 py-0.5 rounded font-mono font-medium",
+                          gammaData.netGamma > 0
+                            ? "bg-[var(--accent-info)]/20 text-[var(--accent-info)]"
+                            : "bg-orange-500/20 text-orange-500"
+                        )}
+                        title={`Gamma: ${gammaData.netGamma > 0 ? "Positive (Support)" : "Negative (Resistance)"}`}
+                        data-testid={`gamma-badge-${ticker.symbol}`}
+                      >
+                        {gammaData.netGamma > 0 ? "G+" : "G-"}
+                      </div>
+                    )}
+
+                    {/* IV indicator */}
+                    {ivData && (
+                      <div
+                        className={cn(
+                          "px-1.5 py-0.5 rounded font-mono font-medium",
+                          ivData.iv_percentile >= 70
+                            ? "bg-red-500/20 text-red-500"
+                            : ivData.iv_percentile >= 40
+                              ? "bg-yellow-500/20 text-yellow-500"
+                              : "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
+                        )}
+                        title={`IV Percentile: ${ivData.iv_percentile.toFixed(0)}th`}
+                        data-testid={`iv-badge-${ticker.symbol}`}
+                      >
+                        IV{Math.round(ivData.iv_percentile)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Remove button - visible on hover */}
+              {onRemove && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onRemove();
+                  }}
+                  className="relative z-30 ml-2 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-[var(--radius)] opacity-50 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/20 transition-all touch-manipulation active:scale-95 pointer-events-auto"
+                  title="Remove from watchlist"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               )}
-            >
-              {priceDisplay}
-            </span>
-            {changePercent !== 0 && (
-              <span className={cn("text-[10px] font-mono font-medium tabular-nums", priceColor)}>
-                {changePercent > 0 ? "+" : ""}
-                {changePercent.toFixed(2)}%
-              </span>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Row 2: Sparkline + Status */}
-        <div className="flex items-center gap-2">
-          {/* Sparkline - takes most of the space */}
-          <div className="flex-1 min-w-0">
-            {hasCandles ? (
-              <HDMiniSparkline symbol={ticker.symbol} height={28} />
-            ) : (
-              <HDMiniSparklineSkeleton height={28} />
-            )}
-          </div>
+        {/* Expanded content (inline, not overlay) */}
+        <CollapsibleContent>
+          <div
+            className="px-3 pb-3 pt-1 border-t border-[var(--border-hairline)] bg-[var(--surface-2)]"
+            data-testid={`watchlist-expanded-${ticker.symbol}`}
+          >
+            {/* Full confluence checklist */}
+            <div className="mb-2">
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1.5">
+                Confluence Factors
+              </div>
+              <HDSignalChips components={confluenceComponents} showAll />
+            </div>
 
-          {/* Status indicators - compact right side */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Live indicator */}
-            <HDLiveIndicator status={dataStatus} lastUpdate={lastUpdated} showLabel={false} />
-
-            {/* Enhanced Confluence Indicator with pulsing beacon + component badges */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex flex-col gap-0.5">
-                  {/* Pulsing beacon + score */}
-                  <div className="flex items-center gap-1">
-                    <div
-                      className={cn(
-                        "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                        confluenceScore >= 70
-                          ? "bg-[var(--accent-positive)] shadow-[0_0_6px_var(--accent-positive)] animate-pulse"
-                          : confluenceScore >= 40
-                            ? "bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.5)] animate-pulse"
-                            : "bg-zinc-500 animate-pulse"
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        "text-[10px] font-mono font-bold tabular-nums",
-                        confluenceScore >= 70
-                          ? "text-[var(--accent-positive)]"
-                          : confluenceScore >= 40
-                            ? "text-yellow-500"
-                            : "text-zinc-500"
-                      )}
-                    >
-                      {Math.round(confluenceScore || 0)}
-                    </span>
-                  </div>
-
-                  {/* Component mini-badges */}
-                  <div className="flex items-center gap-0.5">
-                    {/* MTF - Multi-Timeframe */}
-                    <div
-                      className={cn(
-                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
-                        symbolData?.confluence?.components?.trendAlignment
-                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
-                          : "bg-zinc-700/40 text-zinc-600"
-                      )}
-                    >
-                      M
-                    </div>
-
-                    {/* RSI - Momentum */}
-                    <div
-                      className={cn(
-                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
-                        symbolData?.confluence?.components?.rsiConfirm
-                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
-                          : "bg-zinc-700/40 text-zinc-600"
-                      )}
-                    >
-                      R
-                    </div>
-
-                    {/* VOL - Volume */}
-                    <div
-                      className={cn(
-                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
-                        symbolData?.confluence?.components?.volumeConfirm
-                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
-                          : "bg-zinc-700/40 text-zinc-600"
-                      )}
-                    >
-                      V
-                    </div>
-
-                    {/* VWAP - Price Position */}
-                    <div
-                      className={cn(
-                        "w-4 h-3 flex items-center justify-center rounded text-[7px] font-bold transition-all duration-200",
-                        symbolData?.confluence?.components?.aboveVWAP
-                          ? "bg-[var(--accent-positive)]/25 text-[var(--accent-positive)] border border-[var(--accent-positive)]/40"
-                          : "bg-zinc-700/40 text-zinc-600"
-                      )}
-                    >
-                      W
-                    </div>
-                  </div>
+            {/* Power mode: additional metrics */}
+            {viewMode === "power" && (flowSummary || gammaData || ivData) && (
+              <div className="mt-3 pt-2 border-t border-[var(--border-hairline)]">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1.5">
+                  Advanced Metrics
                 </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <div className="text-xs space-y-2">
-                  <div className="font-semibold">
-                    Confluence: {Math.round(confluenceScore || 0)}/100
-                  </div>
-                  <div className="text-[10px] text-zinc-400 space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={
-                          symbolData?.confluence?.components?.trendAlignment
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {flowSummary && (
+                    <div>
+                      <div className="text-zinc-500 text-[10px]">Flow</div>
+                      <div
+                        className={cn(
+                          "font-mono",
+                          flowSummary.netPremium > 0
                             ? "text-[var(--accent-positive)]"
-                            : "text-zinc-500"
-                        }
+                            : "text-[var(--accent-negative)]"
+                        )}
                       >
-                        {symbolData?.confluence?.components?.trendAlignment ? "✓" : "○"}
-                      </span>
-                      <span>Multi-Timeframe Trend</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={
-                          symbolData?.confluence?.components?.rsiConfirm
-                            ? "text-[var(--accent-positive)]"
-                            : "text-zinc-500"
-                        }
-                      >
-                        {symbolData?.confluence?.components?.rsiConfirm ? "✓" : "○"}
-                      </span>
-                      <span>RSI Momentum</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={
-                          symbolData?.confluence?.components?.volumeConfirm
-                            ? "text-[var(--accent-positive)]"
-                            : "text-zinc-500"
-                        }
-                      >
-                        {symbolData?.confluence?.components?.volumeConfirm ? "✓" : "○"}
-                      </span>
-                      <span>Volume Confirmation</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={
-                          symbolData?.confluence?.components?.aboveVWAP
-                            ? "text-[var(--accent-positive)]"
-                            : "text-zinc-500"
-                        }
-                      >
-                        {symbolData?.confluence?.components?.aboveVWAP ? "✓" : "○"}
-                      </span>
-                      <span>Above VWAP</span>
-                    </div>
-                  </div>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-
-            {/* Inline metrics badges */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {/* Flow indicator */}
-              {flowSummary && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div
-                      className={cn(
-                        "px-1.5 py-0.5 rounded font-mono font-medium",
-                        flowSummary.netPremium > 0
-                          ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
-                          : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
-                      )}
-                    >
-                      {flowSummary.netPremium > 0 ? "F+" : "F-"}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="text-xs">
-                      <div className="font-semibold mb-1">Options Flow</div>
-                      <div className="text-[var(--text-low)]">
-                        Net: ${(flowSummary.netPremium / 1e6).toFixed(1)}M
+                        ${(flowSummary.netPremium / 1e6).toFixed(1)}M
                       </div>
-                      <div className="text-[var(--text-low)]">
-                        Calls: {flowSummary.callCount} | Puts: {flowSummary.putCount}
+                      <div className="text-[10px] text-zinc-500">
+                        C: {flowSummary.callCount} / P: {flowSummary.putCount}
                       </div>
                     </div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-
-              {/* Gamma indicator */}
-              {gammaData && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div
-                      className={cn(
-                        "px-1.5 py-0.5 rounded font-mono font-medium",
-                        gammaData.netGamma > 0
-                          ? "bg-[var(--accent-info)]/20 text-[var(--accent-info)]"
-                          : "bg-orange-500/20 text-orange-500"
-                      )}
-                    >
-                      {gammaData.netGamma > 0 ? "G+" : "G-"}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="text-xs">
-                      <div className="font-semibold mb-1">Gamma Exposure</div>
-                      <div className="text-[var(--text-low)]">
-                        {gammaData.netGamma > 0 ? "Positive (Support)" : "Negative (Resistance)"}
+                  )}
+                  {gammaData && (
+                    <div>
+                      <div className="text-zinc-500 text-[10px]">Gamma</div>
+                      <div
+                        className={cn(
+                          "font-mono",
+                          gammaData.netGamma > 0 ? "text-[var(--accent-info)]" : "text-orange-500"
+                        )}
+                      >
+                        {gammaData.netGamma > 0 ? "+" : ""}
+                        {gammaData.netGamma?.toFixed(0) || "N/A"}
                       </div>
                       {gammaData.majorStrike && (
-                        <div className="text-[var(--text-low)]">
+                        <div className="text-[10px] text-zinc-500">
                           Key: ${gammaData.majorStrike.toFixed(0)}
                         </div>
                       )}
                     </div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-
-              {/* IV indicator */}
-              {ivData && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div
-                      className={cn(
-                        "px-1.5 py-0.5 rounded font-mono font-medium",
-                        ivData.iv_percentile >= 70
-                          ? "bg-red-500/20 text-red-500"
-                          : ivData.iv_percentile >= 40
-                            ? "bg-yellow-500/20 text-yellow-500"
-                            : "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
-                      )}
-                    >
-                      IV{Math.round(ivData.iv_percentile)}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="text-xs">
-                      <div className="font-semibold mb-1">IV Percentile</div>
-                      <div className="text-[var(--text-low)]">
-                        {ivData.iv_percentile.toFixed(0)}th percentile
+                  )}
+                  {ivData && (
+                    <div>
+                      <div className="text-zinc-500 text-[10px]">IV</div>
+                      <div
+                        className={cn(
+                          "font-mono",
+                          ivData.iv_percentile >= 70
+                            ? "text-red-500"
+                            : ivData.iv_percentile >= 40
+                              ? "text-yellow-500"
+                              : "text-[var(--accent-positive)]"
+                        )}
+                      >
+                        {ivData.iv_percentile.toFixed(0)}th %ile
                       </div>
-                      <div className="text-[var(--text-low)]">{ivData.iv_regime || "Normal"}</div>
+                      <div className="text-[10px] text-zinc-500">
+                        {ivData.iv_regime || "Normal"}
+                      </div>
                     </div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Remove button - visible on hover, uses pointer-events to ensure clickable */}
-          {onRemove && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onRemove();
-              }}
-              className="relative z-30 ml-2 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-[var(--radius)] opacity-50 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/20 transition-all touch-manipulation active:scale-95 pointer-events-auto"
-              title="Remove from watchlist"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        </CollapsibleContent>
       </div>
-    </>
+    </Collapsible>
   );
 }

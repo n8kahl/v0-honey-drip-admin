@@ -7,8 +7,34 @@ import {
   updateTrade as dbUpdateTrade,
   deleteTrade as dbDeleteTrade,
 } from "../lib/supabase/database";
+import { createClient } from "../lib/supabase/client";
 import { ensureArray } from "../lib/utils/validation";
 import { tradeStoreLogger as log } from "../lib/utils/logger";
+
+/**
+ * Get authentication headers for API calls
+ * Uses JWT from Supabase session for proper authentication
+ */
+async function getApiHeaders(): Promise<HeadersInit> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    log.warn("Failed to get auth session for API headers");
+  }
+
+  return headers;
+}
 
 // ============================================================================
 // TRADE STORE - SINGLE SOURCE OF TRUTH
@@ -137,32 +163,44 @@ export const useTradeStore = create<TradeStore>()(
       getCurrentTrade: () => {
         const { currentTradeId, activeTrades, historyTrades, previewTrade } = get();
 
-        // If we have a preview trade and it matches, return it
+        // If we have a currentTradeId, look it up in persisted trades FIRST
+        // This ensures that clicking an active trade shows the correct (LOADED/ENTERED) state
+        // rather than falling back to a stale preview trade
+        if (currentTradeId) {
+          const activeTrade = activeTrades.find((t) => t.id === currentTradeId);
+          if (activeTrade) return activeTrade;
+
+          const historyTrade = historyTrades.find((t) => t.id === currentTradeId);
+          if (historyTrade) return historyTrade;
+        }
+
+        // Only fall back to previewTrade if no persisted trade found with that ID
         if (previewTrade && (!currentTradeId || previewTrade.id === currentTradeId)) {
           return previewTrade;
         }
 
-        if (!currentTradeId) return null;
-
-        // Look in active trades first
-        const activeTrade = activeTrades.find((t) => t.id === currentTradeId);
-        if (activeTrade) return activeTrade;
-
-        // Then check history
-        return historyTrades.find((t) => t.id === currentTradeId) || null;
+        return null;
       },
 
       // Get the state of the current trade
+      // Priority: persisted trades first (LOADED/ENTERED/EXITED), then preview trade
       getTradeState: () => {
-        const { previewTrade } = get();
-        const currentTrade = get().getCurrentTrade();
+        const { previewTrade, currentTradeId, activeTrades, historyTrades } = get();
 
-        // Preview trade is always WATCHING
-        if (previewTrade && currentTrade?.id === previewTrade.id) {
-          return "WATCHING";
+        // Priority 1: Check persisted trades first - their state is authoritative
+        if (currentTradeId) {
+          const activeTrade = activeTrades.find((t) => t.id === currentTradeId);
+          if (activeTrade) return activeTrade.state;
+
+          const historyTrade = historyTrades.find((t) => t.id === currentTradeId);
+          if (historyTrade) return historyTrade.state;
         }
 
-        return currentTrade?.state || "WATCHING";
+        // Priority 2: Only use preview trade state if no persisted trade found
+        if (previewTrade) return "WATCHING";
+
+        // Default
+        return "WATCHING";
       },
 
       // Get all LOADED trades
@@ -608,10 +646,11 @@ export const useTradeStore = create<TradeStore>()(
       linkTradeToChannels: async (tradeId, channelIds) => {
         log.debug("Linking trade to channels", { tradeId, channelIds });
         try {
+          const headers = await getApiHeaders();
           const promises = channelIds.map((channelId) =>
             fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
               method: "POST",
-              headers: { "x-user-id": "" },
+              headers,
             }).then((response) => ({ channelId, response }))
           );
 
@@ -665,9 +704,10 @@ export const useTradeStore = create<TradeStore>()(
       unlinkTradeFromChannel: async (tradeId, channelId) => {
         log.debug("Unlinking trade from channel", { tradeId, channelId });
         try {
+          const headers = await getApiHeaders();
           const response = await fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
             method: "DELETE",
-            headers: { "x-user-id": "" },
+            headers,
           });
 
           if (!response.ok) {
@@ -696,10 +736,11 @@ export const useTradeStore = create<TradeStore>()(
       linkTradeToChallenges: async (tradeId, challengeIds) => {
         log.debug("Linking trade to challenges", { tradeId, challengeIds });
         try {
+          const headers = await getApiHeaders();
           const promises = challengeIds.map((challengeId) =>
             fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
               method: "POST",
-              headers: { "x-user-id": "" },
+              headers,
             }).then((response) => ({ challengeId, response }))
           );
 
@@ -752,9 +793,10 @@ export const useTradeStore = create<TradeStore>()(
       unlinkTradeFromChallenge: async (tradeId, challengeId) => {
         log.debug("Unlinking trade from challenge", { tradeId, challengeId });
         try {
+          const headers = await getApiHeaders();
           const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
             method: "DELETE",
-            headers: { "x-user-id": "" },
+            headers,
           });
 
           if (!response.ok) {
@@ -780,15 +822,13 @@ export const useTradeStore = create<TradeStore>()(
         }
       },
 
-      updateTradeChallenges: async (userId, tradeId, challengeIds) => {
+      updateTradeChallenges: async (_userId, tradeId, challengeIds) => {
         log.debug("Updating trade challenges", { tradeId, challengeIds });
         try {
+          const headers = await getApiHeaders();
           const response = await fetch(`/api/trades/${tradeId}/challenges`, {
             method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              "x-user-id": userId,
-            },
+            headers,
             body: JSON.stringify({ challengeIds }),
           });
 

@@ -1,12 +1,13 @@
-'use client';
+"use client";
 
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
-import { useTradeStore } from '../stores/tradeStore';
-import { AppLayout } from '../components/layouts/AppLayout';
-import { BreadcrumbNav } from '../components/navigation/BreadcrumbNav';
-import { HDLiveChart } from '../components/hd/charts/HDLiveChart';
-import { Suspense } from 'react';
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { useTradeStore } from "../stores/tradeStore";
+import { AppLayout } from "../components/layouts/AppLayout";
+import { BreadcrumbNav } from "../components/navigation/BreadcrumbNav";
+import { HDLiveChart } from "../components/hd/charts/HDLiveChart";
+import { HDEditablePrice } from "../components/hd/common/HDEditablePrice";
+import { Suspense } from "react";
 
 /**
  * TradeDetailPage - View details for a specific trade
@@ -23,11 +24,33 @@ import { Suspense } from 'react';
 export default function TradeDetailPage() {
   const { id: tradeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { activeTrades, historyTrades } = useTradeStore();
+  const { activeTrades, historyTrades, updateTrade } = useTradeStore();
 
   // Find the trade from either active or history trades
   const allTrades = [...activeTrades, ...historyTrades];
   const trade = allTrades.find((t) => t.id === tradeId);
+
+  /**
+   * Handle editing entry or exit price with P&L recalculation
+   */
+  const handlePriceEdit = async (field: "entryPrice" | "exitPrice", newPrice: number) => {
+    if (!trade) return;
+
+    // Calculate new movePercent based on updated prices
+    const entryPrice = field === "entryPrice" ? newPrice : trade.entryPrice || 0;
+    const exitPrice = field === "exitPrice" ? newPrice : trade.exitPrice || 0;
+
+    let movePercent: number | undefined;
+    if (entryPrice > 0 && exitPrice > 0) {
+      movePercent = ((exitPrice - entryPrice) / entryPrice) * 100;
+    }
+
+    // Update trade in database with new price and recalculated P&L
+    await updateTrade(trade.id, {
+      [field]: newPrice,
+      movePercent,
+    });
+  };
 
   if (!trade) {
     return (
@@ -51,7 +74,7 @@ export default function TradeDetailPage() {
   // Determine if trade is active or historical for breadcrumb navigation
   const isActiveTrade = activeTrades.some((t) => t.id === tradeId);
   const breadcrumbItems = [
-    { label: 'Trades', href: isActiveTrade ? '/active' : '/history' },
+    { label: "Trades", href: isActiveTrade ? "/active" : "/history" },
     {
       label: `${trade.ticker} ${trade.contract.strike}${trade.contract.type}`,
       isActive: true,
@@ -60,7 +83,13 @@ export default function TradeDetailPage() {
 
   return (
     <AppLayout hideMainBottomNav>
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading trade details...</div>}>
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center min-h-screen">
+            Loading trade details...
+          </div>
+        }
+      >
         {/* Breadcrumb Navigation */}
         <BreadcrumbNav items={breadcrumbItems} />
 
@@ -85,9 +114,10 @@ export default function TradeDetailPage() {
             </div>
             <div className="text-right">
               <div
-                className={`text-2xl font-bold ${(trade.movePercent || 0) >= 0 ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'}`}
+                className={`text-2xl font-bold ${(trade.movePercent || 0) >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"}`}
               >
-                {(trade.movePercent || 0) >= 0 ? '+' : ''}{(trade.movePercent || 0).toFixed(2)}%
+                {(trade.movePercent || 0) >= 0 ? "+" : ""}
+                {(trade.movePercent || 0).toFixed(2)}%
               </div>
               <p className="text-[var(--text-muted)] text-sm">P&L</p>
             </div>
@@ -102,12 +132,18 @@ export default function TradeDetailPage() {
               <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Entry</h2>
               <div className="space-y-2">
                 <div>
-                  <p className="text-[var(--text-muted)] text-xs">Price</p>
-                  <p className="text-lg font-medium">${(trade.entryPrice || 0).toFixed(2)}</p>
+                  <p className="text-[var(--text-muted)] text-xs mb-1">Price</p>
+                  <HDEditablePrice
+                    value={trade.entryPrice || 0}
+                    onSave={async (newPrice) => handlePriceEdit("entryPrice", newPrice)}
+                    className="text-lg font-medium text-[var(--text-high)]"
+                  />
                 </div>
                 <div>
                   <p className="text-[var(--text-muted)] text-xs">Time</p>
-                  <p className="text-sm">{trade.entryTime ? new Date(trade.entryTime).toLocaleString() : '--'}</p>
+                  <p className="text-sm">
+                    {trade.entryTime ? new Date(trade.entryTime).toLocaleString() : "--"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -117,12 +153,19 @@ export default function TradeDetailPage() {
               <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Exit</h2>
               <div className="space-y-2">
                 <div>
-                  <p className="text-[var(--text-muted)] text-xs">Price</p>
-                  <p className="text-lg font-medium">${(trade.exitPrice || 0).toFixed(2)}</p>
+                  <p className="text-[var(--text-muted)] text-xs mb-1">Price</p>
+                  <HDEditablePrice
+                    value={trade.exitPrice || 0}
+                    onSave={async (newPrice) => handlePriceEdit("exitPrice", newPrice)}
+                    className="text-lg font-medium text-[var(--text-high)]"
+                    disabled={trade.state !== "EXITED"}
+                  />
                 </div>
                 <div>
                   <p className="text-[var(--text-muted)] text-xs">Time</p>
-                  <p className="text-sm">{trade.exitTime ? new Date(trade.exitTime).toLocaleString() : '--'}</p>
+                  <p className="text-sm">
+                    {trade.exitTime ? new Date(trade.exitTime).toLocaleString() : "--"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -147,12 +190,7 @@ export default function TradeDetailPage() {
           <div className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4 mb-4">
             <h2 className="text-[var(--text-muted)] text-xs uppercase mb-3">Price Chart</h2>
             <div className="h-[400px]">
-              <HDLiveChart
-                ticker={trade.ticker}
-                timeframe="5m"
-                showToolbar={true}
-                height={400}
-              />
+              <HDLiveChart ticker={trade.ticker} timeframe="5m" showToolbar={true} height={400} />
             </div>
           </div>
 

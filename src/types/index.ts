@@ -170,6 +170,8 @@ export interface Trade {
   notes?: string;
   // Voice command context for pre-filling alert composer
   voiceContext?: string;
+  // R-multiple for risk/reward tracking (computed from entry, exit, stopLoss)
+  rMultiple?: number;
   // Legacy confluence fields (deprecated, use confluence.factors)
   legacyConfluence?: {
     trend?: string;

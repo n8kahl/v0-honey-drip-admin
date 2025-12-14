@@ -3,14 +3,15 @@ import { HDRowWatchlist } from "../cards/HDRowWatchlist";
 import { HDRowTrade } from "../cards/HDRowTrade";
 import { HDRowChallenge } from "../cards/HDRowChallenge";
 import { HDConfirmDialog } from "../forms/HDConfirmDialog";
-import { formatPercent, cn } from "../../../lib/utils";
-import { Plus, ChevronDown, ChevronRight } from "lucide-react";
-import { useState, useEffect } from "react";
+import { cn } from "../../../lib/utils";
+import { Plus, ChevronDown, ChevronRight, Zap, List, ArrowDownWideNarrow } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 import { WatchlistRecapCard } from "../../WatchlistRecapCard";
 import MobileWatchlist from "../../Watchlist/MobileWatchlist";
-import { useEnrichedMarketSession } from "../../../stores/marketDataStore";
+import { useEnrichedMarketSession, useMarketDataStore } from "../../../stores/marketDataStore";
 import { useTradeConfluenceMonitor } from "../../../hooks/useTradeConfluenceMonitor";
+import { useUIStore } from "../../../stores/uiStore";
 
 interface HDPanelWatchlistProps {
   watchlist: Ticker[];
@@ -109,6 +110,14 @@ export function HDPanelWatchlist({
   const [watchlistExpanded, setWatchlistExpanded] = useState<boolean>(true);
   const [challengesExpanded, setChallengesExpanded] = useState<boolean>(true);
 
+  // Watchlist view mode and sorting from UIStore
+  const watchlistViewMode = useUIStore((state) => state.watchlistViewMode);
+  const watchlistSortMode = useUIStore((state) => state.watchlistSortMode);
+  const expandedWatchlistRow = useUIStore((state) => state.expandedWatchlistRow);
+  const setWatchlistViewMode = useUIStore((state) => state.setWatchlistViewMode);
+  const setWatchlistSortMode = useUIStore((state) => state.setWatchlistSortMode);
+  const setExpandedWatchlistRow = useUIStore((state) => state.setExpandedWatchlistRow);
+
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     type: "ticker" | "challenge" | "loadedTrade";
@@ -121,6 +130,30 @@ export function HDPanelWatchlist({
 
   const loadedTrades = hotTrades?.filter((t) => t.state === "LOADED") || [];
   const activeTrades = hotTrades?.filter((t) => t.state === "ENTERED") || []; // Only ENTERED, not EXITED
+
+  // Get confluence scores for all watchlist symbols (for sorting)
+  const allSymbolsData = useMarketDataStore((state) => state.symbols);
+
+  // Sort watchlist based on sort mode
+  const sortedWatchlist = useMemo(() => {
+    const list = [...watchlist];
+
+    switch (watchlistSortMode) {
+      case "score":
+        // Sort by confluence score descending
+        return list.sort((a, b) => {
+          const aScore = allSymbolsData[a.symbol]?.confluence?.overall ?? 0;
+          const bScore = allSymbolsData[b.symbol]?.confluence?.overall ?? 0;
+          return bScore - aScore;
+        });
+      case "change":
+        return list.sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0));
+      case "alphabetical":
+        return list.sort((a, b) => a.symbol.localeCompare(b.symbol));
+      default:
+        return list;
+    }
+  }, [watchlist, watchlistSortMode, allSymbolsData]);
 
   useEffect(() => {
     if (expandLoadedList !== undefined) {
@@ -272,13 +305,56 @@ export function HDPanelWatchlist({
               <ChevronRight className="w-3.5 h-3.5 text-black/70" />
             )}
           </button>
-          <button
-            onClick={onAddTicker}
-            className="w-7 h-7 flex items-center justify-center rounded-[var(--radius)] text-black/70 hover:text-black hover:bg-black/10 transition-colors flex-shrink-0"
-            aria-label="Add ticker"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+
+          {/* Mode toggle and controls */}
+          <div className="flex items-center gap-1.5">
+            {/* View Mode Toggle */}
+            <button
+              onClick={() =>
+                setWatchlistViewMode(watchlistViewMode === "clean" ? "power" : "clean")
+              }
+              className={cn(
+                "px-2 py-1 rounded text-[10px] font-medium transition-colors",
+                watchlistViewMode === "power"
+                  ? "bg-black/20 text-black"
+                  : "bg-transparent text-black/60 hover:text-black hover:bg-black/10"
+              )}
+              data-testid="watchlist-mode-toggle"
+              title={
+                watchlistViewMode === "clean" ? "Switch to Power mode" : "Switch to Clean mode"
+              }
+            >
+              {watchlistViewMode === "clean" ? (
+                <List className="w-3.5 h-3.5" />
+              ) : (
+                <Zap className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            {/* Sort Mode Dropdown */}
+            <select
+              value={watchlistSortMode}
+              onChange={(e) =>
+                setWatchlistSortMode(e.target.value as "score" | "change" | "alphabetical")
+              }
+              className="px-1.5 py-1 rounded text-[10px] font-medium bg-transparent text-black border-none cursor-pointer hover:bg-black/10 transition-colors appearance-none"
+              data-testid="watchlist-sort-select"
+              title="Sort watchlist"
+            >
+              <option value="score">Score</option>
+              <option value="change">Change %</option>
+              <option value="alphabetical">A-Z</option>
+            </select>
+
+            {/* Add Ticker Button */}
+            <button
+              onClick={onAddTicker}
+              className="w-7 h-7 flex items-center justify-center rounded-[var(--radius)] text-black/70 hover:text-black hover:bg-black/10 transition-colors flex-shrink-0"
+              aria-label="Add ticker"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         {watchlistExpanded && (
           <div className="flex-shrink-0">
@@ -323,7 +399,7 @@ export function HDPanelWatchlist({
 
             {/* Desktop: original vertical list */}
             <div className="hidden md:block">
-              {watchlist.map((ticker) => (
+              {sortedWatchlist.map((ticker) => (
                 <HDRowWatchlist
                   key={ticker.id}
                   ticker={ticker}
@@ -331,6 +407,11 @@ export function HDPanelWatchlist({
                   onClick={() => onTickerClick?.(ticker)}
                   onRemove={() => setConfirmDialog({ isOpen: true, type: "ticker", item: ticker })}
                   compositeSignals={compositeSignals?.filter((s) => s.symbol === ticker.symbol)}
+                  viewMode={watchlistViewMode}
+                  isExpanded={expandedWatchlistRow === ticker.symbol}
+                  onExpandChange={(expanded) =>
+                    setExpandedWatchlistRow(expanded ? ticker.symbol : null)
+                  }
                 />
               ))}
             </div>

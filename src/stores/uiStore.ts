@@ -1,9 +1,11 @@
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { Trade } from '../types';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { Trade } from "../types";
 
-type VoiceState = 'idle' | 'listening' | 'processing';
-type ChartViewportMode = 'AUTO' | 'MANUAL';
+type VoiceState = "idle" | "listening" | "processing";
+type ChartViewportMode = "AUTO" | "MANUAL";
+type WatchlistViewMode = "clean" | "power";
+type WatchlistSortMode = "score" | "change" | "alphabetical";
 
 interface LogicalRange {
   from: number;
@@ -31,6 +33,11 @@ interface UIStore {
 
   // Chart navigation callbacks
   chartScrollToBar: ((barTimeKey: string) => void) | null;
+
+  // Watchlist preferences
+  watchlistViewMode: WatchlistViewMode;
+  watchlistSortMode: WatchlistSortMode;
+  expandedWatchlistRow: string | null; // symbol of expanded row (only one at a time)
 
   // Actions
   setMainCockpitSymbol: (symbol: string | null) => void;
@@ -61,6 +68,11 @@ interface UIStore {
   getChartRange: (key: string) => LogicalRange | undefined;
   clearChartRange: (key: string) => void;
 
+  // Watchlist preferences
+  setWatchlistViewMode: (mode: WatchlistViewMode) => void;
+  setWatchlistSortMode: (mode: WatchlistSortMode) => void;
+  setExpandedWatchlistRow: (symbol: string | null) => void;
+
   // Reset
   reset: () => void;
 }
@@ -74,12 +86,17 @@ export const useUIStore = create<UIStore>()(
       showAddTickerDialog: false,
       showAddChallengeDialog: false,
       voiceActive: false,
-      voiceState: 'idle',
+      voiceState: "idle",
       focusedTrade: null,
       flashTradeTab: false,
-      chartViewportMode: 'AUTO',
+      chartViewportMode: "AUTO",
       savedRanges: {},
       chartScrollToBar: null,
+
+      // Watchlist preferences
+      watchlistViewMode: "clean",
+      watchlistSortMode: "score",
+      expandedWatchlistRow: null,
 
       // Simple setters
       setMainCockpitSymbol: (symbol) => set({ mainCockpitSymbol: symbol }),
@@ -88,10 +105,10 @@ export const useUIStore = create<UIStore>()(
       scrollChartToBar: (barTimeKey) => {
         const { chartScrollToBar } = get();
         if (chartScrollToBar) {
-          console.log('[v0] uiStore: Scrolling chart to bar:', barTimeKey);
+          console.log("[v0] uiStore: Scrolling chart to bar:", barTimeKey);
           chartScrollToBar(barTimeKey);
         } else {
-          console.warn('[v0] uiStore: No chart scroll callback registered');
+          console.warn("[v0] uiStore: No chart scroll callback registered");
         }
       },
       setShowDiscordDialog: (show) => set({ showDiscordDialog: show }),
@@ -107,7 +124,7 @@ export const useUIStore = create<UIStore>()(
         const { voiceActive } = get();
         set({
           voiceActive: !voiceActive,
-          voiceState: !voiceActive ? 'listening' : 'idle',
+          voiceState: !voiceActive ? "listening" : "idle",
         });
       },
 
@@ -143,6 +160,11 @@ export const useUIStore = create<UIStore>()(
         set({ savedRanges: rest });
       },
 
+      // Watchlist preferences
+      setWatchlistViewMode: (mode) => set({ watchlistViewMode: mode }),
+      setWatchlistSortMode: (mode) => set({ watchlistSortMode: mode }),
+      setExpandedWatchlistRow: (symbol) => set({ expandedWatchlistRow: symbol }),
+
       // Reset
       reset: () =>
         set({
@@ -151,13 +173,16 @@ export const useUIStore = create<UIStore>()(
           showAddTickerDialog: false,
           showAddChallengeDialog: false,
           voiceActive: false,
-          voiceState: 'idle',
+          voiceState: "idle",
           focusedTrade: null,
           flashTradeTab: false,
-          chartViewportMode: 'AUTO',
+          chartViewportMode: "AUTO",
           savedRanges: {},
+          watchlistViewMode: "clean",
+          watchlistSortMode: "score",
+          expandedWatchlistRow: null,
         }),
     }),
-    { name: 'UIStore' }
+    { name: "UIStore" }
   )
 );
