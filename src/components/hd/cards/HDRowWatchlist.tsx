@@ -468,17 +468,19 @@ export function HDRowWatchlist({
             </div>
           </div>
 
-          {/* Remove button */}
+          {/* Remove button - visible on hover, uses pointer-events to ensure clickable */}
           {onRemove && (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 onRemove();
               }}
-              className="min-w-[24px] min-h-[24px] flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
+              className="relative z-30 ml-2 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-[var(--radius)] opacity-50 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/20 transition-all touch-manipulation active:scale-95 pointer-events-auto"
               title="Remove from watchlist"
             >
-              <X className="w-3 h-3" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>

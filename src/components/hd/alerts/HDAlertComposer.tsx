@@ -921,7 +921,7 @@ export function HDAlertComposer({
           />
         </div>
 
-        {/* Channels */}
+        {/* Channels - Always collapsible when channels are selected */}
         <div>
           <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-3 block">
             Discord Channels{" "}
@@ -929,10 +929,10 @@ export function HDAlertComposer({
               <span className="text-[var(--accent-negative)] normal-case">(required)</span>
             )}
           </Label>
-          {alertType === "enter" && selectedChannels.length > 0 ? (
-            // Collapsed by default for enter alerts when channels are already selected
+          {selectedChannels.length > 0 ? (
+            // Collapsed by default when channels are already selected
             <details className="group">
-              <summary className="cursor-pointer flex items-center justify-between p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors mb-2">
+              <summary className="cursor-pointer flex items-center justify-between p-2 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors">
                 <span className="text-xs text-[var(--text-high)]">
                   {selectedChannels.length} channel{selectedChannels.length !== 1 ? "s" : ""}{" "}
                   selected
@@ -973,7 +973,7 @@ export function HDAlertComposer({
               </div>
             </details>
           ) : (
-            // Expanded by default for load alerts or when no channels selected
+            // Expanded by default when no channels selected
             <div className="grid grid-cols-2 gap-2">
               {availableChannels.map((channel) => (
                 <div
@@ -997,63 +997,35 @@ export function HDAlertComposer({
           )}
         </div>
 
-        {/* Challenges */}
+        {/* Challenges - Always collapsible */}
         {challenges.length > 0 && (
           <div>
             <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-3 block">
               Challenges (Optional)
             </Label>
-            {alertType === "enter" && selectedChallenges.length > 0 ? (
-              // Collapsed by default for enter alerts when challenges are already selected
-              <details className="group">
-                <summary className="cursor-pointer flex items-center justify-between p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors mb-2">
-                  <span className="text-xs text-[var(--text-high)]">
-                    {selectedChallenges.length} challenge
-                    {selectedChallenges.length !== 1 ? "s" : ""} selected
-                  </span>
-                  <svg
-                    className="w-4 h-4 text-[var(--text-muted)] transition-transform group-open:rotate-180"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </summary>
-                <div className="space-y-2 mt-2">
-                  {challenges.map((challenge) => (
-                    <div
-                      key={challenge.id}
-                      className="flex items-center space-x-3 p-2 rounded-[var(--radius)] hover:bg-[var(--surface-1)] transition-colors"
-                    >
-                      <Checkbox
-                        id={`challenge-${challenge.id}`}
-                        checked={selectedChallenges.includes(challenge.id)}
-                        onCheckedChange={() => toggleChallenge(challenge.id)}
-                      />
-                      <label
-                        htmlFor={`challenge-${challenge.id}`}
-                        className="text-sm text-[var(--text-high)] cursor-pointer flex items-center gap-2 flex-1"
-                      >
-                        {challenge.name}
-                        {challenge.scope === "honeydrip-wide" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] uppercase tracking-wide">
-                            HD
-                          </span>
-                        )}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            ) : (
-              // Expanded by default for load alerts or when no challenges selected
-              <div className="space-y-2">
+            {/* Always show as collapsible summary */}
+            <details className="group">
+              <summary className="cursor-pointer flex items-center justify-between p-2 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors">
+                <span className="text-xs text-[var(--text-high)]">
+                  {selectedChallenges.length > 0
+                    ? `${selectedChallenges.length} challenge${selectedChallenges.length !== 1 ? "s" : ""} selected`
+                    : "No challenges selected"}
+                </span>
+                <svg
+                  className="w-4 h-4 text-[var(--text-muted)] transition-transform group-open:rotate-180"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </summary>
+              <div className="space-y-2 mt-2">
                 {challenges.map((challenge) => (
                   <div
                     key={challenge.id}
@@ -1078,20 +1050,38 @@ export function HDAlertComposer({
                   </div>
                 ))}
               </div>
-            )}
+            </details>
           </div>
         )}
 
-        {/* Discord Preview */}
+        {/* Discord Preview - Collapsible */}
         <div>
           <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-2 block">
             Discord Message Preview
           </Label>
-          <div className="p-4 rounded-[var(--radius)] bg-[var(--bg-base)] border border-[var(--border-hairline)] font-mono text-xs leading-relaxed">
-            <pre className="text-[var(--text-high)] whitespace-pre-wrap overflow-x-auto">
-              {getPreviewMessage()}
-            </pre>
-          </div>
+          <details className="group">
+            <summary className="cursor-pointer flex items-center justify-between p-2 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] hover:bg-[var(--surface-1)]/80 transition-colors">
+              <span className="text-xs text-[var(--text-high)]">Click to preview message</span>
+              <svg
+                className="w-4 h-4 text-[var(--text-muted)] transition-transform group-open:rotate-180"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </summary>
+            <div className="mt-2 p-4 rounded-[var(--radius)] bg-[var(--bg-base)] border border-[var(--border-hairline)] font-mono text-xs leading-relaxed">
+              <pre className="text-[var(--text-high)] whitespace-pre-wrap overflow-x-auto">
+                {getPreviewMessage()}
+              </pre>
+            </div>
+          </details>
         </div>
 
         {/* Gains Image Preview - Only for Exit alerts when enabled */}

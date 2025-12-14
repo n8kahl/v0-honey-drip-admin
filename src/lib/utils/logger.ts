@@ -6,9 +6,17 @@
  * - Environment-based filtering
  * - Structured data logging
  * - Performance-friendly in production
+ * - Correlation IDs for tracing async operations
+ * - Trade lifecycle tracking
  */
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+// Generate unique correlation ID for tracing async operations
+let correlationCounter = 0;
+export function generateCorrelationId(prefix = "op"): string {
+  return `${prefix}-${Date.now()}-${++correlationCounter}`;
+}
 
 const LOG_LEVELS: Record<LogLevel, number> = {
   debug: 0,
@@ -31,7 +39,7 @@ function getMinLogLevel(): LogLevel {
 
   // Default: warn in production, debug in development
   const isProd = (import.meta as any)?.env?.PROD === true;
-  return isProd ? 'warn' : 'debug';
+  return isProd ? "warn" : "debug";
 }
 
 const MIN_LOG_LEVEL = getMinLogLevel();
@@ -84,26 +92,26 @@ export interface Logger {
 export function createLogger(context: string): Logger {
   return {
     debug: (message: string, data?: any) => {
-      if (shouldLog('debug')) {
-        console.debug(formatMessage('debug', context, message, data));
+      if (shouldLog("debug")) {
+        console.debug(formatMessage("debug", context, message, data));
       }
     },
 
     info: (message: string, data?: any) => {
-      if (shouldLog('info')) {
-        console.info(formatMessage('info', context, message, data));
+      if (shouldLog("info")) {
+        console.info(formatMessage("info", context, message, data));
       }
     },
 
     warn: (message: string, data?: any) => {
-      if (shouldLog('warn')) {
-        console.warn(formatMessage('warn', context, message, data));
+      if (shouldLog("warn")) {
+        console.warn(formatMessage("warn", context, message, data));
       }
     },
 
     error: (message: string, data?: any) => {
-      if (shouldLog('error')) {
-        console.error(formatMessage('error', context, message, data));
+      if (shouldLog("error")) {
+        console.error(formatMessage("error", context, message, data));
       }
     },
   };
@@ -113,7 +121,93 @@ export function createLogger(context: string): Logger {
  * Default logger for general use
  * For component-specific logging, use createLogger() instead
  */
-export const logger = createLogger('app');
+export const logger = createLogger("app");
+
+/**
+ * Trade-specific logger with enhanced context
+ * Use for trade lifecycle operations
+ */
+export interface TradeLogData {
+  tradeId?: string;
+  ticker?: string;
+  state?: string;
+  correlationId?: string;
+  [key: string]: any;
+}
+
+export function createTradeLogger(context: string) {
+  const baseLogger = createLogger(context);
+
+  return {
+    /**
+     * Log trade state transition
+     */
+    transition(from: string, to: string, data?: TradeLogData) {
+      baseLogger.info(`State transition: ${from} → ${to}`, {
+        ...data,
+        _type: "transition",
+      });
+    },
+
+    /**
+     * Log trade action start
+     */
+    actionStart(action: string, data?: TradeLogData) {
+      const correlationId = data?.correlationId || generateCorrelationId(action);
+      baseLogger.info(`▶ ${action} started`, {
+        ...data,
+        correlationId,
+        _type: "action_start",
+      });
+      return correlationId;
+    },
+
+    /**
+     * Log trade action completion
+     */
+    actionEnd(action: string, correlationId: string, data?: TradeLogData) {
+      baseLogger.info(`✓ ${action} completed`, {
+        ...data,
+        correlationId,
+        _type: "action_end",
+      });
+    },
+
+    /**
+     * Log trade action failure
+     */
+    actionFail(action: string, correlationId: string, error: any, data?: TradeLogData) {
+      baseLogger.error(`✗ ${action} failed`, {
+        ...data,
+        correlationId,
+        error: error?.message || String(error),
+        _type: "action_fail",
+      });
+    },
+
+    /**
+     * Log state snapshot for debugging
+     */
+    snapshot(label: string, state: Record<string, any>) {
+      baseLogger.debug(`📸 ${label}`, {
+        ...state,
+        _type: "snapshot",
+      });
+    },
+
+    /**
+     * Standard log methods
+     */
+    debug: baseLogger.debug,
+    info: baseLogger.info,
+    warn: baseLogger.warn,
+    error: baseLogger.error,
+  };
+}
+
+// Pre-configured trade loggers for key modules
+export const tradeStoreLogger = createTradeLogger("TradeStore");
+export const tradeHookLogger = createTradeLogger("TradeHook");
 
 /**
  * Convenience function for performance logging

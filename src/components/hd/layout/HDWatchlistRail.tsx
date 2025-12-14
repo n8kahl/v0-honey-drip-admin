@@ -200,17 +200,18 @@ export function HDWatchlistRail({
             <SectionHeader title="Active" />
             <div className="divide-y divide-[var(--border-hairline)]">
               {enteredTrades.map((trade) => {
-                const currentTrade = useTradeStore.getState().currentTrade;
+                const focusedTrade = useTradeStore.getState().getCurrentTrade();
                 return (
                   <HDActiveTradeRow
                     key={trade.id}
                     trade={trade}
-                    active={currentTrade?.id === trade.id}
+                    active={focusedTrade?.id === trade.id}
                     onClick={() => {
                       if (onActiveTradeClick) {
                         onActiveTradeClick(trade);
                       } else {
-                        useTradeStore.setState({ currentTrade: trade, tradeState: trade.state });
+                        // Use the atomic setFocusedTrade action (sets both previewTrade and currentTradeId)
+                        useTradeStore.getState().setFocusedTrade(trade);
                       }
                     }}
                   />
@@ -226,12 +227,12 @@ export function HDWatchlistRail({
             <SectionHeader title="Loaded" />
             <div className="divide-y divide-[var(--border-hairline)]">
               {loadedTrades.map((trade) => {
-                const currentTrade = useTradeStore.getState().currentTrade;
+                const focusedTrade = useTradeStore.getState().getCurrentTrade();
                 return (
                   <HDRowLoadedTrade
                     key={trade.id}
                     trade={trade}
-                    active={currentTrade?.id === trade.id}
+                    active={focusedTrade?.id === trade.id}
                     onClick={() => onLoadedTradeClick?.(trade)}
                     onRemove={() => onRemoveLoadedTrade?.(trade)}
                   />

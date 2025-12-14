@@ -37,6 +37,8 @@ export interface NowPanelProps {
   compositeSignals?: CompositeSignal[];
   // For symbol view - watchlist reference
   watchlist?: Ticker[];
+  /** Whether a trade action is currently in progress */
+  isTransitioning?: boolean;
 }
 
 export function NowPanel({
@@ -49,18 +51,19 @@ export function NowPanel({
   onContractSelect,
   compositeSignals,
   watchlist = [],
+  isTransitioning = false,
 }: NowPanelProps) {
   // Determine panel mode based on trade state
   const mode: PanelMode = useMemo(() => {
     if (!focus || focus.kind === "symbol") return "setup";
     if (focus.kind === "trade") {
-      // Find the trade to check its state
-      const trade =
-        currentTrade?.id === focus.tradeId
-          ? currentTrade
-          : activeTrades.find((t) => t.id === focus.tradeId);
-
-      // ENTERED state → Manage mode, everything else → Setup mode
+      // Use tradeState directly if we have currentTrade matching the focus
+      // This ensures immediate switch when entering a trade
+      if (currentTrade?.id === focus.tradeId && tradeState === "ENTERED") {
+        return "manage";
+      }
+      // Find the trade to check its state from activeTrades
+      const trade = activeTrades.find((t) => t.id === focus.tradeId);
       if (trade?.state === "ENTERED") return "manage";
     }
     return "setup";
@@ -73,6 +76,9 @@ export function NowPanel({
 
   // Symbol focus - show chart, options chain, best pick [SETUP MODE]
   if (focus.kind === "symbol") {
+    // Disable auto-select if there's a trade in LOADED/ENTERED state OR if transitioning
+    // This prevents re-triggering contract selection after a trade is loaded
+    const hasActiveTrade = tradeState === "LOADED" || tradeState === "ENTERED";
     return (
       <NowPanelSymbol
         symbol={focus.symbol}
@@ -81,6 +87,7 @@ export function NowPanel({
         onContractSelect={onContractSelect}
         compositeSignals={compositeSignals}
         watchlist={watchlist}
+        disableAutoSelect={hasActiveTrade || isTransitioning}
       />
     );
   }
@@ -98,7 +105,9 @@ export function NowPanel({
     }
 
     // ENTERED state → Management Cockpit [MANAGE MODE]
-    if (trade.state === "ENTERED") {
+    // Use tradeState for currentTrade to ensure immediate switch
+    const effectiveState = currentTrade?.id === focus.tradeId ? tradeState : trade.state;
+    if (effectiveState === "ENTERED") {
       return <NowPanelManage trade={trade} activeTicker={activeTicker} watchlist={watchlist} />;
     }
 

@@ -31,6 +31,7 @@ import {
 import { recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
+import { tradeHookLogger as log } from "../lib/utils/logger";
 
 // ============================================================================
 // TRADE STATE MACHINE - Database-First Architecture
@@ -73,12 +74,14 @@ interface TradeStateMachineState {
   activeTicker: Ticker | null;
   contracts: Contract[];
   currentTrade: Trade | null;
+  previewTrade: Trade | null; // Preview trade (WATCHING state only, not persisted)
   tradeState: TradeState;
   alertType: AlertType;
   alertOptions: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
   showAlert: boolean;
   activeTrades: Trade[];
   focus: FocusTarget;
+  isTransitioning: boolean; // True when a state transition is in progress (prevents duplicate actions)
 }
 
 interface TradeStateMachineActions {
@@ -142,40 +145,23 @@ export function useTradeStateMachine({
   // ========================================
   // STORE SELECTORS - Single Source of Truth
   // ========================================
-  // Subscribe to primitive state values to ensure re-renders when they change
+  // Subscribe to store state - these trigger re-renders when values change
   const activeTrades = useTradeStore((s) => s.activeTrades);
-  const currentTradeId = useTradeStore((s) => s.currentTradeId);
   const previewTrade = useTradeStore((s) => s.previewTrade);
-  const historyTrades = useTradeStore((s) => s.historyTrades);
-  const setCurrentTradeId = useTradeStore((s) => s.setCurrentTradeId);
-  const setPreviewTrade = useTradeStore((s) => s.setPreviewTrade);
+  const setFocusedTrade = useTradeStore((s) => s.setFocusedTrade);
   const loadTrades = useTradeStore((s) => s.loadTrades);
 
-  // Derive currentTrade from subscribed state (ensures re-render on changes)
-  const currentTrade = useMemo(() => {
-    // If we have a preview trade and it matches, return it
-    if (previewTrade && (!currentTradeId || previewTrade.id === currentTradeId)) {
-      return previewTrade;
-    }
-    if (!currentTradeId) return null;
-    // Look in active trades first
-    const activeTrade = activeTrades.find((t) => t.id === currentTradeId);
-    if (activeTrade) return activeTrade;
-    // Then check history
-    return historyTrades.find((t) => t.id === currentTradeId) || null;
-  }, [currentTradeId, activeTrades, historyTrades, previewTrade]);
+  // Use store's derived selectors - SINGLE SOURCE OF TRUTH (no duplicate logic)
+  // These call into the store's getCurrentTrade() and getTradeState() methods
+  const currentTrade = useTradeStore((s) => s.getCurrentTrade());
+  const tradeState: TradeState = useTradeStore((s) => s.getTradeState());
 
-  // Derive tradeState from currentTrade
-  const tradeState: TradeState = useMemo(() => {
-    // Preview trade is always WATCHING
-    if (previewTrade && currentTrade?.id === previewTrade.id) {
-      return "WATCHING";
-    }
-    return currentTrade?.state || "WATCHING";
-  }, [currentTrade, previewTrade]);
+  // UI State from store - centralized to prevent race conditions
+  const isTransitioning = useTradeStore((s) => s.ui.isTransitioning);
+  const setIsTransitioning = useTradeStore((s) => s.setIsTransitioning);
 
   // ========================================
-  // LOCAL UI STATE (not persisted)
+  // LOCAL UI STATE (component-specific, not shared)
   // ========================================
   const [activeTicker, setActiveTicker] = useState<Ticker | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -184,7 +170,7 @@ export function useTradeStateMachine({
     updateKind?: "trim" | "generic" | "sl" | "take-profit";
   }>({});
   const [showAlert, setShowAlert] = useState(false);
-  const [isCreatingTrade, setIsCreatingTrade] = useState(false);
+  const [_isCreatingTrade, setIsCreatingTrade] = useState(false); // Unused, kept for potential future use
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
 
@@ -245,18 +231,23 @@ export function useTradeStateMachine({
 
   const handleTickerClick = useCallback(
     (ticker: Ticker) => {
+      log.info("Ticker clicked", { symbol: ticker.symbol, last: ticker.last });
       setActiveTicker(ticker);
-      setCurrentTradeId(null);
-      setPreviewTrade(null);
+      setFocusedTrade(null); // Atomic clear of both previewTrade and currentTradeId
     },
-    [setCurrentTradeId, setPreviewTrade]
+    [setFocusedTrade]
   );
 
   const handleActiveTradeClick = useCallback(
     (trade: Trade, watchlist: Ticker[]) => {
-      // Focus on this trade in the store
-      setCurrentTradeId(trade.id);
-      setPreviewTrade(null);
+      log.info("Active trade clicked", {
+        tradeId: trade.id,
+        ticker: trade.ticker,
+        state: trade.state,
+      });
+
+      // Focus on this trade in the store (atomic update)
+      setFocusedTrade(trade);
 
       // Find and set the activeTicker so the chart renders
       const ticker = watchlist.find((w) => w.symbol === trade.ticker);
@@ -281,7 +272,7 @@ export function useTradeStateMachine({
 
       setShowAlert(false);
     },
-    [setCurrentTradeId, setPreviewTrade]
+    [setFocusedTrade]
   );
 
   const handleContractSelect = useCallback(
@@ -294,9 +285,18 @@ export function useTradeStateMachine({
       const ticker = explicitTicker || activeTicker;
 
       if (!ticker) {
+        log.warn("Contract select failed: No ticker selected");
         toast.error("Unable to create trade: No ticker selected");
         return;
       }
+
+      const correlationId = log.actionStart("handleContractSelect", {
+        ticker: ticker.symbol,
+        strike: contract.strike,
+        type: contract.type,
+        expiry: contract.expiry,
+        mid: contract.mid,
+      });
 
       setIsCreatingTrade(true);
 
@@ -315,12 +315,14 @@ export function useTradeStateMachine({
             DEFAULT_DTE_THRESHOLDS
           );
 
-          let riskProfile = RISK_PROFILES[tradeType];
+          // Risk profile computed but not yet integrated into calculateRisk
+          // TODO: Pass adjusted profile to risk calculations
+          let _riskProfile = RISK_PROFILES[tradeType];
           if (
             confluenceData &&
             (confluenceData.trend || confluenceData.volatility || confluenceData.liquidity)
           ) {
-            riskProfile = adjustProfileByConfluence(riskProfile, confluenceData);
+            _riskProfile = adjustProfileByConfluence(_riskProfile, confluenceData);
           }
 
           const risk = calculateRisk({
@@ -395,24 +397,29 @@ export function useTradeStateMachine({
           voiceContext: voiceReasoning,
         };
 
-        // Set as preview in store (single source of truth)
-        setPreviewTrade(previewTradeObj);
-        setCurrentTradeId(previewTradeObj.id);
+        // Set as preview in store (single source of truth) - atomic update
+        setFocusedTrade(previewTradeObj);
         setAlertType("load");
         setShowAlert(true);
+
+        log.actionEnd("handleContractSelect", correlationId, {
+          previewTradeId: previewTradeObj.id,
+          ticker: ticker.symbol,
+          targetPrice,
+          stopLoss,
+        });
       } catch (error) {
-        console.error("[v0] Error in handleContractSelect:", error);
+        log.actionFail("handleContractSelect", correlationId, error, { ticker: ticker.symbol });
         toast.error("Failed to create trade", {
           description: error instanceof Error ? error.message : "Unknown error occurred",
         } as any);
-        setPreviewTrade(null);
-        setCurrentTradeId(null);
+        setFocusedTrade(null); // Atomic clear on error
         setShowAlert(false);
       } finally {
         setIsCreatingTrade(false);
       }
     },
-    [activeTicker, toast, keyLevels, setPreviewTrade, setCurrentTradeId]
+    [activeTicker, toast, keyLevels, setFocusedTrade]
   );
 
   // ========================================
@@ -427,14 +434,41 @@ export function useTradeStateMachine({
     ) => {
       const trade = currentTrade;
 
+      // GUARD: Prevent duplicate transitions
+      if (isTransitioning) {
+        log.warn("Load blocked: transition already in progress", { tradeId: trade?.id });
+        return;
+      }
+
       if (!trade || !userId) {
+        log.warn("Load blocked: trade or user missing", { hasTrade: !!trade, hasUserId: !!userId });
         toast.error("Unable to load trade: Trade or user missing");
         return;
       }
 
+      // GUARD: Only allow from WATCHING state
+      if (trade.state !== "WATCHING" && tradeState !== "WATCHING") {
+        log.warn("Load blocked: invalid state", {
+          tradeId: trade.id,
+          state: trade.state,
+          tradeState,
+        });
+        toast.error("Trade already loaded or entered");
+        return;
+      }
+
+      const correlationId = log.actionStart("handleLoadAndAlert", {
+        tradeId: trade.id,
+        ticker: trade.ticker,
+        fromState: trade.state,
+        channelCount: channelIds.length,
+        challengeCount: challengeIds.length,
+      });
+
       const effectiveTargetPrice = priceOverrides?.targetPrice ?? trade.targetPrice;
       const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
 
+      setIsTransitioning(true);
       try {
         // 1. PERSIST TO DATABASE FIRST
         const dbTrade = await createTradeApi(userId, {
@@ -451,14 +485,14 @@ export function useTradeStateMachine({
           confluenceUpdatedAt: trade.confluenceUpdatedAt?.toISOString(),
         });
 
-        console.warn(`[v0] Load trade created with DB ID: ${dbTrade.id}`);
-
         // 2. RELOAD TRADES FROM DATABASE (ensures store matches DB)
         await loadTrades(userId);
 
-        // 3. FOCUS ON NEW TRADE
-        setCurrentTradeId(dbTrade.id);
-        setPreviewTrade(null);
+        // 3. FOCUS ON NEW TRADE - Atomic update to prevent race conditions
+        useTradeStore.setState({
+          previewTrade: null,
+          currentTradeId: dbTrade.id,
+        });
         setAlertType("enter");
         setShowAlert(false);
         setContracts([]);
@@ -487,12 +521,24 @@ export function useTradeStateMachine({
           }
         }
 
+        log.transition("WATCHING", "LOADED", { tradeId: dbTrade.id, ticker: trade.ticker });
+        log.actionEnd("handleLoadAndAlert", correlationId, {
+          dbTradeId: dbTrade.id,
+          ticker: trade.ticker,
+          channelsSent: channels.length,
+        });
+
         showAlertToast("load", trade.ticker, channels);
       } catch (error) {
-        console.error("[v0] Failed to load trade:", error);
+        log.actionFail("handleLoadAndAlert", correlationId, error, {
+          tradeId: trade.id,
+          ticker: trade.ticker,
+        });
         toast.error("Failed to load trade", {
           description: error instanceof Error ? error.message : "Unknown error occurred",
         } as any);
+      } finally {
+        setIsTransitioning(false);
       }
     },
     [
@@ -501,10 +547,10 @@ export function useTradeStateMachine({
       toast,
       discord,
       loadTrades,
-      setCurrentTradeId,
-      setPreviewTrade,
       getDiscordChannelsForAlert,
       showAlertToast,
+      isTransitioning,
+      tradeState,
     ]
   );
 
@@ -520,11 +566,42 @@ export function useTradeStateMachine({
     ) => {
       const trade = currentTrade;
 
+      // GUARD: Prevent duplicate transitions
+      if (isTransitioning) {
+        log.warn("Enter blocked: transition already in progress", { tradeId: trade?.id });
+        return;
+      }
+
       if (!trade || !userId) {
+        log.warn("Enter blocked: trade or user missing", {
+          hasTrade: !!trade,
+          hasUserId: !!userId,
+        });
         toast.error("Unable to enter trade: Trade or user missing");
         return;
       }
 
+      // GUARD: Only allow from WATCHING or LOADED state
+      const effectiveState = tradeState || trade.state;
+      if (effectiveState === "ENTERED") {
+        log.warn("Enter blocked: trade already ENTERED", { tradeId: trade.id });
+        toast.error("Trade already entered");
+        return;
+      }
+      if (effectiveState === "EXITED") {
+        log.warn("Enter blocked: trade already EXITED", { tradeId: trade.id });
+        toast.error("Cannot enter an exited trade");
+        return;
+      }
+
+      const correlationId = log.actionStart("handleEnterAndAlert", {
+        tradeId: trade.id,
+        ticker: trade.ticker,
+        fromState: effectiveState,
+        channelCount: channelIds.length,
+      });
+
+      setIsTransitioning(true);
       const finalEntryPrice = priceOverrides?.entryPrice || trade.contract.mid;
       let targetPrice = priceOverrides?.targetPrice ?? finalEntryPrice * 1.5;
       let stopLoss = priceOverrides?.stopLoss ?? finalEntryPrice * 0.5;
@@ -596,7 +673,6 @@ export function useTradeStateMachine({
             confluenceUpdatedAt: trade.confluenceUpdatedAt?.toISOString(),
           });
           dbTradeId = dbTrade.id;
-          console.warn(`[v0] Enter trade created with DB ID: ${dbTradeId}`);
         } else if (trade.state === "LOADED") {
           // LOADED → ENTERED: Update existing trade
           await updateTradeApi(userId, trade.id, {
@@ -606,15 +682,16 @@ export function useTradeStateMachine({
             target_price: targetPrice,
             stop_loss: stopLoss,
           });
-          console.warn(`[v0] Trade ${trade.id} updated to ENTERED`);
         }
 
         // RELOAD FROM DATABASE
         await loadTrades(userId);
 
-        // FOCUS ON TRADE
-        setCurrentTradeId(dbTradeId);
-        setPreviewTrade(null);
+        // FOCUS ON TRADE - Use atomic update to prevent race conditions
+        useTradeStore.setState({
+          previewTrade: null,
+          currentTradeId: dbTradeId,
+        });
         setShowAlert(false);
 
         // SEND DISCORD ALERT
@@ -673,12 +750,25 @@ export function useTradeStateMachine({
           onMobileTabChange("active");
         }
 
+        log.transition(effectiveState, "ENTERED", { tradeId: dbTradeId, ticker: trade.ticker });
+        log.actionEnd("handleEnterAndAlert", correlationId, {
+          dbTradeId,
+          ticker: trade.ticker,
+          entryPrice: finalEntryPrice,
+          channelsSent: channels.length,
+        });
+
         showAlertToast("enter", trade.ticker, channels);
       } catch (error) {
-        console.error("[v0] Failed to enter trade:", error);
+        log.actionFail("handleEnterAndAlert", correlationId, error, {
+          tradeId: trade.id,
+          ticker: trade.ticker,
+        });
         toast.error("Failed to enter trade", {
           description: error instanceof Error ? error.message : "Unknown error occurred",
         } as any);
+      } finally {
+        setIsTransitioning(false);
       }
     },
     [
@@ -688,12 +778,12 @@ export function useTradeStateMachine({
       discord,
       keyLevels,
       loadTrades,
-      setCurrentTradeId,
-      setPreviewTrade,
       getDiscordChannelsForAlert,
       showAlertToast,
       isMobile,
       onMobileTabChange,
+      isTransitioning,
+      tradeState,
     ]
   );
 
@@ -710,9 +800,18 @@ export function useTradeStateMachine({
       const trade = currentTrade;
 
       if (!trade || !userId) {
+        log.warn("Send alert blocked: trade or user missing", { alertType, hasTrade: !!trade });
         toast.error("Unable to send alert: Trade or user missing");
         return;
       }
+
+      log.info("handleSendAlert called", {
+        alertType,
+        tradeId: trade.id,
+        ticker: trade.ticker,
+        state: trade.state,
+        channelCount: channelIds.length,
+      });
 
       // Route to specific handlers based on alertType
       if (alertType === "load") {
@@ -779,14 +878,26 @@ export function useTradeStateMachine({
           );
         }
 
+        // Handle exit - clear state BEFORE reloading to prevent race condition
+        // where auto-select triggers during the reload
+        if (alertType === "exit") {
+          log.info("Exit: Clearing state BEFORE loadTrades to prevent race condition", {
+            tradeId: trade.id,
+            ticker: trade.ticker,
+          });
+          // Clear ticker FIRST to prevent auto-select race condition
+          setActiveTicker(null);
+          setFocusedTrade(null); // Atomic clear of both previewTrade and currentTradeId
+          setShowAlert(false);
+        }
+
         // Reload from database
+        log.debug("Reloading trades from database", { alertType });
         await loadTrades(userId);
 
-        // Handle exit - return to home
+        // Handle exit callbacks
         if (alertType === "exit") {
-          setCurrentTradeId(null);
-          setPreviewTrade(null);
-          setActiveTicker(null);
+          log.transition(trade.state, "EXITED", { tradeId: trade.id, ticker: trade.ticker });
 
           if (onExitedTrade && trade) {
             onExitedTrade({ ...trade, state: "EXITED" });
@@ -797,7 +908,11 @@ export function useTradeStateMachine({
           }
         }
 
-        setShowAlert(false);
+        if (alertType !== "exit") {
+          setShowAlert(false);
+        }
+
+        log.info("Alert sent successfully", { alertType, tradeId: trade.id, ticker: trade.ticker });
 
         // Send Discord alert
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
@@ -852,7 +967,12 @@ export function useTradeStateMachine({
 
         showAlertToast(alertType, trade.ticker, channels);
       } catch (error) {
-        console.error("[v0] Failed to send alert:", error);
+        log.error("Failed to send alert", {
+          alertType,
+          tradeId: trade.id,
+          ticker: trade.ticker,
+          error: error instanceof Error ? error.message : String(error),
+        });
         toast.error(`Failed to save ${alertType}`, {
           description: error instanceof Error ? error.message : "Unknown error occurred",
         } as any);
@@ -868,8 +988,7 @@ export function useTradeStateMachine({
       loadTrades,
       handleLoadAndAlert,
       handleEnterAndAlert,
-      setCurrentTradeId,
-      setPreviewTrade,
+      setFocusedTrade,
       getDiscordChannelsForAlert,
       showAlertToast,
       isMobile,
@@ -898,42 +1017,47 @@ export function useTradeStateMachine({
   }, [isMobile, onMobileTabChange]);
 
   const handleDiscard = useCallback(() => {
-    setPreviewTrade(null);
-    setCurrentTradeId(null);
+    setFocusedTrade(null); // Atomic clear of both previewTrade and currentTradeId
     setShowAlert(false);
-  }, [setPreviewTrade, setCurrentTradeId]);
+  }, [setFocusedTrade]);
 
   const handleUnloadTrade = useCallback(async () => {
     const trade = currentTrade;
-    if (!trade || trade.state !== "LOADED" || !userId) return;
+    if (!trade || trade.state !== "LOADED" || !userId) {
+      log.warn("Unload blocked: invalid state", {
+        hasTrade: !!trade,
+        state: trade?.state,
+        hasUserId: !!userId,
+      });
+      return;
+    }
+
+    const correlationId = log.actionStart("handleUnloadTrade", {
+      tradeId: trade.id,
+      ticker: trade.ticker,
+    });
 
     try {
       await deleteTradeApi(userId, trade.id);
       await loadTrades(userId);
 
-      setCurrentTradeId(null);
-      setPreviewTrade(null);
+      setFocusedTrade(null); // Atomic clear
       setShowAlert(false);
 
+      log.actionEnd("handleUnloadTrade", correlationId, {
+        tradeId: trade.id,
+        ticker: trade.ticker,
+      });
       toast.success(`${trade.ticker} unloaded`);
     } catch (error) {
-      console.error("[v0] Failed to unload trade:", error);
+      log.actionFail("handleUnloadTrade", correlationId, error, { tradeId: trade.id });
       toast.error("Failed to unload trade");
     }
 
     if (isMobile && onMobileTabChange) {
       onMobileTabChange("live");
     }
-  }, [
-    currentTrade,
-    userId,
-    loadTrades,
-    setCurrentTradeId,
-    setPreviewTrade,
-    toast,
-    isMobile,
-    onMobileTabChange,
-  ]);
+  }, [currentTrade, userId, loadTrades, setFocusedTrade, toast, isMobile, onMobileTabChange]);
 
   const handleTrim = useCallback(() => {
     if (!currentTrade) return;
@@ -960,15 +1084,35 @@ export function useTradeStateMachine({
     openAlertComposer("add");
   }, [currentTrade, openAlertComposer]);
 
-  const handleTakeProfit = useCallback(() => {
-    if (!currentTrade) return;
-    openAlertComposer("update", { updateKind: "take-profit" });
-  }, [currentTrade, openAlertComposer]);
+  const handleTakeProfit = useCallback(
+    (_sendAlert?: boolean) => {
+      // Read directly from store to avoid stale closure
+      const storeState = useTradeStore.getState();
+      const trade = storeState.currentTradeId
+        ? storeState.activeTrades.find((t) => t.id === storeState.currentTradeId)
+        : null;
 
-  const handleExit = useCallback(() => {
-    if (!currentTrade) return;
-    openAlertComposer("exit");
-  }, [currentTrade, openAlertComposer]);
+      if (!trade) return;
+      // TODO: If _sendAlert is explicitly false, handle immediate take profit without Discord
+      openAlertComposer("update", { updateKind: "take-profit" });
+    },
+    [openAlertComposer]
+  );
+
+  const handleExit = useCallback(
+    (_sendAlert?: boolean) => {
+      // Read directly from store to avoid stale closure
+      const storeState = useTradeStore.getState();
+      const trade = storeState.currentTradeId
+        ? storeState.activeTrades.find((t) => t.id === storeState.currentTradeId)
+        : null;
+
+      if (!trade) return;
+      // TODO: If _sendAlert is explicitly false, handle immediate exit without Discord
+      openAlertComposer("exit");
+    },
+    [openAlertComposer]
+  );
 
   // ========================================
   // COMPUTED FOCUS TARGET
@@ -988,12 +1132,14 @@ export function useTradeStateMachine({
     activeTicker,
     contracts,
     currentTrade,
+    previewTrade,
     tradeState,
     alertType,
     alertOptions,
     showAlert,
     activeTrades,
     focus,
+    isTransitioning,
     // Actions
     actions: {
       handleTickerClick,

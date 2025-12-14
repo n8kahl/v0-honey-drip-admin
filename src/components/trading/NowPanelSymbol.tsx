@@ -1,10 +1,11 @@
 /**
  * NowPanelSymbol - Symbol Analysis View (Operator-Grade Setup Cockpit)
  *
- * Layout (per plan spec):
- * 1. Top4Grid (2x2): Ticker/Price, Confluence, Events, ATR/Range/MTF
- * 2. SelectedContractStrip: Shows active contract (recommended or manual)
- * 3. CompactChain: ATM ±2 strikes, expandable
+ * Stacked 4-Zone Layout:
+ * ZONE 1: HeaderRow (Ticker/Price + Confluence) - via SetupWorkspace
+ * ZONE 2: EventsStrip (thin row) - via SetupWorkspace
+ * ZONE 3: DecisionViz (full width, A/B/C tabs) - via SetupWorkspace
+ * ZONE 4: SelectedContractStrip + CompactChain
  *
  * Key Behaviors:
  * - Auto-selects recommended contract on symbol load
@@ -15,7 +16,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import type { Ticker, Contract } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
-import { Top4Grid, type DataHealth } from "../hd/viz/Top4Grid";
+import { SetupWorkspace, type DataHealth } from "../hd/viz/SetupWorkspace";
 import { SelectedContractStrip } from "../hd/strips/SelectedContractStrip";
 import { CompactChain } from "../hd/common/CompactChain";
 import { useContractRecommendation } from "../../hooks/useContractRecommendation";
@@ -28,6 +29,7 @@ import {
 } from "../../stores/marketDataStore";
 import { cn } from "../../lib/utils";
 import { chipStyle } from "../../ui/semantics";
+import { getAppLogo } from "../../lib/config/branding";
 
 interface NowPanelSymbolProps {
   symbol: string;
@@ -36,6 +38,8 @@ interface NowPanelSymbolProps {
   onContractSelect: (contract: Contract) => void;
   compositeSignals?: CompositeSignal[];
   watchlist?: Ticker[];
+  /** If true, disable auto-selection of contracts (e.g., when a trade is already loaded) */
+  disableAutoSelect?: boolean;
 }
 
 export function NowPanelSymbol({
@@ -45,6 +49,7 @@ export function NowPanelSymbol({
   onContractSelect,
   compositeSignals,
   watchlist = [],
+  disableAutoSelect = false,
 }: NowPanelSymbolProps) {
   // Manual contract selection state (null = use recommended)
   const [manualContract, setManualContract] = useState<Contract | null>(null);
@@ -110,12 +115,14 @@ export function NowPanelSymbol({
   }, [symbol]);
 
   // Auto-trigger onContractSelect when recommendation loads (for right rail)
+  // GUARD: Skip if disableAutoSelect is true (prevents re-triggering after trade loads)
   useEffect(() => {
+    if (disableAutoSelect) return;
     if (recommendation?.bestContract && !manualContract) {
       // Notify parent that a contract is active (for right rail to populate)
       onContractSelect(recommendation.bestContract);
     }
-  }, [recommendation?.bestContract, manualContract, onContractSelect]);
+  }, [recommendation?.bestContract, manualContract, onContractSelect, disableAutoSelect]);
 
   // Handle manual contract selection from chain
   const handleContractSelect = useCallback(
@@ -139,51 +146,10 @@ export function NowPanelSymbol({
     console.log(`[NowPanelSymbol] Retry requested for ${symbol}`);
   }, [symbol]);
 
-  // Confluence data from MTF trend and indicators
-  const confluenceData = useMemo(() => {
-    const bullCount = Object.values(mtfTrend).filter((t) => t === "bull").length;
-    const bearCount = Object.values(mtfTrend).filter((t) => t === "bear").length;
-    const total = bullCount + bearCount;
-
-    let direction: "LONG" | "SHORT" | "NEUTRAL" = "NEUTRAL";
-    let score = 50;
-
-    if (total >= 2) {
-      if (bullCount >= bearCount * 2) {
-        direction = "LONG";
-        score = 60 + (bullCount / 4) * 30;
-      } else if (bearCount >= bullCount * 2) {
-        direction = "SHORT";
-        score = 60 + (bearCount / 4) * 30;
-      }
-    }
-
-    // Adjust based on RSI
-    if (indicators.rsi14 !== undefined) {
-      if (indicators.rsi14 >= 70) {
-        score = Math.max(score - 15, 30);
-        if (direction === "LONG") direction = "NEUTRAL";
-      } else if (indicators.rsi14 <= 30) {
-        score = Math.max(score - 15, 30);
-        if (direction === "SHORT") direction = "NEUTRAL";
-      }
-    }
-
-    return {
-      score: Math.min(Math.round(score), 95),
-      direction,
-      drivers: [
-        { label: "RSI(14)", value: indicators.rsi14?.toFixed(0) ?? "—" },
-        { label: "ATR(14)", value: indicators.atr14?.toFixed(2) ?? "—" },
-        { label: "MTF", value: `${bullCount}↑ ${bearCount}↓` },
-      ],
-    };
-  }, [mtfTrend, indicators]);
-
   return (
-    <div className="flex-1 flex flex-col overflow-hidden animate-crossfade">
-      {/* Top: 2x2 Decision Grid */}
-      <Top4Grid
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* ZONES 1-3: SetupWorkspace (HeaderRow + Events + DecisionViz) */}
+      <SetupWorkspace
         symbol={symbol}
         candles={candles}
         keyLevels={keyLevels}
@@ -192,59 +158,68 @@ export function NowPanelSymbol({
         dataHealth={dataHealth}
         currentPrice={currentPrice}
         changePercent={calculatedChangePercent}
+        symbolData={symbolData}
         onRetry={handleRetry}
-        confluenceScore={confluenceData.score}
-        confluenceDirection={confluenceData.direction}
-        confluenceDrivers={confluenceData.drivers}
       />
 
-      {/* Middle: Selected Contract Strip */}
-      <div className="px-3 py-2">
+      {/* ZONE 4: Contract Selection */}
+      <div className="px-3 pb-3 flex flex-col gap-2 overflow-hidden flex-1">
+        {/* Selected Contract Strip */}
         <SelectedContractStrip
           contract={activeContract}
           isRecommended={isUsingRecommended}
           onRevertToRecommended={handleRevertToRecommended}
           hasRecommendation={!!recommendation?.hasRecommendation}
         />
-      </div>
 
-      {/* Bottom: Compact Options Chain (scrollable) */}
-      <div className="flex-1 overflow-hidden px-3 pb-3">
-        <div className="h-full overflow-y-auto">
-          <CompactChain
-            contracts={contracts}
-            currentPrice={currentPrice}
-            ticker={symbol}
-            onContractSelect={handleContractSelect}
-            recommendation={recommendation}
-            selectedContractId={activeContract?.id}
-            className="h-full"
-          />
+        {/* Horizontal Split: Options Chain (50%) + Logo (50%) */}
+        <div className="flex gap-3 flex-1 overflow-hidden">
+          {/* Left: Compact Options Chain (~50%) */}
+          <div className="w-1/2 overflow-y-auto">
+            <CompactChain
+              contracts={contracts}
+              currentPrice={currentPrice}
+              ticker={symbol}
+              onContractSelect={handleContractSelect}
+              recommendation={recommendation}
+              selectedContractId={activeContract?.id}
+            />
+          </div>
 
-          {/* Active Signals Summary (below chain) */}
-          {compositeSignals && compositeSignals.length > 0 && (
-            <div className="mt-3 px-3 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-              <div className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
-                Active Signals ({compositeSignals.length})
+          {/* Right: Logo Area (~50%) */}
+          <div className="w-1/2 flex flex-col items-center justify-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+            <img
+              src={getAppLogo()}
+              alt="Logo"
+              className="max-w-[180px] max-h-[180px] object-contain opacity-40"
+            />
+            {/* Active Signals Summary (below logo) */}
+            {compositeSignals && compositeSignals.length > 0 && (
+              <div className="mt-4 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+                <div className="text-[9px] font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1.5 text-center">
+                  Active Signals ({compositeSignals.length})
+                </div>
+                <div className="flex flex-wrap gap-1 justify-center">
+                  {compositeSignals.slice(0, 3).map((signal, idx) => (
+                    <span
+                      key={idx}
+                      className={cn(
+                        chipStyle(signal.direction === "LONG" ? "success" : "fail"),
+                        "text-[8px] px-1.5 py-0.5"
+                      )}
+                    >
+                      {signal.opportunityType.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                  {compositeSignals.length > 3 && (
+                    <span className={cn(chipStyle("neutral"), "text-[8px] px-1.5 py-0.5")}>
+                      +{compositeSignals.length - 3}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {compositeSignals.slice(0, 4).map((signal, idx) => (
-                  <span
-                    key={idx}
-                    className={cn(
-                      chipStyle(signal.direction === "LONG" ? "success" : "fail"),
-                      "hover-lift-sm"
-                    )}
-                  >
-                    {signal.opportunityType.replace(/_/g, " ")}
-                  </span>
-                ))}
-                {compositeSignals.length > 4 && (
-                  <span className={chipStyle("neutral")}>+{compositeSignals.length - 4}</span>
-                )}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

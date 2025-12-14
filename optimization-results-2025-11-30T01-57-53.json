@@ -1,0 +1,458 @@
+{
+  "timestamp": "2025-11-30T01:57:53.072Z",
+  "config": {
+    "populationSize": 10,
+    "generations": 5,
+    "mutationRate": 0.2,
+    "crossoverRate": 0.7,
+    "elitismCount": 2,
+    "targetWinRate": 0.65,
+    "minTradesThreshold": 30
+  },
+  "bestIndividual": {
+    "params": {
+      "minScores": {
+        "scalp": 40,
+        "day": 40,
+        "swing": 40
+      },
+      "ivBoosts": {
+        "lowIV": 0.15,
+        "highIV": -0.2
+      },
+      "gammaBoosts": {
+        "shortGamma": 0.15,
+        "longGamma": -0.09898349666085261
+      },
+      "flowBoosts": {
+        "aligned": 0.2,
+        "opposed": -0.15
+      },
+      "mtfWeights": {
+        "weekly": 3,
+        "daily": 2,
+        "hourly": 1,
+        "fifteenMin": 0.6044391175406709
+      },
+      "riskReward": {
+        "targetMultiple": 1.5,
+        "stopMultiple": 1,
+        "maxHoldBars": 20
+      }
+    },
+    "fitness": 29.649231229370272,
+    "winRate": 0.4851985559566787,
+    "profitFactor": 0.8735481651838535,
+    "totalTrades": 2770,
+    "generation": 2
+  },
+  "generationStats": [
+    {
+      "generation": 1,
+      "avgFitness": 24.75964799253098,
+      "maxFitness": 27.558505584701813,
+      "avgWinRate": 0.3866142219941804,
+      "bestWinRate": 0.46094182825484764
+    },
+    {
+      "generation": 2,
+      "avgFitness": 27.17720081764973,
+      "maxFitness": 29.649231229370272,
+      "avgWinRate": 0.44952983765524246,
+      "bestWinRate": 0.4851985559566787
+    },
+    {
+      "generation": 3,
+      "avgFitness": 27.574223665536373,
+      "maxFitness": 27.684575564170903,
+      "avgWinRate": 0.4632551857899778,
+      "bestWinRate": 0.4851985559566787
+    },
+    {
+      "generation": 4,
+      "avgFitness": 27.622955677639602,
+      "maxFitness": 27.684575564170903,
+      "avgWinRate": 0.4681746357033427,
+      "bestWinRate": 0.4851985559566787
+    },
+    {
+      "generation": 5,
+      "avgFitness": 27.679028273225043,
+      "maxFitness": 27.91738189929301,
+      "avgWinRate": 0.4695913926919236,
+      "bestWinRate": 0.4851985559566787
+    }
+  ],
+  "finalPopulation": [
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40.69136313739983,
+          "swing": 40
+        },
+        "ivBoosts": {
+          "lowIV": 0.0911316714086435,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.15
+        },
+        "mtfWeights": {
+          "weekly": 3,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.91738189929301,
+      "winRate": 0.4724156400642742,
+      "profitFactor": 0.6701260494536732,
+      "totalTrades": 1867,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40.69136313739983,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.25153235469917523
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.684575564170903,
+      "winRate": 0.4701617401003904,
+      "profitFactor": 0.6463509933592143,
+      "totalTrades": 1793,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40.69136313739983,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.25153235469917523
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.684575564170903,
+      "winRate": 0.4701617401003904,
+      "profitFactor": 0.6463509933592143,
+      "totalTrades": 1793,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40.69136313739983,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.25153235469917523
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.684575564170903,
+      "winRate": 0.4701617401003904,
+      "profitFactor": 0.6463509933592143,
+      "totalTrades": 1793,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40.69136313739983,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.25153235469917523
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.684575564170903,
+      "winRate": 0.4701617401003904,
+      "profitFactor": 0.6463509933592143,
+      "totalTrades": 1793,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40.69136313739983,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.15
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.5
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.684575564170903,
+      "winRate": 0.4701617401003904,
+      "profitFactor": 0.6463509933592143,
+      "totalTrades": 1793,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.15
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 1,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.620045539142094,
+      "winRate": 0.46869806094182825,
+      "profitFactor": 0.645353850244827,
+      "totalTrades": 1805,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 37.484567490765336,
+          "day": 40,
+          "swing": 40
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.1829488439519971,
+          "opposed": -0.15
+        },
+        "mtfWeights": {
+          "weekly": 3,
+          "daily": 2,
+          "hourly": 1,
+          "fifteenMin": 0.5
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.620045539142094,
+      "winRate": 0.46869806094182825,
+      "profitFactor": 0.645353850244827,
+      "totalTrades": 1805,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.2718237679165609,
+          "highIV": -0.2055326051920472
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.15
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 0.6604454603745344,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.620045539142094,
+      "winRate": 0.46869806094182825,
+      "profitFactor": 0.645353850244827,
+      "totalTrades": 1805,
+      "generation": 5
+    },
+    {
+      "params": {
+        "minScores": {
+          "scalp": 47.305466905868485,
+          "day": 40,
+          "swing": 41.61096335638265
+        },
+        "ivBoosts": {
+          "lowIV": 0.0911316714086435,
+          "highIV": -0.2
+        },
+        "gammaBoosts": {
+          "shortGamma": 0.15,
+          "longGamma": -0.1357184889508441
+        },
+        "flowBoosts": {
+          "aligned": 0.2,
+          "opposed": -0.15
+        },
+        "mtfWeights": {
+          "weekly": 2.643361863993385,
+          "daily": 2,
+          "hourly": 1,
+          "fifteenMin": 0.4082781050722565
+        },
+        "riskReward": {
+          "targetMultiple": 1.5,
+          "stopMultiple": 1.1693187169088244,
+          "maxHoldBars": 11
+        }
+      },
+      "fitness": 27.589886394676636,
+      "winRate": 0.4665954035275254,
+      "profitFactor": 0.6543450422626031,
+      "totalTrades": 1871,
+      "generation": 5
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import {
   deleteTrade as dbDeleteTrade,
 } from "../lib/supabase/database";
 import { ensureArray } from "../lib/utils/validation";
+import { tradeStoreLogger as log } from "../lib/utils/logger";
 
 // ============================================================================
 // TRADE STORE - SINGLE SOURCE OF TRUTH
@@ -38,6 +39,11 @@ interface TradeStore {
   isLoading: boolean;
   error: string | null;
 
+  // UI State (centralized to prevent race conditions)
+  ui: {
+    isTransitioning: boolean; // True when a state transition is in progress
+  };
+
   // Derived Selectors (computed from base state)
   getCurrentTrade: () => Trade | null;
   getTradeState: () => TradeState;
@@ -51,6 +57,12 @@ interface TradeStore {
   setPreviewTrade: (trade: Trade | null) => void;
   setContracts: (contracts: Contract[]) => void;
   setUpdatedTradeIds: (ids: Set<string>) => void;
+
+  // Atomic action to set focused trade (prevents race conditions)
+  setFocusedTrade: (trade: Trade | null) => void;
+
+  // UI State setters
+  setIsTransitioning: (value: boolean) => void;
 
   // CRUD operations
   createTrade: (userId: string, trade: Partial<Trade>) => Promise<void>;
@@ -112,6 +124,11 @@ export const useTradeStore = create<TradeStore>()(
       isLoading: false,
       error: null,
 
+      // UI State (centralized)
+      ui: {
+        isTransitioning: false,
+      },
+
       // ========================================
       // Derived Selectors
       // ========================================
@@ -168,10 +185,46 @@ export const useTradeStore = create<TradeStore>()(
       setContracts: (contracts) => set({ contracts }),
       setUpdatedTradeIds: (ids) => set({ updatedTradeIds: ids }),
 
+      // Atomic action to set focused trade - updates BOTH previewTrade and currentTradeId
+      // in a single set() call to prevent race conditions where they diverge
+      setFocusedTrade: (trade) => {
+        if (trade) {
+          // If it's a WATCHING trade (preview), set as previewTrade
+          if (trade.state === "WATCHING") {
+            log.debug("setFocusedTrade: Setting preview trade", {
+              tradeId: trade.id,
+              ticker: trade.ticker,
+            });
+            set({ previewTrade: trade, currentTradeId: trade.id });
+          } else {
+            // For persisted trades (LOADED, ENTERED, EXITED), clear preview and set currentTradeId
+            log.debug("setFocusedTrade: Setting persisted trade focus", {
+              tradeId: trade.id,
+              state: trade.state,
+            });
+            set({ previewTrade: null, currentTradeId: trade.id });
+          }
+        } else {
+          // Clear focus
+          log.debug("setFocusedTrade: Clearing focus");
+          set({ previewTrade: null, currentTradeId: null });
+        }
+      },
+
+      // UI State setter - centralized to prevent race conditions
+      setIsTransitioning: (value) => {
+        log.debug("setIsTransitioning", { value });
+        set((state) => ({ ui: { ...state.ui, isTransitioning: value } }));
+      },
+
       // ========================================
       // CRUD Operations
       // ========================================
       createTrade: async (userId, tradeData) => {
+        const correlationId = log.actionStart("createTrade", {
+          ticker: tradeData.ticker,
+          state: tradeData.state,
+        });
         set({ isLoading: true, error: null });
         try {
           const newTrade = await dbCreateTrade(userId, tradeData as any);
@@ -210,16 +263,37 @@ export const useTradeStore = create<TradeStore>()(
             previewTrade: null, // Clear preview
             isLoading: false,
           }));
+
+          log.actionEnd("createTrade", correlationId, {
+            tradeId: mappedTrade.id,
+            ticker: mappedTrade.ticker,
+            state: mappedTrade.state,
+          });
         } catch (error) {
-          console.error("[TradeStore] Failed to create trade:", error);
+          log.actionFail("createTrade", correlationId, error, { ticker: tradeData.ticker });
           set({ error: "Failed to create trade", isLoading: false });
         }
       },
 
       updateTrade: async (tradeId, updates) => {
-        console.warn(`[TradeStore] updateTrade called for ${tradeId}:`, updates);
+        const correlationId = log.actionStart("updateTrade", {
+          tradeId,
+          updateFields: Object.keys(updates),
+          newState: updates.state,
+        });
         set({ isLoading: true, error: null });
         try {
+          // Log state transition if state is changing
+          if (updates.state) {
+            const currentTrade = get().getTradeById(tradeId);
+            if (currentTrade && currentTrade.state !== updates.state) {
+              log.transition(currentTrade.state, updates.state, {
+                tradeId,
+                ticker: currentTrade.ticker,
+              });
+            }
+          }
+
           // First update local state
           set((state) => ({
             activeTrades: state.activeTrades.map((t) =>
@@ -256,32 +330,34 @@ export const useTradeStore = create<TradeStore>()(
             }
           }
 
-          console.warn(`[TradeStore] DB updates for ${tradeId}:`, dbUpdates);
+          log.debug("DB updates prepared", { tradeId, dbUpdates, correlationId });
 
           // Only try DB update if we have valid fields to update
           if (Object.keys(dbUpdates).length > 0) {
             try {
               await dbUpdateTrade(tradeId, dbUpdates as any);
-              console.warn(`[TradeStore] ✅ Trade ${tradeId} successfully updated in database`);
+              log.actionEnd("updateTrade", correlationId, {
+                tradeId,
+                fieldsUpdated: Object.keys(dbUpdates),
+              });
             } catch (dbError: any) {
-              console.error(
-                `[TradeStore] ❌ CRITICAL: Failed to update trade ${tradeId} in database:`,
-                dbError
-              );
+              log.actionFail("updateTrade", correlationId, dbError, { tradeId });
               set({ error: `Failed to sync trade: ${dbError.message || "Unknown error"}` });
               throw dbError;
             }
           } else {
-            console.warn(`[TradeStore] No database fields to update for trade ${tradeId}`);
+            log.debug("No database fields to update", { tradeId, correlationId });
+            log.actionEnd("updateTrade", correlationId, { tradeId, fieldsUpdated: [] });
           }
         } catch (error) {
-          console.error("[TradeStore] Failed to update trade:", error);
+          log.actionFail("updateTrade", correlationId, error, { tradeId });
           set({ error: "Failed to update trade", isLoading: false });
           throw error;
         }
       },
 
       deleteTrade: async (tradeId) => {
+        const correlationId = log.actionStart("deleteTrade", { tradeId });
         set({ isLoading: true, error: null });
         try {
           // Clear currentTradeId if it matches
@@ -299,24 +375,38 @@ export const useTradeStore = create<TradeStore>()(
           // Try to delete from database (may fail for in-memory trades)
           try {
             await dbDeleteTrade(tradeId);
-          } catch (dbError: any) {
+            log.actionEnd("deleteTrade", correlationId, { tradeId });
+          } catch (dbError: unknown) {
+            const errMsg = dbError instanceof Error ? dbError.message : String(dbError);
+            const errCode = (dbError as { code?: string })?.code;
             // Only log if not a "not found" error
-            if (!dbError?.message?.includes("No rows") && !dbError?.code?.includes("PGRST116")) {
-              console.warn("[TradeStore] DB delete failed (trade may be in-memory only):", dbError);
+            if (!errMsg?.includes("No rows") && !errCode?.includes("PGRST116")) {
+              log.warn("DB delete failed (trade may be in-memory only)", {
+                tradeId,
+                error: errMsg,
+              });
+            } else {
+              log.debug("Trade was in-memory only, no DB delete needed", { tradeId });
             }
           }
         } catch (error) {
-          console.error("[TradeStore] Failed to delete trade:", error);
+          log.actionFail("deleteTrade", correlationId, error, { tradeId });
           set({ error: "Failed to delete trade", isLoading: false });
         }
       },
 
       loadTrades: async (userId) => {
-        console.warn(`[TradeStore] loadTrades called for userId: ${userId}`);
+        // GUARD: Skip if already loading to prevent race conditions from concurrent loads
+        if (get().isLoading) {
+          log.debug("loadTrades skipped: already loading");
+          return;
+        }
+
+        const correlationId = log.actionStart("loadTrades", { userId });
         set({ isLoading: true, error: null });
         try {
           const tradesData = await getTrades(userId);
-          console.warn(`[TradeStore] Loaded ${tradesData.length} trades from database`);
+          log.debug("Raw trades loaded from database", { count: tradesData.length, correlationId });
 
           const mappedTrades: Trade[] = tradesData.map((t) => {
             // Use stored contract if available
@@ -407,11 +497,17 @@ export const useTradeStore = create<TradeStore>()(
           const active = mappedTrades.filter((t) => t.state !== "EXITED");
           const history = mappedTrades.filter((t) => t.state === "EXITED");
 
-          console.warn(`[TradeStore] Mapped trades:`, {
+          // Log a snapshot of the loaded state
+          log.snapshot("Trades loaded", {
             total: mappedTrades.length,
             active: active.length,
             history: history.length,
-            activeStates: active.map((t) => ({ id: t.id, ticker: t.ticker, state: t.state })),
+            activeByState: {
+              WATCHING: active.filter((t) => t.state === "WATCHING").length,
+              LOADED: active.filter((t) => t.state === "LOADED").length,
+              ENTERED: active.filter((t) => t.state === "ENTERED").length,
+            },
+            activeTickers: active.map((t) => `${t.ticker}:${t.state}`),
           });
 
           set({
@@ -419,8 +515,13 @@ export const useTradeStore = create<TradeStore>()(
             historyTrades: history,
             isLoading: false,
           });
+
+          log.actionEnd("loadTrades", correlationId, {
+            activeCount: active.length,
+            historyCount: history.length,
+          });
         } catch (error) {
-          console.error("[TradeStore] Failed to load trades:", error);
+          log.actionFail("loadTrades", correlationId, error, { userId });
           set({ error: "Failed to load trades", isLoading: false });
         }
       },
@@ -493,9 +594,10 @@ export const useTradeStore = create<TradeStore>()(
                 : t
             ),
           }));
-        } catch (error: any) {
-          console.error("[TradeStore] Failed to add trade update to DB:", error);
-          set({ error: error.message });
+        } catch (error: unknown) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          log.error("Failed to add trade update to DB", { tradeId, error: errMsg });
+          set({ error: errMsg });
           throw error;
         }
       },
@@ -504,43 +606,64 @@ export const useTradeStore = create<TradeStore>()(
       // Discord/Challenge Linking
       // ========================================
       linkTradeToChannels: async (tradeId, channelIds) => {
+        log.debug("Linking trade to channels", { tradeId, channelIds });
         try {
           const promises = channelIds.map((channelId) =>
             fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
               method: "POST",
               headers: { "x-user-id": "" },
-            })
+            }).then((response) => ({ channelId, response }))
           );
 
-          const responses = await Promise.all(promises);
+          // Use Promise.allSettled to handle partial failures gracefully
+          const results = await Promise.allSettled(promises);
 
-          for (const response of responses) {
-            if (!response.ok) {
-              throw new Error(`Failed to link channel: ${response.status}`);
+          const succeeded: string[] = [];
+          const failed: string[] = [];
+
+          for (const result of results) {
+            if (result.status === "fulfilled" && result.value.response.ok) {
+              succeeded.push(result.value.channelId);
+            } else {
+              const channelId = result.status === "fulfilled" ? result.value.channelId : "unknown";
+              failed.push(channelId);
             }
           }
 
-          // Update local state
-          set((state) => ({
-            activeTrades: state.activeTrades.map((t) =>
-              t.id === tradeId
-                ? {
-                    ...t,
-                    discordChannels: [
-                      ...new Set([...ensureArray(t.discordChannels), ...channelIds]),
-                    ],
-                  }
-                : t
-            ),
-          }));
-        } catch (error: any) {
-          console.error("[TradeStore] Failed to link channels:", error);
-          set({ error: error.message });
+          if (failed.length > 0) {
+            log.warn("Some channel links failed", { tradeId, succeeded, failed });
+          }
+
+          // Update local state with successfully linked channels
+          if (succeeded.length > 0) {
+            set((state) => ({
+              activeTrades: state.activeTrades.map((t) =>
+                t.id === tradeId
+                  ? {
+                      ...t,
+                      discordChannels: [
+                        ...new Set([...ensureArray(t.discordChannels), ...succeeded]),
+                      ],
+                    }
+                  : t
+              ),
+            }));
+          }
+
+          // Only throw if ALL links failed
+          if (succeeded.length === 0 && channelIds.length > 0) {
+            throw new Error(`Failed to link any channels`);
+          }
+        } catch (error: unknown) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          log.error("Failed to link channels", { tradeId, channelIds, error: errMsg });
+          set({ error: errMsg });
           throw error;
         }
       },
 
       unlinkTradeFromChannel: async (tradeId, channelId) => {
+        log.debug("Unlinking trade from channel", { tradeId, channelId });
         try {
           const response = await fetch(`/api/trades/${tradeId}/channels/${channelId}`, {
             method: "DELETE",
@@ -562,49 +685,72 @@ export const useTradeStore = create<TradeStore>()(
                 : t
             ),
           }));
-        } catch (error: any) {
-          console.error("[TradeStore] Failed to unlink channel:", error);
-          set({ error: error.message });
+        } catch (error: unknown) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          log.error("Failed to unlink channel", { tradeId, channelId, error: errMsg });
+          set({ error: errMsg });
           throw error;
         }
       },
 
       linkTradeToChallenges: async (tradeId, challengeIds) => {
+        log.debug("Linking trade to challenges", { tradeId, challengeIds });
         try {
           const promises = challengeIds.map((challengeId) =>
             fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
               method: "POST",
               headers: { "x-user-id": "" },
-            })
+            }).then((response) => ({ challengeId, response }))
           );
 
-          const responses = await Promise.all(promises);
+          // Use Promise.allSettled to handle partial failures gracefully
+          const results = await Promise.allSettled(promises);
 
-          for (const response of responses) {
-            if (!response.ok) {
-              throw new Error(`Failed to link challenge: ${response.status}`);
+          const succeeded: string[] = [];
+          const failed: string[] = [];
+
+          for (const result of results) {
+            if (result.status === "fulfilled" && result.value.response.ok) {
+              succeeded.push(result.value.challengeId);
+            } else {
+              const challengeId =
+                result.status === "fulfilled" ? result.value.challengeId : "unknown";
+              failed.push(challengeId);
             }
           }
 
-          // Update local state
-          set((state) => ({
-            activeTrades: state.activeTrades.map((t) =>
-              t.id === tradeId
-                ? {
-                    ...t,
-                    challenges: [...new Set([...ensureArray(t.challenges), ...challengeIds])],
-                  }
-                : t
-            ),
-          }));
-        } catch (error: any) {
-          console.error("[TradeStore] Failed to link challenges:", error);
-          set({ error: error.message });
+          if (failed.length > 0) {
+            log.warn("Some challenge links failed", { tradeId, succeeded, failed });
+          }
+
+          // Update local state with successfully linked challenges
+          if (succeeded.length > 0) {
+            set((state) => ({
+              activeTrades: state.activeTrades.map((t) =>
+                t.id === tradeId
+                  ? {
+                      ...t,
+                      challenges: [...new Set([...ensureArray(t.challenges), ...succeeded])],
+                    }
+                  : t
+              ),
+            }));
+          }
+
+          // Only throw if ALL links failed
+          if (succeeded.length === 0 && challengeIds.length > 0) {
+            throw new Error(`Failed to link any challenges`);
+          }
+        } catch (error: unknown) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          log.error("Failed to link challenges", { tradeId, challengeIds, error: errMsg });
+          set({ error: errMsg });
           throw error;
         }
       },
 
       unlinkTradeFromChallenge: async (tradeId, challengeId) => {
+        log.debug("Unlinking trade from challenge", { tradeId, challengeId });
         try {
           const response = await fetch(`/api/trades/${tradeId}/challenges/${challengeId}`, {
             method: "DELETE",
@@ -626,14 +772,16 @@ export const useTradeStore = create<TradeStore>()(
                 : t
             ),
           }));
-        } catch (error: any) {
-          console.error("[TradeStore] Failed to unlink challenge:", error);
-          set({ error: error.message });
+        } catch (error: unknown) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          log.error("Failed to unlink challenge", { tradeId, challengeId, error: errMsg });
+          set({ error: errMsg });
           throw error;
         }
       },
 
       updateTradeChallenges: async (userId, tradeId, challengeIds) => {
+        log.debug("Updating trade challenges", { tradeId, challengeIds });
         try {
           const response = await fetch(`/api/trades/${tradeId}/challenges`, {
             method: "PUT",
@@ -654,9 +802,10 @@ export const useTradeStore = create<TradeStore>()(
               t.id === tradeId ? { ...t, challenges: challengeIds } : t
             ),
           }));
-        } catch (error: any) {
-          console.error("[TradeStore] Failed to update trade challenges:", error);
-          set({ error: error.message });
+        } catch (error: unknown) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          log.error("Failed to update trade challenges", { tradeId, challengeIds, error: errMsg });
+          set({ error: errMsg });
           throw error;
         }
       },
@@ -695,6 +844,9 @@ export const useTradeStore = create<TradeStore>()(
           updatedTradeIds: new Set(),
           isLoading: false,
           error: null,
+          ui: {
+            isTransitioning: false,
+          },
         }),
     }),
     { name: "TradeStore" }

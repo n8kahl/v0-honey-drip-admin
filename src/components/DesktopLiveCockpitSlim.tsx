@@ -100,12 +100,14 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     activeTicker,
     contracts,
     currentTrade,
+    previewTrade,
     tradeState,
     alertType,
     alertOptions,
     showAlert,
     activeTrades,
     focus,
+    isTransitioning,
     actions,
   } = useTradeStateMachine({
     onExitedTrade,
@@ -399,6 +401,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               onContractSelect={(contract) => actions.handleContractSelect(contract)}
               compositeSignals={compositeSignals}
               watchlist={watchlist}
+              isTransitioning={isTransitioning}
             />
           )}
         </div>
@@ -424,15 +427,17 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onAdd={actions.handleAdd}
             onTakeProfit={actions.handleTakeProfit}
             onExit={actions.handleExit}
+            isTransitioning={isTransitioning}
             setupMode={
-              tradeState === "WATCHING" && activeTicker?.symbol
+              tradeState === "WATCHING" && activeTicker?.symbol && previewTrade
                 ? {
                     focusedSymbol: activeTicker.symbol,
-                    activeContract: currentTrade?.contract ?? null,
+                    activeContract: previewTrade.contract ?? null,
                     recommendedContract: null,
-                    contractSource: currentTrade?.contract ? "manual" : null,
+                    contractSource: previewTrade.contract ? "manual" : null,
                     currentPrice: activeTicker.last ?? 0,
-                    tradeType: currentTrade?.tradeType ?? "Day",
+                    tradeType: previewTrade.tradeType ?? "Day",
+                    isTransitioning,
                     onLoadAndAlert: (channelIds, challengeIds) =>
                       actions.handleLoadAndAlert(channelIds, challengeIds, undefined, undefined),
                     onEnterAndAlert: (channelIds, challengeIds) =>

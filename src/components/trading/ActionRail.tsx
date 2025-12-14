@@ -72,6 +72,7 @@ export interface ActionRailProps {
   alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
   channels: DiscordChannel[];
   challenges: Challenge[];
+  isTransitioning?: boolean; // True when a state transition is in progress
   // Alert callbacks (for LOADED/ENTERED states)
   onSendAlert: (
     channelIds: string[],
@@ -93,8 +94,8 @@ export interface ActionRailProps {
   onMoveSL: () => void;
   onTrailStop: () => void;
   onAdd: () => void;
-  onExit: () => void;
-  onTakeProfit: () => void;
+  onExit: (sendAlert?: boolean) => void;
+  onTakeProfit: (sendAlert?: boolean) => void;
   // Setup mode props (WATCHING state with symbol focus)
   setupMode?: {
     focusedSymbol: string;
@@ -103,6 +104,7 @@ export interface ActionRailProps {
     contractSource: "recommended" | "manual" | null;
     currentPrice: number;
     tradeType: "Scalp" | "Day" | "Swing" | "LEAP";
+    isTransitioning?: boolean; // True when a state transition is in progress
     onLoadAndAlert: (channelIds: string[], challengeIds: string[]) => void;
     onEnterAndAlert: (channelIds: string[], challengeIds: string[]) => void;
     onDiscard: () => void;
@@ -164,17 +166,36 @@ export function ActionRail({
           <SetupModeContent setupMode={setupMode!} channels={channels} challenges={challenges} />
         ) : /* ENTERED state → Manage Mode */
         isManageMode ? (
-          <ActionRailManage
-            trade={currentTrade!}
-            channels={channels}
-            challenges={challenges}
-            onTrim={(percent) => onTrim()}
-            onMoveSLToBreakeven={() => onMoveSL()}
-            onTrailStop={onTrailStop}
-            onAdd={onAdd}
-            onExit={(sendAlert) => onExit()}
-            onTakeProfit={(sendAlert) => onTakeProfit()}
-          />
+          <>
+            {/* Show Discord Composer when showAlert is true (Take Profit / Exit) */}
+            {showAlert ? (
+              <ActionRailDiscord
+                trade={currentTrade}
+                channels={channels}
+                challenges={challenges}
+                showAlert={showAlert}
+                alertType={alertType}
+                alertOptions={alertOptions}
+                expanded={true}
+                onToggleExpanded={() => {}}
+                onSendAlert={onSendAlert}
+                onEnterAndAlert={onEnterAndAlert}
+                onCancelAlert={onCancelAlert}
+              />
+            ) : (
+              <ActionRailManage
+                trade={currentTrade!}
+                channels={channels}
+                challenges={challenges}
+                onTrim={(percent) => onTrim()}
+                onMoveSLToBreakeven={() => onMoveSL()}
+                onTrailStop={onTrailStop}
+                onAdd={onAdd}
+                onExit={(sendAlert) => onExit(sendAlert)}
+                onTakeProfit={(sendAlert) => onTakeProfit(sendAlert)}
+              />
+            )}
+          </>
         ) : /* LOADED/EXITED → Standard content */
         hasTradeContent ? (
           <>
@@ -236,6 +257,7 @@ function SetupModeContent({ setupMode, channels, challenges }: SetupModeContentP
     contractSource,
     currentPrice,
     tradeType,
+    isTransitioning = false,
     onLoadAndAlert,
     onEnterAndAlert,
     onDiscard,
@@ -517,40 +539,61 @@ function SetupModeContent({ setupMode, channels, challenges }: SetupModeContentP
                 selectedChallenges,
                 hasChannelsSelected,
                 activeContract: activeContract?.id,
+                isTransitioning,
               });
-              onLoadAndAlert(selectedChannels, selectedChallenges);
+              if (!isTransitioning) {
+                onLoadAndAlert(selectedChannels, selectedChallenges);
+              }
             }}
-            disabled={!hasChannelsSelected}
+            disabled={!hasChannelsSelected || isTransitioning}
             className={cn(
               "w-full flex items-center justify-center gap-2 py-2.5 rounded font-medium text-sm transition-all btn-press",
-              hasChannelsSelected
+              hasChannelsSelected && !isTransitioning
                 ? "bg-[var(--brand-primary)] text-black hover:bg-[var(--brand-primary-hover)]"
                 : "bg-[var(--surface-3)] text-[var(--text-faint)] cursor-not-allowed"
             )}
           >
-            <Send className="w-4 h-4" />
-            Load and Alert
+            {isTransitioning ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            {isTransitioning ? "Loading..." : "Load and Alert"}
           </button>
 
           {/* Enter and Alert - Secondary */}
           <button
-            onClick={() => onEnterAndAlert(selectedChannels, selectedChallenges)}
-            disabled={!hasChannelsSelected}
+            onClick={() => {
+              if (!isTransitioning) {
+                onEnterAndAlert(selectedChannels, selectedChallenges);
+              }
+            }}
+            disabled={!hasChannelsSelected || isTransitioning}
             className={cn(
               "w-full flex items-center justify-center gap-2 py-2.5 rounded font-medium text-sm transition-all btn-press",
-              hasChannelsSelected
+              hasChannelsSelected && !isTransitioning
                 ? "bg-[var(--accent-positive)] text-white hover:bg-[var(--accent-positive)]/90"
                 : "bg-[var(--surface-3)] text-[var(--text-faint)] cursor-not-allowed"
             )}
           >
-            <Play className="w-4 h-4" />
-            Enter and Alert
+            {isTransitioning ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            {isTransitioning ? "Entering..." : "Enter and Alert"}
           </button>
 
           {/* Dismiss - Tertiary */}
           <button
             onClick={onDiscard}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded font-medium text-xs transition-all text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-3)]"
+            disabled={isTransitioning}
+            className={cn(
+              "w-full flex items-center justify-center gap-2 py-2 rounded font-medium text-xs transition-all",
+              isTransitioning
+                ? "text-[var(--text-faint)] cursor-not-allowed"
+                : "text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-3)]"
+            )}
           >
             <X className="w-3.5 h-3.5" />
             Dismiss

@@ -513,6 +513,11 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
       timestamp: timestamp || new Date().toISOString(),
     };
 
+    console.log(
+      "[Trades API] Inserting trade update record:",
+      JSON.stringify(updateRecord, null, 2)
+    );
+
     const { data, error } = await getSupabaseClient()
       .from("trade_updates")
       .insert([updateRecord] as any)
@@ -520,10 +525,18 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
       .single();
 
     if (error) {
-      console.error("[Trades API] Error creating trade update:", error);
-      return res
-        .status(500)
-        .json({ error: "Failed to create trade update", details: error.message });
+      console.error("[Trades API] Error creating trade update:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      return res.status(500).json({
+        error: "Failed to create trade update",
+        details: error.message,
+        code: error.code,
+        hint: error.hint,
+      });
     }
 
     if (!data) {

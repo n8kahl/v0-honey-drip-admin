@@ -1,0 +1,9 @@
+Detector,Total Trades,Winners,Losers,Win Rate %,Profit Factor,Expectancy (R),Avg Win %,Avg Loss %,Largest Win %,Largest Loss %,Total P&L %,Avg Bars Held
+kcu_ema_bounce_long,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+kcu_ema_bounce_short,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+kcu_vwap_standard_long,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+kcu_vwap_standard_short,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+kcu_king_queen_long,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+kcu_king_queen_short,0,0,0,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.0
+kcu_orb_breakout_long,117,60,57,51.3,0.89,-0.11,0.25,-0.38,1.44,-1.21,-6.58,4.8
+kcu_orb_breakout_short,224,84,140,37.5,0.34,-0.36,0.30,-0.38,2.21,-2.46,-28.03,3.1
