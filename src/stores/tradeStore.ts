@@ -36,6 +36,45 @@ async function getApiHeaders(): Promise<HeadersInit> {
   return headers;
 }
 
+/**
+ * Merge trades by ID, keeping the most advanced state.
+ * This prevents duplicates when optimistic updates race with loadTrades().
+ *
+ * State priority: WATCHING < LOADED < ENTERED < EXITED
+ * If incoming state >= existing state, incoming wins (DB is source of truth)
+ */
+function mergeTradesByIdKeepLatest(existing: Trade[], incoming: Trade[]): Trade[] {
+  const stateOrder: Record<string, number> = {
+    WATCHING: 0,
+    LOADED: 1,
+    ENTERED: 2,
+    EXITED: 3,
+  };
+  const map = new Map<string, Trade>();
+
+  // Add existing first
+  for (const trade of existing) {
+    map.set(trade.id, trade);
+  }
+
+  // Merge incoming - keep more advanced state, or update if same/newer state
+  for (const trade of incoming) {
+    const current = map.get(trade.id);
+    if (!current) {
+      map.set(trade.id, trade);
+    } else {
+      const currentOrder = stateOrder[current.state] ?? 0;
+      const incomingOrder = stateOrder[trade.state] ?? 0;
+      // Keep the more advanced state, OR update if same state (DB is source of truth)
+      if (incomingOrder >= currentOrder) {
+        map.set(trade.id, trade);
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 // ============================================================================
 // TRADE STORE - SINGLE SOURCE OF TRUTH
 // ============================================================================
@@ -184,6 +223,7 @@ export const useTradeStore = create<TradeStore>()(
 
       // Get the state of the current trade
       // Priority: persisted trades first (LOADED/ENTERED/EXITED), then preview trade
+      // FIX: Only return WATCHING if previewTrade IS the current trade
       getTradeState: () => {
         const { previewTrade, currentTradeId, activeTrades, historyTrades } = get();
 
@@ -196,10 +236,23 @@ export const useTradeStore = create<TradeStore>()(
           if (historyTrade) return historyTrade.state;
         }
 
-        // Priority 2: Only use preview trade state if no persisted trade found
-        if (previewTrade) return "WATCHING";
+        // Priority 2: Only return WATCHING if previewTrade IS the current trade
+        // This prevents showing WATCHING buttons when currentTradeId points to a persisted trade
+        // that hasn't loaded into activeTrades yet
+        if (previewTrade) {
+          // If no currentTradeId is set, previewTrade is authoritative
+          if (!currentTradeId) return "WATCHING";
 
-        // Default
+          // If currentTradeId matches previewTrade, it's still a preview
+          if (previewTrade.id === currentTradeId) return "WATCHING";
+
+          // If currentTradeId is set to something else, DON'T return WATCHING
+          // The trade may be loading - safer to check previewTrade's state or default
+          // to a transitional state that won't show setup buttons
+          return previewTrade.state || "WATCHING";
+        }
+
+        // Default - no trade focused
         return "WATCHING";
       },
 
@@ -548,11 +601,13 @@ export const useTradeStore = create<TradeStore>()(
             activeTickers: active.map((t) => `${t.ticker}:${t.state}`),
           });
 
-          set({
-            activeTrades: active,
-            historyTrades: history,
+          // Use merge to prevent race conditions with optimistic updates
+          // This ensures trades added by handleLoadAndAlert don't get lost/duplicated
+          set((state) => ({
+            activeTrades: mergeTradesByIdKeepLatest(state.activeTrades, active),
+            historyTrades: mergeTradesByIdKeepLatest(state.historyTrades, history),
             isLoading: false,
-          });
+          }));
 
           log.actionEnd("loadTrades", correlationId, {
             activeCount: active.length,

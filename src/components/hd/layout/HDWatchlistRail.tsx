@@ -116,9 +116,15 @@ export function HDWatchlistRail({
     [setExpandedWatchlistRow]
   );
 
-  // Filter trades by state
-  const loadedTrades = activeTrades.filter((t) => t.state === "LOADED");
-  const enteredTrades = activeTrades.filter((t) => t.state === "ENTERED");
+  // Filter trades by state with explicit dedup to prevent race condition duplicates
+  // The dedup at lines 70-94 handles different states, but this guards against
+  // same-state duplicates that could slip through during rapid transitions
+  const loadedTrades = [
+    ...new Map(activeTrades.filter((t) => t.state === "LOADED").map((t) => [t.id, t])).values(),
+  ];
+  const enteredTrades = [
+    ...new Map(activeTrades.filter((t) => t.state === "ENTERED").map((t) => [t.id, t])).values(),
+  ];
 
   // Calculate challenge progress
   const activeChallenges = challenges.filter((c) => c.isActive);
