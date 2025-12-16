@@ -77,7 +77,7 @@ export function ActionRailManage({
   onTakeProfit,
 }: ActionRailManageProps) {
   const [sendAlertOnExit, setSendAlertOnExit] = useState(true);
-  const [showGuidanceDetail, setShowGuidanceDetail] = useState(false);
+  const [showGuidanceDetail, setShowGuidanceDetail] = useState(true);
 
   return (
     <div className="flex flex-col h-full animate-mode-enter">

@@ -83,15 +83,16 @@ export function HDRowLoadedTrade({ trade, active, onClick, onRemove }: HDRowLoad
         </div>
       </div>
 
-      {/* Remove Button */}
+      {/* Remove Button - Always visible with subtle opacity, full opacity on hover */}
       {onRemove && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
           }}
-          className="ml-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-[var(--radius)] opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
+          className="ml-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-[var(--radius)] opacity-40 hover:opacity-100 group-hover:opacity-100 text-zinc-400 hover:text-[var(--accent-negative)] hover:bg-[var(--surface-3)] transition-all touch-manipulation active:scale-95"
           title="Remove loaded trade"
+          aria-label="Remove loaded trade"
         >
           <X className="w-3.5 h-3.5" />
         </button>

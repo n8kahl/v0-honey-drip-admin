@@ -51,6 +51,18 @@ export function ActionRailActions({
 }: ActionRailActionsProps) {
   if (!currentTrade) return null;
 
+  // DEFENSIVE: Use the trade's actual state as the primary source of truth
+  // This prevents showing wrong buttons during state transition race conditions
+  // If tradeState prop disagrees with currentTrade.state, prefer currentTrade.state
+  const effectiveState = currentTrade.state;
+
+  // Log disagreement for debugging (only in development)
+  if (process.env.NODE_ENV === "development" && tradeState !== effectiveState) {
+    console.debug(
+      `[ActionRailActions] State disagreement: prop=${tradeState}, trade=${effectiveState}. Using trade.state.`
+    );
+  }
+
   return (
     <div className="p-4 space-y-3">
       {/* Header */}
@@ -58,16 +70,11 @@ export function ActionRailActions({
         Quick Actions
       </div>
 
-      {/* LOADED State Actions */}
-      {tradeState === "LOADED" && (
-        <LoadedActions
-          onEnter={onEnter}
-          onUnload={onUnload}
-        />
-      )}
+      {/* LOADED State Actions - Show Enter/Discard buttons */}
+      {effectiveState === "LOADED" && <LoadedActions onEnter={onEnter} onUnload={onUnload} />}
 
-      {/* ENTERED State Actions */}
-      {tradeState === "ENTERED" && (
+      {/* ENTERED State Actions - Show Trim/Exit/etc buttons */}
+      {effectiveState === "ENTERED" && (
         <EnteredActions
           onTrim={onTrim}
           onMoveSL={onMoveSL}
@@ -78,10 +85,8 @@ export function ActionRailActions({
         />
       )}
 
-      {/* EXITED State Actions */}
-      {tradeState === "EXITED" && (
-        <ExitedActions />
-      )}
+      {/* EXITED State Actions - Show Share/Duplicate buttons */}
+      {effectiveState === "EXITED" && <ExitedActions />}
     </div>
   );
 }
@@ -90,13 +95,7 @@ export function ActionRailActions({
 // LOADED State Actions
 // ============================================================================
 
-function LoadedActions({
-  onEnter,
-  onUnload,
-}: {
-  onEnter?: () => void;
-  onUnload: () => void;
-}) {
+function LoadedActions({ onEnter, onUnload }: { onEnter?: () => void; onUnload: () => void }) {
   return (
     <div className="space-y-2 animate-fade-in-up">
       {/* Enter + Alert - Primary action */}
@@ -242,8 +241,10 @@ function ActionButton({
 }: ActionButtonProps) {
   const variantStyles = {
     primary: "bg-[var(--brand-primary)] text-black hover:bg-[var(--brand-primary-hover)]",
-    secondary: "bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text-high)]",
-    danger: "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/20",
+    secondary:
+      "bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text-high)]",
+    danger:
+      "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/20",
   };
 
   return (

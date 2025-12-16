@@ -60,6 +60,10 @@ export function HDWatchlistRail({
   const historyTrades = useTradeStore((state) => state.historyTrades);
   const rawActiveTrades = propActiveTrades ?? storeActiveTrades;
 
+  // REACTIVE subscription for focused trade - triggers re-render when trade focus changes
+  // This replaces non-reactive getState() calls that were causing highlight lag
+  const currentTradeId = useTradeStore((state) => state.currentTradeId);
+
   // Combine active and history trades for challenge stats (exited trades move to history)
   const allTrades = useMemo(() => {
     return [...rawActiveTrades, ...historyTrades];
@@ -205,24 +209,21 @@ export function HDWatchlistRail({
           <div>
             <SectionHeader title="Active" />
             <div className="divide-y divide-[var(--border-hairline)]">
-              {enteredTrades.map((trade) => {
-                const focusedTrade = useTradeStore.getState().getCurrentTrade();
-                return (
-                  <HDActiveTradeRow
-                    key={trade.id}
-                    trade={trade}
-                    active={focusedTrade?.id === trade.id}
-                    onClick={() => {
-                      if (onActiveTradeClick) {
-                        onActiveTradeClick(trade);
-                      } else {
-                        // Use the atomic setFocusedTrade action (sets both previewTrade and currentTradeId)
-                        useTradeStore.getState().setFocusedTrade(trade);
-                      }
-                    }}
-                  />
-                );
-              })}
+              {enteredTrades.map((trade) => (
+                <HDActiveTradeRow
+                  key={trade.id}
+                  trade={trade}
+                  active={currentTradeId === trade.id}
+                  onClick={() => {
+                    if (onActiveTradeClick) {
+                      onActiveTradeClick(trade);
+                    } else {
+                      // Use the atomic setFocusedTrade action (sets both previewTrade and currentTradeId)
+                      useTradeStore.getState().setFocusedTrade(trade);
+                    }
+                  }}
+                />
+              ))}
             </div>
           </div>
         )}
@@ -232,18 +233,15 @@ export function HDWatchlistRail({
           <div className={enteredTrades.length > 0 ? "mt-4" : ""}>
             <SectionHeader title="Loaded" />
             <div className="divide-y divide-[var(--border-hairline)]">
-              {loadedTrades.map((trade) => {
-                const focusedTrade = useTradeStore.getState().getCurrentTrade();
-                return (
-                  <HDRowLoadedTrade
-                    key={trade.id}
-                    trade={trade}
-                    active={focusedTrade?.id === trade.id}
-                    onClick={() => onLoadedTradeClick?.(trade)}
-                    onRemove={() => onRemoveLoadedTrade?.(trade)}
-                  />
-                );
-              })}
+              {loadedTrades.map((trade) => (
+                <HDRowLoadedTrade
+                  key={trade.id}
+                  trade={trade}
+                  active={currentTradeId === trade.id}
+                  onClick={() => onLoadedTradeClick?.(trade)}
+                  onRemove={() => onRemoveLoadedTrade?.(trade)}
+                />
+              ))}
             </div>
           </div>
         )}

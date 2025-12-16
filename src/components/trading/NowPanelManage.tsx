@@ -333,8 +333,8 @@ function LevelsATRPanel({
   indicators,
   mtfTrend,
 }: LevelsATRPanelProps) {
-  const [mtfExpanded, setMtfExpanded] = useState(false);
-  const [gammaExpanded, setGammaExpanded] = useState(false);
+  const [mtfExpanded, setMtfExpanded] = useState(true);
+  const [gammaExpanded, setGammaExpanded] = useState(true);
 
   // Build key levels array
   const levels = useMemo(() => {

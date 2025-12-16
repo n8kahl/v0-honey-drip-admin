@@ -23,7 +23,6 @@ import { useMarketStore } from "../stores/marketStore";
 import { useTradeStore } from "../stores/tradeStore";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
-import { deleteTradeApi } from "../lib/api/tradeApi";
 
 // Default confluence object to prevent undefined errors in child components
 const DEFAULT_CONFLUENCE = {
@@ -83,7 +82,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
 
   // Store access for direct state updates
   const setCurrentTradeId = useTradeStore((s) => s.setCurrentTradeId);
-  const loadTrades = useTradeStore((s) => s.loadTrades);
+  const deleteTrade = useTradeStore((s) => s.deleteTrade);
 
   // Compute keyLevels for active ticker in real-time
   // Get current trade from store to compute keyLevels
@@ -312,17 +311,11 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               actions.handleActiveTradeClick(trade, watchlist);
             }}
             onRemoveLoadedTrade={async (trade) => {
-              // Delete from database and reload
-              const userId = user?.id || "00000000-0000-0000-0000-000000000001";
+              // Use deleteTrade from store - it optimistically removes from state AND deletes from DB
               try {
-                await deleteTradeApi(userId, trade.id);
-                await loadTrades(userId);
-                // If this was the current trade, clear it
-                if (currentTrade?.id === trade.id) {
-                  setCurrentTradeId(null);
-                }
+                await deleteTrade(trade.id);
               } catch (error) {
-                console.error("Failed to remove trade:", error);
+                console.error("[HDWatchlistRail] Failed to remove trade:", error);
               }
             }}
             activeTicker={activeTicker?.symbol}
@@ -353,11 +346,9 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onRemoveChallenge={onRemoveChallenge}
             onRemoveTicker={onRemoveTicker}
             onRemoveLoadedTrade={async (trade: Trade) => {
-              // Delete from database and reload
-              const userId = user?.id || "00000000-0000-0000-0000-000000000001";
+              // Use deleteTrade from store - it optimistically removes from state AND deletes from DB
               try {
-                await deleteTradeApi(userId, trade.id);
-                await loadTrades(userId);
+                await deleteTrade(trade.id);
               } catch (error) {
                 console.error("Failed to remove trade:", error);
               }
@@ -428,25 +419,27 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
             onTakeProfit={actions.handleTakeProfit}
             onExit={actions.handleExit}
             isTransitioning={isTransitioning}
-            setupMode={
-              tradeState === "WATCHING" && activeTicker?.symbol && previewTrade
-                ? {
-                    focusedSymbol: activeTicker.symbol,
-                    activeContract: previewTrade.contract ?? null,
-                    recommendedContract: null,
-                    contractSource: previewTrade.contract ? "manual" : null,
-                    currentPrice: activeTicker.last ?? 0,
-                    tradeType: previewTrade.tradeType ?? "Day",
-                    isTransitioning,
-                    onLoadAndAlert: (channelIds, challengeIds) =>
-                      actions.handleLoadAndAlert(channelIds, challengeIds, undefined, undefined),
-                    onEnterAndAlert: (channelIds, challengeIds) =>
-                      actions.handleEnterAndAlert(channelIds, challengeIds, undefined, undefined),
-                    onDiscard: actions.handleDiscard,
-                    onRevertToRecommended: undefined,
-                  }
-                : undefined
-            }
+            setupMode={{
+              // Always pass setupMode object - ActionRail decides when to show based on tradeState
+              // This prevents race conditions where setupMode becomes undefined before tradeState updates
+              focusedSymbol: activeTicker?.symbol ?? null,
+              activeContract: previewTrade?.contract ?? currentTrade?.contract ?? null,
+              recommendedContract: null,
+              contractSource: previewTrade?.contract
+                ? "manual"
+                : currentTrade?.contract
+                  ? "manual"
+                  : null,
+              currentPrice: activeTicker?.last ?? 0,
+              tradeType: previewTrade?.tradeType ?? currentTrade?.tradeType ?? "Day",
+              isTransitioning,
+              onLoadAndAlert: (channelIds, challengeIds) =>
+                actions.handleLoadAndAlert(channelIds, challengeIds, undefined, undefined),
+              onEnterAndAlert: (channelIds, challengeIds) =>
+                actions.handleEnterAndAlert(channelIds, challengeIds, undefined, undefined),
+              onDiscard: actions.handleDiscard,
+              onRevertToRecommended: undefined,
+            }}
           />
         </div>
         <HDDialogChallengeDetail

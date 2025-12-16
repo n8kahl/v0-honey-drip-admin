@@ -96,9 +96,10 @@ export interface ActionRailProps {
   onAdd: () => void;
   onExit: (sendAlert?: boolean) => void;
   onTakeProfit: (sendAlert?: boolean) => void;
-  // Setup mode props (WATCHING state with symbol focus)
+  // Setup mode props - Always passed, ActionRail decides when to use based on tradeState
+  // focusedSymbol can be null when no symbol is selected
   setupMode?: {
-    focusedSymbol: string;
+    focusedSymbol: string | null;
     activeContract: Contract | null;
     recommendedContract: Contract | null;
     contractSource: "recommended" | "manual" | null;
@@ -148,10 +149,13 @@ export function ActionRail({
     }
   }, [showAlert]);
 
-  // Determine which mode we're in
+  // Determine which mode we're in based SOLELY on tradeState
+  // This ensures immediate UI updates when state changes, regardless of prop propagation timing
   const isSetupMode = tradeState === "WATCHING" && setupMode?.focusedSymbol;
+  const isLoadedMode = tradeState === "LOADED" && currentTrade;
   const isManageMode = tradeState === "ENTERED" && currentTrade;
-  // Show trade content when we have a trade loaded (LOADED/ENTERED/EXITED states)
+  const isExitedMode = tradeState === "EXITED" && currentTrade;
+  // Show trade content for any persisted trade state (LOADED/ENTERED/EXITED)
   const hasTradeContent = currentTrade != null;
 
   return (
@@ -370,7 +374,7 @@ function SetupModeContent({ setupMode, channels, challenges }: SetupModeContentP
           <div className="p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)]">
             <div className="flex items-baseline gap-2 mb-1">
               <span className="text-sm font-semibold text-[var(--text-high)]">
-                {focusedSymbol} ${activeContract.strike}
+                {focusedSymbol ?? ""} ${activeContract.strike}
                 {contractMetrics.typeLabel[0]}
               </span>
               <span className={cn("text-xs font-medium", contractMetrics.dteInfo.className)}>
