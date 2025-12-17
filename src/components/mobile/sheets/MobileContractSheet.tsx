@@ -29,20 +29,59 @@ export function MobileContractSheet({
   const [selectedType, setSelectedType] = useState<OptionType>("C");
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
 
-  // Filter contracts by type and sort by distance to ATM
+  // Filter contracts by type and show multi-DTE spread (matching desktop pattern)
   const filteredContracts = useMemo(() => {
-    return contracts
-      .filter((c) => c.type === selectedType)
-      .sort((a, b) => {
-        // Sort by DTE first, then by delta (closer to 0.50 = more ATM)
-        if (a.daysToExpiry !== b.daysToExpiry) {
-          return a.daysToExpiry - b.daysToExpiry;
-        }
-        const aDelta = Math.abs((a.delta || 0.5) - 0.5);
-        const bDelta = Math.abs((b.delta || 0.5) - 0.5);
-        return aDelta - bDelta;
-      })
-      .slice(0, 10); // Show top 10 most relevant
+    const typed = contracts.filter((c) => c.type === selectedType);
+    if (typed.length === 0) return [];
+
+    // Group by expiration date
+    const byExpiry = new Map<number, Contract[]>();
+    typed.forEach((c) => {
+      const dte = c.daysToExpiry || 0;
+      if (!byExpiry.has(dte)) byExpiry.set(dte, []);
+      byExpiry.get(dte)!.push(c);
+    });
+
+    // Get unique DTEs sorted
+    const dteSorted = Array.from(byExpiry.keys()).sort((a, b) => a - b);
+
+    // Find expiry closest to 7 DTE (optimal for day/swing trades)
+    const targetDTE = 7;
+    const closestDTE = dteSorted.reduce((prev, curr) =>
+      Math.abs(curr - targetDTE) < Math.abs(prev - targetDTE) ? curr : prev
+    );
+
+    // Get contracts from closest expiry
+    const expiryContracts = byExpiry.get(closestDTE) || [];
+
+    // Sort by delta (ATM first)
+    const sorted = expiryContracts.sort((a, b) => {
+      const aDelta = Math.abs((a.delta || 0.5) - 0.5);
+      const bDelta = Math.abs((b.delta || 0.5) - 0.5);
+      return aDelta - bDelta;
+    });
+
+    // Split into ITM/ATM/OTM
+    const atmIndex = sorted.findIndex((c) => Math.abs((c.delta || 0.5) - 0.5) < 0.05);
+    const atm = atmIndex >= 0 ? sorted[atmIndex] : sorted[0];
+
+    let itm: Contract[] = [];
+    let otm: Contract[] = [];
+
+    if (selectedType === "C") {
+      // Calls: ITM = delta > 0.55, OTM = delta < 0.45
+      itm = sorted.filter((c) => (c.delta || 0) > 0.55).slice(0, 10);
+      otm = sorted.filter((c) => (c.delta || 0) < 0.45).slice(0, 10);
+    } else {
+      // Puts: ITM = delta < -0.55, OTM = delta > -0.45
+      itm = sorted.filter((c) => (c.delta || 0) < -0.55).slice(0, 10);
+      otm = sorted.filter((c) => (c.delta || 0) > -0.45).slice(0, 10);
+    }
+
+    // Return 10 ITM + 1 ATM + 10 OTM (max 21 contracts)
+    return [...itm, atm, ...otm].filter(
+      (c, i, arr) => arr.findIndex((x) => x.symbol === c.symbol) === i
+    );
   }, [contracts, selectedType]);
 
   // Auto-select best contract (highest liquidity near ATM)
@@ -170,6 +209,7 @@ export function MobileContractSheet({
                   return (
                     <button
                       key={contract.id}
+                      data-testid="contract-card"
                       onClick={() => setSelectedContract(isSelected ? null : contract)}
                       className={cn(
                         "w-full p-3 rounded-lg border flex items-center justify-between",

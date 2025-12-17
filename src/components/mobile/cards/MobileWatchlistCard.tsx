@@ -30,12 +30,42 @@ export function MobileWatchlistCard({ ticker, onLoad, active }: MobileWatchlistC
       {/* Left: Symbol */}
       <div className="flex items-center gap-3 min-w-0">
         <span className="text-[var(--text-high)] font-medium">{ticker.symbol}</span>
-        {confluenceScore !== undefined && confluenceScore > 70 && (
-          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-500/20 border border-yellow-500/30">
-            <Zap className="w-2.5 h-2.5 text-yellow-500" />
-            <span className="text-[9px] font-medium text-yellow-500">
+        {confluenceScore !== undefined && confluenceScore >= 50 && (
+          <div
+            data-testid="confluence-badge"
+            className={`flex items-center gap-1 px-2 py-1 rounded ${
+              confluenceScore >= 80
+                ? "bg-green-500/20 border border-green-500/30"
+                : confluenceScore >= 70
+                  ? "bg-yellow-500/20 border border-yellow-500/30"
+                  : "bg-blue-500/20 border border-blue-500/30"
+            }`}
+          >
+            <Zap
+              className={`w-3 h-3 ${
+                confluenceScore >= 80
+                  ? "text-green-500"
+                  : confluenceScore >= 70
+                    ? "text-yellow-500"
+                    : "text-blue-500"
+              }`}
+            />
+            <span
+              className={`text-xs font-medium ${
+                confluenceScore >= 80
+                  ? "text-green-500"
+                  : confluenceScore >= 70
+                    ? "text-yellow-500"
+                    : "text-blue-500"
+              }`}
+            >
               {Math.round(confluenceScore)}
             </span>
+            {symbolData.confluence?.highlights?.[0] && (
+              <span className="text-[10px] text-[var(--text-med)] ml-1 truncate max-w-[80px]">
+                {symbolData.confluence.highlights[0]}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -351,6 +351,8 @@ export function MobileAlertSheet({
                     channels.map((channel) => (
                       <button
                         key={channel.id}
+                        data-testid="channel-chip"
+                        data-selected={selectedChannels.includes(channel.id)}
                         onClick={() => toggleChannel(channel.id)}
                         className="w-full flex items-center justify-between p-3"
                       >

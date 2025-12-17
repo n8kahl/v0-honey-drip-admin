@@ -237,6 +237,11 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     } catch (error) {
       console.error("[v0] Mobile failed to send alert:", error);
       toast.error("Failed to send alert");
+      // Close modal after 1.5s to allow user to see error
+      setTimeout(() => {
+        setAlertSheetOpen(false);
+        setAlertTrade(null);
+      }, 1500);
     }
   };
 
