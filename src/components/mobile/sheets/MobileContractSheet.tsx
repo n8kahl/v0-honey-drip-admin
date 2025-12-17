@@ -73,9 +73,19 @@ export function MobileContractSheet({
       itm = sorted.filter((c) => (c.delta || 0) > 0.55).slice(0, 10);
       otm = sorted.filter((c) => (c.delta || 0) < 0.45).slice(0, 10);
     } else {
-      // Puts: ITM = delta < -0.55, OTM = delta > -0.45
-      itm = sorted.filter((c) => (c.delta || 0) < -0.55).slice(0, 10);
-      otm = sorted.filter((c) => (c.delta || 0) > -0.45).slice(0, 10);
+      // Puts: ITM = |delta| > 0.55 (more negative), OTM = |delta| < 0.45 (less negative)
+      itm = sorted
+        .filter((c) => {
+          const d = c.delta || 0;
+          return d < 0 && Math.abs(d) > 0.55;
+        })
+        .slice(0, 10);
+      otm = sorted
+        .filter((c) => {
+          const d = c.delta || 0;
+          return d < 0 && Math.abs(d) < 0.45;
+        })
+        .slice(0, 10);
     }
 
     // Return 10 ITM + 1 ATM + 10 OTM (max 21 contracts)

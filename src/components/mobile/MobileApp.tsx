@@ -192,43 +192,67 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   };
 
   // Handle sending alert (desktop pattern: persist channels + challenges)
-  const handleSendAlert = async (channels: string[], challengeIds: string[], comment?: string) => {
+  const handleSendAlert = async (
+    channels: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: {
+      entryPrice?: number;
+      currentPrice?: number;
+      targetPrice?: number;
+      stopLoss?: number;
+    }
+  ) => {
     if (!alertTrade) return;
 
     try {
       const selectedChannels = discordChannels.filter((c) => channels.includes(c.id));
 
+      // Apply price overrides to trade object (matching desktop pattern)
+      const tradeWithPrices = priceOverrides
+        ? {
+            ...alertTrade,
+            entryPrice: priceOverrides.entryPrice ?? alertTrade.entryPrice,
+            currentPrice: priceOverrides.currentPrice ?? alertTrade.currentPrice,
+            targetPrice: priceOverrides.targetPrice ?? alertTrade.targetPrice,
+            stopLoss: priceOverrides.stopLoss ?? alertTrade.stopLoss,
+          }
+        : alertTrade;
+
       // Persist challenges if provided (desktop pattern)
-      if (challengeIds.length > 0 && alertTrade.id) {
-        await useTradeStore.getState().linkTradeToChallenges(alertTrade.id, challengeIds);
+      if (challengeIds.length > 0 && tradeWithPrices.id) {
+        await useTradeStore.getState().linkTradeToChallenges(tradeWithPrices.id, challengeIds);
       }
 
       if (alertType === "update" && alertOptions.updateKind === "trim") {
-        await discord.sendUpdateAlert(selectedChannels, alertTrade, "trim", comment);
+        await discord.sendUpdateAlert(selectedChannels, tradeWithPrices, "trim", comment);
         toast.success("Trim alert sent");
       } else if (alertType === "update" && alertOptions.updateKind === "sl") {
-        await discord.sendUpdateAlert(selectedChannels, alertTrade, "update-sl", comment);
+        await discord.sendUpdateAlert(selectedChannels, tradeWithPrices, "update-sl", comment);
         toast.success("Stop loss update sent");
       } else if (alertType === "exit") {
-        await discord.sendExitAlert(selectedChannels, alertTrade, comment);
+        await discord.sendExitAlert(selectedChannels, tradeWithPrices, comment);
         // Update trade state to EXITED
-        await updateTrade(alertTrade.id, {
+        await updateTrade(tradeWithPrices.id, {
           state: "EXITED",
-          exitPrice: alertTrade.currentPrice,
+          exitPrice: tradeWithPrices.currentPrice,
           exitTime: new Date(),
         });
         toast.success("Exit alert sent");
       } else if (alertType === "enter") {
-        await discord.sendEntryAlert(selectedChannels, alertTrade, comment);
-        // Update trade state to ENTERED (desktop pattern)
-        await updateTrade(alertTrade.id, {
+        await discord.sendEntryAlert(selectedChannels, tradeWithPrices, comment);
+        // Update trade state to ENTERED with price overrides (desktop pattern)
+        await updateTrade(tradeWithPrices.id, {
           state: "ENTERED",
-          entryPrice: alertTrade.contract?.mid,
+          entryPrice: priceOverrides?.entryPrice ?? tradeWithPrices.contract?.mid,
+          currentPrice: priceOverrides?.currentPrice ?? tradeWithPrices.contract?.mid,
+          targetPrice: priceOverrides?.targetPrice,
+          stopLoss: priceOverrides?.stopLoss,
           entryTime: new Date(),
         });
         toast.success("Entry alert sent");
       } else if (alertType === "load") {
-        await discord.sendLoadAlert(selectedChannels, alertTrade, comment);
+        await discord.sendLoadAlert(selectedChannels, tradeWithPrices, comment);
         toast.success("Load alert sent");
       }
 

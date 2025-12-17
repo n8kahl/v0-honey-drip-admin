@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Drawer } from "vaul";
 import { Trade, AlertType, DiscordChannel, Challenge } from "../../../types";
 import { cn } from "../../../lib/utils";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
 import { formatDiscordAlert } from "../../../lib/discordFormatter";
 
 interface MobileAlertSheetProps {
@@ -13,7 +13,17 @@ interface MobileAlertSheetProps {
   alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
   channels: DiscordChannel[];
   challenges: Challenge[];
-  onSend: (channels: string[], challenges: string[], comment?: string) => void;
+  onSend: (
+    channels: string[],
+    challenges: string[],
+    comment?: string,
+    priceOverrides?: {
+      entryPrice?: number;
+      currentPrice?: number;
+      targetPrice?: number;
+      stopLoss?: number;
+    }
+  ) => void;
 }
 
 export function MobileAlertSheet({
@@ -38,6 +48,52 @@ export function MobileAlertSheet({
   const [showTarget, setShowTarget] = useState(false);
   const [showStopLoss, setShowStopLoss] = useState(false);
   const [showPnL, setShowPnL] = useState(false);
+
+  // Price overrides (matching desktop pattern)
+  const [entryPrice, setEntryPrice] = useState<number>(0);
+  const [currentPrice, setCurrentPrice] = useState<number>(0);
+  const [targetPrice, setTargetPrice] = useState<number>(0);
+  const [stopLoss, setStopLoss] = useState<number>(0);
+
+  // Inline price editing
+  const [editingField, setEditingField] = useState<"entry" | "current" | "target" | "stop" | null>(
+    null
+  );
+  const [tempValue, setTempValue] = useState("");
+
+  const formatPrice = (price: number) => price.toFixed(2);
+
+  const startEdit = (field: "entry" | "current" | "target" | "stop") => {
+    setEditingField(field);
+    const value =
+      field === "entry"
+        ? entryPrice
+        : field === "current"
+          ? currentPrice
+          : field === "target"
+            ? targetPrice
+            : stopLoss;
+    setTempValue(value.toFixed(2));
+  };
+
+  const saveEdit = () => {
+    const value = parseFloat(tempValue);
+    if (!isNaN(value) && value >= 0) {
+      if (editingField === "entry") setEntryPrice(value);
+      else if (editingField === "current") setCurrentPrice(value);
+      else if (editingField === "target") setTargetPrice(value);
+      else if (editingField === "stop") setStopLoss(value);
+    }
+    setEditingField(null);
+  };
+
+  const adjustPrice = (field: "entry" | "current" | "target" | "stop", delta: number) => {
+    const step = 0.05;
+    if (field === "entry") setEntryPrice(Math.max(0, entryPrice + delta * step));
+    else if (field === "current") setCurrentPrice(Math.max(0, currentPrice + delta * step));
+    else if (field === "target") setTargetPrice(Math.max(0, targetPrice + delta * step));
+    else if (field === "stop") setStopLoss(Math.max(0, stopLoss + delta * step));
+  };
 
   // Get alert title with emoji (matching desktop)
   const getAlertTitle = () => {
@@ -83,6 +139,12 @@ export function MobileAlertSheet({
   // Initialize state when sheet opens (matching desktop defaults)
   useEffect(() => {
     if (open && trade) {
+      // Initialize price overrides from trade
+      setEntryPrice(trade.entryPrice || trade.contract?.mid || 0);
+      setCurrentPrice(trade.currentPrice || trade.contract?.mid || 0);
+      setTargetPrice(trade.targetPrice || trade.contract?.mid * 1.5 || 0);
+      setStopLoss(trade.stopLoss || trade.contract?.mid * 0.5 || 0);
+
       // Initialize channels from trade or defaults
       const tradeChannels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
       if (tradeChannels.length > 0) {
@@ -170,8 +232,20 @@ export function MobileAlertSheet({
   const getAlertMessage = useMemo(() => {
     if (!trade) return "";
 
+    // Build trade object with price overrides for preview
+    const previewTrade =
+      alertType === "load" || alertType === "enter"
+        ? {
+            ...trade,
+            entryPrice,
+            currentPrice,
+            targetPrice,
+            stopLoss,
+          }
+        : trade;
+
     // Build options object from toggle state
-    return formatDiscordAlert(trade, alertType, {
+    return formatDiscordAlert(previewTrade, alertType, {
       updateKind: alertOptions?.updateKind,
       includeEntry: showEntry,
       includeCurrent: showCurrent,
@@ -204,6 +278,10 @@ export function MobileAlertSheet({
     showTarget,
     showStopLoss,
     showPnL,
+    entryPrice,
+    currentPrice,
+    targetPrice,
+    stopLoss,
   ]);
 
   const toggleChannel = (channelId: string) => {
@@ -219,7 +297,17 @@ export function MobileAlertSheet({
   };
 
   const handleSend = () => {
-    onSend(selectedChannels, selectedChallenges, comment.trim() || undefined);
+    // For load/enter alerts, pass price overrides
+    const priceOverrides =
+      alertType === "load" || alertType === "enter"
+        ? {
+            entryPrice,
+            currentPrice,
+            targetPrice,
+            stopLoss,
+          }
+        : undefined;
+    onSend(selectedChannels, selectedChallenges, comment.trim() || undefined, priceOverrides);
   };
 
   if (!trade) return null;
@@ -240,6 +328,182 @@ export function MobileAlertSheet({
                 Alert Preview
               </h2>
             </div>
+
+            {/* Editable Price Strip (for enter/load alerts) */}
+            {(alertType === "load" || alertType === "enter") && (
+              <div className="mb-4">
+                <label className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-2">
+                  Prices (Tap to Edit)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Entry Price */}
+                  <div className="p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                    <div className="text-[9px] text-[var(--text-muted)] uppercase mb-1">Entry</div>
+                    {editingField === "entry" ? (
+                      <input
+                        type="text"
+                        value={tempValue}
+                        onChange={(e) => setTempValue(e.target.value)}
+                        onBlur={saveEdit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit();
+                          if (e.key === "Escape") setEditingField(null);
+                        }}
+                        autoFocus
+                        className="w-full text-sm font-mono bg-transparent border-b border-[var(--brand-primary)] text-[var(--text-high)] text-center outline-none"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => adjustPrice("entry", -1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)]"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => startEdit("entry")}
+                          className="text-sm font-mono text-[var(--text-high)]"
+                        >
+                          ${formatPrice(entryPrice)}
+                        </button>
+                        <button
+                          onClick={() => adjustPrice("entry", 1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)]"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Current Price */}
+                  <div className="p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                    <div className="text-[9px] text-[var(--text-muted)] uppercase mb-1">
+                      Current
+                    </div>
+                    {editingField === "current" ? (
+                      <input
+                        type="text"
+                        value={tempValue}
+                        onChange={(e) => setTempValue(e.target.value)}
+                        onBlur={saveEdit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit();
+                          if (e.key === "Escape") setEditingField(null);
+                        }}
+                        autoFocus
+                        className="w-full text-sm font-mono bg-transparent border-b border-[var(--brand-primary)] text-[var(--text-high)] text-center outline-none"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => adjustPrice("current", -1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)]"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => startEdit("current")}
+                          className="text-sm font-mono text-[var(--text-high)]"
+                        >
+                          ${formatPrice(currentPrice)}
+                        </button>
+                        <button
+                          onClick={() => adjustPrice("current", 1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)]"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Target Price */}
+                  <div className="p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                    <div className="text-[9px] text-[var(--accent-positive)] uppercase mb-1">
+                      Target
+                    </div>
+                    {editingField === "target" ? (
+                      <input
+                        type="text"
+                        value={tempValue}
+                        onChange={(e) => setTempValue(e.target.value)}
+                        onBlur={saveEdit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit();
+                          if (e.key === "Escape") setEditingField(null);
+                        }}
+                        autoFocus
+                        className="w-full text-sm font-mono bg-transparent border-b border-[var(--accent-positive)] text-[var(--accent-positive)] text-center outline-none"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => adjustPrice("target", -1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-positive)]"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => startEdit("target")}
+                          className="text-sm font-mono text-[var(--accent-positive)]"
+                        >
+                          ${formatPrice(targetPrice)}
+                        </button>
+                        <button
+                          onClick={() => adjustPrice("target", 1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-positive)]"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Stop Loss */}
+                  <div className="p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+                    <div className="text-[9px] text-[var(--accent-negative)] uppercase mb-1">
+                      Stop
+                    </div>
+                    {editingField === "stop" ? (
+                      <input
+                        type="text"
+                        value={tempValue}
+                        onChange={(e) => setTempValue(e.target.value)}
+                        onBlur={saveEdit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit();
+                          if (e.key === "Escape") setEditingField(null);
+                        }}
+                        autoFocus
+                        className="w-full text-sm font-mono bg-transparent border-b border-[var(--accent-negative)] text-[var(--accent-negative)] text-center outline-none"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => adjustPrice("stop", -1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-negative)]"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => startEdit("stop")}
+                          className="text-sm font-mono text-[var(--accent-negative)]"
+                        >
+                          ${formatPrice(stopLoss)}
+                        </button>
+                        <button
+                          onClick={() => adjustPrice("stop", 1)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-negative)]"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Alert Preview Box (matching desktop) */}
             <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-4 mb-4">
