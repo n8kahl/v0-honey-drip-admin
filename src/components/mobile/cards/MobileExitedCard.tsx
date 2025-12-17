@@ -6,9 +6,10 @@ import { Share2, Trophy } from "lucide-react";
 interface MobileExitedCardProps {
   trade: Trade;
   onShare: () => void;
+  onTap?: () => void;
 }
 
-export function MobileExitedCard({ trade, onShare }: MobileExitedCardProps) {
+export function MobileExitedCard({ trade, onShare, onTap }: MobileExitedCardProps) {
   const contract = trade.contract;
   const entryPrice = trade.entryPrice || 0;
   const exitPrice = trade.exitPrice || trade.currentPrice || 0;
@@ -22,10 +23,21 @@ export function MobileExitedCard({ trade, onShare }: MobileExitedCardProps) {
 
   return (
     <div
+      onClick={onTap}
+      role={onTap ? "button" : undefined}
+      tabIndex={onTap ? 0 : undefined}
+      onKeyDown={
+        onTap
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") onTap();
+            }
+          : undefined
+      }
       className={cn(
         // Match HDRowLoadedTrade styling - flat row with bottom border
         "w-full p-3 border-b border-[var(--border-hairline)] min-h-[52px]",
-        "hover:bg-[var(--surface-2)] transition-colors duration-150"
+        "hover:bg-[var(--surface-2)] transition-colors duration-150",
+        onTap && "cursor-pointer"
       )}
     >
       {/* Main row: Contract info + P&L */}
@@ -70,7 +82,10 @@ export function MobileExitedCard({ trade, onShare }: MobileExitedCardProps) {
 
         {/* Share button - inline */}
         <button
-          onClick={onShare}
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent card click when Share button clicked
+            onShare();
+          }}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium transition-colors min-h-[32px]",
             isWin

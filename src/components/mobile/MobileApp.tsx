@@ -15,6 +15,8 @@ import { useDiscord } from "../../hooks/useDiscord";
 import { useAuth } from "../../contexts/AuthContext";
 import { Trade, AlertType, Contract, Ticker, TradeType } from "../../types";
 import { toast } from "sonner";
+import { massive } from "../../lib/massive";
+import { fetchNormalizedChain } from "../../services/options";
 
 interface MobileAppProps {
   onLogout?: () => void;
@@ -35,18 +37,13 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const [contractSheetTicker, setContractSheetTicker] = useState<Ticker | null>(null);
   const [contractsForTicker, setContractsForTicker] = useState<Contract[]>([]);
   const [contractsLoading, setContractsLoading] = useState(false);
+  const [contractsError, setContractsError] = useState<string | null>(null);
 
   // Stores
   const { activeTrades, historyTrades, loadTrades, updateTrade } = useTradeStore();
   const { watchlist, loadWatchlist } = useMarketStore();
-  const {
-    discordChannels,
-    challenges,
-    loadDiscordChannels,
-    loadChallenges,
-    discordAlertsEnabled,
-    getDefaultChannels,
-  } = useSettingsStore();
+  const { discordChannels, challenges, loadDiscordChannels, loadChallenges, discordAlertsEnabled } =
+    useSettingsStore();
 
   // Discord hook
   const discord = useDiscord();
@@ -95,8 +92,8 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         toast.info("Discord alerts disabled");
         return;
       }
-      // Handle voice alerts
-      console.log("[Mobile] Voice alert:", alert);
+      // Handle voice alerts (logged to console for debugging)
+      console.error("[v0] Mobile voice alert:", alert);
     },
   });
 
@@ -127,17 +124,23 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const handleLoadTicker = async (ticker: Ticker) => {
     setContractSheetTicker(ticker);
     setContractsLoading(true);
+    setContractsError(null);
     setContractSheetOpen(true);
 
     try {
-      const response = await fetch(`/api/options/chain?symbol=${ticker.symbol}&window=10`);
-      if (!response.ok) throw new Error("Failed to fetch options chain");
-      const data = await response.json();
-      setContractsForTicker(data.contracts || []);
+      // Use fetchNormalizedChain with token manager for authenticated requests
+      const tokenManager = massive.getTokenManager();
+      const contracts = await fetchNormalizedChain(ticker.symbol, {
+        window: 10,
+        tokenManager,
+      });
+      setContractsForTicker(contracts);
     } catch (error) {
-      console.error("[Mobile] Failed to load contracts:", error);
+      console.error("[v0] Mobile failed to load contracts:", error);
+      const errorMsg = error instanceof Error ? error.message : "Failed to load options chain";
+      setContractsError(errorMsg);
       toast.error("Failed to load options chain");
-      setContractSheetOpen(false);
+      // Keep sheet open to show error state with retry button
     } finally {
       setContractsLoading(false);
     }
@@ -188,12 +191,17 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     openAlertSheet(newTrade, "load");
   };
 
-  // Handle sending alert
+  // Handle sending alert (desktop pattern: persist channels + challenges)
   const handleSendAlert = async (channels: string[], challengeIds: string[], comment?: string) => {
     if (!alertTrade) return;
 
     try {
       const selectedChannels = discordChannels.filter((c) => channels.includes(c.id));
+
+      // Persist challenges if provided (desktop pattern)
+      if (challengeIds.length > 0 && alertTrade.id) {
+        await useTradeStore.getState().linkTradeToChallenges(alertTrade.id, challengeIds);
+      }
 
       if (alertType === "update" && alertOptions.updateKind === "trim") {
         await discord.sendUpdateAlert(selectedChannels, alertTrade, "trim", comment);
@@ -212,7 +220,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         toast.success("Exit alert sent");
       } else if (alertType === "enter") {
         await discord.sendEntryAlert(selectedChannels, alertTrade, comment);
-        // Update trade state to ENTERED
+        // Update trade state to ENTERED (desktop pattern)
         await updateTrade(alertTrade.id, {
           state: "ENTERED",
           entryPrice: alertTrade.contract?.mid,
@@ -227,7 +235,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       setAlertSheetOpen(false);
       setAlertTrade(null);
     } catch (error) {
-      console.error("[Mobile] Failed to send alert:", error);
+      console.error("[v0] Mobile failed to send alert:", error);
       toast.error("Failed to send alert");
     }
   };
@@ -331,6 +339,8 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         contracts={contractsForTicker}
         onSelect={handleContractSelect}
         loading={contractsLoading}
+        error={contractsError}
+        onRetry={() => contractSheetTicker && handleLoadTicker(contractSheetTicker)}
       />
     </div>
   );

@@ -12,6 +12,8 @@ interface MobileContractSheetProps {
   contracts: Contract[];
   onSelect: (contract: Contract) => void;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export function MobileContractSheet({
@@ -21,6 +23,8 @@ export function MobileContractSheet({
   contracts,
   onSelect,
   loading = false,
+  error = null,
+  onRetry,
 }: MobileContractSheetProps) {
   const [selectedType, setSelectedType] = useState<OptionType>("C");
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
@@ -142,6 +146,19 @@ export function MobileContractSheet({
                 <div className="flex flex-col items-center justify-center py-8 gap-2">
                   <div className="w-6 h-6 border-2 border-[var(--brand-primary)] border-t-transparent rounded-full animate-spin" />
                   <p className="text-[var(--text-muted)] text-sm">Loading contracts...</p>
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+                    <span className="text-2xl">⚠️</span>
+                  </div>
+                  <p className="text-[var(--text-high)] font-medium">Failed to Load</p>
+                  <p className="text-[var(--text-muted)] text-sm text-center px-4">{error}</p>
+                  {onRetry && (
+                    <Button onClick={onRetry} className="mt-2" variant="default">
+                      Retry
+                    </Button>
+                  )}
                 </div>
               ) : filteredContracts.length === 0 ? (
                 <p className="text-[var(--text-muted)] text-center py-8">No contracts available</p>

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { Drawer } from "vaul";
 import { Trade, AlertType, DiscordChannel, Challenge } from "../../../types";
-import { cn, formatPrice } from "../../../lib/utils";
+import { cn } from "../../../lib/utils";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { formatDiscordAlert } from "../../../lib/discordFormatter";
 
 interface MobileAlertSheetProps {
   open: boolean;
@@ -165,38 +166,45 @@ export function MobileAlertSheet({
     }
   }, [open, trade, channels, alertType, alertOptions]);
 
-  // Generate alert message (matching desktop format)
+  // Generate alert message using canonical formatter (desktop pattern)
   const getAlertMessage = useMemo(() => {
     if (!trade) return "";
-    const { ticker, contract, entryPrice, currentPrice, movePercent, tradeType } = trade;
-    if (!contract) return "";
 
-    const strikeStr = `$${contract.strike}${contract.type}`;
-    const expiryStr = contract.expiry;
-
-    let message = `**${ticker} ${strikeStr} ${expiryStr}** (${tradeType})\n`;
-
-    if (alertType === "load") {
-      message += `\nLoaded for review`;
-    } else if (alertType === "enter" && entryPrice) {
-      if (showEntry) message += `\nEntry: $${entryPrice.toFixed(2)}`;
-      if (showTarget && trade.targetPrice) message += `\nTarget: $${trade.targetPrice.toFixed(2)}`;
-      if (showStopLoss && trade.stopLoss) message += `\nStop: $${trade.stopLoss.toFixed(2)}`;
-    } else if (currentPrice) {
-      if (showCurrent) message += `\nCurrent: $${currentPrice.toFixed(2)}`;
-      if (showPnL && movePercent !== undefined) {
-        const sign = movePercent >= 0 ? "+" : "";
-        message += `\nP&L: ${sign}${movePercent.toFixed(1)}%`;
-      }
-      if (showStopLoss && trade.stopLoss) message += `\nStop: $${trade.stopLoss.toFixed(2)}`;
-    }
-
-    if (comment.trim()) {
-      message += `\n\n${comment}`;
-    }
-
-    return message;
-  }, [trade, alertType, comment, showEntry, showCurrent, showTarget, showStopLoss, showPnL]);
+    // Build options object from toggle state
+    return formatDiscordAlert(trade, alertType, {
+      updateKind: alertOptions?.updateKind,
+      includeEntry: showEntry,
+      includeCurrent: showCurrent,
+      includeTarget: showTarget,
+      includeStopLoss: showStopLoss,
+      includePnL: showPnL,
+      comment: comment.trim() || undefined,
+      includeDTE: true, // Desktop includes DTE
+      dte: trade.contract?.daysToExpiry,
+      includeSetupType: !!trade.setupType,
+      setupType: trade.setupType,
+      // Include confluence if available
+      includeConfluence: !!trade.confluence,
+      confluenceData: trade.confluence
+        ? {
+            overallScore: trade.confluence.overall,
+            subscores: trade.confluence.subscores,
+            components: trade.confluence.components,
+            highlights: trade.confluence.highlights,
+          }
+        : undefined,
+    });
+  }, [
+    trade,
+    alertType,
+    alertOptions,
+    comment,
+    showEntry,
+    showCurrent,
+    showTarget,
+    showStopLoss,
+    showPnL,
+  ]);
 
   const toggleChannel = (channelId: string) => {
     setSelectedChannels((prev) =>

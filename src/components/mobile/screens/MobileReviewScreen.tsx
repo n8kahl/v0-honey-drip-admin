@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Trade } from "../../../types";
 import { MobileExitedCard } from "../cards/MobileExitedCard";
+import { MobileTradeDetailSheet } from "../sheets/MobileTradeDetailSheet";
 import { History } from "lucide-react";
 
 interface MobileReviewScreenProps {
@@ -8,6 +10,7 @@ interface MobileReviewScreenProps {
 }
 
 export function MobileReviewScreen({ trades, onShare }: MobileReviewScreenProps) {
+  const [detailTrade, setDetailTrade] = useState<Trade | null>(null);
   // Sort by exit time, most recent first
   const sortedTrades = [...trades].sort((a, b) => {
     const aTime = a.exitTime ? new Date(a.exitTime).getTime() : 0;
@@ -56,7 +59,12 @@ export function MobileReviewScreen({ trades, onShare }: MobileReviewScreenProps)
           </div>
           <div className="space-y-2">
             {todaysTrades.map((trade) => (
-              <MobileExitedCard key={trade.id} trade={trade} onShare={() => onShare(trade)} />
+              <MobileExitedCard
+                key={trade.id}
+                trade={trade}
+                onShare={() => onShare(trade)}
+                onTap={() => setDetailTrade(trade)}
+              />
             ))}
           </div>
         </div>
@@ -73,11 +81,23 @@ export function MobileReviewScreen({ trades, onShare }: MobileReviewScreenProps)
           </div>
           <div className="space-y-2">
             {olderTrades.map((trade) => (
-              <MobileExitedCard key={trade.id} trade={trade} onShare={() => onShare(trade)} />
+              <MobileExitedCard
+                key={trade.id}
+                trade={trade}
+                onShare={() => onShare(trade)}
+                onTap={() => setDetailTrade(trade)}
+              />
             ))}
           </div>
         </div>
       )}
+
+      {/* Trade Detail Drawer (desktop pattern) */}
+      <MobileTradeDetailSheet
+        open={!!detailTrade}
+        onOpenChange={(open) => !open && setDetailTrade(null)}
+        trade={detailTrade}
+      />
     </div>
   );
 }
