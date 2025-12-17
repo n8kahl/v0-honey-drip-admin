@@ -1035,6 +1035,22 @@ export function useTradeStateMachine({
           setActiveTicker(null);
           setFocusedTrade(null); // Atomic clear of both previewTrade and currentTradeId
           setShowAlert(false);
+
+          // OPTIMISTIC UPDATE: Immediately move trade from activeTrades to historyTrades
+          // This ensures UI updates instantly without waiting for DB reload
+          const exitedTrade: Trade = {
+            ...trade,
+            state: "EXITED",
+            exitPrice: basePrice,
+            exitTime: new Date(),
+            movePercent: trade.entryPrice
+              ? ((basePrice - trade.entryPrice) / trade.entryPrice) * 100
+              : 0,
+          };
+          useTradeStore.setState((state) => ({
+            activeTrades: state.activeTrades.filter((t) => t.id !== trade.id),
+            historyTrades: [...state.historyTrades, exitedTrade],
+          }));
         }
 
         // Reload from database
