@@ -415,11 +415,10 @@ export default function App() {
             }}
             onOpenReviewTrade={() => navigate("/history")}
             onExitedTrade={handleExitedTrade}
-            onEnteredTrade={(trade) => {
-              // Navigate to the trade detail page after entering
-              if (trade.id) {
-                navigate(`/trades/${trade.id}`);
-              }
+            onEnteredTrade={() => {
+              // NO-OP: Stay on cockpit page - NowPanel automatically shows NowPanelManage
+              // for ENTERED trades. Navigating to /trades/:id was causing regression
+              // by showing a static page instead of the live management cockpit.
             }}
             activeTab={activeTab}
             compositeSignals={activeSignals}
