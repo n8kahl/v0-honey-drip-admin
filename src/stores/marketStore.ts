@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { Ticker } from "../types";
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from "../lib/supabase/database";
+import { dismissSignalsForOwnerSymbol } from "../lib/supabase/compositeSignals";
 import { buildApiUrl, isTestEnv } from "../lib/env";
 import { useMarketDataStore } from "./marketDataStore";
 import { toast } from "sonner";
@@ -59,7 +60,7 @@ interface MarketStore {
 
   // Watchlist operations
   addTicker: (userId: string, ticker: Ticker) => Promise<void>;
-  removeTicker: (tickerId: string) => Promise<void>;
+  removeTicker: (userId: string, tickerId: string) => Promise<void>;
   loadWatchlist: (userId: string) => Promise<void>;
 
   // Quote operations
@@ -147,10 +148,28 @@ export const useMarketStore = create<MarketStore>()(
         }
       },
 
-      removeTicker: async (tickerId) => {
+      removeTicker: async (userId, tickerId) => {
         set({ isLoading: true, error: null });
         try {
+          // Get the symbol before removing from watchlist
+          const ticker = get().watchlist.find((t) => t.id === tickerId);
+          const symbol = ticker?.symbol;
+
+          // Remove from watchlist
           await removeFromWatchlist(tickerId);
+
+          // Dismiss any active signals for this symbol
+          if (symbol && userId) {
+            try {
+              const dismissed = await dismissSignalsForOwnerSymbol(userId, symbol);
+              if (dismissed > 0) {
+                console.warn(`[MarketStore] Dismissed ${dismissed} signals for ${symbol}`);
+              }
+            } catch (signalError) {
+              // Log but don't fail the removal
+              console.warn("[MarketStore] Failed to dismiss signals:", signalError);
+            }
+          }
 
           set((state) => ({
             watchlist: state.watchlist.filter((t) => t.id !== tickerId),

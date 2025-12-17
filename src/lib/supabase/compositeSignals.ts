@@ -418,6 +418,50 @@ export async function dismissSignal(id: string): Promise<CompositeSignal> {
 }
 
 /**
+ * Dismiss all active signals for a specific symbol and owner
+ * Used when a symbol is removed from the watchlist
+ *
+ * @param ownerId - User ID (owner of the signals)
+ * @param symbol - Symbol to dismiss signals for
+ * @returns Number of signals dismissed
+ */
+export async function dismissSignalsForOwnerSymbol(
+  ownerId: string,
+  symbol: string
+): Promise<number> {
+  const supabase = await getDefaultClient();
+  const normalizedSymbol = symbol.replace(/^I:/, "").toUpperCase();
+
+  const { data, error } = await supabase
+    .from("composite_signals")
+    .update({
+      status: "DISMISSED",
+      dismissed_at: new Date().toISOString(),
+    })
+    .eq("owner", ownerId)
+    .eq("symbol", normalizedSymbol)
+    .eq("status", "ACTIVE")
+    .select("id");
+
+  if (error) {
+    console.error(
+      `[compositeSignals] Error dismissing signals for ${symbol}:`,
+      error
+    );
+    throw new Error(`Failed to dismiss signals: ${error.message}`);
+  }
+
+  const count = data?.length || 0;
+  if (count > 0) {
+    console.warn(
+      `[compositeSignals] Dismissed ${count} active signals for ${symbol} (owner: ${ownerId})`
+    );
+  }
+
+  return count;
+}
+
+/**
  * Fill a signal (enter trade)
  *
  * @param id - Signal ID

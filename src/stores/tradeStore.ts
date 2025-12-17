@@ -140,6 +140,42 @@ const mapStatusToState = (status: string): TradeState => {
   }
 };
 
+/**
+ * Check if a contract ID is a valid OCC symbol format
+ * Valid format: O:SPY250117C00622000 (starts with "O:" followed by symbol, date, type, strike)
+ */
+function isValidOCCSymbol(id: string | undefined | null): boolean {
+  if (!id || typeof id !== "string") return false;
+  // OCC symbols start with "O:" and are typically 20+ characters
+  return id.startsWith("O:") && id.length >= 18;
+}
+
+/**
+ * Generate OCC symbol from trade data for legacy trades without contract.id
+ * Format: O:SPY250117C00622000 (O:SYMBOL+YYMMDD+C/P+strike*1000 padded to 8 digits)
+ */
+function generateOCCSymbol(
+  ticker: string,
+  expiry: string,
+  type: "call" | "put" | "C" | "P",
+  strike: number
+): string {
+  // Parse expiry date (expects YYYY-MM-DD format)
+  const expiryDate = new Date(expiry);
+  const yy = String(expiryDate.getFullYear()).slice(-2);
+  const mm = String(expiryDate.getMonth() + 1).padStart(2, "0");
+  const dd = String(expiryDate.getDate()).padStart(2, "0");
+
+  // Normalize option type to single char
+  const optionType = type === "call" || type === "C" ? "C" : "P";
+
+  // Strike price * 1000, padded to 8 digits
+  const strikeInt = Math.round(strike * 1000);
+  const strikePadded = String(strikeInt).padStart(8, "0");
+
+  return `O:${ticker}${yy}${mm}${dd}${optionType}${strikePadded}`;
+}
+
 export const useTradeStore = create<TradeStore>()(
   devtools(
     (set, get) => ({
@@ -496,21 +532,45 @@ export const useTradeStore = create<TradeStore>()(
           const mappedTrades: Trade[] = tradesData.map((t) => {
             // Use stored contract if available
             const storedContract = t.contract as any;
-            const contract = storedContract || {
-              id: `${t.ticker}-${t.strike}-${t.expiration}`,
-              strike: parseFloat(t.strike),
-              expiry: t.expiration,
-              expiryDate: new Date(t.expiration),
-              daysToExpiry: Math.ceil(
-                (new Date(t.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-              ),
-              type: (t.contract_type === "call" ? "C" : "P") as OptionType,
-              mid: 0,
-              bid: 0,
-              ask: 0,
-              volume: 0,
-              openInterest: 0,
-            };
+            const strike = parseFloat(t.strike);
+            const optionType = (t.contract_type === "call" ? "C" : "P") as OptionType;
+
+            // Generate proper OCC symbol for live P&L tracking
+            // ALWAYS generate it - we'll use it if stored ID is missing or invalid
+            const generatedOCCSymbol = generateOCCSymbol(t.ticker, t.expiration, optionType, strike);
+
+            // Use stored ID only if it's a valid OCC symbol, otherwise use generated one
+            const storedIdValid = isValidOCCSymbol(storedContract?.id);
+            const contractId = storedIdValid ? storedContract.id : generatedOCCSymbol;
+
+            // Debug log for OCC symbol generation
+            if (!storedIdValid) {
+              log.debug(`[loadTrades] Generated OCC symbol for ${t.ticker}`, {
+                storedId: storedContract?.id || "(none)",
+                generatedId: generatedOCCSymbol,
+                strike,
+                expiry: t.expiration,
+                type: optionType,
+              });
+            }
+
+            const contract = storedContract
+              ? { ...storedContract, id: contractId }
+              : {
+                  id: contractId,
+                  strike,
+                  expiry: t.expiration,
+                  expiryDate: new Date(t.expiration),
+                  daysToExpiry: Math.ceil(
+                    (new Date(t.expiration).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                  ),
+                  type: optionType,
+                  mid: 0,
+                  bid: 0,
+                  ask: 0,
+                  volume: 0,
+                  openInterest: 0,
+                };
 
             // Extract discord channel IDs from junction table data
             const discordChannelRows = Array.isArray((t as any).trades_discord_channels)

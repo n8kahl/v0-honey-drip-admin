@@ -21,7 +21,7 @@ import {
   HeartPulse,
   FileCheck,
 } from "lucide-react";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { useActiveTradePnL, useQuotes } from "../../../hooks/useMassiveData";
 import { useKeyLevels } from "../../../hooks/useKeyLevels";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
 import { useThesisValidation } from "../../../hooks/useThesisValidation";
@@ -251,10 +251,11 @@ export function HDActiveTradePanel({
     }
   }, [showCoach, trade, aiCoach.state.isActive]);
 
-  // Get real-time P&L
-  const { currentPrice, pnlPercent, pnlDollars } = useActiveTradePnL(
+  // Get real-time P&L (with quantity for dollar calculation)
+  const { currentPrice, pnlPercent, pnlDollars, isStale } = useActiveTradePnL(
     trade.contract.id,
-    trade.entryPrice || trade.contract.mid
+    trade.entryPrice || trade.contract.mid,
+    trade.quantity || 1
   );
 
   // Get key levels for underlying (only for indices, not stocks)
@@ -265,14 +266,19 @@ export function HDActiveTradePanel({
     enabled: true,
   });
 
+  // Get live underlying quote (from Tradier for stocks, via unified quotes endpoint)
+  const underlyingSymbols = useMemo(() => [underlyingTicker], [underlyingTicker]);
+  const { quotes: underlyingQuotes } = useQuotes(underlyingSymbols);
+  const liveUnderlyingQuote = underlyingQuotes.get(underlyingTicker);
+
   // Get macro context
   const { macro } = useMacroContext(30000);
-  const vixLevel = macro?.vix?.level;
+  const vixValue = macro?.vix?.value;
 
   // Calculate position health
   const health = useMemo(
-    () => calculatePositionHealth(trade, pnlPercent || 0, currentPrice || 0, vixLevel),
-    [trade, pnlPercent, currentPrice, vixLevel]
+    () => calculatePositionHealth(trade, pnlPercent || 0, currentPrice || 0, vixValue),
+    [trade, pnlPercent, currentPrice, vixValue]
   );
 
   // Get time pressure
@@ -297,10 +303,11 @@ export function HDActiveTradePanel({
   const isProfit = (pnlPercent || 0) >= 0;
   const entryPrice = trade.entryPrice || trade.contract.mid;
 
-  // Calculate underlying price change (if we had entry snapshot)
-  const underlyingCurrent = keyLevels?.vwap || 0;
+  // Calculate underlying price change using LIVE quote (not VWAP)
+  // Priority: live quote > VWAP fallback
+  const underlyingCurrent = liveUnderlyingQuote?.last || keyLevels?.vwap || 0;
   const underlyingAtEntry = trade.underlyingAtEntry || underlyingCurrent;
-  const underlyingChange = underlyingCurrent
+  const underlyingChange = underlyingCurrent && underlyingAtEntry > 0
     ? ((underlyingCurrent - underlyingAtEntry) / underlyingAtEntry) * 100
     : 0;
 

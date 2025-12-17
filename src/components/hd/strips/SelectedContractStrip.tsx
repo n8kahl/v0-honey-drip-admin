@@ -3,14 +3,19 @@
  *
  * Shows between Top4Grid and CompactChain:
  * - Contract info: Strike | Type | Expiry | DTE
- * - Key metrics: Mid | Delta | Spread | IV
+ * - Key metrics: Mid | Delta | Spread | IV | Liquidity Grade
  * - Visual indicator for recommended vs manual selection
  * - "Revert to recommended" action if manually overridden
+ * - Live data indicators showing source and freshness
+ *
+ * Updated Dec 2025: Now uses LoadedTradeLiveModel for live metrics
  */
 
 import type { Contract } from "../../../types";
+import type { LoadedTradeLiveModel } from "../../../hooks/useLoadedTradeLiveModel";
 import { cn } from "../../../lib/utils";
-import { Star, RotateCcw, TrendingUp, TrendingDown } from "lucide-react";
+import { Star, RotateCcw, TrendingUp, TrendingDown, Wifi, Clock, AlertTriangle } from "lucide-react";
+import { formatAge } from "../../../lib/market/dataFreshness";
 
 interface SelectedContractStripProps {
   contract: Contract | null;
@@ -18,6 +23,8 @@ interface SelectedContractStripProps {
   onRevertToRecommended?: () => void;
   hasRecommendation?: boolean;
   className?: string;
+  /** Optional live model for enhanced metrics */
+  liveModel?: LoadedTradeLiveModel | null;
 }
 
 export function SelectedContractStrip({
@@ -26,6 +33,7 @@ export function SelectedContractStrip({
   onRevertToRecommended,
   hasRecommendation = false,
   className,
+  liveModel,
 }: SelectedContractStripProps) {
   if (!contract) {
     return (
@@ -40,8 +48,35 @@ export function SelectedContractStrip({
     );
   }
 
-  const spreadPct =
-    contract.mid > 0 ? (((contract.ask - contract.bid) / contract.mid) * 100).toFixed(1) : "—";
+  // Use live model data when available, fallback to static contract
+  const hasLiveData = liveModel && liveModel.option.source !== "none";
+
+  // Effective mid: prefer live, fallback to contract snapshot
+  const effectiveMid = hasLiveData
+    ? liveModel.formatted.effectiveMid
+    : `$${contract.mid.toFixed(2)}`;
+
+  // Delta: prefer live Greeks, fallback to contract
+  const delta = hasLiveData && liveModel.greeks.delta !== null
+    ? liveModel.greeks.delta.toFixed(2)
+    : contract.delta?.toFixed(2) ?? "—";
+
+  // Spread: prefer live calculation, fallback to static
+  const spreadPct = hasLiveData
+    ? liveModel.formatted.spreadPct
+    : contract.mid > 0
+      ? `${(((contract.ask - contract.bid) / contract.mid) * 100).toFixed(1)}%`
+      : "—";
+
+  // Liquidity grade and slippage (only from live model)
+  const liquidityGrade = hasLiveData ? liveModel.execution.liquidityGrade : null;
+  const slippage = hasLiveData ? liveModel.formatted.slippage : null;
+
+  // Data health
+  const isStale = liveModel?.overallHealth === "stale";
+  const isDegraded = liveModel?.overallHealth === "degraded";
+  const dataSource = hasLiveData ? liveModel.option.source : "static";
+  const dataAge = hasLiveData ? formatAge(Date.now() - liveModel.option.asOf) : null;
 
   const isCall = contract.type === "C";
   const ContractIcon = isCall ? TrendingUp : TrendingDown;
@@ -86,19 +121,28 @@ export function SelectedContractStrip({
 
       {/* Metrics Chips */}
       <div className="flex-1 flex items-center gap-3 justify-center">
-        {/* Mid Price */}
+        {/* Mid Price with live indicator */}
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-[var(--text-faint)] uppercase">Mid</span>
-          <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
-            ${contract.mid.toFixed(2)}
+          <span className={cn(
+            "text-xs font-medium tabular-nums",
+            isStale ? "text-red-400" : "text-[var(--text-high)]"
+          )}>
+            {effectiveMid}
           </span>
+          {hasLiveData && (
+            <Wifi className={cn(
+              "w-3 h-3",
+              dataSource === "websocket" ? "text-green-400" : "text-yellow-400"
+            )} />
+          )}
         </div>
 
         {/* Delta */}
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-[var(--text-faint)]">Δ</span>
           <span className="text-xs text-[var(--text-muted)] tabular-nums">
-            {contract.delta?.toFixed(2) ?? "—"}
+            {delta}
           </span>
         </div>
 
@@ -108,14 +152,40 @@ export function SelectedContractStrip({
           <span
             className={cn(
               "text-xs tabular-nums",
-              parseFloat(spreadPct) > 3
+              typeof spreadPct === "string" && parseFloat(spreadPct) > 3
                 ? "text-[var(--accent-negative)]"
                 : "text-[var(--text-muted)]"
             )}
           >
-            {spreadPct}%
+            {spreadPct}
           </span>
         </div>
+
+        {/* Liquidity Grade (only when live) */}
+        {liquidityGrade && (
+          <div className="flex items-center gap-1">
+            <span
+              className={cn(
+                "px-1.5 py-0.5 text-[10px] font-semibold rounded",
+                liquidityGrade === "A" && "bg-green-500/20 text-green-400",
+                liquidityGrade === "B" && "bg-yellow-500/20 text-yellow-400",
+                liquidityGrade === "C" && "bg-red-500/20 text-red-400"
+              )}
+            >
+              {liquidityGrade}
+            </span>
+          </div>
+        )}
+
+        {/* Expected Slippage (only when live) */}
+        {slippage && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)] uppercase">Slip</span>
+            <span className="text-xs text-[var(--text-muted)] tabular-nums">
+              {slippage}
+            </span>
+          </div>
+        )}
 
         {/* IV */}
         {contract.iv && (
@@ -138,8 +208,34 @@ export function SelectedContractStrip({
         </div>
       </div>
 
-      {/* Selection Badge + Revert Action */}
+      {/* Data Health + Selection Badge + Revert Action */}
       <div className="flex items-center gap-2">
+        {/* Stale/Degraded Warning */}
+        {isStale && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/20 text-red-400">
+            <AlertTriangle className="w-3 h-3" />
+            <span className="text-[9px] font-medium">STALE</span>
+          </div>
+        )}
+        {isDegraded && !isStale && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400">
+            <Clock className="w-3 h-3" />
+            <span className="text-[9px] font-medium">DELAYED</span>
+          </div>
+        )}
+
+        {/* Data Age (when live) */}
+        {dataAge && !isStale && (
+          <span className="text-[9px] text-[var(--text-faint)]">{dataAge}</span>
+        )}
+
+        {/* Static badge when no live data */}
+        {!hasLiveData && (
+          <span className="px-2 py-0.5 text-[9px] font-medium rounded bg-gray-500/20 text-gray-400">
+            SNAPSHOT
+          </span>
+        )}
+
         {isRecommended ? (
           <span className="px-2 py-0.5 text-[9px] font-medium rounded bg-amber-500/20 text-amber-400">
             RECOMMENDED

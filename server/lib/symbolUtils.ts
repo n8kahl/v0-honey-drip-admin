@@ -23,7 +23,8 @@ export function normalizeSymbolForUI(symbol: string): string {
 
 export function normalizeSymbolForMassive(symbol: string): string {
   const clean = normalizeSymbolForUI(symbol);
-  if (isIndex(clean) && !symbol.startsWith('I:')) {
+  // Always add I: prefix for indices, regardless of input format
+  if (isIndex(clean)) {
     return `I:${clean}`;
   }
   return clean;

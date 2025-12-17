@@ -350,7 +350,7 @@ export function CompactChain({
         className
       )}
     >
-      {/* Header Row: Calls/Puts Toggle */}
+      {/* Header Row: Calls/Puts Toggle + Snapshot Badge */}
       <div className="flex items-center gap-2 px-2 py-1.5 bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
         {/* Calls/Puts Toggle */}
         <div className="flex gap-0.5">
@@ -377,6 +377,11 @@ export function CompactChain({
             Puts
           </button>
         </div>
+
+        {/* Snapshot Badge - indicates chain data is static */}
+        <span className="px-1.5 py-0.5 text-[7px] font-medium rounded bg-gray-500/20 text-gray-400">
+          SNAPSHOT
+        </span>
 
         {/* Expiry Count */}
         <div className="flex-1 text-right text-[8px] text-[var(--text-muted)]">

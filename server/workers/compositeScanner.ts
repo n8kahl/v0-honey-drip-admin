@@ -244,6 +244,34 @@ function calculateVWAP(bars: Bar[]): number {
 }
 
 /**
+ * Aggregate bars into larger timeframe
+ * @param bars - Input bars (e.g., 5m bars)
+ * @param multiplier - Number of bars to aggregate (e.g., 3 for 5m→15m, 12 for 5m→60m)
+ * @returns Aggregated bars
+ */
+function aggregateBarsToTimeframe(bars: Bar[], multiplier: number): Bar[] {
+  if (bars.length === 0 || multiplier <= 1) return bars;
+
+  const aggregated: Bar[] = [];
+
+  for (let i = 0; i < bars.length; i += multiplier) {
+    const chunk = bars.slice(i, i + multiplier);
+    if (chunk.length === 0) continue;
+
+    aggregated.push({
+      time: chunk[0].time, // Use first bar's timestamp
+      open: chunk[0].open, // First bar's open
+      high: Math.max(...chunk.map((b) => b.high)), // Highest high
+      low: Math.min(...chunk.map((b) => b.low)), // Lowest low
+      close: chunk[chunk.length - 1].close, // Last bar's close
+      volume: chunk.reduce((sum, b) => sum + b.volume, 0), // Sum volume
+    });
+  }
+
+  return aggregated;
+}
+
+/**
  * Fetch market data and build features for a symbol
  */
 async function fetchSymbolFeatures(
@@ -327,8 +355,8 @@ async function fetchSymbolFeatures(
       return null;
     }
 
-    // Convert to Bar format
-    const bars: Bar[] = rawBars.map((b) => ({
+    // Convert to Bar format (5m bars)
+    const bars5m: Bar[] = rawBars.map((b) => ({
       time: Math.floor(b.t / 1000), // Convert ms to seconds
       open: b.o,
       high: b.h,
@@ -337,25 +365,58 @@ async function fetchSymbolFeatures(
       volume: b.v || 0,
     }));
 
-    // Get latest bar
-    const latestBar = bars[bars.length - 1];
-    const prevBar = bars.length > 1 ? bars[bars.length - 2] : latestBar;
+    // Aggregate 5m bars to 15m bars (3 x 5m = 15m)
+    const bars15m = aggregateBarsToTimeframe(bars5m, 3);
 
-    // Calculate indicators
-    const indicators = calculateIndicators(bars);
-    const vwap = calculateVWAP(bars);
-    const vwapDistancePct = vwap > 0 ? ((latestBar.close - vwap) / vwap) * 100 : 0;
+    // Fetch or aggregate 60m (hourly) bars
+    let bars60m: Bar[] = [];
+    try {
+      // Try to fetch hourly bars directly (more efficient for indices)
+      const hourlyResult = await fetchBarsForRange(symbol, 1, "hour", 14); // 14 days for better trend context
+      bars60m = hourlyResult.bars.map((b) => ({
+        time: Math.floor(b.t / 1000),
+        open: b.o,
+        high: b.h,
+        low: b.l,
+        close: b.c,
+        volume: b.v || 0,
+      }));
+      console.log(`[Composite Scanner] Fetched ${bars60m.length} hourly bars for ${symbol}`);
+    } catch (err) {
+      // Fallback: aggregate from 5m bars (12 x 5m = 60m)
+      bars60m = aggregateBarsToTimeframe(bars5m, 12);
+      console.log(`[Composite Scanner] Aggregated ${bars60m.length} hourly bars from 5m for ${symbol}`);
+    }
 
-    // Build multi-timeframe context (for now, just 5m)
-    const mtf = {
-      [PRIMARY_TIMEFRAME]: {
+    // Get latest bar from 5m (primary timeframe)
+    const latestBar = bars5m[bars5m.length - 1];
+    const prevBar = bars5m.length > 1 ? bars5m[bars5m.length - 2] : latestBar;
+
+    // Calculate indicators for each timeframe
+    const indicators5m = calculateIndicators(bars5m);
+    const indicators15m = calculateIndicators(bars15m);
+    const indicators60m = calculateIndicators(bars60m);
+
+    const vwap5m = calculateVWAP(bars5m);
+    const vwap15m = calculateVWAP(bars15m);
+    const vwap60m = calculateVWAP(bars60m);
+
+    const vwapDistancePct5m = vwap5m > 0 ? ((latestBar.close - vwap5m) / vwap5m) * 100 : 0;
+    const vwapDistancePct15m = vwap15m > 0 ? ((latestBar.close - vwap15m) / vwap15m) * 100 : 0;
+    const vwapDistancePct60m = vwap60m > 0 ? ((latestBar.close - vwap60m) / vwap60m) * 100 : 0;
+
+    // Helper to build timeframe context
+    const buildTfContext = (bars: Bar[], indicators: any, vwap: number, vwapDistancePct: number) => {
+      const latest = bars[bars.length - 1] || latestBar;
+      const prev = bars.length > 1 ? bars[bars.length - 2] : latest;
+      return {
         price: {
-          current: latestBar.close,
-          open: latestBar.open,
-          high: latestBar.high,
-          low: latestBar.low,
-          prevClose: prevBar.close,
-          prev: prevBar.close,
+          current: latest.close,
+          open: latest.open,
+          high: latest.high,
+          low: latest.low,
+          prevClose: prev.close,
+          prev: prev.close,
         },
         vwap: {
           value: vwap,
@@ -365,8 +426,21 @@ async function fetchSymbolFeatures(
         ema: indicators.ema,
         rsi: indicators.rsi,
         atr: indicators.atr,
-      },
+      };
+    };
+
+    // Build multi-timeframe context with 5m, 15m, and 60m
+    const mtf = {
+      "5m": buildTfContext(bars5m, indicators5m, vwap5m, vwapDistancePct5m),
+      "15m": buildTfContext(bars15m, indicators15m, vwap15m, vwapDistancePct15m),
+      "60m": buildTfContext(bars60m, indicators60m, vwap60m, vwapDistancePct60m),
     } as any; // Type assertion needed for RawMTFContext compatibility
+
+    // Keep reference to primary timeframe bars for buildSymbolFeatures
+    const bars = bars5m;
+    const indicators = indicators5m;
+    const vwap = vwap5m;
+    const vwapDistancePct = vwapDistancePct5m;
 
     // Build features
     const features = buildSymbolFeatures({
@@ -480,9 +554,18 @@ function formatDiscordMessage(signal: CompositeSignal): any {
 
 /**
  * Send Discord alerts for newly detected signals
+ * Idempotent: Checks if signal was already alerted before sending
  */
 async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promise<void> {
   try {
+    // IDEMPOTENCY CHECK: Skip if already alerted
+    if (signal.alertedAt) {
+      console.log(
+        `[Composite Scanner] Signal ${signal.id} already alerted at ${signal.alertedAt.toISOString()}, skipping`
+      );
+      return;
+    }
+
     // Fetch user's Discord channels
     const { data: channels, error: channelsErr } = await supabase
       .from("discord_channels")
@@ -513,6 +596,9 @@ async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promi
     // Format message
     const message = formatDiscordMessage(signal);
 
+    // Track if at least one webhook succeeded
+    let anySuccess = false;
+
     // Send to each webhook
     for (const webhookUrl of webhookUrls) {
       try {
@@ -532,9 +618,31 @@ async function sendDiscordAlerts(userId: string, signal: CompositeSignal): Promi
           console.log(
             `[Composite Scanner] ✅ Discord alert sent for ${signal.symbol} (${signal.opportunityType})`
           );
+          anySuccess = true;
         }
       } catch (err) {
         console.error(`[Composite Scanner] Error sending to webhook:`, err);
+      }
+    }
+
+    // Mark signal as alerted if at least one webhook succeeded
+    if (anySuccess && signal.id) {
+      try {
+        const { error: updateErr } = await supabase
+          .from("composite_signals")
+          .update({ alerted_at: new Date().toISOString() })
+          .eq("id", signal.id);
+
+        if (updateErr) {
+          console.error(
+            `[Composite Scanner] Error marking signal ${signal.id} as alerted:`,
+            updateErr
+          );
+        } else {
+          console.log(`[Composite Scanner] ✅ Signal ${signal.id} marked as alerted`);
+        }
+      } catch (markErr) {
+        console.error(`[Composite Scanner] Exception marking signal as alerted:`, markErr);
       }
     }
   } catch (error) {
@@ -778,13 +886,42 @@ async function expireOldActiveSignals(): Promise<void> {
 }
 
 /**
+ * Determine health status based on error rate and scan results
+ * - healthy: <10% error rate
+ * - degraded: 10-50% error rate or scan took >60s
+ * - unhealthy: >50% error rate or no data for >5 minutes
+ */
+function determineHealthStatus(): "healthy" | "degraded" | "unhealthy" {
+  const errorRate = stats.totalScans > 0 ? stats.totalErrors / stats.totalScans : 0;
+  const lastScanAgeMs = Date.now() - stats.lastScanTime.getTime();
+  const scanTooSlow = stats.lastScanDuration > 60000; // > 60 seconds
+  const dataStale = lastScanAgeMs > 5 * 60 * 1000; // > 5 minutes since last scan
+
+  if (errorRate > 0.5 || dataStale) {
+    return "unhealthy";
+  }
+
+  if (errorRate > 0.1 || scanTooSlow) {
+    return "degraded";
+  }
+
+  return "healthy";
+}
+
+/**
  * Update heartbeat table to track worker health
  */
 async function updateHeartbeat(signalsDetected: number): Promise<void> {
   try {
-    console.log(`[Composite Scanner] Attempting heartbeat update... (signals: ${signalsDetected})`);
+    const status = determineHealthStatus();
+    const errorRate = stats.totalScans > 0 ? (stats.totalErrors / stats.totalScans * 100).toFixed(1) : "0";
 
-    // Upsert heartbeat record
+    console.log(
+      `[Composite Scanner] Heartbeat: status=${status}, signals=${signalsDetected}, errorRate=${errorRate}%`
+    );
+
+    // Upsert heartbeat record with dynamic status
+    // Use metadata JSONB column for extended metrics (error_rate, scan_duration_ms)
     const { data, error } = await supabase
       .from("scanner_heartbeat")
       .upsert(
@@ -792,7 +929,15 @@ async function updateHeartbeat(signalsDetected: number): Promise<void> {
           id: "composite_scanner",
           last_scan: new Date().toISOString(),
           signals_detected: signalsDetected,
-          status: "healthy",
+          status,
+          metadata: {
+            error_rate: parseFloat(errorRate),
+            scan_duration_ms: stats.lastScanDuration,
+            total_scans: stats.totalScans,
+            total_errors: stats.totalErrors,
+            avg_scan_duration: Math.round(stats.avgScanDuration),
+            last_updated: new Date().toISOString(),
+          },
         },
         {
           onConflict: "id",

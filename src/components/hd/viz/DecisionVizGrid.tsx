@@ -32,6 +32,7 @@ export type DataHealth = "live" | "delayed" | "stale";
 export interface DecisionVizGridProps {
   symbol: string;
   candles: Candle[];
+  dailyCandles?: Candle[];  // Daily candles for proper ATR(14) calculation
   keyLevels: KeyLevels | null;
   indicators: Indicators;
   mtfTrend: Record<Timeframe, MTFTrend>;
@@ -74,6 +75,7 @@ function setStoredExpanded(expanded: boolean): void {
 export function DecisionVizGrid({
   symbol,
   candles,
+  dailyCandles,
   keyLevels,
   indicators,
   mtfTrend,
@@ -239,6 +241,7 @@ export function DecisionVizGrid({
             </div>
             <DecisionVizRange
               candles={candles}
+              dailyCandles={dailyCandles}
               keyLevels={keyLevels}
               indicators={indicators}
               currentPrice={price}

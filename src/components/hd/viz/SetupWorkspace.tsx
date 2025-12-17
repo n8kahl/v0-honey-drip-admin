@@ -708,6 +708,7 @@ export function SetupWorkspace({
           </div>
           <DecisionVizRange
             candles={candles}
+            dailyCandles={symbolData?.candles["1D"]}
             keyLevels={keyLevels}
             indicators={indicators}
             currentPrice={currentPrice}

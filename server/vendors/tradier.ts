@@ -60,6 +60,86 @@ export async function tradierGetUnderlyingPrice(symbol: string): Promise<number>
   return 0;
 }
 
+/**
+ * Batch fetch stock quotes from Tradier
+ * Returns normalized quote objects for multiple symbols in a single request
+ */
+export interface TradierQuote {
+  symbol: string;
+  last: number;
+  change: number;
+  changePercent: number;
+  prevClose: number;
+  asOf: number;
+}
+
+export async function tradierGetBatchQuotes(symbols: string[]): Promise<TradierQuote[]> {
+  if (symbols.length === 0) return [];
+
+  // Clean symbols (remove I: prefix if any)
+  const cleanSymbols = symbols.map(s => s.replace(/^I:/, ""));
+  const symbolsParam = cleanSymbols.join(",");
+
+  const { ok, data, error } = await tradierFetch<any>(
+    `/markets/quotes?symbols=${encodeURIComponent(symbolsParam)}`
+  );
+
+  if (!ok) {
+    console.error("[Tradier] Batch quotes failed:", error);
+    // Return empty quotes with error source
+    return symbols.map(s => ({
+      symbol: s,
+      last: 0,
+      change: 0,
+      changePercent: 0,
+      prevClose: 0,
+      asOf: Date.now(),
+    }));
+  }
+
+  // Tradier returns { quotes: { quote: [...] } } for multiple, or { quotes: { quote: {...} } } for single
+  const rawQuotes = data?.quotes?.quote;
+  const quoteArray: any[] = Array.isArray(rawQuotes) ? rawQuotes : rawQuotes ? [rawQuotes] : [];
+
+  // Create a map for quick lookup
+  const quoteMap = new Map<string, TradierQuote>();
+
+  for (const q of quoteArray) {
+    const symbol = q?.symbol || "";
+    const last = Number(q?.last || q?.close || q?.bid || 0);
+    const prevClose = Number(q?.prevclose || q?.previous_close || 0);
+    const change = Number(q?.change || 0);
+
+    // Calculate change percent - prefer Tradier's value, fallback to manual calc
+    let changePercent = Number(q?.change_percentage || 0);
+    if (changePercent === 0 && prevClose > 0 && last > 0) {
+      changePercent = ((last - prevClose) / prevClose) * 100;
+    }
+
+    quoteMap.set(symbol.toUpperCase(), {
+      symbol: symbol.toUpperCase(),
+      last,
+      change: change || (prevClose > 0 ? last - prevClose : 0),
+      changePercent,
+      prevClose,
+      asOf: Date.now(),
+    });
+  }
+
+  // Return in order of requested symbols, with fallback for missing
+  return symbols.map(s => {
+    const clean = s.replace(/^I:/, "").toUpperCase();
+    return quoteMap.get(clean) || {
+      symbol: s,
+      last: 0,
+      change: 0,
+      changePercent: 0,
+      prevClose: 0,
+      asOf: Date.now(),
+    };
+  });
+}
+
 export async function tradierGetExpirations(
   symbol: string,
   gteISO: string,

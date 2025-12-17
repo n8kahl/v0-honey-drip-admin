@@ -35,9 +35,61 @@ function buildDateRange(daysBack: number): { from: string; to: string } {
 }
 
 /**
+ * Aggregate minute bars into larger timeframe bars
+ * Used for equities where Tradier doesn't support hourly bars directly
+ */
+function aggregateBars(bars: RawBar[], minutesPerBar: number): RawBar[] {
+  if (bars.length === 0 || minutesPerBar <= 1) return bars;
+
+  const aggregated: RawBar[] = [];
+  const msPerBar = minutesPerBar * 60 * 1000;
+
+  // Sort bars by timestamp
+  const sorted = [...bars].sort((a, b) => a.t - b.t);
+
+  let currentBucket: RawBar | null = null;
+  let bucketStart = 0;
+
+  for (const bar of sorted) {
+    const barBucketStart = Math.floor(bar.t / msPerBar) * msPerBar;
+
+    if (currentBucket === null || barBucketStart !== bucketStart) {
+      // Start new bucket
+      if (currentBucket) {
+        aggregated.push(currentBucket);
+      }
+      bucketStart = barBucketStart;
+      currentBucket = {
+        t: barBucketStart,
+        o: bar.o,
+        h: bar.h,
+        l: bar.l,
+        c: bar.c,
+        v: bar.v,
+      };
+    } else {
+      // Extend current bucket
+      currentBucket.h = Math.max(currentBucket.h, bar.h);
+      currentBucket.l = Math.min(currentBucket.l, bar.l);
+      currentBucket.c = bar.c; // Last close
+      currentBucket.v += bar.v;
+    }
+  }
+
+  if (currentBucket) {
+    aggregated.push(currentBucket);
+  }
+
+  return aggregated;
+}
+
+/**
  * Provider-aware bar fetcher:
- * - Indices → Massive (unlimited indices plan)
+ * - Indices → Massive (unlimited indices plan, supports minute/hour/day)
  * - Equities → Tradier (we do NOT have Massive stocks)
+ *
+ * For equities with hourly timespan, we fetch 1-minute bars and aggregate
+ * since Tradier doesn't support hourly intervals directly.
  */
 export async function fetchBarsForRange(
   symbol: string,
@@ -45,8 +97,9 @@ export async function fetchBarsForRange(
   timespan: Timespan,
   rangeDays = 7
 ): Promise<FetchBarsResult> {
-  if (timespan !== "minute") {
-    throw new Error(`Unsupported timespan ${timespan}. Only "minute" is wired for scanners.`);
+  // Support minute and hour timespans
+  if (timespan !== "minute" && timespan !== "hour") {
+    throw new Error(`Unsupported timespan ${timespan}. Only "minute" and "hour" are wired for scanners.`);
   }
 
   const { from, to } = buildDateRange(rangeDays);
@@ -70,14 +123,18 @@ export async function fetchBarsForRange(
   }
 
   // Equities: always route to Tradier
-  const interval = `${mult}min` as "1min" | "5min" | "15min";
+  // For hourly bars, fetch 1-minute bars and aggregate (Tradier doesn't support hourly directly)
+  const isHourly = timespan === "hour";
+  const fetchMult = isHourly ? 1 : mult;
+  const fetchInterval = `${fetchMult}min` as "1min" | "5min" | "15min";
+
   console.log(
-    `[BarProvider] Using Tradier for ${clean} (${interval}) from ${from} to ${to} (Massive stocks not enabled)`
+    `[BarProvider] Using Tradier for ${clean} (${fetchInterval}${isHourly ? " → aggregating to hourly" : ""}) from ${from} to ${to}`
   );
   const provider: FetchBarsResult["source"] = "tradier-equity";
   try {
-    const tradierBars = await tradierGetHistory(clean, interval, from, to);
-    const normalized: RawBar[] = tradierBars
+    const tradierBars = await tradierGetHistory(clean, fetchInterval, from, to);
+    let normalized: RawBar[] = tradierBars
       .map((bar) => {
         // bar.time is seconds; convert to ms for downstream consumers
         const tSeconds = Number(bar.time) || 0;
@@ -92,6 +149,13 @@ export async function fetchBarsForRange(
         };
       })
       .filter(Boolean) as RawBar[];
+
+    // Aggregate to hourly if requested
+    if (isHourly) {
+      normalized = aggregateBars(normalized, mult * 60); // mult hours * 60 minutes
+      console.log(`[BarProvider] Aggregated ${tradierBars.length} 1m bars → ${normalized.length} ${mult}h bars`);
+    }
+
     return { source: provider, bars: normalized };
   } catch (err: any) {
     err.provider = provider;

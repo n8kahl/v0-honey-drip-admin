@@ -32,6 +32,7 @@ import { createTradeThread, addThreadUpdateBySymbol } from "../lib/api/tradeThre
 import type { TradeThreadUpdateType, TradeThreadUpdatePayload } from "../types/tradeThreads";
 import { recordAlertHistory } from "../lib/supabase/database";
 import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
+import { roundPrice } from "../lib/utils";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
 import { tradeHookLogger as log } from "../lib/utils/logger";
 
@@ -305,9 +306,9 @@ export function useTradeStateMachine({
       setIsCreatingTrade(true);
 
       try {
-        // Calculate initial TP/SL
-        let targetPrice = contract.mid * 1.5;
-        let stopLoss = contract.mid * 0.5;
+        // Calculate initial TP/SL (round to avoid floating point artifacts)
+        let targetPrice = roundPrice(contract.mid * 1.5);
+        let stopLoss = roundPrice(contract.mid * 0.5);
         const underlyingPrice = ticker.last;
         let targetUnderlyingPrice: number | undefined;
         let stopUnderlyingPrice: number | undefined;
@@ -658,8 +659,9 @@ export function useTradeStateMachine({
 
       setIsTransitioning(true);
       const finalEntryPrice = priceOverrides?.entryPrice || trade.contract.mid;
-      let targetPrice = priceOverrides?.targetPrice ?? finalEntryPrice * 1.5;
-      let stopLoss = priceOverrides?.stopLoss ?? finalEntryPrice * 0.5;
+      // Round to avoid floating point artifacts (e.g., 1.149999999 → 1.15)
+      let targetPrice = priceOverrides?.targetPrice ?? roundPrice(finalEntryPrice * 1.5);
+      let stopLoss = priceOverrides?.stopLoss ?? roundPrice(finalEntryPrice * 0.5);
 
       // Recalculate TP/SL if not provided
       if (!priceOverrides?.targetPrice || !priceOverrides?.stopLoss) {

@@ -8,6 +8,7 @@
 import React, { useMemo } from "react";
 import { cn } from "../../../lib/utils";
 import { fmtPrice } from "../../../ui/semantics";
+import { atrWilder } from "../../../lib/indicators";
 import type { KeyLevels } from "../../../lib/riskEngine/types";
 import type { Candle, Indicators } from "../../../stores/marketDataStore";
 
@@ -17,6 +18,7 @@ import type { Candle, Indicators } from "../../../stores/marketDataStore";
 
 interface DecisionVizRangeProps {
   candles: Candle[];
+  dailyCandles?: Candle[];  // Daily candles for proper ATR(14) calculation
   keyLevels: KeyLevels | null;
   indicators: Indicators;
   currentPrice: number;
@@ -28,6 +30,7 @@ interface DecisionVizRangeProps {
 
 export function DecisionVizRange({
   candles,
+  dailyCandles,
   keyLevels,
   indicators,
   currentPrice,
@@ -74,8 +77,22 @@ export function DecisionVizRange({
     };
   }, [currentPrice, dayLow, rangeWidth, keyLevels?.vwap]);
 
-  // ATR calculations
-  const atr = indicators.atr14 ?? 0;
+  // Calculate proper Daily ATR(14) from daily candles
+  // This gives us the actual average daily range over the past 14 days
+  const dailyAtr = useMemo(() => {
+    if (!dailyCandles || dailyCandles.length < 15) return 0;
+
+    const highs = dailyCandles.map((c) => c.high);
+    const lows = dailyCandles.map((c) => c.low);
+    const closes = dailyCandles.map((c) => c.close);
+
+    const atr14Array = atrWilder(highs, lows, closes, 14);
+    return atr14Array[atr14Array.length - 1] || 0;
+  }, [dailyCandles]);
+
+  // Use daily ATR if available, otherwise fall back to indicators.atr14
+  // Note: indicators.atr14 may be from intraday bars if daily bars aren't loaded
+  const atr = dailyAtr || indicators.atr14 || 0;
   const atrMultiple = useMemo(() => {
     if (atr === 0) return 0;
     return rangeWidth / atr;
@@ -164,45 +181,56 @@ export function DecisionVizRange({
         </div>
       </div>
 
-      {/* ATR Room Gauge */}
+      {/* Session ATR Gauge */}
       {atr > 0 && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[10px]">
-            <span className="text-[var(--text-muted)]">ATR Room</span>
+            <span className="text-[var(--text-muted)]">Expected Range</span>
             <span className="text-[var(--text-high)] tabular-nums">
-              {fmtPrice(atrRemaining)} ({atrMultiple.toFixed(1)}× used)
+              {atrUsedPct < 100
+                ? `${fmtPrice(atrRemaining)} room (${Math.round(atrUsedPct)}% used)`
+                : `${atrMultiple.toFixed(1)}× typical range`}
             </span>
           </div>
 
           {/* ATR Bar */}
           <div className="relative h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
-            {/* Used portion */}
+            {/* Used portion - cap at 100% for display */}
             <div
               className={cn(
                 "absolute inset-y-0 left-0 rounded-full transition-all duration-300",
-                atrUsedPct > 80
+                atrUsedPct > 100
                   ? "bg-[var(--accent-negative)]"
-                  : atrUsedPct > 50
+                  : atrUsedPct > 80
                   ? "bg-[var(--data-stale)]"
                   : "bg-[var(--accent-positive)]"
               )}
-              style={{ width: `${atrUsedPct}%` }}
+              style={{ width: `${Math.min(100, atrUsedPct)}%` }}
             />
           </div>
 
           {/* ATR Scale */}
           <div className="flex justify-between text-[9px] text-[var(--text-faint)]">
-            <span>0×</span>
-            <span>0.5×</span>
-            <span>1× ATR ({fmtPrice(atr)})</span>
+            <span>0%</span>
+            <span>50%</span>
+            <span>100% ({fmtPrice(atr)})</span>
           </div>
         </div>
       )}
 
-      {/* No ATR available */}
+      {/* ATR source indicator */}
+      {atr > 0 && dailyAtr === 0 && (
+        <div className="text-[9px] text-[var(--text-faint)] italic">
+          ATR from intraday bars (daily bars unavailable)
+        </div>
+      )}
+
+      {/* No ATR available at all */}
       {atr === 0 && (
         <div className="text-[10px] text-[var(--text-faint)] italic">
-          ATR data unavailable
+          {dailyCandles && dailyCandles.length > 0
+            ? `Need more daily data (${dailyCandles.length}/15 days)`
+            : "Loading ATR..."}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Delete, X } from 'lucide-react';
 import { HDButton } from '../common/HDButton';
-import { cn } from '../../../lib/utils';
+import { cn, roundPrice } from '../../../lib/utils';
 
 interface HDCalculatorModalProps {
   isOpen: boolean;
@@ -20,11 +20,12 @@ export function HDCalculatorModal({
   title,
   label = 'Price'
 }: HDCalculatorModalProps) {
-  const [display, setDisplay] = useState(initialValue.toString());
-  
+  // Round initial value to avoid floating point artifacts (e.g., 1.149999999 → 1.15)
+  const [display, setDisplay] = useState(roundPrice(initialValue).toString());
+
   useEffect(() => {
     if (isOpen) {
-      setDisplay(initialValue.toString());
+      setDisplay(roundPrice(initialValue).toString());
     }
   }, [isOpen, initialValue]);
 
@@ -59,7 +60,8 @@ export function HDCalculatorModal({
   const handleConfirm = () => {
     const value = parseFloat(display);
     if (!isNaN(value)) {
-      onConfirm(value);
+      // Round to 2 decimals to ensure clean value
+      onConfirm(roundPrice(value));
       onClose();
     }
   };

@@ -18,6 +18,24 @@ export function formatPrice(price: number | undefined): string {
   return price.toFixed(2);
 }
 
+/**
+ * Round a price to 2 decimal places to avoid floating point artifacts
+ * e.g., 1.149999999 → 1.15
+ */
+export function roundPrice(price: number): number {
+  return Math.round(price * 100) / 100;
+}
+
+/**
+ * Format a price for display in an input, removing trailing zeros
+ * e.g., 1.10 → "1.1", 1.00 → "1"
+ */
+export function formatPriceForInput(price: number): string {
+  const rounded = roundPrice(price);
+  // Remove unnecessary trailing zeros but keep at least one decimal if present
+  return rounded.toString();
+}
+
 export function formatPercent(percent: number | undefined): string {
   if (percent === undefined || percent === null) return '+0.00%';
   const sign = percent >= 0 ? '+' : '';

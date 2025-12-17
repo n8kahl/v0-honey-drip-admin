@@ -21,6 +21,7 @@ import { SelectedContractStrip } from "../hd/strips/SelectedContractStrip";
 import { CompactChain } from "../hd/common/CompactChain";
 import { useContractRecommendation } from "../../hooks/useContractRecommendation";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
+import { useLoadedTradeLiveModel } from "../../hooks/useLoadedTradeLiveModel";
 import {
   useCandles,
   useIndicators,
@@ -96,6 +97,14 @@ export function NowPanelSymbol({
   // Get key levels
   const { keyLevels } = useKeyLevels(symbol);
 
+  // Active contract = manual OR recommended (auto-selected)
+  // NOTE: Moved up to enable live model hook
+  const activeContract = manualContract || recommendation?.bestContract || null;
+  const isUsingRecommended = !manualContract && !!recommendation?.bestContract;
+
+  // Get live model for selected contract (streaming quotes + Greeks)
+  const liveModel = useLoadedTradeLiveModel(symbol, activeContract);
+
   // Calculate data health
   const dataHealth = useMemo((): DataHealth => {
     if (!symbolData) return "stale";
@@ -104,10 +113,6 @@ export function NowPanelSymbol({
     if (age < 30000) return "delayed";
     return "stale";
   }, [symbolData?.lastUpdated]);
-
-  // Active contract = manual OR recommended (auto-selected)
-  const activeContract = manualContract || recommendation?.bestContract || null;
-  const isUsingRecommended = !manualContract && !!recommendation?.bestContract;
 
   // Reset manual selection when symbol changes (auto-select recommended)
   useEffect(() => {
@@ -164,12 +169,13 @@ export function NowPanelSymbol({
 
       {/* ZONE 4: Contract Selection */}
       <div className="px-3 pb-3 flex flex-col gap-2 overflow-hidden flex-1">
-        {/* Selected Contract Strip */}
+        {/* Selected Contract Strip with live data */}
         <SelectedContractStrip
           contract={activeContract}
           isRecommended={isUsingRecommended}
           onRevertToRecommended={handleRevertToRecommended}
           hasRecommendation={!!recommendation?.hasRecommendation}
+          liveModel={liveModel}
         />
 
         {/* Horizontal Split: Options Chain (50%) + Logo (50%) */}

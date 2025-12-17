@@ -2,7 +2,6 @@ import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { cn } from "../../../lib/utils";
 import { useTradeStore } from "../../../stores";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { useRef, useEffect, useState } from "react";
 
 interface HDActiveTradeRowProps {
@@ -12,20 +11,17 @@ interface HDActiveTradeRowProps {
 }
 
 /**
- * Active trade row with live P&L tracking via WebSocket/REST polling.
- * Uses useActiveTradePnL hook for real-time price updates.
+ * Active trade row with P&L display.
+ * Uses the same P&L calculation as NowPanelManage for consistency.
  * Features P&L bump animation on value changes.
  */
 export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowProps) {
-  // Get live P&L from contract price updates
-  // The contract.id is the OCC symbol (e.g., "O:SPY250110P00650000")
-  const contractTicker = trade.contract?.id || null;
+  // Calculate P&L the same way as NowPanelManage
+  // Use contract.bid (current market price) or mid as fallback
   const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
-
-  const { pnlPercent, currentPrice, source } = useActiveTradePnL(contractTicker, entryPrice);
-
-  // Use live P&L if available, fallback to stored movePercent
-  const displayPnl = entryPrice > 0 && currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
+  const currentContractPrice = trade.contract?.bid || trade.contract?.mid || entryPrice;
+  const pnlDollar = currentContractPrice - entryPrice;
+  const displayPnl = entryPrice > 0 ? (pnlDollar / entryPrice) * 100 : (trade.movePercent ?? 0);
   const isProfit = displayPnl >= 0;
 
   // P&L bump animation state
@@ -100,10 +96,6 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
             >
               {isProfit ? "Profit" : "Loss"}
             </span>
-            {/* Live indicator */}
-            {source === "websocket" && (
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" title="Live" />
-            )}
           </div>
         </div>
       </div>

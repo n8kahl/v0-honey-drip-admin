@@ -394,7 +394,7 @@ export default function App() {
             challenges={challenges}
             onTickerClick={() => {}}
             onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
-            onRemoveTicker={(ticker) => useMarketStore.getState().removeTicker(ticker.id)}
+            onRemoveTicker={(ticker) => useMarketStore.getState().removeTicker(user?.id || "", ticker.id)}
             onAddChallenge={() => useUIStore.getState().setShowAddChallengeDialog(true)}
             onRemoveChallenge={(challenge) =>
               useSettingsStore.getState().removeChallenge(challenge.id)

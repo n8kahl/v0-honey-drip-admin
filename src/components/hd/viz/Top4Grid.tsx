@@ -52,6 +52,7 @@ interface EconomicEvent {
 export interface Top4GridProps {
   symbol: string;
   candles: Candle[];
+  dailyCandles?: Candle[];  // Daily candles for proper ATR(14) calculation
   keyLevels: KeyLevels | null;
   indicators: Indicators;
   mtfTrend: Record<Timeframe, MTFTrend>;
@@ -102,6 +103,7 @@ function getTimeUntil(eventTime: string) {
 export function Top4Grid({
   symbol,
   candles,
+  dailyCandles,
   keyLevels,
   indicators,
   mtfTrend,
@@ -531,6 +533,7 @@ export function Top4Grid({
           {activeTab === "range" && (
             <DecisionVizRange
               candles={candles}
+              dailyCandles={dailyCandles}
               keyLevels={keyLevels}
               indicators={indicators}
               currentPrice={currentPrice}

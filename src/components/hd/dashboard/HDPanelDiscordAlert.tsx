@@ -58,7 +58,7 @@ export function HDPanelDiscordAlert({
         defaultComment = 'Updating stop loss.';
       } else if (alertType === 'update' && alertOptions?.updateKind === 'generic') {
         defaultComment = 'Quick update on this position.';
-      } else if (alertType === 'trail_stop') {
+      } else if (alertType === 'trail-stop') {
         defaultComment = 'Enabling trailing stop on this position.';
       } else if (alertType === 'add') {
         defaultComment = 'Adding to position here.';
@@ -92,7 +92,7 @@ export function HDPanelDiscordAlert({
         setShowTarget(false);
         setShowStopLoss(false);
         setShowPnL(false);
-      } else if (alertType === 'trail_stop') {
+      } else if (alertType === 'trail-stop') {
         setShowEntry(false);
         setShowCurrent(false);
         setShowTarget(false);
@@ -153,7 +153,7 @@ export function HDPanelDiscordAlert({
       case 'add': return '➕ ADDED';
       case 'exit': return '🏁 EXITED';
       case 'update': return '📊 UPDATE';
-      case 'trail_stop': return '🏃‍♂️ TRAIL STOP';
+      case 'trail-stop': return '🏃‍♂️ TRAIL STOP';
     }
   };
 

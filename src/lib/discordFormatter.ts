@@ -267,7 +267,7 @@ function getAlertTypeDisplay(
   if (alertType === "add") {
     return { emoji: "➕", title: "ADD TO POSITION" };
   }
-  if (alertType === "trail_stop") {
+  if (alertType === "trail-stop") {
     return { emoji: "🏃", title: "TRAIL STOP ACTIVATED" };
   }
   if (alertType === "update") {

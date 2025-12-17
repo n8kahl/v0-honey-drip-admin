@@ -1,32 +1,31 @@
 /**
- * NowPanelManage - Management Cockpit for ENTERED Trades
+ * NowPanelManage - Live Trade Cockpit for ENTERED Trades
  *
- * Replaces the basic PositionSnapshot with a full management cockpit:
- * - Position HUD (P&L, progress, Greeks)
- * - Levels/ATR/Positioning panel
- * - Trade Tape timeline
+ * The SINGLE SOURCE OF TRUTH for all live trade metrics.
+ * Uses useActiveTradeLiveModel as the canonical data source.
+ *
+ * Displays:
+ * - Live P&L (percentage and dollars) with animation
+ * - R-Multiple calculation
+ * - Live Greeks (Δ, Γ, Θ, IV)
+ * - Live underlying price from Tradier
+ * - Time to market close (ET timezone)
+ * - Progress to target with visual bar
+ * - Data freshness indicators
+ * - Key levels, ATR, MTF status
  *
  * Only displayed when trade.state === "ENTERED"
  */
 
 import React, { useMemo, useState, useEffect } from "react";
 import type { Trade, Ticker } from "../../types";
+import { useActiveTradeLiveModel } from "../../hooks/useActiveTradeLiveModel";
 import { useMarketDataStore } from "../../stores/marketDataStore";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
-import { cn } from "../../lib/utils";
+import { getHealthStyle, getSourceBadgeStyle } from "../../lib/market/dataFreshness";
+import { cn, formatPrice } from "../../lib/utils";
+import { fmtDTE, getPnlStyle } from "../../ui/semantics";
 import {
-  fmtPrice,
-  fmtPct,
-  fmtDelta,
-  fmtDTE,
-  getPnlStyle,
-  chipStyle,
-  getScoreStyle,
-} from "../../ui/semantics";
-import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Clock,
   Target,
   Activity,
@@ -34,14 +33,16 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart3,
-  Shield,
-  Zap,
   AlertTriangle,
   MessageSquare,
   CheckCircle2,
   ArrowUp,
   ArrowDown,
   ArrowRight,
+  Wifi,
+  WifiOff,
+  Zap,
+  Shield,
 } from "lucide-react";
 
 // ============================================================================
@@ -58,125 +59,107 @@ interface NowPanelManageProps {
 // Main Component
 // ============================================================================
 
-export function NowPanelManage({ trade, activeTicker, watchlist = [] }: NowPanelManageProps) {
-  // Get real-time data from market data store
+export function NowPanelManage({ trade }: NowPanelManageProps) {
+  // Use canonical live model hook - SINGLE SOURCE OF TRUTH
+  const liveModel = useActiveTradeLiveModel(trade);
+
+  // Get additional context data
   const symbolData = useMarketDataStore((s) => s.symbols[trade.ticker]);
   const indicators = symbolData?.indicators;
   const mtfTrend = symbolData?.mtfTrend;
-
-  // Get key levels
   const { keyLevels } = useKeyLevels(trade.ticker);
 
-  // Calculate current underlying price
-  const currentPrice = useMemo(() => {
-    const fromWatchlist = watchlist.find((t) => t.symbol === trade.ticker);
-    // Get latest close from candles if available
-    const latestCandle = symbolData?.candles?.["1m"]?.slice(-1)[0];
-    return fromWatchlist?.last || activeTicker?.last || latestCandle?.close || 0;
-  }, [trade.ticker, watchlist, activeTicker, symbolData]);
-
-  // Calculate P&L
-  const pnlCalcs = useMemo(() => {
-    const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
-    const currentContractPrice = trade.contract?.bid || trade.contract?.mid || entryPrice;
-    const pnlDollar = currentContractPrice - entryPrice;
-    const pnlPercent = entryPrice > 0 ? (pnlDollar / entryPrice) * 100 : 0;
-    const pnlStyle = getPnlStyle(pnlPercent);
-
-    // Calculate progress to targets
-    const tp1 = trade.targetPrice || entryPrice * 1.2;
-    const tp1Progress =
-      entryPrice > 0
-        ? Math.min(
-            100,
-            Math.max(0, ((currentContractPrice - entryPrice) / (tp1 - entryPrice)) * 100)
-          )
-        : 0;
-
-    return {
-      entryPrice,
-      currentContractPrice,
-      pnlDollar,
-      pnlPercent,
-      pnlStyle,
-      tp1,
-      tp1Progress,
-    };
-  }, [trade]);
-
-  // Hold time calculation
-  const [holdTime, setHoldTime] = useState("");
-  useEffect(() => {
-    const entryTime = trade.entryTime ? new Date(trade.entryTime).getTime() : Date.now();
-
-    const updateHoldTime = () => {
-      const elapsed = Date.now() - entryTime;
-      const minutes = Math.floor(elapsed / 60000);
-      const hours = Math.floor(minutes / 60);
-      if (hours > 0) {
-        setHoldTime(`${hours}h ${minutes % 60}m`);
-      } else {
-        setHoldTime(`${minutes}m`);
-      }
-    };
-
-    updateHoldTime();
-    const interval = setInterval(updateHoldTime, 60000);
-    return () => clearInterval(interval);
-  }, [trade.entryTime]);
+  // Loading state if model not yet available
+  if (!liveModel) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-[var(--brand-primary)] border-t-transparent animate-spin" />
+          <span className="text-sm text-[var(--text-muted)]">Loading live data...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden animate-mode-enter">
-      {/* Position HUD - Top ~25% */}
-      <PositionHUD
-        trade={trade}
-        pnlCalcs={pnlCalcs}
-        holdTime={holdTime}
-        currentPrice={currentPrice}
-      />
+      {/* Position HUD - Top ~30% */}
+      <PositionHUD trade={trade} liveModel={liveModel} />
+
+      {/* Greeks Strip */}
+      <GreeksStrip liveModel={liveModel} />
 
       {/* Levels / ATR / Positioning - Middle ~40% */}
       <LevelsATRPanel
         trade={trade}
-        currentPrice={currentPrice}
+        currentPrice={liveModel.underlyingPrice}
         keyLevels={keyLevels}
         indicators={indicators}
         mtfTrend={mtfTrend}
       />
 
-      {/* Trade Tape - Bottom ~35% */}
+      {/* Trade Tape - Bottom ~30% */}
       <TradeTapeSection trade={trade} />
     </div>
   );
 }
 
 // ============================================================================
-// Position HUD - Large P&L Display + Progress
+// Position HUD - Large P&L Display + Progress + Data Health
 // ============================================================================
 
 interface PositionHUDProps {
   trade: Trade;
-  pnlCalcs: {
-    entryPrice: number;
-    currentContractPrice: number;
-    pnlDollar: number;
-    pnlPercent: number;
-    pnlStyle: ReturnType<typeof getPnlStyle>;
-    tp1: number;
-    tp1Progress: number;
-  };
-  holdTime: string;
-  currentPrice: number;
+  liveModel: NonNullable<ReturnType<typeof useActiveTradeLiveModel>>;
 }
 
-function PositionHUD({ trade, pnlCalcs, holdTime, currentPrice }: PositionHUDProps) {
+function PositionHUD({ trade, liveModel }: PositionHUDProps) {
   const contract = trade.contract;
   const dte = contract?.daysToExpiry ?? 0;
   const dteInfo = fmtDTE(dte);
+  const pnlStyle = getPnlStyle(liveModel.pnlPercent);
+  const healthStyle = getHealthStyle(liveModel.overallHealth);
+
+  // Animate P&L changes
+  const [prevPnl, setPrevPnl] = useState(liveModel.pnlPercent);
+  const [pnlFlash, setPnlFlash] = useState<"up" | "down" | null>(null);
+
+  useEffect(() => {
+    if (liveModel.pnlPercent !== prevPnl) {
+      setPnlFlash(liveModel.pnlPercent > prevPnl ? "up" : "down");
+      setPrevPnl(liveModel.pnlPercent);
+      const timeout = setTimeout(() => setPnlFlash(null), 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [liveModel.pnlPercent, prevPnl]);
 
   return (
     <div className="flex-shrink-0 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
-      {/* Row 1: P&L + Hold Time */}
+      {/* Row 0: Data Health Indicator */}
+      <div className="px-4 py-1.5 flex items-center justify-between bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
+        <div className="flex items-center gap-2">
+          {liveModel.overallHealth === "healthy" ? (
+            <Wifi className="w-3.5 h-3.5 text-green-400" />
+          ) : liveModel.overallHealth === "degraded" ? (
+            <Wifi className="w-3.5 h-3.5 text-yellow-400" />
+          ) : (
+            <WifiOff className="w-3.5 h-3.5 text-red-400" />
+          )}
+          <span className={cn("text-[10px] font-medium uppercase tracking-wide", healthStyle.className)}>
+            {healthStyle.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-[10px] text-[var(--text-faint)]">
+          <span className={cn("px-1.5 py-0.5 rounded border", getSourceBadgeStyle(liveModel.optionSource))}>
+            Options: {liveModel.optionSource === "websocket" ? "WS" : "REST"}
+          </span>
+          <span className={cn("px-1.5 py-0.5 rounded border", getSourceBadgeStyle(liveModel.greeksSource === "live" ? "rest" : "static"))}>
+            Greeks: {liveModel.greeksSource === "live" ? "Live" : "Static"}
+          </span>
+        </div>
+      </div>
+
+      {/* Row 1: P&L Display + R-Multiple */}
       <div className="p-4 pb-2">
         <div className="flex items-start justify-between">
           {/* P&L Display */}
@@ -187,26 +170,39 @@ function PositionHUD({ trade, pnlCalcs, holdTime, currentPrice }: PositionHUDPro
             <div className="flex items-baseline gap-3">
               <span
                 className={cn(
-                  "text-3xl font-bold tabular-nums animate-metric-tick",
-                  pnlCalcs.pnlStyle.className
+                  "text-3xl font-bold tabular-nums transition-all duration-200",
+                  pnlStyle.className,
+                  pnlFlash === "up" && "animate-pulse text-[var(--accent-positive)]",
+                  pnlFlash === "down" && "animate-pulse text-[var(--accent-negative)]"
                 )}
               >
-                {pnlCalcs.pnlPercent >= 0 ? "+" : ""}
-                {fmtPct(pnlCalcs.pnlPercent)}
+                {liveModel.pnlPercent >= 0 ? "+" : ""}
+                {liveModel.pnlPercent.toFixed(1)}%
               </span>
-              <span className={cn("text-lg tabular-nums", pnlCalcs.pnlStyle.className)}>
-                {pnlCalcs.pnlDollar >= 0 ? "+" : ""}
-                {fmtPrice(pnlCalcs.pnlDollar)}
+              <span className={cn("text-lg tabular-nums", pnlStyle.className)}>
+                {liveModel.pnlDollars >= 0 ? "+" : ""}${Math.abs(liveModel.pnlDollars).toFixed(0)}
               </span>
             </div>
           </div>
 
-          {/* Hold Time */}
-          <div className="text-right">
-            <div className="text-xs text-[var(--text-faint)] uppercase mb-1">Hold</div>
+          {/* R-Multiple + Time to Close */}
+          <div className="text-right space-y-1">
+            {liveModel.rMultiple !== null && (
+              <div>
+                <div className="text-[10px] text-[var(--text-faint)] uppercase">R-Multiple</div>
+                <div
+                  className={cn(
+                    "text-lg font-bold tabular-nums",
+                    liveModel.rMultiple >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  {liveModel.rMultiple >= 0 ? "+" : ""}{liveModel.rMultiple.toFixed(2)}R
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-1 text-sm text-[var(--text-muted)]">
               <Clock className="w-3.5 h-3.5" />
-              <span className="tabular-nums font-medium">{holdTime}</span>
+              <span className="tabular-nums font-medium">{liveModel.holdTimeFormatted}</span>
             </div>
           </div>
         </div>
@@ -214,43 +210,32 @@ function PositionHUD({ trade, pnlCalcs, holdTime, currentPrice }: PositionHUDPro
         {/* Progress Bar */}
         <div className="mt-3">
           <div className="flex items-center justify-between text-[10px] text-[var(--text-faint)] mb-1">
-            <span>Progress to TP1</span>
-            <span className="tabular-nums">{Math.round(pnlCalcs.tp1Progress)}%</span>
+            <span>Progress to TP</span>
+            <span className="tabular-nums">{Math.round(liveModel.progressToTarget)}%</span>
           </div>
           <div className="h-2 bg-[var(--surface-3)] rounded-full overflow-hidden">
             <div
-              className="h-full bg-[var(--accent-positive)] rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(100, pnlCalcs.tp1Progress)}%` }}
+              className={cn(
+                "h-full rounded-full transition-all duration-500",
+                liveModel.progressToTarget >= 100
+                  ? "bg-[var(--accent-positive)]"
+                  : liveModel.progressToTarget >= 50
+                    ? "bg-[var(--brand-primary)]"
+                    : "bg-[var(--text-muted)]"
+              )}
+              style={{ width: `${Math.min(100, Math.max(0, liveModel.progressToTarget))}%` }}
             />
-            {/* Milestone markers */}
-            <div className="relative h-0">
-              <div
-                className="absolute w-0.5 h-2 bg-[var(--border)] -top-2"
-                style={{ left: "33%" }}
-              />
-              <div
-                className="absolute w-0.5 h-2 bg-[var(--border)] -top-2"
-                style={{ left: "66%" }}
-              />
-              <div
-                className="absolute w-0.5 h-2 bg-[var(--border)] -top-2"
-                style={{ left: "100%" }}
-              />
-            </div>
           </div>
           <div className="flex justify-between text-[9px] text-[var(--text-faint)] mt-0.5">
-            <span>Entry</span>
-            <span>TP1</span>
-            <span>TP2</span>
-            <span>TP3</span>
+            <span>Entry ${liveModel.entryPrice.toFixed(2)}</span>
+            <span>TP ${liveModel.targetPrice.toFixed(2)}</span>
           </div>
         </div>
       </div>
 
-      {/* Row 2: Contract + Greeks Strip */}
+      {/* Row 2: Contract Description + Time to Close */}
       <div className="px-4 py-2 border-t border-[var(--border-hairline)] bg-[var(--surface-2)]">
         <div className="flex items-center justify-between">
-          {/* Contract Description */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-[var(--text-high)]">
               {trade.ticker} ${contract?.strike}
@@ -258,56 +243,127 @@ function PositionHUD({ trade, pnlCalcs, holdTime, currentPrice }: PositionHUDPro
             </span>
             <span className={cn("text-xs font-medium", dteInfo.className)}>{dteInfo.text}</span>
           </div>
-
-          {/* Greeks Chips */}
-          <div className="flex items-center gap-2">
-            {contract?.delta && (
-              <span className="text-xs text-[var(--text-muted)] tabular-nums">
-                Δ {fmtDelta(contract.delta)}
-              </span>
-            )}
-            {contract?.gamma && (
-              <span className="text-xs text-[var(--text-muted)] tabular-nums">
-                Γ {contract.gamma.toFixed(3)}
-              </span>
-            )}
-            {contract?.theta && (
-              <span className="text-xs text-[var(--accent-negative)] tabular-nums">
-                Θ {contract.theta.toFixed(2)}
-              </span>
-            )}
-            {contract?.iv && (
-              <span className="text-xs text-[var(--text-muted)] tabular-nums">
-                IV {(contract.iv * 100).toFixed(0)}%
-              </span>
-            )}
+          <div className="flex items-center gap-2 text-xs">
+            <Clock className="w-3 h-3 text-[var(--text-faint)]" />
+            <span className="text-[var(--text-muted)]">
+              {liveModel.marketOpen ? (
+                <>Close in <span className="font-medium text-[var(--text-high)]">{liveModel.timeToCloseFormatted}</span></>
+              ) : (
+                <span className="text-[var(--accent-negative)]">Market Closed</span>
+              )}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Row 3: Entry vs Current */}
+      {/* Row 3: Entry vs Current (Live Pricing) */}
       <div className="px-4 py-2 border-t border-[var(--border-hairline)] text-xs text-[var(--text-muted)]">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <span>
             <span className="text-[var(--text-faint)]">Entry:</span>{" "}
             <span className="tabular-nums font-medium text-[var(--text-high)]">
-              {fmtPrice(pnlCalcs.entryPrice)}
+              ${liveModel.entryPrice.toFixed(2)}
             </span>
           </span>
-          <span className="text-[var(--text-faint)]">|</span>
+          <span className="text-[var(--text-faint)]">→</span>
           <span>
-            <span className="text-[var(--text-faint)]">Current:</span>{" "}
-            <span className="tabular-nums font-medium text-[var(--text-high)]">
-              {fmtPrice(contract?.bid || 0)} / {fmtPrice(contract?.ask || 0)}
+            <span className="text-[var(--text-faint)]">Live:</span>{" "}
+            <span className={cn("tabular-nums font-medium", pnlStyle.className)}>
+              ${liveModel.effectiveMid.toFixed(2)}
+            </span>
+            <span className="text-[var(--text-faint)] ml-1">
+              ({liveModel.bid.toFixed(2)}/{liveModel.ask.toFixed(2)})
             </span>
           </span>
           <span className="text-[var(--text-faint)]">|</span>
           <span>
             <span className="text-[var(--text-faint)]">Underlying:</span>{" "}
             <span className="tabular-nums font-medium text-[var(--text-high)]">
-              {fmtPrice(currentPrice)}
+              ${liveModel.underlyingPrice.toFixed(2)}
+            </span>
+            <span
+              className={cn(
+                "ml-1 tabular-nums",
+                liveModel.underlyingChangePercent >= 0
+                  ? "text-[var(--accent-positive)]"
+                  : "text-[var(--accent-negative)]"
+              )}
+            >
+              ({liveModel.underlyingChangePercent >= 0 ? "+" : ""}{liveModel.underlyingChangePercent.toFixed(2)}%)
             </span>
           </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Greeks Strip - Compact horizontal display
+// ============================================================================
+
+interface GreeksStripProps {
+  liveModel: NonNullable<ReturnType<typeof useActiveTradeLiveModel>>;
+}
+
+function GreeksStrip({ liveModel }: GreeksStripProps) {
+  return (
+    <div className="flex-shrink-0 px-4 py-2 bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {/* Delta */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)]">Δ</span>
+            <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
+              {liveModel.delta.toFixed(2)}
+            </span>
+          </div>
+
+          {/* Gamma */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)]">Γ</span>
+            <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
+              {liveModel.gamma.toFixed(3)}
+            </span>
+          </div>
+
+          {/* Theta */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)]">Θ</span>
+            <span className="text-xs font-medium text-[var(--accent-negative)] tabular-nums">
+              {liveModel.theta.toFixed(2)}
+            </span>
+          </div>
+
+          {/* IV */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)]">IV</span>
+            <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
+              {(liveModel.iv * 100).toFixed(0)}%
+            </span>
+          </div>
+
+          {/* Spread */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)]">Spread</span>
+            <span
+              className={cn(
+                "text-xs font-medium tabular-nums",
+                liveModel.spreadPercent > 5 ? "text-[var(--accent-negative)]" : "text-[var(--text-high)]"
+              )}
+            >
+              {liveModel.spreadPercent.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Greeks source indicator */}
+        <div className="flex items-center gap-1 text-[10px] text-[var(--text-faint)]">
+          {liveModel.greeksSource === "live" ? (
+            <Zap className="w-3 h-3 text-green-400" />
+          ) : (
+            <span className="text-yellow-400">Static</span>
+          )}
         </div>
       </div>
     </div>
@@ -327,35 +383,22 @@ interface LevelsATRPanelProps {
 }
 
 function LevelsATRPanel({
-  trade,
   currentPrice,
   keyLevels,
   indicators,
   mtfTrend,
 }: LevelsATRPanelProps) {
   const [mtfExpanded, setMtfExpanded] = useState(true);
-  const [gammaExpanded, setGammaExpanded] = useState(true);
 
   // Build key levels array
   const levels = useMemo(() => {
-    const result: { label: string; price: number; type: "support" | "resistance" | "neutral" }[] =
-      [];
+    const result: { label: string; price: number; type: "support" | "resistance" | "neutral" }[] = [];
 
-    if (keyLevels?.vwap) {
-      result.push({ label: "VWAP", price: keyLevels.vwap, type: "neutral" });
-    }
-    if (keyLevels?.pdh) {
-      result.push({ label: "PDH", price: keyLevels.pdh, type: "resistance" });
-    }
-    if (keyLevels?.pdl) {
-      result.push({ label: "PDL", price: keyLevels.pdl, type: "support" });
-    }
-    if (keyLevels?.orh) {
-      result.push({ label: "ORH", price: keyLevels.orh, type: "resistance" });
-    }
-    if (keyLevels?.orl) {
-      result.push({ label: "ORL", price: keyLevels.orl, type: "support" });
-    }
+    if (keyLevels?.vwap) result.push({ label: "VWAP", price: keyLevels.vwap, type: "neutral" });
+    if (keyLevels?.pdh) result.push({ label: "PDH", price: keyLevels.pdh, type: "resistance" });
+    if (keyLevels?.pdl) result.push({ label: "PDL", price: keyLevels.pdl, type: "support" });
+    if (keyLevels?.orh) result.push({ label: "ORH", price: keyLevels.orh, type: "resistance" });
+    if (keyLevels?.orl) result.push({ label: "ORL", price: keyLevels.orl, type: "support" });
 
     return result.sort((a, b) => a.price - b.price);
   }, [keyLevels]);
@@ -380,7 +423,7 @@ function LevelsATRPanel({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      {/* Key Levels Panel - Always Visible */}
+      {/* Key Levels Panel */}
       <div className="p-3 border-b border-[var(--border-hairline)]">
         <div className="flex items-center gap-1.5 mb-2">
           <Layers className="w-3.5 h-3.5 text-[var(--text-muted)]" />
@@ -389,7 +432,6 @@ function LevelsATRPanel({
           </span>
         </div>
 
-        {/* Level Bar Visualization */}
         {levels.length > 0 ? (
           <LevelBar levels={levels} currentPrice={currentPrice} />
         ) : (
@@ -409,8 +451,8 @@ function LevelsATRPanel({
             </span>
           </div>
           {atrMetrics.isExhausted && (
-            <span className={chipStyle("warn")}>
-              <AlertTriangle className="w-3 h-3 mr-1" />
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--accent-warning)]/10 text-[var(--accent-warning)] border border-[var(--accent-warning)]/30">
+              <AlertTriangle className="w-3 h-3" />
               Exhausted
             </span>
           )}
@@ -419,21 +461,13 @@ function LevelsATRPanel({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-[var(--text-muted)]">
-              ATR(14):{" "}
-              <span className="text-[var(--text-high)] tabular-nums">
-                {atrMetrics.atr.toFixed(2)}
-              </span>
+              ATR(14): <span className="text-[var(--text-high)] tabular-nums">{atrMetrics.atr.toFixed(2)}</span>
             </span>
             <span className="text-[var(--text-muted)]">
-              Session:{" "}
-              <span className="text-[var(--text-high)] tabular-nums">
-                {atrMetrics.consumedPct.toFixed(0)}%
-              </span>{" "}
-              consumed
+              Session: <span className="text-[var(--text-high)] tabular-nums">{atrMetrics.consumedPct.toFixed(0)}%</span> consumed
             </span>
           </div>
 
-          {/* ATR Progress Bar */}
           <div className="h-2 bg-[var(--surface-3)] rounded-full overflow-hidden">
             <div
               className={cn(
@@ -446,13 +480,6 @@ function LevelsATRPanel({
               )}
               style={{ width: `${atrMetrics.consumedPct}%` }}
             />
-          </div>
-
-          <div className="text-xs text-[var(--text-faint)]">
-            Room remaining:{" "}
-            <span className="text-[var(--text-muted)] tabular-nums">
-              {atrMetrics.roomMultiple.toFixed(1)}× ATR
-            </span>
           </div>
         </div>
       </div>
@@ -478,34 +505,8 @@ function LevelsATRPanel({
         </button>
 
         {mtfExpanded && mtfTrend && (
-          <div className="px-3 pb-3 animate-expand">
-            <MTFLadder mtfTrend={mtfTrend} indicators={indicators} />
-          </div>
-        )}
-      </div>
-
-      {/* Gamma Walls / Dealer Position - Collapsible */}
-      <div className="border-b border-[var(--border-hairline)]">
-        <button
-          onClick={() => setGammaExpanded(!gammaExpanded)}
-          className="w-full p-3 flex items-center justify-between text-left hover:bg-[var(--surface-2)] transition-colors"
-        >
-          <div className="flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
-              Positioning
-            </span>
-          </div>
-          {gammaExpanded ? (
-            <ChevronUp className="w-4 h-4 text-[var(--text-faint)]" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-[var(--text-faint)]" />
-          )}
-        </button>
-
-        {gammaExpanded && (
-          <div className="px-3 pb-3 animate-expand">
-            <GammaPositionPanel currentPrice={currentPrice} />
+          <div className="px-3 pb-3">
+            <MTFLadder mtfTrend={mtfTrend} />
           </div>
         )}
       </div>
@@ -531,8 +532,7 @@ function LevelBar({
   const getPosition = (price: number) => ((price - minPrice) / range) * 100;
 
   return (
-    <div className="relative h-8 bg-[var(--surface-2)] rounded">
-      {/* Level markers */}
+    <div className="relative h-8 bg-[var(--surface-2)] rounded mb-4">
       {levels.map((level, idx) => (
         <div
           key={idx}
@@ -554,8 +554,6 @@ function LevelBar({
           </span>
         </div>
       ))}
-
-      {/* Current price marker */}
       <div
         className="absolute top-0 bottom-0 flex items-center"
         style={{ left: `${getPosition(currentPrice)}%` }}
@@ -581,7 +579,7 @@ function MTFQuickStatus({ mtfTrend }: { mtfTrend: any }) {
   );
 }
 
-function MTFLadder({ mtfTrend, indicators }: { mtfTrend: any; indicators: any }) {
+function MTFLadder({ mtfTrend }: { mtfTrend: any }) {
   const timeframes = ["1m", "5m", "15m", "1h"] as const;
 
   const getTrendArrow = (direction: string) => {
@@ -614,44 +612,9 @@ function MTFLadder({ mtfTrend, indicators }: { mtfTrend: any; indicators: any })
                 {Math.round(strength)}
               </span>
             </div>
-            <div className="text-[9px] text-[var(--text-faint)]">
-              RSI {indicators?.rsi?.toFixed(0) || "—"}
-            </div>
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ============================================================================
-// Gamma Position Panel (Placeholder)
-// ============================================================================
-
-function GammaPositionPanel({ currentPrice }: { currentPrice: number }) {
-  // This would integrate with GammaExposureEngine in a full implementation
-  return (
-    <div className="space-y-2 text-xs">
-      <div className="flex items-center justify-between">
-        <span className="text-[var(--text-muted)]">Dealer Position:</span>
-        <span className={chipStyle("neutral")}>LONG_GAMMA</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-[var(--text-muted)]">Support Wall:</span>
-        <span className="text-[var(--text-high)] tabular-nums">
-          ${(currentPrice * 0.98).toFixed(2)} (-2.0%)
-        </span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-[var(--text-muted)]">Resistance Wall:</span>
-        <span className="text-[var(--text-high)] tabular-nums">
-          ${(currentPrice * 1.02).toFixed(2)} (+2.0%)
-        </span>
-      </div>
-      <div className="p-2 rounded bg-[var(--surface-3)] text-[var(--text-faint)]">
-        <Zap className="w-3 h-3 inline mr-1" />
-        Pin expected near current price range
-      </div>
     </div>
   );
 }
@@ -675,8 +638,7 @@ function TradeTapeSection({ trade }: { trade: Trade }) {
         <span className="text-[10px] text-[var(--text-faint)]">{updates.length} events</span>
       </div>
 
-      {/* Timeline */}
-      <div className="max-h-40 overflow-y-auto p-3 space-y-2">
+      <div className="max-h-32 overflow-y-auto p-3 space-y-2">
         {updates.length === 0 ? (
           <div className="text-xs text-[var(--text-faint)] text-center py-4">
             No trade events yet
@@ -685,7 +647,6 @@ function TradeTapeSection({ trade }: { trade: Trade }) {
           updates.map((update, idx) => <TapeEvent key={update.id || idx} update={update} />)
         )}
 
-        {/* Live indicator */}
         <div className="flex items-center gap-2 p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)]">
           <div className="w-2 h-2 rounded-full bg-[var(--accent-negative)] animate-pulse" />
           <span className="text-xs text-[var(--text-muted)]">NOW · Holding position</span>
@@ -746,27 +707,20 @@ function TapeEvent({ update }: { update: Trade["updates"][number] }) {
         <div className="flex items-center gap-2">
           <span className="font-medium text-[var(--text-high)]">{getEventLabel()}</span>
           {update.price && (
-            <span className="text-[var(--text-muted)] tabular-nums">
-              @ {fmtPrice(update.price)}
-            </span>
+            <span className="text-[var(--text-muted)] tabular-nums">@ ${update.price.toFixed(2)}</span>
           )}
-          {update.pnlPercent && (
+          {update.pnlPercent !== undefined && update.pnlPercent !== null && (
             <span
               className={cn(
                 "tabular-nums",
-                update.pnlPercent >= 0
-                  ? "text-[var(--accent-positive)]"
-                  : "text-[var(--accent-negative)]"
+                update.pnlPercent >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
               )}
             >
-              ({update.pnlPercent >= 0 ? "+" : ""}
-              {update.pnlPercent.toFixed(1)}%)
+              ({update.pnlPercent >= 0 ? "+" : ""}{update.pnlPercent.toFixed(1)}%)
             </span>
           )}
         </div>
-        {update.message && (
-          <div className="text-[var(--text-faint)] truncate">{update.message}</div>
-        )}
+        {update.message && <div className="text-[var(--text-faint)] truncate">{update.message}</div>}
         <div className="text-[var(--text-faint)] tabular-nums">{timestamp}</div>
       </div>
     </div>

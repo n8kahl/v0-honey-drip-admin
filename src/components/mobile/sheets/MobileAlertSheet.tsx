@@ -110,7 +110,7 @@ export function MobileAlertSheet({
         if (alertOptions?.updateKind === "trim") return "TRIM";
         if (alertOptions?.updateKind === "sl") return "STOP LOSS UPDATE";
         return "UPDATE";
-      case "trail_stop":
+      case "trail-stop":
         return "TRAIL STOP";
       default:
         return "ALERT";
@@ -129,7 +129,7 @@ export function MobileAlertSheet({
         return "\u{1F3C1}"; // checkered flag
       case "update":
         return "\u{1F4CA}"; // chart
-      case "trail_stop":
+      case "trail-stop":
         return "\u{1F3C3}"; // runner
       default:
         return "\u{1F514}"; // bell
@@ -177,7 +177,7 @@ export function MobileAlertSheet({
         defaultComment = "Updating stop loss.";
       } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
         defaultComment = "Quick update on this position.";
-      } else if (alertType === "trail_stop") {
+      } else if (alertType === "trail-stop") {
         defaultComment = "Enabling trailing stop on this position.";
       } else if (alertType === "add") {
         defaultComment = "Adding to position here.";
@@ -211,7 +211,7 @@ export function MobileAlertSheet({
         setShowTarget(false);
         setShowStopLoss(false);
         setShowPnL(false);
-      } else if (alertType === "trail_stop") {
+      } else if (alertType === "trail-stop") {
         setShowEntry(false);
         setShowCurrent(false);
         setShowTarget(false);

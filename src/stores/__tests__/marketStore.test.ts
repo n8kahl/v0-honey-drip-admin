@@ -9,6 +9,12 @@ vi.mock('../../lib/supabase/database', () => {
   };
 });
 
+vi.mock('../../lib/supabase/compositeSignals', () => {
+  return {
+    dismissSignalsForOwnerSymbol: vi.fn().mockResolvedValue(0),
+  };
+});
+
 vi.mock('sonner', () => {
   return {
     toast: {
@@ -109,7 +115,7 @@ describe('useMarketStore watchlist', () => {
       ],
     } as any);
 
-    await getState().removeTicker('db-1');
+    await getState().removeTicker(USER_ID, 'db-1');
 
     const { watchlist } = getState();
     expect(watchlist).toHaveLength(1);
