@@ -370,6 +370,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         loading={contractsLoading}
         error={contractsError}
         onRetry={() => contractSheetTicker && handleLoadTicker(contractSheetTicker)}
+        underlyingPrice={contractSheetTicker?.last || 0}
       />
     </div>
   );

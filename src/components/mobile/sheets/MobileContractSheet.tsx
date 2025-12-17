@@ -14,6 +14,7 @@ interface MobileContractSheetProps {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  underlyingPrice?: number; // Current stock/index price for ATM detection
 }
 
 export function MobileContractSheet({
@@ -25,21 +26,25 @@ export function MobileContractSheet({
   loading = false,
   error = null,
   onRetry,
+  underlyingPrice = 0,
 }: MobileContractSheetProps) {
   const [selectedType, setSelectedType] = useState<OptionType>("C");
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [showMoreOTM, setShowMoreOTM] = useState(false);
+  const [showMoreITM, setShowMoreITM] = useState(false);
 
-  // Filter contracts by type and show multi-DTE spread (matching desktop pattern)
-  const filteredContracts = useMemo(() => {
+  // Filter contracts by type and show ATM-centered spread (matching desktop pattern)
+  const { allContracts, limitedContracts, atmStrike, hiddenOTM, hiddenITM } = useMemo(() => {
     console.log("[v0] Mobile contract filter: input", {
       total: contracts.length,
       type: selectedType,
+      underlyingPrice,
     });
 
     const typed = contracts.filter((c) => c.type === selectedType);
     if (typed.length === 0) {
       console.log("[v0] Mobile contract filter: no contracts of type", selectedType);
-      return [];
+      return { allContracts: [], limitedContracts: [], atmStrike: 0, hiddenOTM: 0, hiddenITM: 0 };
     }
 
     // Group by expiration date
@@ -71,48 +76,131 @@ export function MobileContractSheet({
 
     console.log("[v0] Mobile expiry contracts:", expiryContracts.length);
 
-    // STRIKE-BASED FILTERING (not delta-based)
     // Sort by strike price
     const sorted = [...expiryContracts].sort((a, b) => a.strike - b.strike);
 
-    // Find ATM by delta proximity
-    const targetDelta = selectedType === "C" ? 0.5 : -0.5;
-    const atmIndex = sorted.findIndex(
-      (c) => Math.abs((c.delta || targetDelta) - targetDelta) < 0.1
-    );
-    const centerIndex = atmIndex >= 0 ? atmIndex : Math.floor(sorted.length / 2);
+    // Find ATM strike by proximity to underlying price (matching desktop)
+    if (!underlyingPrice || underlyingPrice <= 0) {
+      console.log("[v0] Mobile: No underlying price, using fallback");
+      return {
+        allContracts: sorted,
+        limitedContracts: sorted.slice(0, 6),
+        atmStrike: 0,
+        hiddenOTM: 0,
+        hiddenITM: 0,
+      };
+    }
 
-    console.log("[v0] Mobile ATM index:", centerIndex, "of", sorted.length);
+    let closestStrike = sorted[0].strike;
+    let minDiff = Math.abs(sorted[0].strike - underlyingPrice);
+    let atmIndex = 0;
 
-    // Take 10 strikes before ATM + ATM + 10 strikes after = 21 total
-    const startIndex = Math.max(0, centerIndex - 10);
-    const endIndex = Math.min(sorted.length, centerIndex + 11);
-    const result = sorted.slice(startIndex, endIndex);
+    for (let i = 0; i < sorted.length; i++) {
+      const diff = Math.abs(sorted[i].strike - underlyingPrice);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestStrike = sorted[i].strike;
+        atmIndex = i;
+      }
+    }
 
     console.log(
-      "[v0] Mobile filtered contracts:",
-      result.length,
-      "from index",
-      startIndex,
-      "to",
-      endIndex
+      "[v0] Mobile ATM:",
+      closestStrike,
+      "at index",
+      atmIndex,
+      "(underlying:",
+      underlyingPrice,
+      ")"
     );
 
-    return result;
-  }, [contracts, selectedType]);
+    // Split into ITM/OTM relative to underlying price (matching desktop logic)
+    const atmContract = sorted[atmIndex];
+    const otmContracts: Contract[] = [];
+    const itmContracts: Contract[] = [];
+
+    for (const c of sorted) {
+      if (c.strike === closestStrike) continue; // Skip ATM
+
+      if (selectedType === "C") {
+        // Calls: ITM when strike < underlying, OTM when strike > underlying
+        if (c.strike < underlyingPrice) {
+          itmContracts.push(c);
+        } else {
+          otmContracts.push(c);
+        }
+      } else {
+        // Puts: ITM when strike > underlying, OTM when strike < underlying
+        if (c.strike > underlyingPrice) {
+          itmContracts.push(c);
+        } else {
+          otmContracts.push(c);
+        }
+      }
+    }
+
+    // Sort by distance from ATM (closest first)
+    const sortByProximity = (arr: Contract[]) =>
+      arr.sort((a, b) => Math.abs(a.strike - closestStrike) - Math.abs(b.strike - closestStrike));
+
+    const sortedOTM = sortByProximity(otmContracts);
+    const sortedITM = sortByProximity(itmContracts);
+
+    // Desktop-style limits: 2 OTM + ATM + 3 ITM = 6 default, expandable to 7 + 1 + 7 = 15
+    const otmLimit = showMoreOTM ? 7 : 2;
+    const itmLimit = showMoreITM ? 7 : 3;
+
+    const limitedOTM = sortedOTM.slice(0, otmLimit);
+    const limitedITM = sortedITM.slice(0, itmLimit);
+
+    const limited = [
+      ...limitedOTM.sort((a, b) => a.strike - b.strike),
+      atmContract,
+      ...limitedITM.sort((a, b) => a.strike - b.strike),
+    ];
+
+    const all = [
+      ...sortedOTM.sort((a, b) => a.strike - b.strike),
+      atmContract,
+      ...sortedITM.sort((a, b) => a.strike - b.strike),
+    ];
+
+    console.log(
+      "[v0] Mobile contracts:",
+      limited.length,
+      "limited (",
+      limitedOTM.length,
+      "OTM +",
+      limitedITM.length,
+      "ITM ), total available:",
+      all.length
+    );
+
+    return {
+      allContracts: all,
+      limitedContracts: limited,
+      atmStrike: closestStrike,
+      hiddenOTM: Math.max(0, sortedOTM.length - otmLimit),
+      hiddenITM: Math.max(0, sortedITM.length - itmLimit),
+    };
+  }, [contracts, selectedType, underlyingPrice, showMoreOTM, showMoreITM]);
 
   // Auto-select best contract (highest liquidity near ATM)
   const bestContract = useMemo(() => {
-    if (filteredContracts.length === 0) return null;
-    // Find contract with best volume * OI near 0.50 delta
-    return filteredContracts.reduce((best, curr) => {
+    if (limitedContracts.length === 0) return null;
+    // Find contract with best volume * OI near ATM strike
+    return limitedContracts.reduce((best, curr) => {
       const currScore =
-        (curr.volume || 0) * (curr.openInterest || 0) * (1 - Math.abs((curr.delta || 0.5) - 0.5));
+        (curr.volume || 0) *
+        (curr.openInterest || 0) *
+        (1 / (1 + Math.abs(curr.strike - atmStrike)));
       const bestScore =
-        (best.volume || 0) * (best.openInterest || 0) * (1 - Math.abs((best.delta || 0.5) - 0.5));
+        (best.volume || 0) *
+        (best.openInterest || 0) *
+        (1 / (1 + Math.abs(best.strike - atmStrike)));
       return currScore > bestScore ? curr : best;
-    }, filteredContracts[0]);
-  }, [filteredContracts]);
+    }, limitedContracts[0]);
+  }, [limitedContracts, atmStrike]);
 
   const handleConfirm = () => {
     const contractToLoad = selectedContract || bestContract;
@@ -216,52 +304,83 @@ export function MobileContractSheet({
                     </Button>
                   )}
                 </div>
-              ) : filteredContracts.length === 0 ? (
+              ) : limitedContracts.length === 0 ? (
                 <p className="text-[var(--text-muted)] text-center py-8">No contracts available</p>
               ) : (
-                filteredContracts.map((contract) => {
-                  const isSelected = selectedContract?.id === contract.id;
-                  const isBest = bestContract?.id === contract.id && !selectedContract;
+                <>
+                  {limitedContracts.map((contract) => {
+                    const isSelected = selectedContract?.id === contract.id;
+                    const isBest = bestContract?.id === contract.id && !selectedContract;
 
-                  return (
-                    <button
-                      key={contract.id}
-                      data-testid="contract-card"
-                      onClick={() => setSelectedContract(isSelected ? null : contract)}
-                      className={cn(
-                        "w-full p-3 rounded-lg border flex items-center justify-between",
-                        isSelected || isBest
-                          ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/5"
-                          : "border-[var(--border-hairline)] bg-[var(--surface-1)]"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        {(isSelected || isBest) && (
-                          <Check className="w-4 h-4 text-[var(--brand-primary)]" />
+                    return (
+                      <button
+                        key={contract.id}
+                        data-testid="contract-card"
+                        onClick={() => setSelectedContract(isSelected ? null : contract)}
+                        className={cn(
+                          "w-full p-3 rounded-lg border flex items-center justify-between",
+                          isSelected || isBest
+                            ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/5"
+                            : contract.strike === atmStrike
+                              ? "border-blue-500/30 bg-blue-500/5"
+                              : "border-[var(--border-hairline)] bg-[var(--surface-1)]"
                         )}
-                        <div className="text-left">
-                          <span className="text-[var(--text-high)] font-medium block">
-                            ${contract.strike}
-                            {contract.type}
+                      >
+                        <div className="flex items-center gap-3">
+                          {(isSelected || isBest) && (
+                            <Check className="w-4 h-4 text-[var(--brand-primary)]" />
+                          )}
+                          <div className="text-left">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[var(--text-high)] font-medium">
+                                ${contract.strike}
+                                {contract.type}
+                              </span>
+                              {contract.strike === atmStrike && (
+                                <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-medium rounded">
+                                  ATM
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[var(--text-muted)] text-xs">
+                              {formatExpiry(contract.expiry)} | Vol: {contract.volume || 0}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[var(--text-high)] tabular-nums block">
+                            ${formatPrice(contract.mid)}
                           </span>
                           <span className="text-[var(--text-muted)] text-xs">
-                            {formatExpiry(contract.expiry)} | Vol: {contract.volume || 0}
+                            {contract.delta !== undefined
+                              ? `${(contract.delta * 100).toFixed(0)}D`
+                              : ""}
                           </span>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[var(--text-high)] tabular-nums block">
-                          ${formatPrice(contract.mid)}
-                        </span>
-                        <span className="text-[var(--text-muted)] text-xs">
-                          {contract.delta !== undefined
-                            ? `${(contract.delta * 100).toFixed(0)}D`
-                            : ""}
-                        </span>
-                      </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Show More OTM button */}
+                  {hiddenOTM > 0 && !showMoreOTM && (
+                    <button
+                      onClick={() => setShowMoreOTM(true)}
+                      className="w-full mt-2 px-4 py-2.5 bg-[var(--surface-1)] border border-[var(--border-muted)] rounded-lg text-[var(--text-med)] text-sm hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      Show {hiddenOTM} more OTM contracts
                     </button>
-                  );
-                })
+                  )}
+
+                  {/* Show More ITM button */}
+                  {hiddenITM > 0 && !showMoreITM && (
+                    <button
+                      onClick={() => setShowMoreITM(true)}
+                      className="w-full mt-2 px-4 py-2.5 bg-[var(--surface-1)] border border-[var(--border-muted)] rounded-lg text-[var(--text-med)] text-sm hover:bg-[var(--surface-2)] transition-colors"
+                    >
+                      Show {hiddenITM} more ITM contracts
+                    </button>
+                  )}
+                </>
               )}
             </div>
 
