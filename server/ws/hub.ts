@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import { setInterval, clearInterval } from "timers";
-import { parseClientParamsToTopics, normalizeIndicesTopic } from "./topicParsing";
+import { parseClientParamsToTopics, normalizeIndicesTopic } from "./topicParsing.js";
 
 type Asset = "options" | "indices";
 
