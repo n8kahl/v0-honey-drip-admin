@@ -105,17 +105,19 @@ export function NowPanel({
     }
 
     // ENTERED state → Management Cockpit [MANAGE MODE]
-    // Use tradeState for currentTrade to ensure immediate switch
-    const effectiveState = currentTrade?.id === focus.tradeId ? tradeState : trade.state;
+    // Use trade.state as the primary source of truth since it's directly from the trade object
+    // This fixes race conditions where tradeState (from derived selectors) lags behind
+    const effectiveState = trade.state;
     if (effectiveState === "ENTERED") {
       return <NowPanelManage trade={trade} activeTicker={activeTicker} watchlist={watchlist} />;
     }
 
     // WATCHING/LOADED/EXITED → Standard trade panel [SETUP MODE]
+    // Pass effectiveState instead of tradeState for consistency
     return (
       <NowPanelTrade
         trade={trade}
-        tradeState={tradeState}
+        tradeState={effectiveState}
         activeTicker={activeTicker}
         watchlist={watchlist}
       />

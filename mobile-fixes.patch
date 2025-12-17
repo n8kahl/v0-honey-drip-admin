@@ -1,0 +1,114 @@
+--- a/src/components/mobile/sheets/MobileContractSheet.tsx
++++ b/src/components/mobile/sheets/MobileContractSheet.tsx
+@@ -32,62 +32,48 @@
+   // Filter contracts by type and show multi-DTE spread (matching desktop pattern)
+   const filteredContracts = useMemo(() => {
+     const typed = contracts.filter((c) => c.type === selectedType);
++    console.log("[v0] Mobile contract filter - typed count:", typed.length, "for type:", selectedType);
+     if (typed.length === 0) return [];
+ 
+     // Group by expiration date
+     const byExpiry = new Map<number, Contract[]>();
+     typed.forEach((c) => {
+       const dte = c.daysToExpiry || 0;
+       if (!byExpiry.has(dte)) byExpiry.set(dte, []);
+       byExpiry.get(dte)!.push(c);
+     });
+ 
+     // Get unique DTEs sorted
+     const dteSorted = Array.from(byExpiry.keys()).sort((a, b) => a - b);
++    console.log("[v0] Mobile available DTEs:", dteSorted);
+ 
+     // Find expiry closest to 7 DTE (optimal for day/swing trades)
+     const targetDTE = 7;
+     const closestDTE = dteSorted.reduce((prev, curr) =>
+       Math.abs(curr - targetDTE) < Math.abs(prev - targetDTE) ? curr : prev
+     );
++    console.log("[v0] Mobile selected DTE:", closestDTE);
+ 
+     // Get contracts from closest expiry
+     const expiryContracts = byExpiry.get(closestDTE) || [];
++    console.log("[v0] Mobile contracts for DTE:", expiryContracts.length);
+ 
+-    // Sort by delta (ATM first)
+-    const sorted = expiryContracts.sort((a, b) => {
+-      const aDelta = Math.abs((a.delta || 0.5) - 0.5);
+-      const bDelta = Math.abs((b.delta || 0.5) - 0.5);
+-      return aDelta - bDelta;
+-    });
+-
+-    // Split into ITM/ATM/OTM
+-    const atmIndex = sorted.findIndex((c) => Math.abs((c.delta || 0.5) - 0.5) < 0.05);
+-    const atm = atmIndex >= 0 ? sorted[atmIndex] : sorted[0];
+-
+-    let itm: Contract[] = [];
+-    let otm: Contract[] = [];
+-
+-    if (selectedType === "C") {
+-      // Calls: ITM = delta > 0.55, OTM = delta < 0.45
+-      itm = sorted.filter((c) => (c.delta || 0) > 0.55).slice(0, 10);
+-      otm = sorted.filter((c) => (c.delta || 0) < 0.45).slice(0, 10);
+-    } else {
+-      // Puts: ITM = |delta| > 0.55 (more negative), OTM = |delta| < 0.45 (less negative)
+-      itm = sorted
+-        .filter((c) => {
+-          const d = c.delta || 0;
+-          return d < 0 && Math.abs(d) > 0.55;
+-        })
+-        .slice(0, 10);
+-      otm = sorted
+-        .filter((c) => {
+-          const d = c.delta || 0;
+-          return d < 0 && Math.abs(d) < 0.45;
+-        })
+-        .slice(0, 10);
+-    }
+-
+-    // Return 10 ITM + 1 ATM + 10 OTM (max 21 contracts)
+-    return [...itm, atm, ...otm].filter(
+-      (c, i, arr) => arr.findIndex((x) => x.symbol === c.symbol) === i
+-    );
++    // Sort by strike price
++    const sorted = [...expiryContracts].sort((a, b) => a.strike - b.strike);
++
++    // Find ATM (closest to 0.50 or -0.50 delta)
++    const targetDelta = selectedType === "C" ? 0.5 : -0.5;
++    const atmIndex = sorted.findIndex((c) => {
++      return Math.abs((c.delta || 0) - targetDelta) < 0.1;
++    });
++
++    // Take 10 strikes before ATM + ATM + 10 strikes after = 21 total
++    const centerIndex = atmIndex >= 0 ? atmIndex : Math.floor(sorted.length / 2);
++    const startIndex = Math.max(0, centerIndex - 10);
++    const endIndex = Math.min(sorted.length, centerIndex + 11);
++
++    const result = sorted.slice(startIndex, endIndex);
++    console.log("[v0] Mobile filtered contracts:", result.length, "from index", startIndex, "to", endIndex);
++
++    return result;
+   }, [contracts, selectedType]);
+ 
+--- a/src/components/mobile/sheets/MobileAlertSheet.tsx
++++ b/src/components/mobile/sheets/MobileAlertSheet.tsx
+@@ -148,10 +148,19 @@
+ 
+       // Initialize channels from trade or defaults
++      console.log("[v0] Mobile alert - channels:", channels.length, channels.map(c => ({ id: c.id, name: c.name, isGlobalDefault: c.isGlobalDefault })));
+       const tradeChannels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
+       if (tradeChannels.length > 0) {
++        console.log("[v0] Mobile using trade channels:", tradeChannels);
+         setSelectedChannels(tradeChannels);
+       } else {
+         const defaultChannel = channels.find((c) => c.isGlobalDefault);
+-        setSelectedChannels(defaultChannel ? [defaultChannel.id] : []);
++        console.log("[v0] Mobile default channel:", defaultChannel);
++        if (defaultChannel) {
++          setSelectedChannels([defaultChannel.id]);
++        } else if (channels.length > 0) {
++          // Fallback: select first channel if no default
++          setSelectedChannels([channels[0].id]);
++          console.log("[v0] Mobile fallback to first channel:", channels[0].name);
++        } else {
++          setSelectedChannels([]);
++        }
+       }

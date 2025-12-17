@@ -149,19 +149,22 @@ export function ActionRail({
     }
   }, [showAlert]);
 
-  // Determine which mode we're in based SOLELY on tradeState
-  // This ensures immediate UI updates when state changes, regardless of prop propagation timing
-  const isSetupMode = tradeState === "WATCHING" && setupMode?.focusedSymbol;
-  const isLoadedMode = tradeState === "LOADED" && currentTrade;
-  const isManageMode = tradeState === "ENTERED" && currentTrade;
-  const isExitedMode = tradeState === "EXITED" && currentTrade;
+  // Determine which mode we're in based on BOTH tradeState and currentTrade.state
+  // Use currentTrade.state as the source of truth when it exists, since it's directly from the trade object
+  // This fixes race conditions where tradeState (from derived selectors) lags behind the actual trade state
+  const effectiveTradeState = currentTrade?.state ?? tradeState;
+
+  const isSetupMode = effectiveTradeState === "WATCHING" && setupMode?.focusedSymbol;
+  const isLoadedMode = effectiveTradeState === "LOADED" && currentTrade;
+  const isManageMode = effectiveTradeState === "ENTERED" && currentTrade;
+  const isExitedMode = effectiveTradeState === "EXITED" && currentTrade;
   // Show trade content for any persisted trade state (LOADED/ENTERED/EXITED)
   const hasTradeContent = currentTrade != null;
 
   return (
     <div className="w-96 flex-shrink-0 border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)] overflow-hidden">
-      {/* State Badge - Always at top */}
-      <ActionRailStateBadge state={tradeState} />
+      {/* State Badge - Always at top, use effective state for consistency */}
+      <ActionRailStateBadge state={effectiveTradeState} />
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
