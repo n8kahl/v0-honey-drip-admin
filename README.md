@@ -51,10 +51,13 @@ A production-ready options trading platform with real-time market data, Discord 
    # Server-side ONLY (not exposed to browser)
 
    MASSIVE_API_KEY=your-massive-api-key
+
+   # WebSocket connection pool (set based on your Massive.com plan)
+
+   MAX_WS_CONNECTIONS=5 # Basic: 1-2, Pro: 5-10, Advanced: 10-25, Enterprise: 50+
    \`\`\`
 
 4. Run the SQL scripts in Supabase:
-
    - Execute `scripts/001_create_schema.sql` in Supabase SQL editor
 
 5. Start the development server:
@@ -72,6 +75,17 @@ The application uses a secure proxy architecture:
 - **Server Side**: API routes proxy all Massive.com requests
   - `/api/massive/[...path]` - REST API proxy with server-side authentication
   - `/api/massive/ws-token` - Generates ephemeral tokens for WebSocket (5-min expiry)
+
+### WebSocket Connection Pool
+
+**Multi-Admin Support**: The platform uses a connection pool to support unlimited concurrent admins without exceeding API limits.
+
+- **Architecture**: 1 upstream connection per asset (options/indices) shared by all clients
+- **Scalability**: 10 admins × 5 tabs = 50 client connections → 2 upstream connections
+- **Monitoring**: Health endpoint at `/api/ws-health` provides real-time metrics
+- **Configuration**: Set `MAX_WS_CONNECTIONS` environment variable based on your Massive.com plan
+
+See **[WEBSOCKET_CONNECTION_POOL.md](./WEBSOCKET_CONNECTION_POOL.md)** for complete documentation.
 
 ### Data Flow
 
