@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import { Trade } from "../../../types";
 import { cn } from "../../../lib/utils";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, Wifi } from "lucide-react";
+import { useLiveGreeks } from "../../../hooks/useOptionsAdvanced";
 
 interface HDGreeksMonitorProps {
   trade: Trade;
@@ -83,13 +84,27 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
   const isCall = contract.type === "C";
   const dte = contract.daysToExpiry ?? 0;
 
-  // Get entry values (stored on trade) vs current values (from contract)
+  // ✅ FIX: Use live Greeks hook instead of static contract data
+  // Polls Massive.com options snapshot every 30s for updated Greeks
+  const liveGreeks = useLiveGreeks(
+    contract?.id || null,
+    {
+      delta: contract.delta,
+      gamma: contract.gamma,
+      theta: contract.theta,
+      vega: contract.vega,
+      iv: contract.iv,
+    },
+    30000 // 30 second poll interval
+  );
+
+  // Get entry values (stored on trade) vs current values (now LIVE from hook)
   const greeks = useMemo((): GreekDisplay[] => {
     const results: GreekDisplay[] = [];
 
-    // Delta
+    // Delta - use live value with fallback to static
     const deltaAtEntry = trade.deltaAtEntry;
-    const deltaCurrent = contract.delta;
+    const deltaCurrent = liveGreeks.delta ?? contract.delta;
     if (deltaCurrent !== undefined) {
       const deltaChange = deltaAtEntry !== undefined ? deltaCurrent - deltaAtEntry : 0;
       const deltaChangePercent =
@@ -106,8 +121,8 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
       });
     }
 
-    // Gamma
-    const gammaCurrent = contract.gamma;
+    // Gamma - use live value with fallback to static
+    const gammaCurrent = liveGreeks.gamma ?? contract.gamma;
     if (gammaCurrent !== undefined) {
       results.push({
         name: "Gamma",
@@ -121,8 +136,8 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
       });
     }
 
-    // Theta
-    const thetaCurrent = contract.theta;
+    // Theta - use live value with fallback to static
+    const thetaCurrent = liveGreeks.theta ?? contract.theta;
     if (thetaCurrent !== undefined) {
       // Calculate theta per hour for day traders
       const thetaPerHour = thetaCurrent / 6.5;
@@ -138,8 +153,8 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
       });
     }
 
-    // Vega
-    const vegaCurrent = contract.vega;
+    // Vega - use live value with fallback to static
+    const vegaCurrent = liveGreeks.vega ?? contract.vega;
     if (vegaCurrent !== undefined) {
       results.push({
         name: "Vega",
@@ -152,9 +167,9 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
       });
     }
 
-    // IV (Implied Volatility)
+    // IV (Implied Volatility) - use live value with fallback to static
     const ivAtEntry = trade.ivAtEntry;
-    const ivCurrent = contract.iv;
+    const ivCurrent = liveGreeks.iv ?? contract.iv;
     if (ivCurrent !== undefined) {
       const ivChange = ivAtEntry !== undefined ? ivCurrent - ivAtEntry : 0;
       const ivChangePercent = ivAtEntry && ivAtEntry !== 0 ? (ivChange / ivAtEntry) * 100 : 0;
@@ -180,7 +195,7 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
     }
 
     return results;
-  }, [trade, contract, isCall, dte]);
+  }, [trade, contract, liveGreeks, isCall, dte]);
 
   if (greeks.length === 0) {
     return null;
@@ -218,9 +233,21 @@ export function HDGreeksMonitor({ trade, compact = false }: HDGreeksMonitorProps
   // Full mode: detailed grid
   return (
     <div className="bg-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] p-4">
-      <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide mb-3">
-        Greeks Monitor
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-[var(--text-high)] uppercase tracking-wide">
+          Greeks Monitor
+        </h3>
+        {/* Live/Static indicator */}
+        <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+          <Wifi
+            className={cn(
+              "w-3 h-3",
+              liveGreeks.source === "live" ? "text-green-500" : "text-yellow-500"
+            )}
+          />
+          <span>{liveGreeks.source === "live" ? "Live" : "Static"}</span>
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {greeks.map((greek) => (
