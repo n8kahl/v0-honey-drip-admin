@@ -159,7 +159,7 @@ export function ActionRail({
   const hasTradeContent = currentTrade != null;
 
   return (
-    <div className="w-80 flex-shrink-0 border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)] overflow-hidden">
+    <div className="w-96 flex-shrink-0 border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)] overflow-hidden">
       {/* State Badge - Always at top */}
       <ActionRailStateBadge state={tradeState} />
 

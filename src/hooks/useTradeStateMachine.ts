@@ -904,7 +904,13 @@ export function useTradeStateMachine({
       }
 
       // For other alert types (trim, update, exit, etc.)
-      const basePrice = trade.currentPrice || trade.entryPrice || trade.contract.mid;
+      // CRITICAL FIX: Use priceOverrides.currentPrice for exit calculations instead of ignoring it
+      const effectiveCurrent =
+        priceOverrides?.currentPrice ??
+        trade.currentPrice ??
+        trade.entryPrice ??
+        trade.contract.mid;
+      const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
       const message = comment || "";
 
       let updateType: TradeUpdate["type"] | null = null;
@@ -913,6 +919,10 @@ export function useTradeStateMachine({
       switch (alertType) {
         case "trim":
           updateType = "trim";
+          // Optionally update current_price for trim
+          if (priceOverrides?.currentPrice) {
+            dbUpdates.current_price = priceOverrides.currentPrice;
+          }
           break;
         case "update":
           updateType =
@@ -921,18 +931,40 @@ export function useTradeStateMachine({
               : alertOptions.updateKind === "take-profit"
                 ? "trim"
                 : "update";
+          // CRITICAL FIX: Persist stop loss for SL updates
+          if (alertOptions.updateKind === "sl" && effectiveStopLoss !== undefined) {
+            dbUpdates.stop_loss = effectiveStopLoss;
+            log.info("Persisting stop loss update", {
+              stopLoss: effectiveStopLoss,
+              tradeId: trade.id,
+            });
+          }
           break;
         case "update-sl":
           updateType = "update-sl";
+          // CRITICAL FIX: Persist stop loss for explicit update-sl alerts
+          if (effectiveStopLoss !== undefined) {
+            dbUpdates.stop_loss = effectiveStopLoss;
+            log.info("Persisting stop loss update (update-sl)", {
+              stopLoss: effectiveStopLoss,
+              tradeId: trade.id,
+            });
+          }
           break;
         case "trail-stop":
           updateType = "trail-stop";
+          // Persist the trailing stop value
+          if (effectiveStopLoss !== undefined) {
+            dbUpdates.stop_loss = effectiveStopLoss;
+            dbUpdates.stop_mode = "trailing";
+          }
           break;
         case "add":
           updateType = "add";
           break;
         case "exit": {
-          const exitPrice = basePrice;
+          // CRITICAL FIX: Use effectiveCurrent (from priceOverrides) instead of ignoring user edits
+          const exitPrice = effectiveCurrent;
           const movePercent = trade.entryPrice
             ? ((exitPrice - trade.entryPrice) / trade.entryPrice) * 100
             : 0;
@@ -943,6 +975,11 @@ export function useTradeStateMachine({
             exit_time: new Date().toISOString(),
             move_percent: movePercent,
           };
+          log.info("Exit using effective current price", {
+            exitPrice,
+            originalCurrent: trade.currentPrice,
+            override: priceOverrides?.currentPrice,
+          });
           break;
         }
       }
@@ -954,7 +991,7 @@ export function useTradeStateMachine({
         }
 
         if (updateType) {
-          await addTradeUpdateApi(userId, trade.id, updateType, basePrice, message).catch(
+          await addTradeUpdateApi(userId, trade.id, updateType, effectiveCurrent, message).catch(
             console.warn
           );
         }
@@ -982,7 +1019,7 @@ export function useTradeStateMachine({
               } else if (alertOptions.updateKind === "take-profit") {
                 threadUpdateType = "TRIM";
                 threadPayload = {
-                  exitPrice: basePrice,
+                  exitPrice: effectiveCurrent,
                   pnlPercent: trade.movePercent || 0,
                   message: message || "Taking profit",
                 };
@@ -1012,12 +1049,12 @@ export function useTradeStateMachine({
             case "exit": {
               threadUpdateType = "EXIT";
               const exitPnlPercent = trade.entryPrice
-                ? ((basePrice - trade.entryPrice) / trade.entryPrice) * 100
+                ? ((effectiveCurrent - trade.entryPrice) / trade.entryPrice) * 100
                 : 0;
               threadPayload = {
-                exitPrice: basePrice,
+                exitPrice: effectiveCurrent,
                 pnlPercent: exitPnlPercent,
-                message: message || `Exit at $${basePrice.toFixed(2)}`,
+                message: message || `Exit at $${effectiveCurrent.toFixed(2)}`,
               };
               break;
             }
@@ -1056,10 +1093,10 @@ export function useTradeStateMachine({
           const exitedTrade: Trade = {
             ...trade,
             state: "EXITED",
-            exitPrice: basePrice,
+            exitPrice: effectiveCurrent,
             exitTime: new Date(),
             movePercent: trade.entryPrice
-              ? ((basePrice - trade.entryPrice) / trade.entryPrice) * 100
+              ? ((effectiveCurrent - trade.entryPrice) / trade.entryPrice) * 100
               : 0,
           };
           useTradeStore.setState((state) => ({
@@ -1141,15 +1178,15 @@ export function useTradeStateMachine({
                   // TODO: Implement image generation using html-to-image or server-side rendering
                   // For now, imageUrl remains undefined
                 }
-                // Spread trade with exit data - original trade object doesn't have exitPrice/movePercent set
+                // Spread trade with exit data - using effectiveCurrent (with user's price override)
                 await discord.sendExitAlert(
                   channels,
                   {
                     ...trade,
-                    exitPrice: basePrice,
+                    exitPrice: effectiveCurrent,
                     exitTime: new Date(),
                     movePercent: trade.entryPrice
-                      ? ((basePrice - trade.entryPrice) / trade.entryPrice) * 100
+                      ? ((effectiveCurrent - trade.entryPrice) / trade.entryPrice) * 100
                       : 0,
                   },
                   message,

@@ -2,7 +2,7 @@ import { Trade, AlertType, SetupType } from "../types";
 import { formatPrice } from "./utils";
 
 interface DiscordAlertOptions {
-  updateKind?: "trim" | "generic" | "sl";
+  updateKind?: "trim" | "generic" | "sl" | "take-profit";
   includeEntry?: boolean;
   includeCurrent?: boolean;
   includeTarget?: boolean;
@@ -10,7 +10,26 @@ interface DiscordAlertOptions {
   includePnL?: boolean;
   includeConfluence?: boolean;
   comment?: string;
+  // Enhanced confluence data structure (supports both legacy and new format)
   confluenceData?: {
+    // New comprehensive fields from marketDataStore ConfluenceScore
+    overallScore?: number;
+    subscores?: {
+      trend?: number;
+      momentum?: number;
+      volatility?: number;
+      volume?: number;
+      technical?: number;
+    };
+    components?: {
+      trendAlignment?: boolean;
+      aboveVWAP?: boolean;
+      rsiConfirm?: boolean;
+      volumeConfirm?: boolean;
+      supportResistance?: boolean;
+    };
+    highlights?: string[]; // e.g., ["RVOL 2.1x", "Flow +62", "IVP 34%"]
+    // Legacy fields (backwards compatibility)
     rsi?: number;
     macdSignal?: "bullish" | "bearish" | "neutral";
     emaStatus?: string;
@@ -139,38 +158,80 @@ export function formatDiscordAlert(
     }
   }
 
-  // Confluence metrics (optional)
+  // Confluence metrics (enhanced with full breakdown)
   if (options.includeConfluence && options.confluenceData) {
     lines.push("");
-    const confluenceParts: string[] = [];
     const conf = options.confluenceData;
 
-    if (conf.rsi) {
-      confluenceParts.push(`RSI ${conf.rsi}`);
-    }
-    if (conf.macdSignal) {
-      const macdText =
-        conf.macdSignal === "bullish"
-          ? "MACD bullish"
-          : conf.macdSignal === "bearish"
-            ? "MACD bearish"
-            : "MACD neutral";
-      confluenceParts.push(macdText);
-    }
-    if (conf.emaStatus) {
-      confluenceParts.push(conf.emaStatus);
-    }
-    if (conf.volumeChange !== undefined) {
-      confluenceParts.push(
-        `Volume ${conf.volumeChange >= 0 ? "+" : ""}${conf.volumeChange.toFixed(0)}%`
-      );
-    }
-    if (conf.ivPercentile !== undefined) {
-      confluenceParts.push(`IV ${conf.ivPercentile}th %ile`);
+    // Line 1: Overall score (if available)
+    if (conf.overallScore !== undefined) {
+      const scoreEmoji = conf.overallScore >= 80 ? "🟢" : conf.overallScore >= 60 ? "🟡" : "🔴";
+      lines.push(`📈 Confluence: **${Math.round(conf.overallScore)}** ${scoreEmoji}`);
+    } else {
+      lines.push("📈 Confluence:");
     }
 
-    if (confluenceParts.length > 0) {
-      lines.push(`📈 Confluence: ${confluenceParts.join(" | ")}`);
+    // Line 2: Subscores (trend/momentum/volatility/volume/technical)
+    if (conf.subscores) {
+      const subscoreParts: string[] = [];
+      const ss = conf.subscores;
+      if (ss.trend !== undefined) subscoreParts.push(`Trend ${Math.round(ss.trend)}`);
+      if (ss.momentum !== undefined) subscoreParts.push(`Mom ${Math.round(ss.momentum)}`);
+      if (ss.volatility !== undefined) subscoreParts.push(`Vol ${Math.round(ss.volatility)}`);
+      if (ss.volume !== undefined) subscoreParts.push(`Volm ${Math.round(ss.volume)}`);
+      if (ss.technical !== undefined) subscoreParts.push(`Tech ${Math.round(ss.technical)}`);
+      if (subscoreParts.length > 0) {
+        lines.push(`• ${subscoreParts.join(" | ")}`);
+      }
+    }
+
+    // Line 3: Component checklist (✅/❌ format)
+    if (conf.components) {
+      const c = conf.components;
+      const checkParts: string[] = [];
+      if (c.aboveVWAP !== undefined) checkParts.push(`${c.aboveVWAP ? "✅" : "❌"} VWAP`);
+      if (c.rsiConfirm !== undefined) checkParts.push(`${c.rsiConfirm ? "✅" : "❌"} RSI`);
+      if (c.trendAlignment !== undefined) checkParts.push(`${c.trendAlignment ? "✅" : "❌"} MTF`);
+      if (c.supportResistance !== undefined)
+        checkParts.push(`${c.supportResistance ? "✅" : "❌"} S/R`);
+      if (c.volumeConfirm !== undefined) checkParts.push(`${c.volumeConfirm ? "✅" : "❌"} Vol`);
+      if (checkParts.length > 0) {
+        lines.push(`• ${checkParts.join(" ")}`);
+      }
+    }
+
+    // Line 4: Highlights (RVOL, Flow, IVP)
+    if (conf.highlights && conf.highlights.length > 0) {
+      lines.push(`• ${conf.highlights.join(" | ")}`);
+    }
+
+    // Legacy fallback: If no new fields, use legacy format
+    if (!conf.overallScore && !conf.subscores && !conf.components && !conf.highlights) {
+      const legacyParts: string[] = [];
+      if (conf.rsi) legacyParts.push(`RSI ${conf.rsi}`);
+      if (conf.macdSignal) {
+        const macdText =
+          conf.macdSignal === "bullish"
+            ? "MACD bullish"
+            : conf.macdSignal === "bearish"
+              ? "MACD bearish"
+              : "MACD neutral";
+        legacyParts.push(macdText);
+      }
+      if (conf.emaStatus) legacyParts.push(conf.emaStatus);
+      if (conf.volumeChange !== undefined) {
+        legacyParts.push(
+          `Volume ${conf.volumeChange >= 0 ? "+" : ""}${conf.volumeChange.toFixed(0)}%`
+        );
+      }
+      if (conf.ivPercentile !== undefined) {
+        legacyParts.push(`IV ${conf.ivPercentile}th %ile`);
+      }
+      if (legacyParts.length > 0) {
+        // Remove the empty confluence header if we only have legacy
+        lines.pop();
+        lines.push(`📈 Confluence: ${legacyParts.join(" | ")}`);
+      }
     }
   }
 
@@ -192,7 +253,7 @@ export function formatDiscordAlert(
  */
 function getAlertTypeDisplay(
   alertType: AlertType,
-  updateKind?: "trim" | "generic" | "sl"
+  updateKind?: "trim" | "generic" | "sl" | "take-profit"
 ): { emoji: string; title: string } {
   if (alertType === "load") {
     return { emoji: "🟡", title: "LOAD ALERT" };
@@ -215,6 +276,9 @@ function getAlertTypeDisplay(
     }
     if (updateKind === "sl") {
       return { emoji: "🛡️", title: "STOP LOSS UPDATE" };
+    }
+    if (updateKind === "take-profit") {
+      return { emoji: "🎯", title: "TAKE PROFIT ALERT" };
     }
     return { emoji: "📝", title: "UPDATE ALERT" };
   }

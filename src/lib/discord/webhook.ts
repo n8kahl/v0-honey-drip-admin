@@ -248,6 +248,8 @@ class DiscordWebhookClient {
       challengeInfo?: {
         name: string;
       };
+      // Confluence data
+      confluence?: any;
     }
   ): Promise<boolean> {
     const optionType = data.type === "C" ? "Call" : "Put";
@@ -321,6 +323,17 @@ class DiscordWebhookClient {
     // Setup type
     if (data.setupType) {
       fields.push({ name: "📋 Setup", value: data.setupType, inline: true });
+    }
+
+    // Confluence score
+    if (data.confluence?.score !== undefined) {
+      const score = data.confluence.score;
+      const scoreEmoji = score >= 80 ? "🟢" : score >= 60 ? "🟡" : "🔴";
+      fields.push({
+        name: "📈 Confluence",
+        value: `${Math.round(score)} ${scoreEmoji}`,
+        inline: true,
+      });
     }
 
     // Add challenge info if provided

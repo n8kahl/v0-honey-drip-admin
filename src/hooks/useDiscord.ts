@@ -112,6 +112,7 @@ export function useDiscord() {
           delta: trade.contract.delta,
           iv: trade.contract.iv,
           setupType: trade.setupType,
+          confluence: trade.confluence,
         })
       );
       return results;

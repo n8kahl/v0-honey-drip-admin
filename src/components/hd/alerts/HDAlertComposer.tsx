@@ -1,13 +1,74 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Trade, Challenge, DiscordChannel, AlertType } from "../../../types";
 import { cn, formatPrice } from "../../../lib/utils";
 import { formatDiscordAlert } from "../../../lib/discordFormatter";
 import { Checkbox } from "../../ui/checkbox";
 import { Label } from "../../ui/label";
 import { Textarea } from "../../ui/textarea";
-import { Edit2 } from "lucide-react";
+import {
+  Edit2,
+  Zap,
+  TrendingUp,
+  TrendingDown,
+  Shield,
+  Target,
+  Minus,
+  Plus,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { HDCalculatorModal } from "../forms/HDCalculatorModal";
 import { HDTradeShareCard } from "../cards/HDTradeShareCard";
+import { useSymbolData } from "../../../stores/marketDataStore";
+
+// Persistence key prefix for toggle settings
+const TOGGLE_STORAGE_PREFIX = "hd.alertComposer.toggles";
+
+// Toggle field names for persistence
+interface ToggleSettings {
+  showEntry: boolean;
+  showCurrent: boolean;
+  showTarget: boolean;
+  showStopLoss: boolean;
+  showPnL: boolean;
+  showConfluence: boolean;
+  showDTE: boolean;
+  showRiskReward: boolean;
+  showGreeks: boolean;
+  showUnderlying: boolean;
+  showSetupType: boolean;
+  showGainsImage: boolean;
+}
+
+// Get the storage key for a specific alert type (including updateKind for updates)
+function getToggleStorageKey(alertType: AlertType, updateKind?: string): string {
+  if (alertType === "update" && updateKind) {
+    return `${TOGGLE_STORAGE_PREFIX}.${alertType}.${updateKind}`;
+  }
+  return `${TOGGLE_STORAGE_PREFIX}.${alertType}`;
+}
+
+// Load toggle settings from localStorage
+function loadToggleSettings(key: string): Partial<ToggleSettings> | null {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn(`[AlertComposer] Failed to load toggle settings from ${key}:`, e);
+  }
+  return null;
+}
+
+// Save toggle settings to localStorage
+function saveToggleSettings(key: string, settings: Partial<ToggleSettings>): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(settings));
+  } catch (e) {
+    console.warn(`[AlertComposer] Failed to save toggle settings to ${key}:`, e);
+  }
+}
 
 // Price overrides that can be passed from the alert composer to the alert handlers
 export interface PriceOverrides {
@@ -97,6 +158,64 @@ export function HDAlertComposer({
   // Quick action buttons state for stop loss updates
   const [slQuickAction, setSlQuickAction] = useState<"custom" | "trail" | "breakeven">("custom");
 
+  // Inline editing state for price strip
+  const [editingPriceField, setEditingPriceField] = useState<
+    "entry" | "current" | "target" | "stop" | null
+  >(null);
+  const [tempPriceValue, setTempPriceValue] = useState<string>("");
+  const priceInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (editingPriceField && priceInputRef.current) {
+      priceInputRef.current.focus();
+      priceInputRef.current.select();
+    }
+  }, [editingPriceField]);
+
+  // Handle inline price edit start
+  const startInlineEdit = (field: "entry" | "current" | "target" | "stop") => {
+    setEditingPriceField(field);
+    const value =
+      field === "entry"
+        ? entryPrice
+        : field === "current"
+          ? currentPrice
+          : field === "target"
+            ? targetPrice
+            : stopLoss;
+    setTempPriceValue(value?.toFixed(2) || "0.00");
+  };
+
+  // Handle inline price edit save
+  const saveInlineEdit = () => {
+    if (!editingPriceField) return;
+    const value = parseFloat(tempPriceValue);
+    if (!isNaN(value) && value >= 0) {
+      if (editingPriceField === "entry") setEntryPrice(value);
+      else if (editingPriceField === "current") setCurrentPrice(value);
+      else if (editingPriceField === "target") setTargetPrice(value);
+      else if (editingPriceField === "stop") setStopLoss(value);
+    }
+    setEditingPriceField(null);
+    setTempPriceValue("");
+  };
+
+  // Handle inline price edit cancel
+  const cancelInlineEdit = () => {
+    setEditingPriceField(null);
+    setTempPriceValue("");
+  };
+
+  // Handle increment/decrement for inline price editing
+  const adjustPrice = (field: "entry" | "current" | "target" | "stop", delta: number) => {
+    const step = 0.05; // 5 cent increments
+    if (field === "entry") setEntryPrice(Math.max(0, (entryPrice || 0) + delta * step));
+    else if (field === "current") setCurrentPrice(Math.max(0, (currentPrice || 0) + delta * step));
+    else if (field === "target") setTargetPrice(Math.max(0, (targetPrice || 0) + delta * step));
+    else if (field === "stop") setStopLoss(Math.max(0, (stopLoss || 0) + delta * step));
+  };
+
   // Initialize channels and challenges when trade changes or alert opens
   useEffect(() => {
     // Ensure we always work with arrays to prevent .includes() crashes
@@ -157,7 +276,66 @@ export function HDAlertComposer({
     setSelectedChallenges(tradeChallenges);
   }, [trade.id, trade.discordChannels, trade.challenges, alertType, availableChannels]); // Re-run when channels/challenges change
 
-  // Initialize defaults based on alertType
+  // Get default toggle values for a given alert type (used as baseline before applying persisted)
+  const getDefaultToggles = useCallback((type: AlertType, updateKind?: string): ToggleSettings => {
+    // Base defaults - conservative
+    const base: ToggleSettings = {
+      showEntry: false,
+      showCurrent: false,
+      showTarget: false,
+      showStopLoss: false,
+      showPnL: false,
+      showConfluence: false,
+      showDTE: true, // DTE is always relevant for options
+      showRiskReward: false,
+      showGreeks: false,
+      showUnderlying: false,
+      showSetupType: false,
+      showGainsImage: false,
+    };
+
+    if (type === "enter") {
+      return {
+        ...base,
+        showEntry: true,
+        showCurrent: true,
+        showTarget: true,
+        showStopLoss: true,
+        showRiskReward: true,
+        showGreeks: true,
+        showUnderlying: true,
+        showSetupType: true,
+      };
+    } else if (type === "update" && updateKind === "trim") {
+      return { ...base, showCurrent: true, showPnL: true };
+    } else if (type === "update" && updateKind === "sl") {
+      return { ...base, showCurrent: true, showStopLoss: true, showPnL: true };
+    } else if (type === "update" && updateKind === "generic") {
+      return { ...base, showCurrent: true, showPnL: true };
+    } else if (type === "update" && updateKind === "take-profit") {
+      return { ...base, showCurrent: true, showTarget: true, showPnL: true };
+    } else if (type === "trail-stop") {
+      return { ...base, showStopLoss: true };
+    } else if (type === "add") {
+      return { ...base, showCurrent: true, showPnL: true };
+    } else if (type === "exit") {
+      return { ...base, showEntry: true, showCurrent: true, showPnL: true, showGainsImage: true };
+    } else if (type === "load") {
+      return {
+        ...base,
+        showCurrent: true,
+        showTarget: true,
+        showStopLoss: true,
+        showRiskReward: true,
+        showGreeks: true,
+        showUnderlying: true,
+        showSetupType: true,
+      };
+    }
+    return base;
+  }, []);
+
+  // Initialize defaults based on alertType - with localStorage persistence support
   useEffect(() => {
     // Initialize prices
     setEntryPrice(trade.entryPrice || trade.contract.mid);
@@ -192,114 +370,77 @@ export function HDAlertComposer({
     }
     setComment(defaultComment);
 
-    // Set default field visibility based on alert type
-    // LOAD: Focus on setup - show DTE, R:R, setup type, underlying
-    // ENTER: Full details - show everything important
-    // UPDATE/TRIM: Focus on P&L progress
-    // EXIT: Show final results
-    if (alertType === "enter") {
-      setShowEntry(true);
-      setShowCurrent(true);
-      setShowTarget(true);
-      setShowStopLoss(true);
-      setShowPnL(false);
-      setShowDTE(true);
-      setShowRiskReward(true);
-      setShowGreeks(true);
-      setShowUnderlying(true);
-      setShowSetupType(true);
-    } else if (alertType === "update" && alertOptions?.updateKind === "trim") {
-      setShowEntry(false);
-      setShowCurrent(true);
-      setShowTarget(false);
-      setShowStopLoss(false);
-      setShowPnL(true);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
-      setShowEntry(false);
-      setShowCurrent(true);
-      setShowTarget(false);
-      setShowStopLoss(true);
-      setShowPnL(true);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
-      setShowEntry(false);
-      setShowCurrent(true);
-      setShowTarget(false);
-      setShowStopLoss(false);
-      setShowPnL(true);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "update" && alertOptions?.updateKind === "take-profit") {
-      // Take profit shows target reached, P&L locked in
-      setShowEntry(false);
-      setShowCurrent(true);
-      setShowTarget(true);
-      setShowStopLoss(false);
-      setShowPnL(true);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "trail-stop") {
-      setShowEntry(false);
-      setShowCurrent(false);
-      setShowTarget(false);
-      setShowStopLoss(true);
-      setShowPnL(false);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "add") {
-      setShowEntry(false);
-      setShowCurrent(true);
-      setShowTarget(false);
-      setShowStopLoss(false);
-      setShowPnL(true);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "exit") {
-      setShowEntry(true);
-      setShowCurrent(true);
-      setShowTarget(false);
-      setShowStopLoss(false);
-      setShowPnL(true);
-      setShowGainsImage(true);
-      setShowDTE(true);
-      setShowRiskReward(false);
-      setShowGreeks(false);
-      setShowUnderlying(false);
-      setShowSetupType(false);
-    } else if (alertType === "load") {
-      setShowEntry(false);
-      setShowCurrent(true);
-      setShowTarget(true);
-      setShowStopLoss(true);
-      setShowPnL(false);
-      setShowDTE(true);
-      setShowRiskReward(true);
-      setShowGreeks(true);
-      setShowUnderlying(true);
-      setShowSetupType(true);
-    }
-  }, [trade, alertType, alertOptions]);
+    // Get default toggles for this alert type
+    const defaults = getDefaultToggles(alertType, alertOptions?.updateKind);
+
+    // Try to load persisted toggles from localStorage
+    const storageKey = getToggleStorageKey(alertType, alertOptions?.updateKind);
+    const persisted = loadToggleSettings(storageKey);
+
+    // Merge persisted with defaults (persisted values override defaults)
+    const toggles = persisted ? { ...defaults, ...persisted } : defaults;
+
+    // Apply toggles to state
+    setShowEntry(toggles.showEntry);
+    setShowCurrent(toggles.showCurrent);
+    setShowTarget(toggles.showTarget);
+    setShowStopLoss(toggles.showStopLoss);
+    setShowPnL(toggles.showPnL);
+    setShowConfluence(toggles.showConfluence);
+    setShowDTE(toggles.showDTE);
+    setShowRiskReward(toggles.showRiskReward);
+    setShowGreeks(toggles.showGreeks);
+    setShowUnderlying(toggles.showUnderlying);
+    setShowSetupType(toggles.showSetupType);
+    setShowGainsImage(toggles.showGainsImage);
+
+    console.log(
+      `[AlertComposer] Initialized toggles for ${alertType}${alertOptions?.updateKind ? `.${alertOptions.updateKind}` : ""} - persisted: ${!!persisted}`,
+      toggles
+    );
+  }, [trade, alertType, alertOptions, getDefaultToggles, underlyingPrice]);
+
+  // Persist toggle changes to localStorage when they change (debounced to avoid excessive writes)
+  useEffect(() => {
+    // Skip on initial mount - only persist user changes
+    const storageKey = getToggleStorageKey(alertType, alertOptions?.updateKind);
+
+    // Debounce persistence to avoid too many writes
+    const timeoutId = setTimeout(() => {
+      const currentToggles: ToggleSettings = {
+        showEntry,
+        showCurrent,
+        showTarget,
+        showStopLoss,
+        showPnL,
+        showConfluence,
+        showDTE,
+        showRiskReward,
+        showGreeks,
+        showUnderlying,
+        showSetupType,
+        showGainsImage,
+      };
+      saveToggleSettings(storageKey, currentToggles);
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    alertType,
+    alertOptions?.updateKind,
+    showEntry,
+    showCurrent,
+    showTarget,
+    showStopLoss,
+    showPnL,
+    showConfluence,
+    showDTE,
+    showRiskReward,
+    showGreeks,
+    showUnderlying,
+    showSetupType,
+    showGainsImage,
+  ]);
 
   const toggleChannel = (channel: string) => {
     setSelectedChannels((prev) =>
@@ -340,17 +481,9 @@ export function HDAlertComposer({
   };
 
   const getPreviewMessage = () => {
-    const confluenceDataFromTrade = trade.confluence
-      ? {
-          rsi: trade.confluence.rsi14,
-          macdSignal: trade.confluence.macdSignal,
-          volumeChange: trade.confluence.volumeChange,
-          ivPercentile: trade.confluence.ivPercentile,
-        }
-      : undefined;
-
-    // Use the Discord formatter with current field selections
-    return formatDiscordAlert(trade, alertType, {
+    // Use effectiveTrade (with user's price overrides) for preview - CRITICAL FIX
+    // This ensures preview matches what will actually be sent
+    return formatDiscordAlert(effectiveTrade, alertType, {
       updateKind: alertOptions?.updateKind,
       includeEntry: showEntry,
       includeCurrent: showCurrent,
@@ -359,7 +492,8 @@ export function HDAlertComposer({
       includePnL: showPnL,
       includeConfluence: showConfluence,
       comment: comment,
-      confluenceData: showConfluence ? confluenceDataFromTrade : undefined,
+      // Pass comprehensive confluence data from live sources
+      confluenceData: showConfluence ? confluenceForDiscord : undefined,
       // New enhanced fields
       includeDTE: showDTE,
       includeRiskReward: showRiskReward,
@@ -371,7 +505,7 @@ export function HDAlertComposer({
       riskReward: riskRewardRatio,
       greeks: showGreeks ? greeksData : undefined,
       underlyingPrice: showUnderlying ? underlyingPrice : undefined,
-      setupType: showSetupType ? trade.setupType : undefined,
+      setupType: showSetupType ? effectiveTrade.setupType : undefined,
     });
   };
 
@@ -451,6 +585,169 @@ export function HDAlertComposer({
     };
   }, [trade.contract]);
 
+  // Get live confluence data from marketDataStore
+  const symbolData = useSymbolData(trade.ticker);
+
+  // Create "effectiveTrade" - applies user's price overrides to trade for preview/send
+  // This is the SINGLE SOURCE OF TRUTH for what will be sent
+  const effectiveTrade = useMemo((): Trade => {
+    // Compute movePercent based on current prices
+    const effectiveEntry = entryPrice || trade.entryPrice || trade.contract.mid;
+    const effectiveCurrent = currentPrice || trade.currentPrice || trade.contract.mid;
+    const computedMovePercent =
+      effectiveEntry > 0
+        ? ((effectiveCurrent - effectiveEntry) / effectiveEntry) * 100
+        : trade.movePercent || 0;
+
+    return {
+      ...trade,
+      entryPrice: entryPrice || trade.entryPrice,
+      currentPrice: currentPrice || trade.currentPrice || trade.contract.mid,
+      targetPrice: targetPrice || trade.targetPrice,
+      stopLoss: stopLoss || trade.stopLoss,
+      movePercent: computedMovePercent,
+    };
+  }, [trade, entryPrice, currentPrice, targetPrice, stopLoss]);
+
+  // Build comprehensive confluence data for Discord from best available source
+  const confluenceForDiscord = useMemo(() => {
+    // Priority 1: Live symbolData confluence from marketDataStore (most complete)
+    const liveConf = symbolData?.confluence;
+    // Priority 2: Trade's stored confluence (may be stale)
+    const tradeConf = trade.confluence;
+
+    if (!liveConf && !tradeConf) return undefined;
+
+    // Use live data if available, fall back to trade confluence
+    const overallScore = liveConf?.overall ?? tradeConf?.score;
+
+    // Build subscores from live data
+    const subscores = liveConf
+      ? {
+          trend: liveConf.trend,
+          momentum: liveConf.momentum,
+          volatility: liveConf.volatility,
+          volume: liveConf.volume,
+          technical: liveConf.technical,
+        }
+      : undefined;
+
+    // Build components checklist from live data
+    const components = liveConf?.components
+      ? {
+          trendAlignment: liveConf.components.trendAlignment,
+          aboveVWAP: liveConf.components.aboveVWAP,
+          rsiConfirm: liveConf.components.rsiConfirm,
+          volumeConfirm: liveConf.components.volumeConfirm,
+          supportResistance: liveConf.components.supportResistance,
+        }
+      : undefined;
+
+    // Build highlights from trade confluence factors
+    const highlights: string[] = [];
+    if (tradeConf?.factors) {
+      if (tradeConf.factors.ivPercentile?.value !== undefined) {
+        highlights.push(`IVP ${tradeConf.factors.ivPercentile.value}%`);
+      }
+      if (tradeConf.factors.flowPressure?.value !== undefined) {
+        const flow = tradeConf.factors.flowPressure.value;
+        highlights.push(`Flow ${flow >= 0 ? "+" : ""}${flow}`);
+      }
+      if (tradeConf.factors.volumeProfile?.value !== undefined) {
+        highlights.push(`RVOL ${tradeConf.factors.volumeProfile.value.toFixed(1)}x`);
+      }
+    }
+
+    // Legacy RSI/MACD support (for backwards compatibility)
+    const indicators = symbolData?.indicators;
+    const rsi = indicators?.rsi14 ? Math.round(indicators.rsi14) : undefined;
+
+    return {
+      overallScore,
+      subscores,
+      components,
+      highlights: highlights.length > 0 ? highlights : undefined,
+      // Legacy fields for backwards compatibility
+      rsi,
+      macdSignal: undefined as "bullish" | "bearish" | "neutral" | undefined,
+      volumeChange: undefined as number | undefined,
+      ivPercentile: tradeConf?.factors?.ivPercentile?.value,
+    };
+  }, [symbolData, trade.confluence]);
+
+  // Validation for alert data - prevents invalid sends
+  const validationErrors = useMemo(() => {
+    const errors: string[] = [];
+
+    // Check for required channel selection
+    if (selectedChannels.length === 0) {
+      errors.push("Select at least one Discord channel");
+    }
+
+    // Check price validity for alerts that need it
+    const priceFieldsToCheck: { field: string; value: number | undefined; showToggle: boolean }[] =
+      [
+        { field: "Entry price", value: entryPrice, showToggle: showEntry },
+        { field: "Current price", value: currentPrice, showToggle: showCurrent },
+        { field: "Target price", value: targetPrice, showToggle: showTarget },
+        { field: "Stop loss", value: stopLoss, showToggle: showStopLoss },
+      ];
+
+    // For entry/load alerts, validate all price fields that are shown
+    for (const { field, value, showToggle } of priceFieldsToCheck) {
+      if (showToggle && (value === undefined || isNaN(value) || value <= 0)) {
+        errors.push(`${field} must be a positive number`);
+      }
+    }
+
+    // Validate stop loss vs entry for enter/load alerts (risk management check)
+    const isLongTrade = trade.tradeType === "Scalp" || trade.contract?.type === "C";
+
+    if (alertType === "load" || alertType === "enter") {
+      const effectiveEntry = entryPrice || trade.entryPrice || trade.contract.mid;
+      const effectiveStop = stopLoss || trade.stopLoss;
+      const effectiveTarget = targetPrice || trade.targetPrice;
+
+      if (effectiveEntry && effectiveStop && effectiveEntry > 0 && effectiveStop > 0) {
+        if (isLongTrade && effectiveStop >= effectiveEntry) {
+          errors.push("Stop loss should be below entry for long positions");
+        }
+        // For short positions (puts), stop should be above entry
+        if (!isLongTrade && effectiveStop <= effectiveEntry) {
+          errors.push("Stop loss should be above entry for short positions");
+        }
+      }
+
+      if (effectiveEntry && effectiveTarget && effectiveEntry > 0 && effectiveTarget > 0) {
+        if (isLongTrade && effectiveTarget <= effectiveEntry) {
+          errors.push("Target should be above entry for long positions");
+        }
+        if (!isLongTrade && effectiveTarget >= effectiveEntry) {
+          errors.push("Target should be below entry for short positions");
+        }
+      }
+    }
+
+    return errors;
+  }, [
+    selectedChannels,
+    entryPrice,
+    currentPrice,
+    targetPrice,
+    stopLoss,
+    showEntry,
+    showCurrent,
+    showTarget,
+    showStopLoss,
+    alertType,
+    trade,
+  ]);
+
+  // Can send if no validation errors (channel check is redundant but explicit)
+  const canSend =
+    validationErrors.length === 0 ||
+    (validationErrors.length === 1 && validationErrors[0].includes("Discord channel"));
+
   return (
     <div className="h-full flex flex-col bg-[var(--surface-2)] overflow-hidden">
       {/* Header */}
@@ -474,71 +771,367 @@ export function HDAlertComposer({
       </div>
 
       {/* Scrollable Middle Content */}
-      <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-6">
-        {/* Stop Loss Quick Actions - Show for SL updates */}
-        {alertType === "update" && alertOptions?.updateKind === "sl" && trade.entryPrice && (
-          <div>
-            <Label className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-3 block">
-              Quick Actions
-            </Label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  const breakeven = trade.entryPrice || trade.contract.mid;
-                  setStopLoss(breakeven);
-                  setComment(
-                    `Moving stop to breakeven at $${formatPrice(breakeven)} to lock in risk-free trade. Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)} (${trade.movePercent ? (trade.movePercent > 0 ? "+" : "") + trade.movePercent.toFixed(1) : "0.0"}%).`
-                  );
-                }}
-                className={cn(
-                  "flex-1 px-3 py-2 rounded-[var(--radius)] text-xs transition-colors",
-                  "bg-[var(--surface-1)] border border-[var(--border-hairline)]",
-                  "text-[var(--text-high)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
-                )}
-              >
-                Move to Breakeven
-              </button>
-              <button
-                onClick={() => {
-                  setComment(
-                    `Trailing stop activated at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}. Letting winners run. Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)} (${trade.movePercent ? (trade.movePercent > 0 ? "+" : "") + trade.movePercent.toFixed(1) : "0.0"}%).`
-                  );
-                }}
-                className={cn(
-                  "flex-1 px-3 py-2 rounded-[var(--radius)] text-xs transition-colors",
-                  "bg-[var(--surface-1)] border border-[var(--border-hairline)]",
-                  "text-[var(--text-high)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
-                )}
-              >
-                Trail Stop
-              </button>
-            </div>
+      <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-3 space-y-3">
+        {/* 1-CLICK PRESET BUTTONS - Quick config for common scenarios */}
+        {(alertType === "load" || alertType === "enter") && (
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => {
+                // Full send: all fields enabled
+                setShowEntry(true);
+                setShowCurrent(true);
+                setShowTarget(true);
+                setShowStopLoss(true);
+                setShowRiskReward(true);
+                setShowDTE(true);
+                setShowGreeks(true);
+                setShowConfluence(true);
+              }}
+              className="flex-1 px-2 py-1.5 rounded-[var(--radius)] text-[10px] font-medium bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/20 transition-colors flex items-center justify-center gap-1"
+            >
+              <Zap className="w-3 h-3" />
+              Full
+            </button>
+            <button
+              onClick={() => {
+                // Minimal: just entry, target, stop
+                setShowEntry(true);
+                setShowCurrent(false);
+                setShowTarget(true);
+                setShowStopLoss(true);
+                setShowRiskReward(false);
+                setShowDTE(true);
+                setShowGreeks(false);
+                setShowConfluence(false);
+              }}
+              className="flex-1 px-2 py-1.5 rounded-[var(--radius)] text-[10px] font-medium bg-[var(--surface-1)] text-[var(--text-high)] hover:bg-[var(--surface-2)] transition-colors flex items-center justify-center gap-1"
+            >
+              <Target className="w-3 h-3" />
+              Minimal
+            </button>
+            <button
+              onClick={() => {
+                // Scalp: quick trade, tight stops
+                setShowEntry(true);
+                setShowCurrent(true);
+                setShowTarget(true);
+                setShowStopLoss(true);
+                setShowRiskReward(true);
+                setShowDTE(true);
+                setShowGreeks(false);
+                setShowConfluence(false);
+              }}
+              className="flex-1 px-2 py-1.5 rounded-[var(--radius)] text-[10px] font-medium bg-[var(--surface-1)] text-[var(--text-high)] hover:bg-[var(--surface-2)] transition-colors flex items-center justify-center gap-1"
+            >
+              <TrendingUp className="w-3 h-3" />
+              Scalp
+            </button>
           </div>
         )}
 
-        {/* Trim Quick Actions - Show current price and P&L info */}
-        {alertType === "update" && alertOptions?.updateKind === "trim" && (
-          <div className="p-4 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[var(--text-muted)] text-xs">Current Price</span>
-              <span className="text-[var(--text-high)] tabular-nums">
-                ${formatPrice(trade.currentPrice || trade.contract.mid)}
-              </span>
+        {/* ENHANCED PRICE STRIP - Inline editing with +/- buttons */}
+        <div className="p-2 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)]">
+          <div className="grid grid-cols-2 gap-2">
+            {/* Entry Price */}
+            <div
+              className={cn(
+                "p-2 rounded-[var(--radius)] transition-colors",
+                showEntry ? "bg-[var(--surface-2)]" : "opacity-60"
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-[var(--text-muted)] uppercase">Entry</span>
+                <Checkbox
+                  id="toggle-entry-strip"
+                  checked={showEntry}
+                  onCheckedChange={(checked) => setShowEntry(checked as boolean)}
+                  className="w-3 h-3"
+                />
+              </div>
+              {editingPriceField === "entry" ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={priceInputRef}
+                    type="text"
+                    value={tempPriceValue}
+                    onChange={(e) => setTempPriceValue(e.target.value)}
+                    onBlur={saveInlineEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveInlineEdit();
+                      if (e.key === "Escape") cancelInlineEdit();
+                    }}
+                    className="w-full text-sm font-mono bg-transparent border-b border-[var(--brand-primary)] text-[var(--text-high)] text-center outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => adjustPrice("entry", -1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-3)]"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => startInlineEdit("entry")}
+                    className="text-sm font-mono text-[var(--text-high)] hover:text-[var(--brand-primary)]"
+                  >
+                    ${formatPrice(entryPrice)}
+                  </button>
+                  <button
+                    onClick={() => adjustPrice("entry", 1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-3)]"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[var(--text-muted)] text-xs">P&L</span>
+
+            {/* Current Price */}
+            <div
+              className={cn(
+                "p-2 rounded-[var(--radius)] transition-colors",
+                showCurrent ? "bg-[var(--surface-2)]" : "opacity-60"
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-[var(--text-muted)] uppercase">Current</span>
+                <Checkbox
+                  id="toggle-current-strip"
+                  checked={showCurrent}
+                  onCheckedChange={(checked) => setShowCurrent(checked as boolean)}
+                  className="w-3 h-3"
+                />
+              </div>
+              {editingPriceField === "current" ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={editingPriceField === "current" ? priceInputRef : undefined}
+                    type="text"
+                    value={tempPriceValue}
+                    onChange={(e) => setTempPriceValue(e.target.value)}
+                    onBlur={saveInlineEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveInlineEdit();
+                      if (e.key === "Escape") cancelInlineEdit();
+                    }}
+                    className="w-full text-sm font-mono bg-transparent border-b border-[var(--brand-primary)] text-[var(--text-high)] text-center outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => adjustPrice("current", -1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-3)]"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => startInlineEdit("current")}
+                    className="text-sm font-mono text-[var(--text-high)] hover:text-[var(--brand-primary)]"
+                  >
+                    ${formatPrice(currentPrice)}
+                  </button>
+                  <button
+                    onClick={() => adjustPrice("current", 1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-high)] hover:bg-[var(--surface-3)]"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Target Price */}
+            <div
+              className={cn(
+                "p-2 rounded-[var(--radius)] transition-colors",
+                showTarget ? "bg-[var(--accent-positive)]/10" : "opacity-60"
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-[var(--accent-positive)] uppercase">Target</span>
+                <Checkbox
+                  id="toggle-target-strip"
+                  checked={showTarget}
+                  onCheckedChange={(checked) => setShowTarget(checked as boolean)}
+                  className="w-3 h-3"
+                />
+              </div>
+              {editingPriceField === "target" ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={editingPriceField === "target" ? priceInputRef : undefined}
+                    type="text"
+                    value={tempPriceValue}
+                    onChange={(e) => setTempPriceValue(e.target.value)}
+                    onBlur={saveInlineEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveInlineEdit();
+                      if (e.key === "Escape") cancelInlineEdit();
+                    }}
+                    className="w-full text-sm font-mono bg-transparent border-b border-[var(--accent-positive)] text-[var(--accent-positive)] text-center outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => adjustPrice("target", -1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-positive)] hover:bg-[var(--accent-positive)]/10"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => startInlineEdit("target")}
+                    className="text-sm font-mono text-[var(--accent-positive)] hover:text-[var(--accent-positive)]/80"
+                  >
+                    ${formatPrice(targetPrice)}
+                  </button>
+                  <button
+                    onClick={() => adjustPrice("target", 1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-positive)] hover:bg-[var(--accent-positive)]/10"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Stop Loss */}
+            <div
+              className={cn(
+                "p-2 rounded-[var(--radius)] transition-colors",
+                showStopLoss ? "bg-[var(--accent-negative)]/10" : "opacity-60"
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-[var(--accent-negative)] uppercase">Stop</span>
+                <Checkbox
+                  id="toggle-stop-strip"
+                  checked={showStopLoss}
+                  onCheckedChange={(checked) => setShowStopLoss(checked as boolean)}
+                  className="w-3 h-3"
+                />
+              </div>
+              {editingPriceField === "stop" ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={editingPriceField === "stop" ? priceInputRef : undefined}
+                    type="text"
+                    value={tempPriceValue}
+                    onChange={(e) => setTempPriceValue(e.target.value)}
+                    onBlur={saveInlineEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveInlineEdit();
+                      if (e.key === "Escape") cancelInlineEdit();
+                    }}
+                    className="w-full text-sm font-mono bg-transparent border-b border-[var(--accent-negative)] text-[var(--accent-negative)] text-center outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => adjustPrice("stop", -1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/10"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => startInlineEdit("stop")}
+                    className="text-sm font-mono text-[var(--accent-negative)] hover:text-[var(--accent-negative)]/80"
+                  >
+                    ${formatPrice(stopLoss)}
+                  </button>
+                  <button
+                    onClick={() => adjustPrice("stop", 1)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--accent-negative)] hover:bg-[var(--accent-negative)]/10"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* P&L + R:R indicator row */}
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--border-hairline)]">
+            <div className="flex items-center gap-3">
+              {effectiveTrade.movePercent !== undefined && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-[var(--text-muted)] uppercase">P&L</span>
+                  <span
+                    className={cn(
+                      "text-xs tabular-nums font-medium",
+                      effectiveTrade.movePercent >= 0
+                        ? "text-[var(--accent-positive)]"
+                        : "text-[var(--accent-negative)]"
+                    )}
+                  >
+                    {effectiveTrade.movePercent >= 0 ? "+" : ""}
+                    {effectiveTrade.movePercent.toFixed(1)}%
+                  </span>
+                </div>
+              )}
+              {riskRewardRatio && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-[var(--text-muted)] uppercase">R:R</span>
+                  <span
+                    className={cn(
+                      "text-xs tabular-nums font-medium",
+                      riskRewardRatio >= 2
+                        ? "text-[var(--accent-positive)]"
+                        : riskRewardRatio >= 1
+                          ? "text-[var(--brand-primary)]"
+                          : "text-[var(--text-muted)]"
+                    )}
+                  >
+                    {riskRewardRatio.toFixed(1)}:1
+                  </span>
+                </div>
+              )}
+            </div>
+            {tradeTypeDisplay && (
               <span
                 className={cn(
-                  "tabular-nums",
-                  (trade.movePercent || 0) >= 0
-                    ? "text-[var(--accent-positive)]"
-                    : "text-[var(--accent-negative)]"
+                  "text-[10px] tabular-nums font-medium px-1.5 py-0.5 rounded",
+                  tradeTypeDisplay.dte === 0
+                    ? "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
+                    : tradeTypeDisplay.dte && tradeTypeDisplay.dte <= 2
+                      ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
+                      : "bg-[var(--surface-2)] text-[var(--text-muted)]"
                 )}
               >
-                {(trade.movePercent || 0) >= 0 ? "+" : ""}
-                {(trade.movePercent || 0).toFixed(1)}%
+                {tradeTypeDisplay.dte}DTE
               </span>
-            </div>
+            )}
+          </div>
+        </div>
+
+        {/* Stop Loss Quick Actions - Compact row for SL updates */}
+        {alertType === "update" && alertOptions?.updateKind === "sl" && trade.entryPrice && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const breakeven = trade.entryPrice || trade.contract.mid;
+                setStopLoss(breakeven);
+                setComment(
+                  `Moving stop to breakeven at $${formatPrice(breakeven)} to lock in risk-free trade.`
+                );
+              }}
+              className="flex-1 px-3 py-2 rounded-[var(--radius)] text-xs bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)] transition-colors"
+            >
+              Breakeven
+            </button>
+            <button
+              onClick={() => {
+                setComment(
+                  `Trailing stop activated at $${formatPrice(stopLoss)}. Letting winners run.`
+                );
+              }}
+              className="flex-1 px-3 py-2 rounded-[var(--radius)] text-xs bg-[var(--surface-1)] border border-[var(--border-hairline)] text-[var(--text-high)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)] transition-colors"
+            >
+              Trail Stop
+            </button>
           </div>
         )}
 
@@ -1108,6 +1701,23 @@ export function HDAlertComposer({
 
       {/* Footer Actions */}
       <div className="p-4 lg:p-6 border-t border-[var(--border-hairline)] space-y-2 flex-shrink-0">
+        {/* Validation Errors Display */}
+        {validationErrors.length > 0 &&
+          !validationErrors.every((e) => e.includes("Discord channel")) && (
+            <div className="p-3 rounded-[var(--radius)] bg-[var(--accent-negative)]/10 border border-[var(--accent-negative)]/30 text-sm">
+              <p className="text-[var(--accent-negative)] font-medium mb-1">
+                Please fix the following:
+              </p>
+              <ul className="list-disc list-inside text-[var(--text-muted)] space-y-0.5">
+                {validationErrors
+                  .filter((e) => !e.includes("Discord channel"))
+                  .map((error, idx) => (
+                    <li key={idx}>{error}</li>
+                  ))}
+              </ul>
+            </div>
+          )}
+
         {/* For 'enter' alerts: Show Enter Trade (green), Unload (yellow), Cancel (red) */}
         {alertType === "enter" ? (
           <>
@@ -1133,7 +1743,7 @@ export function HDAlertComposer({
                     { entryPrice, currentPrice, targetPrice, stopLoss }
                   );
                 }}
-                disabled={selectedChannels.length === 0}
+                disabled={!canSend || selectedChannels.length === 0}
                 className="w-full py-3 rounded-[var(--radius)] bg-[var(--accent-positive)] text-white hover:bg-[var(--accent-positive)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
               >
                 Enter Trade
@@ -1180,7 +1790,7 @@ export function HDAlertComposer({
                   includeGainsImage: alertType === "exit" ? showGainsImage : undefined,
                 });
               }}
-              disabled={selectedChannels.length === 0}
+              disabled={!canSend || selectedChannels.length === 0}
               className="w-full py-3 rounded-[var(--radius)] bg-[var(--brand-primary)] text-[var(--bg-base)] hover:bg-[var(--brand-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
             >
               {alertType === "load" ? "Load and Alert" : "Send Alert"}
@@ -1208,7 +1818,7 @@ export function HDAlertComposer({
                   );
                   console.log("✅ onEnterAndAlert() called");
                 }}
-                disabled={selectedChannels.length === 0}
+                disabled={!canSend || selectedChannels.length === 0}
                 className="w-full py-3 rounded-[var(--radius)] bg-[var(--accent-positive)] text-white hover:bg-[var(--accent-positive)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
               >
                 Enter and Alert
