@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { setInterval, clearInterval } from "timers";
 import { parseClientParamsToTopics, normalizeIndicesTopic } from "./topicParsing.js";
+import { ConnectionPoolManager } from "./connectionPool.js";
 
 type Asset = "options" | "indices";
 
@@ -45,12 +46,22 @@ export class MassiveHub {
    * This is THE source of truth for what topics should be subscribed upstream.
    */
   private topicRefCount = new Map<string, number>();
+  private pool = ConnectionPoolManager.getInstance();
 
-  constructor(private opts: HubOpts) {}
+  constructor(private opts: HubOpts) {
+    this.pool.updateUpstreamState(this.opts.asset, "disconnected");
+  }
 
   attachClient = (clientWs: WebSocket) => {
+    if (!this.pool.canAcceptClient(this.opts.asset)) {
+      console.warn(`${this.opts.logPrefix} Rejecting client: connection limit reached`);
+      clientWs.close(1008, "Connection limit reached");
+      return;
+    }
+
     const ctx: ClientCtx = { ws: clientWs, subs: new Set() };
     this.clients.add(ctx);
+    this.pool.registerClient(this.opts.asset);
 
     clientWs.on("message", (raw: WebSocket.RawData) => this.onClientMessage(ctx, raw));
     clientWs.on("close", () => this.detachClient(ctx));
@@ -65,6 +76,7 @@ export class MassiveHub {
     for (const t of ctx.subs) this.decTopic(t);
     ctx.subs.clear();
     this.clients.delete(ctx);
+    this.pool.unregisterClient(this.opts.asset);
 
     if (this.clients.size === 0) {
       this.safeCloseUpstream();
@@ -75,11 +87,13 @@ export class MassiveHub {
     const { upstreamUrl, apiKey, logPrefix } = this.opts;
     this.upstreamOpen = false;
     this.upstreamAuthd = false;
+    this.pool.updateUpstreamState(this.opts.asset, "connecting");
 
     this.upstream = new WebSocket(upstreamUrl);
 
     this.upstream.once("open", () => {
       this.upstreamOpen = true;
+      this.pool.updateUpstreamState(this.opts.asset, "connected");
       console.log(`${logPrefix} Upstream connected, sending auth...`);
 
       // Per Massive WebSocket Quickstart: {"action":"auth","params":"<apikey>"}
@@ -122,6 +136,7 @@ export class MassiveHub {
           this.upstreamAuthd = true;
           // FIX: On reconnect, resubscribe ALL topics from refcount (not just queued)
           this.subscribeAllCurrentTopics();
+          this.pool.updateSubscriptionCount(this.opts.asset, this.topicRefCount.size);
         }
       } catch (err) {
         // Non-JSON messages are expected, only warn in debug mode
@@ -138,6 +153,7 @@ export class MassiveHub {
       }
       this.upstreamOpen = false;
       this.upstreamAuthd = false;
+      this.pool.updateUpstreamState(this.opts.asset, "disconnected", reason?.toString("utf-8"));
       for (const client of this.clients) {
         try {
           client.ws.close(code);
@@ -165,6 +181,7 @@ export class MassiveHub {
 
     this.upstream.on("error", (err) => {
       console.error(`${logPrefix} upstream error`, err);
+      this.pool.updateUpstreamState(this.opts.asset, "error", err.message);
       try {
         this.upstream?.close();
       } catch (closeErr) {
@@ -225,6 +242,8 @@ export class MassiveHub {
       this.sendUpstream({ action: "subscribe", params: topic });
     }
     // If not authenticated yet, topic will be subscribed in subscribeAllCurrentTopics()
+
+    this.pool.updateSubscriptionCount(this.opts.asset, this.topicRefCount.size);
   }
 
   /**
@@ -243,6 +262,8 @@ export class MassiveHub {
     } else {
       this.topicRefCount.set(topic, count);
     }
+
+    this.pool.updateSubscriptionCount(this.opts.asset, this.topicRefCount.size);
   }
 
   /**

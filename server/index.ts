@@ -19,6 +19,7 @@ import youtubeRouter from "./routes/youtube.js";
 import aiRouter from "./routes/ai.js";
 import publicRouter from "./routes/public.js";
 import { attachWsServers } from "./ws/index.js";
+import { connectionPoolHealthEndpoint } from "./ws/connectionPool.js";
 
 const app = express();
 
@@ -97,6 +98,9 @@ app.get("/api/massive-key-status", (_req: Request, res: Response) => {
     nodeEnv: process.env.NODE_ENV || "unknown",
   });
 });
+
+// WebSocket connection pool health
+app.get("/api/ws-health", connectionPoolHealthEndpoint);
 
 // ===== Health Check Endpoint =====
 app.get("/api/health", async (_req: Request, res: Response) => {
