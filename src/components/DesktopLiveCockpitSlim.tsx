@@ -42,6 +42,7 @@ interface DesktopLiveCockpitSlimProps {
   onAddChallenge?: () => void;
   onRemoveChallenge?: (challenge: Challenge) => void;
   onExitedTrade?: (trade: Trade) => void;
+  onEnteredTrade?: (trade: Trade) => void;
   channels: DiscordChannel[];
   onMobileTabChange?: (tab: "live" | "active" | "history" | "settings") => void;
   onVoiceNavigate?: (
@@ -70,6 +71,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     compositeSignals,
     onRemoveChallenge,
     onExitedTrade,
+    onEnteredTrade,
     channels,
     onMobileTabChange,
     onVoiceNavigate,
@@ -110,6 +112,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     actions,
   } = useTradeStateMachine({
     onExitedTrade,
+    onEnteredTrade,
     onMobileTabChange,
     keyLevels: computedKeyLevels,
   });

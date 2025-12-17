@@ -415,6 +415,12 @@ export default function App() {
             }}
             onOpenReviewTrade={() => navigate("/history")}
             onExitedTrade={handleExitedTrade}
+            onEnteredTrade={(trade) => {
+              // Navigate to the trade detail page after entering
+              if (trade.id) {
+                navigate(`/trades/${trade.id}`);
+              }
+            }}
             activeTab={activeTab}
             compositeSignals={activeSignals}
             onVoiceStateChange={setHeaderVoiceState}

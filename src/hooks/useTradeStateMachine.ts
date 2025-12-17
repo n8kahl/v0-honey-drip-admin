@@ -68,6 +68,7 @@ function getRiskDefaultsFromStore() {
 
 interface UseTradeStateMachineProps {
   onExitedTrade?: (trade: Trade) => void;
+  onEnteredTrade?: (trade: Trade) => void;
   onMobileTabChange?: (tab: "live" | "active" | "history" | "settings") => void;
   keyLevels?: KeyLevels | null;
 }
@@ -136,6 +137,7 @@ interface TradeStateMachineActions {
 
 export function useTradeStateMachine({
   onExitedTrade,
+  onEnteredTrade,
   onMobileTabChange,
   keyLevels,
 }: UseTradeStateMachineProps = {}): TradeStateMachineState & { actions: TradeStateMachineActions } {
@@ -816,6 +818,18 @@ export function useTradeStateMachine({
           onMobileTabChange("active");
         }
 
+        // Callback for navigation to trade detail page
+        if (onEnteredTrade) {
+          onEnteredTrade({
+            ...trade,
+            id: dbTradeId,
+            state: "ENTERED",
+            entryPrice: finalEntryPrice,
+            targetPrice,
+            stopLoss,
+          });
+        }
+
         log.transition(effectiveState, "ENTERED", { tradeId: dbTradeId, ticker: trade.ticker });
         log.actionEnd("handleEnterAndAlert", correlationId, {
           dbTradeId,
@@ -848,6 +862,7 @@ export function useTradeStateMachine({
       showAlertToast,
       isMobile,
       onMobileTabChange,
+      onEnteredTrade,
       isTransitioning,
       tradeState,
     ]
