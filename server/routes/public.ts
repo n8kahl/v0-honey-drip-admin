@@ -14,7 +14,7 @@ import {
   getBestPrice,
   ACTIVE_TRADE_STATES,
   EXITED_TRADE_STATES,
-} from "../lib/publicCalculations";
+} from "../lib/publicCalculations.js";
 
 const router = Router();
 

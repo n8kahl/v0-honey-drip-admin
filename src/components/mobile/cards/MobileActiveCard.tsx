@@ -1,8 +1,9 @@
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../../hd/common/HDTagTradeType";
 import { cn, formatPrice } from "../../../lib/utils";
-import { Scissors, Shield, LogOut, Zap } from "lucide-react";
+import { Scissors, Shield, LogOut, Zap, Wifi, WifiOff } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
+import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 
 interface MobileActiveCardProps {
   trade: Trade;
@@ -23,10 +24,28 @@ export function MobileActiveCard({
 }: MobileActiveCardProps) {
   const contract = trade.contract;
   const entryPrice = trade.entryPrice || contract?.mid || 0;
-  const currentPrice = trade.currentPrice || contract?.mid || 0;
+
+  // Get LIVE price data via WebSocket/REST transport (matches desktop HDActiveTradeRow)
+  const contractTicker = contract?.id || null;
+  const {
+    pnlPercent: livePnlPercent,
+    currentPrice: liveCurrentPrice,
+    source,
+    asOf,
+  } = useActiveTradePnL(contractTicker, entryPrice);
+
+  // Use live data if available, fallback to stale trade data
+  const currentPrice =
+    liveCurrentPrice > 0 ? liveCurrentPrice : trade.currentPrice || contract?.mid || 0;
   const pnlPercent =
-    trade.movePercent || (entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0);
+    liveCurrentPrice > 0
+      ? livePnlPercent
+      : trade.movePercent ||
+        (entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0);
   const isProfit = pnlPercent >= 0;
+
+  // Data freshness check (stale if >10s old)
+  const isStale = Date.now() - asOf > 10000;
 
   // Get live confluence from market data store
   const symbolData = useSymbolData(trade.ticker);
@@ -74,8 +93,14 @@ export function MobileActiveCard({
           )}
         </div>
 
-        {/* Right: Price + Confluence + P&L */}
+        {/* Right: Live indicator + Price + Confluence + P&L */}
         <div className="flex items-center gap-3">
+          {/* Live data indicator */}
+          {source === "websocket" && !isStale ? (
+            <Wifi className="w-3 h-3 text-green-500" />
+          ) : isStale ? (
+            <WifiOff className="w-3 h-3 text-amber-500" />
+          ) : null}
           <span className="text-[var(--text-high)] font-mono text-sm">
             ${formatPrice(currentPrice)}
           </span>

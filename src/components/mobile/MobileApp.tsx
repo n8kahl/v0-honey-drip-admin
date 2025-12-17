@@ -248,11 +248,11 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         }}
       />
 
-      {/* Spacer for fixed header */}
-      <div className="h-14 pt-safe" />
+      {/* Spacer for fixed header (h-14 = 56px + safe-area-inset-top) */}
+      <div className="h-header-safe" />
 
-      {/* Main content */}
-      <main className="flex-1 overflow-hidden pb-16">
+      {/* Main content - pb-nav-safe accounts for nav height (64px) + safe area bottom */}
+      <main className="flex-1 overflow-hidden pb-nav-safe">
         {activeTab === "active" && (
           <MobileActiveScreen
             trades={enteredTrades}

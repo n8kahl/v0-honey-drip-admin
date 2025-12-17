@@ -10,9 +10,12 @@ import {
   Activity,
   Layers,
   Zap,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { useOffHoursData, type KeyLevel } from "../../../hooks/useOffHoursData";
 import { useSymbolData } from "../../../stores/marketDataStore";
+import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 
 interface MobileTradeDetailSheetProps {
   open: boolean;
@@ -28,13 +31,32 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
   const symbolData = useSymbolData(trade?.ticker || "");
   const liveConfluence = symbolData?.confluence;
 
+  // Get LIVE price data via WebSocket/REST transport (matches desktop pattern)
+  const contract = trade?.contract;
+  const entryPrice = trade?.entryPrice || contract?.mid || 0;
+  const contractTicker = contract?.id || null;
+  const {
+    pnlPercent: livePnlPercent,
+    currentPrice: liveCurrentPrice,
+    source,
+    asOf,
+  } = useActiveTradePnL(contractTicker, entryPrice);
+
   if (!trade) return null;
 
-  const contract = trade.contract;
-  const entryPrice = trade.entryPrice || contract?.mid || 0;
-  const currentPrice = trade.currentPrice || contract?.mid || 0;
-  const pnlPercent = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+  // Use live data if available, fallback to stale trade data
+  const currentPrice =
+    liveCurrentPrice > 0 ? liveCurrentPrice : trade.currentPrice || contract?.mid || 0;
+  const pnlPercent =
+    liveCurrentPrice > 0
+      ? livePnlPercent
+      : entryPrice > 0
+        ? ((currentPrice - entryPrice) / entryPrice) * 100
+        : 0;
   const isPositive = pnlPercent >= 0;
+
+  // Data freshness check (stale if >10s old)
+  const isStale = Date.now() - asOf > 10000;
 
   // Calculate DTE
   const dte = contract?.expiry
@@ -161,9 +183,21 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
                   {trade.ticker} ${contract?.strike}
                   {contract?.type}
                 </h2>
-                <span className="text-[var(--text-muted)] text-sm">
-                  {dte !== null ? `${dte}DTE` : ""} · {trade.tradeType}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--text-muted)] text-sm">
+                    {dte !== null ? `${dte}DTE` : ""} · {trade.tradeType}
+                  </span>
+                  {/* Live data indicator */}
+                  {source === "websocket" && !isStale ? (
+                    <span className="flex items-center gap-1 text-green-500 text-xs">
+                      <Wifi className="w-3 h-3" /> Live
+                    </span>
+                  ) : isStale ? (
+                    <span className="flex items-center gap-1 text-amber-500 text-xs">
+                      <WifiOff className="w-3 h-3" /> Stale
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div
                 className={cn(

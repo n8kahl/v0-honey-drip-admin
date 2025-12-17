@@ -20,7 +20,7 @@ export function MobileHeader({
   const voiceActive = isListening || isProcessing || waitingForWakeWord;
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-14 bg-[var(--surface-1)] border-b border-[var(--border-hairline)] flex items-center justify-between px-4 pt-safe z-50">
+    <header className="fixed top-0 left-0 right-0 h-header-safe bg-[var(--surface-1)] border-b border-[var(--border-hairline)] flex items-end justify-between px-4 pb-2 z-50">
       {/* Logo + Brand */}
       <div className="flex items-center gap-2">
         <img src={branding.logoUrl} alt={branding.appName} className="w-8 h-8 object-contain" />

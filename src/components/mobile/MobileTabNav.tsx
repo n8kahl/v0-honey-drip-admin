@@ -24,7 +24,7 @@ export function MobileTabNav({
   loadedTradesCount = 0,
 }: MobileTabNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[var(--surface-1)] border-t border-[var(--border-hairline)] flex items-center justify-around pb-safe z-50">
+    <nav className="fixed bottom-0 left-0 right-0 h-nav-safe bg-[var(--surface-1)] border-t border-[var(--border-hairline)] flex items-start justify-around pt-2 z-50">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;

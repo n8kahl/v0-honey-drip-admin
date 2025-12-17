@@ -22,7 +22,7 @@ export function MobileBottomNav({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-14 bg-[var(--surface-1)] border-t border-[var(--border-hairline)] flex items-center justify-around safe-area-inset-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 h-nav-safe bg-[var(--surface-1)] border-t border-[var(--border-hairline)] flex items-start justify-around pt-2">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;

@@ -1141,7 +1141,20 @@ export function useTradeStateMachine({
                   // TODO: Implement image generation using html-to-image or server-side rendering
                   // For now, imageUrl remains undefined
                 }
-                await discord.sendExitAlert(channels, trade, message, imageUrl);
+                // Spread trade with exit data - original trade object doesn't have exitPrice/movePercent set
+                await discord.sendExitAlert(
+                  channels,
+                  {
+                    ...trade,
+                    exitPrice: basePrice,
+                    exitTime: new Date(),
+                    movePercent: trade.entryPrice
+                      ? ((basePrice - trade.entryPrice) / trade.entryPrice) * 100
+                      : 0,
+                  },
+                  message,
+                  imageUrl
+                );
                 break;
               }
             }

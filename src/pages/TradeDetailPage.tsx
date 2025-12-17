@@ -1,25 +1,32 @@
 "use client";
 
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Wifi, WifiOff } from "lucide-react";
 import { useTradeStore } from "../stores/tradeStore";
 import { AppLayout } from "../components/layouts/AppLayout";
 import { BreadcrumbNav } from "../components/navigation/BreadcrumbNav";
 import { HDLiveChart } from "../components/hd/charts/HDLiveChart";
 import { HDEditablePrice } from "../components/hd/common/HDEditablePrice";
+import { NowPanelManage } from "../components/trading/NowPanelManage";
+import { useActiveTradePnL } from "../hooks/useMassiveData";
 import { Suspense } from "react";
+import { cn } from "../lib/utils";
 
 /**
  * TradeDetailPage - View details for a specific trade
  *
  * Route: /trades/:id
  *
- * Shows:
- * - Full trade information
+ * For ENTERED trades (active management):
+ * - Live P&L via WebSocket/REST streaming
+ * - Full management cockpit (NowPanelManage)
+ * - Key levels, MTF status, trade tape
+ *
+ * For EXITED trades (historical review):
+ * - Static review layout
  * - Entry/exit prices and times
  * - P&L breakdown
  * - Trade charts/analysis
- * - Option to close trade
  */
 export default function TradeDetailPage() {
   const { id: tradeId } = useParams<{ id: string }>();
@@ -71,16 +78,60 @@ export default function TradeDetailPage() {
     );
   }
 
-  // Determine if trade is active or historical for breadcrumb navigation
-  const isActiveTrade = activeTrades.some((t) => t.id === tradeId);
+  // Determine if trade is active (ENTERED/LOADED) or historical (EXITED)
+  const isActiveTrade = trade.state === "ENTERED" || trade.state === "LOADED";
   const breadcrumbItems = [
-    { label: "Trades", href: isActiveTrade ? "/active" : "/history" },
+    { label: "Trades", href: isActiveTrade ? "/" : "/history" },
     {
       label: `${trade.ticker} ${trade.contract.strike}${trade.contract.type}`,
       isActive: true,
     },
   ];
 
+  // For ENTERED trades, render the live management cockpit
+  if (isActiveTrade) {
+    return (
+      <AppLayout hideMainBottomNav>
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center min-h-screen">
+              Loading trade details...
+            </div>
+          }
+        >
+          {/* Breadcrumb Navigation */}
+          <BreadcrumbNav items={breadcrumbItems} />
+
+          {/* Header with back button */}
+          <div className="sticky top-0 z-40 bg-[var(--surface-1)] border-b border-[var(--border-hairline)] p-4">
+            <div className="max-w-6xl mx-auto flex items-center gap-3">
+              <button
+                onClick={() => navigate("/")}
+                className="p-2 rounded-[var(--radius)] hover:bg-[var(--surface-2)] transition-colors"
+                title="Back to cockpit"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div>
+                <h1 className="text-xl font-medium">{trade.ticker}</h1>
+                <p className="text-[var(--text-muted)] text-sm">
+                  {trade.contract.strike}
+                  {trade.contract.type} • {trade.contract.daysToExpiry}DTE • Active Trade
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Live Management Cockpit */}
+          <div className="max-w-6xl mx-auto flex flex-col h-[calc(100vh-120px)]">
+            <NowPanelManage trade={trade} activeTicker={null} />
+          </div>
+        </Suspense>
+      </AppLayout>
+    );
+  }
+
+  // For EXITED trades, render the static review layout
   return (
     <AppLayout hideMainBottomNav>
       <Suspense
@@ -124,7 +175,7 @@ export default function TradeDetailPage() {
           </div>
         </div>
 
-        {/* Main content */}
+        {/* Main content - Static review for EXITED trades */}
         <div className="max-w-6xl mx-auto p-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             {/* Entry Info */}

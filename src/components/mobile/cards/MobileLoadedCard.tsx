@@ -1,8 +1,9 @@
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../../hd/common/HDTagTradeType";
 import { cn, formatPrice } from "../../../lib/utils";
-import { Play, X, Zap } from "lucide-react";
+import { Play, X, Zap, Wifi, WifiOff } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
+import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 
 interface MobileLoadedCardProps {
   trade: Trade;
@@ -13,7 +14,20 @@ interface MobileLoadedCardProps {
 
 export function MobileLoadedCard({ trade, onEnter, onDismiss, active }: MobileLoadedCardProps) {
   const contract = trade.contract;
-  const mid = contract?.mid || 0;
+
+  // Get LIVE price data via WebSocket/REST transport (matches desktop pattern)
+  const contractTicker = contract?.id || null;
+  const {
+    currentPrice: liveCurrentPrice,
+    source,
+    asOf,
+  } = useActiveTradePnL(contractTicker, contract?.mid || 0);
+
+  // Use live data if available, fallback to stale contract data
+  const mid = liveCurrentPrice > 0 ? liveCurrentPrice : contract?.mid || 0;
+
+  // Data freshness check (stale if >10s old)
+  const isStale = Date.now() - asOf > 10000;
 
   // Get live confluence from market data store
   const symbolData = useSymbolData(trade.ticker);
@@ -60,8 +74,14 @@ export function MobileLoadedCard({ trade, onEnter, onDismiss, active }: MobileLo
           )}
         </div>
 
-        {/* Right: Price + Confluence */}
+        {/* Right: Live indicator + Price + Confluence */}
         <div className="flex items-center gap-3">
+          {/* Live data indicator */}
+          {source === "websocket" && !isStale ? (
+            <Wifi className="w-3 h-3 text-green-500" />
+          ) : isStale ? (
+            <WifiOff className="w-3 h-3 text-amber-500" />
+          ) : null}
           <span className="text-[var(--text-high)] font-mono text-sm">${formatPrice(mid)}</span>
           {confluenceScore !== undefined && confluenceScore > 70 && (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-500/20 border border-yellow-500/30">

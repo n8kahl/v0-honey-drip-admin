@@ -1004,3 +1004,82 @@
     animation: contract-select 0.4s ease-out forwards;
   }
 }
+
+/* ============================================
+ * Mobile Safe Area Utilities
+ * ============================================
+ * Required for proper spacing on iOS (notch, home indicator)
+ * and Android devices with rounded corners or navigation gestures.
+ *
+ * Usage:
+ * - pt-safe: Add padding-top for status bar / notch
+ * - pb-safe: Add padding-bottom for home indicator
+ * - Combined with fixed headers/navs to prevent content overlap
+ * ============================================ */
+
+@layer utilities {
+  /* Padding utilities for safe areas */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pl-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  .pr-safe {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Margin utilities for safe areas */
+  .mt-safe {
+    margin-top: env(safe-area-inset-top, 0px);
+  }
+
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Combined bottom padding for mobile nav (nav height + safe area) */
+  /* Mobile nav is h-16 (64px), plus safe area for home indicator */
+  .pb-nav-safe {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Combined top padding for mobile header (header height + safe area) */
+  /* Mobile header is h-14 (56px), plus safe area for notch/status bar */
+  .pt-header-safe {
+    padding-top: calc(56px + env(safe-area-inset-top, 0px));
+  }
+
+  /* Height utilities accounting for safe areas */
+  .h-header-safe {
+    height: calc(56px + env(safe-area-inset-top, 0px));
+  }
+
+  .h-nav-safe {
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Min-height for full screen minus header and nav with safe areas */
+  .min-h-screen-safe {
+    min-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Safe area inset as CSS custom property (for use in calc) */
+  .safe-area-inset-bottom {
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  /* iOS Safari bottom bar compensation */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .pb-safe-ios {
+      padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
+    }
+  }
+}
