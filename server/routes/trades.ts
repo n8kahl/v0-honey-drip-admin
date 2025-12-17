@@ -71,6 +71,111 @@ async function getUserId(req: Request): Promise<string | null> {
   return null;
 }
 
+// ============================================================================
+// Ownership Verification Helpers
+// ============================================================================
+
+/**
+ * Verify that a trade belongs to a specific user.
+ *
+ * SECURITY: This is critical for link/unlink endpoints that bypass RLS.
+ * Service role key bypasses RLS, so we must manually verify ownership.
+ *
+ * @param tradeId - Trade ID to verify
+ * @param userId - User ID that should own the trade
+ * @returns Object with verified: true if trade belongs to user, false otherwise
+ */
+async function assertTradeOwnedByUser(
+  tradeId: string,
+  userId: string
+): Promise<{ verified: boolean; error?: string; status?: number }> {
+  const { data, error } = await getSupabaseClient()
+    .from("trades")
+    .select("id, user_id")
+    .eq("id", tradeId)
+    .single();
+
+  if (error || !data) {
+    return { verified: false, error: "Trade not found", status: 404 };
+  }
+
+  // Type assertion needed: Supabase client returns `never` without generated types
+  const tradeData = data as { id: string; user_id: string };
+  if (tradeData.user_id !== userId) {
+    return { verified: false, error: "Unauthorized: Trade belongs to another user", status: 403 };
+  }
+
+  return { verified: true };
+}
+
+/**
+ * Verify that a Discord channel belongs to a specific user.
+ *
+ * SECURITY: Prevents users from linking channels they don't own to trades.
+ *
+ * @param channelId - Discord channel ID to verify
+ * @param userId - User ID that should own the channel
+ * @returns Object with verified: true if channel belongs to user, false otherwise
+ */
+async function assertChannelOwnedByUser(
+  channelId: string,
+  userId: string
+): Promise<{ verified: boolean; error?: string; status?: number }> {
+  const { data, error } = await getSupabaseClient()
+    .from("discord_channels")
+    .select("id, user_id")
+    .eq("id", channelId)
+    .single();
+
+  if (error || !data) {
+    return { verified: false, error: "Discord channel not found", status: 404 };
+  }
+
+  // Type assertion needed: Supabase client returns `never` without generated types
+  const channelData = data as { id: string; user_id: string };
+  if (channelData.user_id !== userId) {
+    return { verified: false, error: "Unauthorized: Channel belongs to another user", status: 403 };
+  }
+
+  return { verified: true };
+}
+
+/**
+ * Verify that a challenge belongs to a specific user.
+ *
+ * SECURITY: Prevents users from linking challenges they don't own to trades.
+ *
+ * @param challengeId - Challenge ID to verify
+ * @param userId - User ID that should own the challenge
+ * @returns Object with verified: true if challenge belongs to user, false otherwise
+ */
+async function assertChallengeOwnedByUser(
+  challengeId: string,
+  userId: string
+): Promise<{ verified: boolean; error?: string; status?: number }> {
+  const { data, error } = await getSupabaseClient()
+    .from("challenges")
+    .select("id, user_id")
+    .eq("id", challengeId)
+    .single();
+
+  if (error || !data) {
+    return { verified: false, error: "Challenge not found", status: 404 };
+  }
+
+  // Type assertion needed: Supabase client returns `never` without generated types
+  const challengeData = data as { id: string; user_id: string };
+  if (challengeData.user_id !== userId) {
+    return {
+      verified: false,
+      error: "Unauthorized: Challenge belongs to another user",
+      status: 403,
+    };
+  }
+
+  return { verified: true };
+}
+
 /**
  * Helper: Validate required fields
  */
@@ -568,6 +673,20 @@ router.post("/api/trades/:tradeId/channels/:channelId", async (req: Request, res
       return res.status(400).json({ error: "Missing trade ID or channel ID" });
     }
 
+    // SECURITY: Verify trade belongs to this user (service role bypasses RLS)
+    const tradeOwnership = await assertTradeOwnedByUser(tradeId, userId);
+    if (!tradeOwnership.verified) {
+      console.warn(`[Trades API] Trade ownership verification failed: ${tradeOwnership.error}`);
+      return res.status(tradeOwnership.status || 403).json({ error: tradeOwnership.error });
+    }
+
+    // SECURITY: Verify channel belongs to this user
+    const channelOwnership = await assertChannelOwnedByUser(channelId, userId);
+    if (!channelOwnership.verified) {
+      console.warn(`[Trades API] Channel ownership verification failed: ${channelOwnership.error}`);
+      return res.status(channelOwnership.status || 403).json({ error: channelOwnership.error });
+    }
+
     console.log(`[Trades API] Linking channel ${channelId} to trade ${tradeId}`);
 
     // Insert or ignore if already exists (UNIQUE constraint)
@@ -644,6 +763,13 @@ router.delete("/api/trades/:tradeId/channels/:channelId", async (req: Request, r
       return res.status(400).json({ error: "Missing trade ID or channel ID" });
     }
 
+    // SECURITY: Verify trade belongs to this user (service role bypasses RLS)
+    const tradeOwnership = await assertTradeOwnedByUser(tradeId, userId);
+    if (!tradeOwnership.verified) {
+      console.warn(`[Trades API] Trade ownership verification failed: ${tradeOwnership.error}`);
+      return res.status(tradeOwnership.status || 403).json({ error: tradeOwnership.error });
+    }
+
     console.log(`[Trades API] Unlinking channel ${channelId} from trade ${tradeId}`);
 
     const { error } = await getSupabaseClient()
@@ -682,6 +808,22 @@ router.post("/api/trades/:tradeId/challenges/:challengeId", async (req: Request,
 
     if (!tradeId || !challengeId) {
       return res.status(400).json({ error: "Missing trade ID or challenge ID" });
+    }
+
+    // SECURITY: Verify trade belongs to this user (service role bypasses RLS)
+    const tradeOwnership = await assertTradeOwnedByUser(tradeId, userId);
+    if (!tradeOwnership.verified) {
+      console.warn(`[Trades API] Trade ownership verification failed: ${tradeOwnership.error}`);
+      return res.status(tradeOwnership.status || 403).json({ error: tradeOwnership.error });
+    }
+
+    // SECURITY: Verify challenge belongs to this user
+    const challengeOwnership = await assertChallengeOwnedByUser(challengeId, userId);
+    if (!challengeOwnership.verified) {
+      console.warn(
+        `[Trades API] Challenge ownership verification failed: ${challengeOwnership.error}`
+      );
+      return res.status(challengeOwnership.status || 403).json({ error: challengeOwnership.error });
     }
 
     console.log(`[Trades API] Linking challenge ${challengeId} to trade ${tradeId}`);
@@ -763,6 +905,13 @@ router.delete(
         return res.status(400).json({ error: "Missing trade ID or challenge ID" });
       }
 
+      // SECURITY: Verify trade belongs to this user (service role bypasses RLS)
+      const tradeOwnership = await assertTradeOwnedByUser(tradeId, userId);
+      if (!tradeOwnership.verified) {
+        console.warn(`[Trades API] Trade ownership verification failed: ${tradeOwnership.error}`);
+        return res.status(tradeOwnership.status || 403).json({ error: tradeOwnership.error });
+      }
+
       console.log(`[Trades API] Unlinking challenge ${challengeId} from trade ${tradeId}`);
 
       const { error } = await getSupabaseClient()
@@ -815,16 +964,26 @@ router.put("/api/trades/:tradeId/challenges", async (req: Request, res: Response
       `[Trades API] Replacing challenges for trade ${tradeId}: ${challengeIds.length} challenges`
     );
 
-    // First, verify the trade belongs to this user
-    const { data: tradeData, error: tradeError } = await getSupabaseClient()
-      .from("trades")
-      .select("id")
-      .eq("id", tradeId)
-      .eq("user_id", userId)
-      .single();
+    // SECURITY: Verify trade belongs to this user (service role bypasses RLS)
+    const tradeOwnership = await assertTradeOwnedByUser(tradeId, userId);
+    if (!tradeOwnership.verified) {
+      console.warn(`[Trades API] Trade ownership verification failed: ${tradeOwnership.error}`);
+      return res.status(tradeOwnership.status || 403).json({ error: tradeOwnership.error });
+    }
 
-    if (tradeError || !tradeData) {
-      return res.status(404).json({ error: "Trade not found or unauthorized" });
+    // SECURITY: Verify all challenges belong to this user before linking
+    if (challengeIds.length > 0) {
+      for (const challengeId of challengeIds) {
+        const challengeOwnership = await assertChallengeOwnedByUser(challengeId, userId);
+        if (!challengeOwnership.verified) {
+          console.warn(
+            `[Trades API] Challenge ownership verification failed for ${challengeId}: ${challengeOwnership.error}`
+          );
+          return res
+            .status(challengeOwnership.status || 403)
+            .json({ error: challengeOwnership.error });
+        }
+      }
     }
 
     // Delete all existing challenge links for this trade

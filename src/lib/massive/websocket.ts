@@ -264,7 +264,8 @@ export class MassiveWebSocket {
       // Unsubscribe old channels
       if (oldRoots.length > 0) {
         const oldChannels = this.buildOptionsChannels(oldRoots);
-        this.send("options", { action: "unsubscribe", params: oldChannels.join(",") });
+        // FIX: Send params as array to avoid comma-splitting issues in hub.ts
+        this.send("options", { action: "unsubscribe", params: oldChannels });
         oldChannels.forEach((ch) => this.subscriptions.options.delete(ch));
       }
 
@@ -391,7 +392,8 @@ export class MassiveWebSocket {
     const channels = this.buildOptionsChannels(this.watchlistRoots);
     console.log("[MassiveWS] Subscribing to options:", channels);
 
-    this.send("options", { action: "subscribe", params: channels.join(",") });
+    // FIX: Send params as array to avoid comma-splitting issues in hub.ts
+    this.send("options", { action: "subscribe", params: channels });
     channels.forEach((ch) => this.subscriptions.options.add(ch));
   }
 
@@ -406,7 +408,8 @@ export class MassiveWebSocket {
     const channels = ["indices.bars:1m,5m,15m,60m:I:SPX,I:NDX,I:VIX,I:RVX"];
     console.log("[MassiveWS] Subscribing to indices:", channels);
 
-    this.send("indices", { action: "subscribe", params: channels.join(",") });
+    // FIX: Send params as array to avoid comma-splitting issues in hub.ts
+    this.send("indices", { action: "subscribe", params: channels });
     channels.forEach((ch) => this.subscriptions.indices.add(ch));
   }
 

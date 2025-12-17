@@ -10,6 +10,11 @@ import {
 import { createClient } from "../lib/supabase/client";
 import { ensureArray } from "../lib/utils/validation";
 import { tradeStoreLogger as log } from "../lib/utils/logger";
+import {
+  reconcileTradeLists,
+  assertTradeListsValid,
+  type TradeListsInput,
+} from "../domain/tradeLifecycle";
 
 /**
  * Get authentication headers for API calls
@@ -34,45 +39,6 @@ async function getApiHeaders(): Promise<HeadersInit> {
   }
 
   return headers;
-}
-
-/**
- * Merge trades by ID, keeping the most advanced state.
- * This prevents duplicates when optimistic updates race with loadTrades().
- *
- * State priority: WATCHING < LOADED < ENTERED < EXITED
- * If incoming state >= existing state, incoming wins (DB is source of truth)
- */
-function mergeTradesByIdKeepLatest(existing: Trade[], incoming: Trade[]): Trade[] {
-  const stateOrder: Record<string, number> = {
-    WATCHING: 0,
-    LOADED: 1,
-    ENTERED: 2,
-    EXITED: 3,
-  };
-  const map = new Map<string, Trade>();
-
-  // Add existing first
-  for (const trade of existing) {
-    map.set(trade.id, trade);
-  }
-
-  // Merge incoming - keep more advanced state, or update if same/newer state
-  for (const trade of incoming) {
-    const current = map.get(trade.id);
-    if (!current) {
-      map.set(trade.id, trade);
-    } else {
-      const currentOrder = stateOrder[current.state] ?? 0;
-      const incomingOrder = stateOrder[trade.state] ?? 0;
-      // Keep the more advanced state, OR update if same state (DB is source of truth)
-      if (incomingOrder >= currentOrder) {
-        map.set(trade.id, trade);
-      }
-    }
-  }
-
-  return Array.from(map.values());
 }
 
 // ============================================================================
@@ -267,10 +233,38 @@ export const useTradeStore = create<TradeStore>()(
       },
 
       // ========================================
-      // Simple Setters
+      // Simple Setters (with invariant validation in dev mode)
       // ========================================
-      setActiveTrades: (trades) => set({ activeTrades: trades }),
-      setHistoryTrades: (trades) => set({ historyTrades: trades }),
+      setActiveTrades: (trades) => {
+        set({ activeTrades: trades });
+        // Validate invariants in development
+        if (process.env.NODE_ENV === "development") {
+          const state = get();
+          assertTradeListsValid(
+            {
+              activeTrades: trades,
+              historyTrades: state.historyTrades,
+              previewTrade: state.previewTrade,
+            },
+            "setActiveTrades"
+          );
+        }
+      },
+      setHistoryTrades: (trades) => {
+        set({ historyTrades: trades });
+        // Validate invariants in development
+        if (process.env.NODE_ENV === "development") {
+          const state = get();
+          assertTradeListsValid(
+            {
+              activeTrades: state.activeTrades,
+              historyTrades: trades,
+              previewTrade: state.previewTrade,
+            },
+            "setHistoryTrades"
+          );
+        }
+      },
       setCurrentTradeId: (id) => set({ currentTradeId: id }),
       setPreviewTrade: (trade) => set({ previewTrade: trade }),
       setContracts: (contracts) => set({ contracts }),
@@ -557,6 +551,11 @@ export const useTradeStore = create<TradeStore>()(
               }
             }
 
+            // FIX: currentPrice should prefer DB current_price, fallback to entry_price
+            // Bug was: currentPrice: t.entry_price (always used entry, ignored DB current_price)
+            const currentPriceRaw = (t as any).current_price ?? t.entry_price;
+            const currentPrice = currentPriceRaw ? parseFloat(currentPriceRaw) : undefined;
+
             return {
               id: t.id,
               ticker: t.ticker,
@@ -565,7 +564,7 @@ export const useTradeStore = create<TradeStore>()(
               exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
               entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
               exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
-              currentPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              currentPrice,
               targetPrice: (t as any).target_price
                 ? parseFloat((t as any).target_price)
                 : undefined,
@@ -585,33 +584,52 @@ export const useTradeStore = create<TradeStore>()(
             };
           });
 
-          const active = mappedTrades.filter((t) => t.state !== "EXITED");
-          const history = mappedTrades.filter((t) => t.state === "EXITED");
-
           // Log a snapshot of the loaded state
-          log.snapshot("Trades loaded", {
+          log.snapshot("Trades loaded from DB", {
             total: mappedTrades.length,
-            active: active.length,
-            history: history.length,
-            activeByState: {
-              WATCHING: active.filter((t) => t.state === "WATCHING").length,
-              LOADED: active.filter((t) => t.state === "LOADED").length,
-              ENTERED: active.filter((t) => t.state === "ENTERED").length,
+            byState: {
+              WATCHING: mappedTrades.filter((t) => t.state === "WATCHING").length,
+              LOADED: mappedTrades.filter((t) => t.state === "LOADED").length,
+              ENTERED: mappedTrades.filter((t) => t.state === "ENTERED").length,
+              EXITED: mappedTrades.filter((t) => t.state === "EXITED").length,
             },
-            activeTickers: active.map((t) => `${t.ticker}:${t.state}`),
+            tickers: mappedTrades.map((t) => `${t.ticker}:${t.state}`),
           });
 
-          // Use merge to prevent race conditions with optimistic updates
-          // This ensures trades added by handleLoadAndAlert don't get lost/duplicated
-          set((state) => ({
-            activeTrades: mergeTradesByIdKeepLatest(state.activeTrades, active),
-            historyTrades: mergeTradesByIdKeepLatest(state.historyTrades, history),
-            isLoading: false,
-          }));
+          // FIX: Use reconcileTradeLists instead of independent merge
+          // OLD BUG (lines 606-608): mergeTradesByIdKeepLatest on activeTrades and historyTrades
+          // independently could leave an EXITED trade in activeTrades while also in historyTrades.
+          // reconcileTradeLists ensures each trade ID appears in EXACTLY ONE list based on state.
+          set((state) => {
+            const existingLists: TradeListsInput = {
+              activeTrades: state.activeTrades,
+              historyTrades: state.historyTrades,
+              previewTrade: state.previewTrade,
+            };
+
+            const reconciled = reconcileTradeLists(existingLists, mappedTrades);
+
+            // Validate invariants in development
+            assertTradeListsValid(reconciled, "loadTrades");
+
+            log.debug("Trade lists reconciled", {
+              correlationId,
+              activeCount: reconciled.activeTrades.length,
+              historyCount: reconciled.historyTrades.length,
+              previewCleared:
+                existingLists.previewTrade !== null && reconciled.previewTrade === null,
+            });
+
+            return {
+              activeTrades: reconciled.activeTrades,
+              historyTrades: reconciled.historyTrades,
+              previewTrade: reconciled.previewTrade,
+              isLoading: false,
+            };
+          });
 
           log.actionEnd("loadTrades", correlationId, {
-            activeCount: active.length,
-            historyCount: history.length,
+            dbTradesCount: mappedTrades.length,
           });
         } catch (error) {
           log.actionFail("loadTrades", correlationId, error, { userId });

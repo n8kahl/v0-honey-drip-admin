@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { setInterval, clearInterval } from "timers";
+import { parseClientParamsToTopics, normalizeIndicesTopic } from "./topicParsing";
 
 type Asset = "options" | "indices";
 
@@ -15,6 +16,22 @@ interface HubOpts {
   logPrefix: string;
 }
 
+/**
+ * MassiveHub - WebSocket proxy hub with topic ref-counting
+ *
+ * Manages multiple client connections and proxies subscriptions to a single
+ * upstream Massive.com WebSocket connection. Uses reference counting to
+ * ensure each topic is subscribed only once upstream, regardless of how
+ * many clients request it.
+ *
+ * BUG FIXES (December 2025):
+ * - Fixed comma-splitting bug: Topics like "options.bars:1m,5m,15m:SPY*" were being
+ *   split incorrectly. Now uses parseClientParamsToTopics which detects structured
+ *   topics and doesn't split them.
+ * - Fixed reconnect bug: queuedTopics was only populated before auth, so reconnect
+ *   didn't resubscribe all topics. Now uses subscribeAllCurrentTopics() on auth_success
+ *   which iterates topicRefCount.keys().
+ */
 export class MassiveHub {
   private upstream?: WebSocket;
   private upstreamOpen = false;
@@ -22,8 +39,12 @@ export class MassiveHub {
   private heartbeat?: NodeJS.Timeout;
 
   private clients = new Set<ClientCtx>();
+
+  /**
+   * Reference count for each topic. Key is the normalized topic string.
+   * This is THE source of truth for what topics should be subscribed upstream.
+   */
   private topicRefCount = new Map<string, number>();
-  private queuedTopics = new Set<string>();
 
   constructor(private opts: HubOpts) {}
 
@@ -97,9 +118,10 @@ export class MassiveHub {
 
         const statusMsg = Array.isArray(arr) ? arr.find((m) => m?.ev === "status") : undefined;
         if (statusMsg?.status === "auth_success") {
-          console.log(`${logPrefix} ✅ Authentication successful!`);
+          console.log(`${logPrefix} Authentication successful!`);
           this.upstreamAuthd = true;
-          this.flushQueuedTopics();
+          // FIX: On reconnect, resubscribe ALL topics from refcount (not just queued)
+          this.subscribeAllCurrentTopics();
         }
       } catch (err) {
         // Non-JSON messages are expected, only warn in debug mode
@@ -128,15 +150,15 @@ export class MassiveHub {
       console.warn(`${logPrefix} upstream closed with code ${code}: ${reasonText}`);
 
       if (code === 1008) {
-        console.error(`${logPrefix} ❌ Code 1008 = Policy Violation. Possible causes:
+        console.error(`${logPrefix} Code 1008 = Policy Violation. Possible causes:
   1. Invalid API key format or expired key
   2. Insufficient permissions (need OPTIONS ADVANCED or INDICES ADVANCED tier)
   3. WebSocket endpoint mismatch (check ${upstreamUrl})
   4. Authentication message rejected
-  
+
   Current API key: ${apiKey ? apiKey.slice(0, 12) + "..." : "MISSING"}
   Authenticated before close: ${this.upstreamAuthd}
-  
+
   Check Massive dashboard: https://massive.com/dashboard/keys`);
       }
     });
@@ -172,39 +194,63 @@ export class MassiveHub {
     this.upstream.send(JSON.stringify(msg));
   }
 
-  private flushQueuedTopics() {
-    if (!this.queuedTopics.size) return;
-    const params = Array.from(this.queuedTopics).join(",");
-    this.sendUpstream({ action: "subscribe", params });
-    this.queuedTopics.clear();
-  }
+  /**
+   * Subscribe to all topics currently in topicRefCount.
+   *
+   * Called on auth_success to ensure all topics are resubscribed after reconnect.
+   * Sends one subscribe message per topic to ensure proper handling by Massive.
+   */
+  private subscribeAllCurrentTopics() {
+    const topics = Array.from(this.topicRefCount.keys());
+    if (topics.length === 0) return;
 
-  private incTopic(topic: string) {
-    const count = (this.topicRefCount.get(topic) ?? 0) + 1;
-    this.topicRefCount.set(topic, count);
-    if (count === 1) {
-      if (!this.upstreamAuthd) {
-        this.queuedTopics.add(topic);
-      } else {
-        this.sendUpstream({ action: "subscribe", params: topic });
-      }
+    console.warn(`${this.opts.logPrefix} Resubscribing ${topics.length} topics after auth`);
+
+    for (const topic of topics) {
+      this.sendUpstream({ action: "subscribe", params: topic });
     }
   }
 
+  /**
+   * Increment reference count for a topic.
+   *
+   * If this is the first subscriber (count goes 0 -> 1), subscribe upstream.
+   */
+  private incTopic(topic: string) {
+    const count = (this.topicRefCount.get(topic) ?? 0) + 1;
+    this.topicRefCount.set(topic, count);
+
+    // Only subscribe upstream on first subscription
+    if (count === 1 && this.upstreamAuthd) {
+      this.sendUpstream({ action: "subscribe", params: topic });
+    }
+    // If not authenticated yet, topic will be subscribed in subscribeAllCurrentTopics()
+  }
+
+  /**
+   * Decrement reference count for a topic.
+   *
+   * If this was the last subscriber (count goes 1 -> 0), unsubscribe upstream.
+   */
   private decTopic(topic: string) {
     const count = (this.topicRefCount.get(topic) ?? 0) - 1;
+
     if (count <= 0) {
       this.topicRefCount.delete(topic);
       if (this.upstreamAuthd) {
         this.sendUpstream({ action: "unsubscribe", params: topic });
-      } else {
-        this.queuedTopics.delete(topic);
       }
     } else {
       this.topicRefCount.set(topic, count);
     }
   }
 
+  /**
+   * Handle incoming message from a client WebSocket.
+   *
+   * BUG FIX: Uses parseClientParamsToTopics instead of split(",") to correctly
+   * handle topics containing commas (e.g., "options.bars:1m,5m,15m:SPY*").
+   */
   private onClientMessage(ctx: ClientCtx, raw: WebSocket.RawData) {
     let msg: unknown;
     try {
@@ -218,20 +264,15 @@ export class MassiveHub {
     const msgObj = msg as Record<string, unknown>;
     switch (msgObj.action) {
       case "subscribe": {
-        const rawParams: string = (msgObj.params as string) ?? "";
-        const topics = rawParams
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const fixed = topics.map((topic) => {
-          if (this.opts.asset !== "indices") return topic;
-          const match = topic.match(/^(V|AM|A)\.(.+)$/);
-          if (!match) return topic;
-          const ev = match[1];
-          const sym = match[2];
-          return sym.startsWith("I:") ? topic : `${ev}.I:${sym}`;
-        });
-        for (const topic of fixed) {
+        // FIX: Use parseClientParamsToTopics instead of split(",")
+        // This correctly handles topics like "options.bars:1m,5m,15m:SPY*"
+        const topics = parseClientParamsToTopics(msgObj.params);
+
+        // Normalize indices topics (add I: prefix if needed)
+        const normalizedTopics =
+          this.opts.asset === "indices" ? topics.map(normalizeIndicesTopic) : topics;
+
+        for (const topic of normalizedTopics) {
           if (!ctx.subs.has(topic)) {
             ctx.subs.add(topic);
             this.incTopic(topic);
@@ -240,12 +281,14 @@ export class MassiveHub {
         break;
       }
       case "unsubscribe": {
-        const rawParams: string = (msgObj.params as string) ?? "";
-        const topics = rawParams
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        for (const topic of topics) {
+        // FIX: Use parseClientParamsToTopics instead of split(",")
+        const topics = parseClientParamsToTopics(msgObj.params);
+
+        // Normalize indices topics for consistent lookup
+        const normalizedTopics =
+          this.opts.asset === "indices" ? topics.map(normalizeIndicesTopic) : topics;
+
+        for (const topic of normalizedTopics) {
           if (ctx.subs.has(topic)) {
             ctx.subs.delete(topic);
             this.decTopic(topic);
@@ -262,5 +305,23 @@ export class MassiveHub {
         break;
       }
     }
+  }
+
+  // ============================================================================
+  // Test helpers (exported for unit tests)
+  // ============================================================================
+
+  /**
+   * Get current topic ref counts (for testing)
+   */
+  _getTopicRefCount(): Map<string, number> {
+    return new Map(this.topicRefCount);
+  }
+
+  /**
+   * Check if authenticated (for testing)
+   */
+  _isAuthenticated(): boolean {
+    return this.upstreamAuthd;
   }
 }

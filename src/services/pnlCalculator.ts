@@ -11,7 +11,7 @@
  * @module services/pnl-calculator
  */
 
-import { getMetricsService } from './monitoring';
+import { getMetricsService } from "./monitoring";
 
 // ============================================================================
 // Types
@@ -50,6 +50,9 @@ export interface PnLCalculationParams {
   entryPrice: number; // Price paid at entry (or mid if not specified)
   exitPrice: number; // Price received at exit (or mid if not specified)
   quantity: number; // Number of contracts
+
+  // Contract multiplier (default 100 for standard options, 1 for stocks)
+  contractMultiplier?: number;
 
   // Optional: spread data for more accurate slippage
   entryBid?: number;
@@ -95,7 +98,7 @@ export const DEFAULT_COMMISSION_CONFIG: CommissionConfig = {
   entryCommission: 0.65,
   exitCommission: 0.65,
   exchangeFee: 0.01,
-  minCommissionPerTrade: 1.00,
+  minCommissionPerTrade: 1.0,
 };
 
 export const DEFAULT_SLIPPAGE_CONFIG: SlippageConfig = {
@@ -121,12 +124,15 @@ export const DEFAULT_SLIPPAGE_CONFIG: SlippageConfig = {
  */
 export function calculatePnL(params: PnLCalculationParams): PnLResult {
   const { entryPrice, exitPrice, quantity } = params;
+  // Default multiplier is 100 for standard options (each contract = 100 shares)
+  const multiplier = params.contractMultiplier ?? 100;
   const commission = { ...DEFAULT_COMMISSION_CONFIG, ...params.commission };
   const slippage = { ...DEFAULT_SLIPPAGE_CONFIG, ...params.slippage };
 
   // ===== Calculate Gross P&L =====
   const grossPnLPerContract = exitPrice - entryPrice;
-  const grossPnLDollars = grossPnLPerContract * quantity;
+  // Apply contract multiplier to convert option price to actual dollar value
+  const grossPnLDollars = grossPnLPerContract * quantity * multiplier;
   const grossPnLPercent = entryPrice > 0 ? (grossPnLPerContract / entryPrice) * 100 : 0;
 
   // ===== Calculate Commission Costs =====
@@ -146,19 +152,21 @@ export function calculatePnL(params: PnLCalculationParams): PnLResult {
   const entrySlippage = calculateSlippageCost(
     entryPrice,
     quantity,
-    'buy',
+    "buy",
     params.entryBid,
     params.entryAsk,
-    slippage
+    slippage,
+    multiplier
   );
 
   const exitSlippage = calculateSlippageCost(
     exitPrice,
     quantity,
-    'sell',
+    "sell",
     params.exitBid,
     params.exitAsk,
-    slippage
+    slippage,
+    multiplier
   );
 
   const totalSlippageCost = entrySlippage + exitSlippage;
@@ -167,13 +175,17 @@ export function calculatePnL(params: PnLCalculationParams): PnLResult {
   const totalCosts = totalCommissionCost + totalSlippageCost;
   const netPnLDollars = grossPnLDollars - totalCosts;
 
-  // Net P&L percent: (netPnL) / (entryPrice * quantity + costs)
-  const costAdjustedEntry = entryPrice * quantity + entryCommissionCost + entrySlippage;
+  // Net P&L percent: (netPnL) / (entry cost basis including commissions)
+  // Apply contract multiplier to entry value to get actual dollar cost basis
+  const costAdjustedEntry =
+    entryPrice * quantity * multiplier + entryCommissionCost + entrySlippage;
   const netPnLPercent = costAdjustedEntry > 0 ? (netPnLDollars / costAdjustedEntry) * 100 : 0;
 
   // ===== Cost Analysis =====
-  const commissionAsPercentOfGross = grossPnLDollars !== 0 ? (totalCommissionCost / Math.abs(grossPnLDollars)) * 100 : 0;
-  const slippageAsPercentOfGross = grossPnLDollars !== 0 ? (totalSlippageCost / Math.abs(grossPnLDollars)) * 100 : 0;
+  const commissionAsPercentOfGross =
+    grossPnLDollars !== 0 ? (totalCommissionCost / Math.abs(grossPnLDollars)) * 100 : 0;
+  const slippageAsPercentOfGross =
+    grossPnLDollars !== 0 ? (totalSlippageCost / Math.abs(grossPnLDollars)) * 100 : 0;
   const totalCostAsPercentOfGross = commissionAsPercentOfGross + slippageAsPercentOfGross;
 
   // ===== Breakeven Analysis =====
@@ -232,15 +244,17 @@ export function calculatePnL(params: PnLCalculationParams): PnLResult {
  * @param bid - Actual bid (if known)
  * @param ask - Actual ask (if known)
  * @param config - Slippage configuration
+ * @param multiplier - Contract multiplier (100 for options, 1 for stocks)
  * @returns Slippage cost in dollars
  */
 function calculateSlippageCost(
   midPrice: number,
   quantity: number,
-  direction: 'buy' | 'sell',
+  direction: "buy" | "sell",
   bid: number | undefined,
   ask: number | undefined,
-  config: SlippageConfig
+  config: SlippageConfig,
+  multiplier: number = 100
 ): number {
   let slippagePercent = config.bidAskSpreadPercent / 100; // Convert to decimal
 
@@ -258,7 +272,8 @@ function calculateSlippageCost(
 
   // For buys (entry), you pay spread; for sells (exit), you lose spread
   // Both are costs in terms of P&L
-  const slippageDollars = midPrice * quantity * finalSlippage;
+  // Apply contract multiplier to get actual dollar slippage
+  const slippageDollars = midPrice * quantity * multiplier * finalSlippage;
 
   return slippageDollars;
 }
@@ -288,34 +303,123 @@ export function calculateNetPnLPercent(
 }
 
 /**
- * Calculate breakeven price (price where net P&L = 0)
+ * Configuration for breakeven calculation
+ */
+export interface BreakevenConfig {
+  entryPrice: number;
+  quantity: number;
+  contractMultiplier?: number;
+  commission?: Partial<CommissionConfig>;
+  slippage?: Partial<SlippageConfig>;
+  entryBid?: number;
+  entryAsk?: number;
+}
+
+/**
+ * Calculate breakeven price using deterministic binary search
  *
- * @param entryPrice - Entry price
- * @param quantity - Number of contracts
- * @param commission - Optional commission config
- * @param slippage - Optional slippage config
+ * This function finds the exact exit price where netPnL = 0 by using
+ * binary search. This is more accurate than approximation methods since
+ * the full P&L calculation is non-linear due to slippage modeling.
+ *
+ * @param config - Breakeven calculation configuration
+ * @param tolerance - Tolerance in dollars (default $0.01)
+ * @param maxIterations - Maximum iterations (default 50)
  * @returns Breakeven price
  */
 export function calculateBreakevenPrice(
+  config: BreakevenConfig,
+  tolerance: number = 0.01,
+  maxIterations: number = 50
+): number {
+  const { entryPrice, quantity, contractMultiplier, commission, slippage, entryBid, entryAsk } =
+    config;
+  const multiplier = contractMultiplier ?? 100;
+
+  // Quick sanity check
+  if (entryPrice <= 0 || quantity <= 0) {
+    return entryPrice;
+  }
+
+  // Binary search bounds: breakeven must be between entry and some upper bound
+  // Upper bound: entry + 50% (should be way more than enough for any realistic scenario)
+  let low = entryPrice;
+  let high = entryPrice * 1.5;
+
+  // First, verify that our bounds bracket zero
+  const pnlAtEntry = calculatePnL({
+    entryPrice,
+    exitPrice: entryPrice,
+    quantity,
+    contractMultiplier: multiplier,
+    commission,
+    slippage,
+    entryBid,
+    entryAsk,
+  }).netPnL;
+
+  // At entry price, we should have negative P&L (due to costs)
+  // If somehow positive or zero, entry IS breakeven (unlikely but handle edge case)
+  if (pnlAtEntry >= 0) {
+    return entryPrice;
+  }
+
+  // Binary search for breakeven
+  for (let i = 0; i < maxIterations; i++) {
+    const mid = (low + high) / 2;
+
+    const result = calculatePnL({
+      entryPrice,
+      exitPrice: mid,
+      quantity,
+      contractMultiplier: multiplier,
+      commission,
+      slippage,
+      entryBid,
+      entryAsk,
+    });
+
+    // Check if we're within tolerance
+    if (Math.abs(result.netPnL) <= tolerance) {
+      return mid;
+    }
+
+    // Adjust search bounds
+    if (result.netPnL < 0) {
+      // Need higher exit price
+      low = mid;
+    } else {
+      // Exit price too high
+      high = mid;
+    }
+
+    // Check for convergence
+    if (high - low < tolerance / (quantity * multiplier)) {
+      return mid;
+    }
+  }
+
+  // Return best estimate after max iterations
+  return (low + high) / 2;
+}
+
+/**
+ * Legacy breakeven calculation (simplified, for backward compatibility)
+ *
+ * @deprecated Use calculateBreakevenPrice with BreakevenConfig instead
+ */
+export function calculateBreakevenPriceSimple(
   entryPrice: number,
   quantity: number = 1,
   commission?: Partial<CommissionConfig>,
   slippage?: Partial<SlippageConfig>
 ): number {
-  const config = { ...DEFAULT_COMMISSION_CONFIG, ...commission };
-  const slippageConfig = { ...DEFAULT_SLIPPAGE_CONFIG, ...slippage };
-
-  // Total cost per contract
-  const commissionPerContract = (config.entryCommission + config.exitCommission) / quantity;
-  const slippagePerContract =
-    (entryPrice * (slippageConfig.bidAskSpreadPercent / 100) *
-      slippageConfig.marketImpactFactor *
-      slippageConfig.executionQualityFactor) /
-    quantity;
-
-  const totalCostPerContract = commissionPerContract + slippagePerContract;
-
-  return entryPrice + totalCostPerContract;
+  return calculateBreakevenPrice({
+    entryPrice,
+    quantity,
+    commission,
+    slippage,
+  });
 }
 
 /**
@@ -355,8 +459,7 @@ export function adjustWinRateForCosts(
   // EV = (winRate * avgWin) - ((1-winRate) * avgLoss)
   const winProbability = adjustedWinRate / 100;
   const lossProbability = 1 - winProbability;
-  const expectedValue =
-    winProbability * adjustedWinSize - lossProbability * adjustedLossSize;
+  const expectedValue = winProbability * adjustedWinSize - lossProbability * adjustedLossSize;
 
   return {
     adjustedWinRate,
@@ -373,8 +476,8 @@ export function adjustWinRateForCosts(
  * @returns Formatted string like "+$1.50 (+5.2%)" or "-$0.50 (-2.1%)"
  */
 export function formatPnL(pnl: number, pnlPercent: number): string {
-  const sign = pnl >= 0 ? '+' : '';
-  const percentSign = pnlPercent >= 0 ? '+' : '';
+  const sign = pnl >= 0 ? "+" : "";
+  const percentSign = pnlPercent >= 0 ? "+" : "";
   return `${sign}$${Math.abs(pnl).toFixed(2)} (${percentSign}${pnlPercent.toFixed(1)}%)`;
 }
 
@@ -384,8 +487,8 @@ export function formatPnL(pnl: number, pnlPercent: number): string {
  * @param pnl - P&L amount in dollars
  * @returns Color class: 'text-green-600' | 'text-red-600' | 'text-gray-600'
  */
-export function getPnLColor(pnl: number): 'text-green-600' | 'text-red-600' | 'text-gray-600' {
-  if (pnl > 0) return 'text-green-600';
-  if (pnl < 0) return 'text-red-600';
-  return 'text-gray-600';
+export function getPnLColor(pnl: number): "text-green-600" | "text-red-600" | "text-gray-600" {
+  if (pnl > 0) return "text-green-600";
+  if (pnl < 0) return "text-red-600";
+  return "text-gray-600";
 }

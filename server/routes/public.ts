@@ -7,6 +7,14 @@
 
 import { Router, type Request, type Response } from "express";
 import { createClient } from "@supabase/supabase-js";
+import {
+  calculatePnlPercent,
+  calculateProgressToTarget,
+  getTimeElapsed,
+  getBestPrice,
+  ACTIVE_TRADE_STATES,
+  EXITED_TRADE_STATES,
+} from "../lib/publicCalculations";
 
 const router = Router();
 
@@ -74,47 +82,6 @@ interface DailyStats {
 }
 
 // ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Calculate P&L percentage from entry and current/exit price
- */
-function calculatePnl(entry: number | null, current: number | null): number | null {
-  if (!entry || entry === 0 || !current) return null;
-  return ((current - entry) / entry) * 100;
-}
-
-/**
- * Get time elapsed since a timestamp in human-readable format
- */
-function getTimeElapsed(timestamp: string | null): string | null {
-  if (!timestamp) return null;
-  const ms = Date.now() - new Date(timestamp).getTime();
-  const minutes = Math.floor(ms / 60000);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) return `${days}d`;
-  if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  return `${minutes}m`;
-}
-
-/**
- * Calculate progress to target (0-100%)
- */
-function calculateProgress(
-  entry: number | null,
-  current: number | null,
-  target: number | null
-): number | null {
-  if (!entry || !current || !target) return null;
-  if (target === entry) return current >= target ? 100 : 0;
-  const progress = ((current - entry) / (target - entry)) * 100;
-  return Math.max(0, Math.min(100, progress));
-}
-
-// ============================================================================
 // Routes
 // ============================================================================
 
@@ -130,17 +97,18 @@ router.get("/trades/active", async (_req: Request, res: Response) => {
       .from("trades")
       .select("*")
       .eq("show_on_public", true)
-      .in("state", ["LOADED", "ENTERED"])
+      .in("state", ACTIVE_TRADE_STATES)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
     // Enrich trades with computed fields
+    // FIX: Use nullish coalescing (??) for price fallbacks to handle 0 correctly
     const enrichedTrades = (trades || []).map((trade: PublicTrade) => ({
       ...trade,
-      pnl_percent: calculatePnl(trade.entry_price, trade.current_price),
-      time_in_trade: getTimeElapsed(trade.entry_time || trade.created_at),
-      progress_to_target: calculateProgress(
+      pnl_percent: calculatePnlPercent(trade.entry_price, trade.current_price),
+      time_in_trade: getTimeElapsed(trade.entry_time ?? trade.created_at),
+      progress_to_target: calculateProgressToTarget(
         trade.entry_price,
         trade.current_price,
         trade.target_price
@@ -201,11 +169,15 @@ router.get("/trades/:id", async (req: Request, res: Response) => {
     if (updatesError) throw updatesError;
 
     // Enrich trade
+    // FIX: Use getBestPrice with nullish coalescing to handle 0 correctly
     const enrichedTrade = {
       ...trade,
-      pnl_percent: calculatePnl(trade.entry_price, trade.current_price || trade.exit_price),
-      time_in_trade: getTimeElapsed(trade.entry_time || trade.created_at),
-      progress_to_target: calculateProgress(
+      pnl_percent: calculatePnlPercent(
+        trade.entry_price,
+        getBestPrice(trade.current_price, trade.exit_price)
+      ),
+      time_in_trade: getTimeElapsed(trade.entry_time ?? trade.created_at),
+      progress_to_target: calculateProgressToTarget(
         trade.entry_price,
         trade.current_price,
         trade.target_price
@@ -249,11 +221,15 @@ router.get("/t/:token", async (req: Request, res: Response) => {
       .order("created_at", { ascending: false });
 
     // Enrich trade
+    // FIX: Use getBestPrice with nullish coalescing to handle 0 correctly
     const enrichedTrade = {
       ...trade,
-      pnl_percent: calculatePnl(trade.entry_price, trade.current_price || trade.exit_price),
-      time_in_trade: getTimeElapsed(trade.entry_time || trade.created_at),
-      progress_to_target: calculateProgress(
+      pnl_percent: calculatePnlPercent(
+        trade.entry_price,
+        getBestPrice(trade.current_price, trade.exit_price)
+      ),
+      time_in_trade: getTimeElapsed(trade.entry_time ?? trade.created_at),
+      progress_to_target: calculateProgressToTarget(
         trade.entry_price,
         trade.current_price,
         trade.target_price
@@ -323,7 +299,11 @@ router.get("/stats/today", async (_req: Request, res: Response) => {
     };
 
     trades?.forEach((trade: PublicTrade) => {
-      const pnl = calculatePnl(trade.entry_price, trade.exit_price || trade.current_price);
+      // FIX: Use getBestPrice to handle 0 correctly
+      const pnl = calculatePnlPercent(
+        trade.entry_price,
+        getBestPrice(trade.exit_price, trade.current_price)
+      );
 
       if (pnl !== null) {
         stats.total_gain_percent += pnl;
@@ -411,7 +391,11 @@ router.get("/stats/leaderboard", async (_req: Request, res: Response) => {
       const stats = adminStats.get(adminId)!;
       stats.total_trades++;
 
-      const pnl = calculatePnl(trade.entry_price, trade.exit_price || trade.current_price);
+      // FIX: Use getBestPrice to handle 0 correctly
+      const pnl = calculatePnlPercent(
+        trade.entry_price,
+        getBestPrice(trade.exit_price, trade.current_price)
+      );
 
       if (pnl !== null) {
         stats.total_gain_percent += pnl;
@@ -512,21 +496,23 @@ router.get("/wins/recent", async (_req: Request, res: Response) => {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+    // FIX: Query both uppercase and lowercase state values
     const { data: trades, error } = await supabase
       .from("trades")
       .select("*")
       .eq("show_on_public", true)
-      .eq("state", "EXITED")
+      .in("state", EXITED_TRADE_STATES)
       .gte("exit_time", sevenDaysAgo.toISOString())
       .order("exit_time", { ascending: false });
 
     if (error) throw error;
 
     // Filter and sort by P&L
+    // FIX: Use calculatePnlPercent which handles 0 correctly
     const wins = (trades || [])
       .map((trade: PublicTrade) => ({
         ...trade,
-        pnl_percent: calculatePnl(trade.entry_price, trade.exit_price),
+        pnl_percent: calculatePnlPercent(trade.entry_price, trade.exit_price),
       }))
       .filter((trade: any) => trade.pnl_percent && trade.pnl_percent > 0)
       .sort((a: any, b: any) => b.pnl_percent - a.pnl_percent)
@@ -550,11 +536,12 @@ router.get("/performance/30d", async (_req: Request, res: Response) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+    // FIX: Query both uppercase and lowercase state values
     const { data: trades, error } = await supabase
       .from("trades")
       .select("*")
       .eq("show_on_public", true)
-      .eq("state", "EXITED")
+      .in("state", EXITED_TRADE_STATES)
       .gte("exit_time", thirtyDaysAgo.toISOString());
 
     if (error) throw error;
@@ -574,7 +561,8 @@ router.get("/performance/30d", async (_req: Request, res: Response) => {
       const type = trade.trade_type;
       if (!typeStats[type]) return;
 
-      const pnl = calculatePnl(trade.entry_price, trade.exit_price);
+      // FIX: Use calculatePnlPercent which handles 0 correctly
+      const pnl = calculatePnlPercent(trade.entry_price, trade.exit_price);
       if (pnl === null) return;
 
       typeStats[type].total++;

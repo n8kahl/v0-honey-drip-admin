@@ -291,7 +291,10 @@ router.post("/api/trade-threads/:threadId/updates", async (req: Request, res: Re
       const exitPrice = payload?.exitPrice;
       const entryPrice = (thread as any).entry_price;
       let pnlPercent = 0;
-      if (entryPrice && exitPrice) {
+      // FIX: Use nullish checks to handle exitPrice=0 correctly (worthless options)
+      // entryPrice must be valid positive number (can't divide by 0)
+      // exitPrice can be 0 (worthless option is a valid -100% loss)
+      if (entryPrice != null && entryPrice !== 0 && exitPrice != null) {
         pnlPercent = ((exitPrice - entryPrice) / entryPrice) * 100;
       }
 
