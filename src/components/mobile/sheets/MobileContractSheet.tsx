@@ -31,8 +31,16 @@ export function MobileContractSheet({
 
   // Filter contracts by type and show multi-DTE spread (matching desktop pattern)
   const filteredContracts = useMemo(() => {
+    console.log("[v0] Mobile contract filter: input", {
+      total: contracts.length,
+      type: selectedType,
+    });
+
     const typed = contracts.filter((c) => c.type === selectedType);
-    if (typed.length === 0) return [];
+    if (typed.length === 0) {
+      console.log("[v0] Mobile contract filter: no contracts of type", selectedType);
+      return [];
+    }
 
     // Group by expiration date
     const byExpiry = new Map<number, Contract[]>();
@@ -41,6 +49,11 @@ export function MobileContractSheet({
       if (!byExpiry.has(dte)) byExpiry.set(dte, []);
       byExpiry.get(dte)!.push(c);
     });
+
+    console.log(
+      "[v0] Mobile expiries found:",
+      Array.from(byExpiry.keys()).sort((a, b) => a - b)
+    );
 
     // Get unique DTEs sorted
     const dteSorted = Array.from(byExpiry.keys()).sort((a, b) => a - b);
@@ -51,47 +64,41 @@ export function MobileContractSheet({
       Math.abs(curr - targetDTE) < Math.abs(prev - targetDTE) ? curr : prev
     );
 
+    console.log("[v0] Mobile selected DTE:", closestDTE, "from target", targetDTE);
+
     // Get contracts from closest expiry
     const expiryContracts = byExpiry.get(closestDTE) || [];
 
-    // Sort by delta (ATM first)
-    const sorted = expiryContracts.sort((a, b) => {
-      const aDelta = Math.abs((a.delta || 0.5) - 0.5);
-      const bDelta = Math.abs((b.delta || 0.5) - 0.5);
-      return aDelta - bDelta;
-    });
+    console.log("[v0] Mobile expiry contracts:", expiryContracts.length);
 
-    // Split into ITM/ATM/OTM
-    const atmIndex = sorted.findIndex((c) => Math.abs((c.delta || 0.5) - 0.5) < 0.05);
-    const atm = atmIndex >= 0 ? sorted[atmIndex] : sorted[0];
+    // STRIKE-BASED FILTERING (not delta-based)
+    // Sort by strike price
+    const sorted = [...expiryContracts].sort((a, b) => a.strike - b.strike);
 
-    let itm: Contract[] = [];
-    let otm: Contract[] = [];
-
-    if (selectedType === "C") {
-      // Calls: ITM = delta > 0.55, OTM = delta < 0.45
-      itm = sorted.filter((c) => (c.delta || 0) > 0.55).slice(0, 10);
-      otm = sorted.filter((c) => (c.delta || 0) < 0.45).slice(0, 10);
-    } else {
-      // Puts: ITM = |delta| > 0.55 (more negative), OTM = |delta| < 0.45 (less negative)
-      itm = sorted
-        .filter((c) => {
-          const d = c.delta || 0;
-          return d < 0 && Math.abs(d) > 0.55;
-        })
-        .slice(0, 10);
-      otm = sorted
-        .filter((c) => {
-          const d = c.delta || 0;
-          return d < 0 && Math.abs(d) < 0.45;
-        })
-        .slice(0, 10);
-    }
-
-    // Return 10 ITM + 1 ATM + 10 OTM (max 21 contracts)
-    return [...itm, atm, ...otm].filter(
-      (c, i, arr) => arr.findIndex((x) => x.symbol === c.symbol) === i
+    // Find ATM by delta proximity
+    const targetDelta = selectedType === "C" ? 0.5 : -0.5;
+    const atmIndex = sorted.findIndex(
+      (c) => Math.abs((c.delta || targetDelta) - targetDelta) < 0.1
     );
+    const centerIndex = atmIndex >= 0 ? atmIndex : Math.floor(sorted.length / 2);
+
+    console.log("[v0] Mobile ATM index:", centerIndex, "of", sorted.length);
+
+    // Take 10 strikes before ATM + ATM + 10 strikes after = 21 total
+    const startIndex = Math.max(0, centerIndex - 10);
+    const endIndex = Math.min(sorted.length, centerIndex + 11);
+    const result = sorted.slice(startIndex, endIndex);
+
+    console.log(
+      "[v0] Mobile filtered contracts:",
+      result.length,
+      "from index",
+      startIndex,
+      "to",
+      endIndex
+    );
+
+    return result;
   }, [contracts, selectedType]);
 
   // Auto-select best contract (highest liquidity near ATM)

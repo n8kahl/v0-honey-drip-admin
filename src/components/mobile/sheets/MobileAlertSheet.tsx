@@ -145,13 +145,24 @@ export function MobileAlertSheet({
       setTargetPrice(trade.targetPrice || trade.contract?.mid * 1.5 || 0);
       setStopLoss(trade.stopLoss || trade.contract?.mid * 0.5 || 0);
 
-      // Initialize channels from trade or defaults
+      // Initialize channels from trade or defaults (3-tier fallback)
       const tradeChannels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
       if (tradeChannels.length > 0) {
+        console.log("[v0] Mobile alert: using trade channels", tradeChannels);
         setSelectedChannels(tradeChannels);
       } else {
+        // 3-tier fallback: isGlobalDefault → first channel → empty
         const defaultChannel = channels.find((c) => c.isGlobalDefault);
-        setSelectedChannels(defaultChannel ? [defaultChannel.id] : []);
+        if (defaultChannel) {
+          console.log("[v0] Mobile alert: using global default channel", defaultChannel.id);
+          setSelectedChannels([defaultChannel.id]);
+        } else if (channels.length > 0) {
+          console.log("[v0] Mobile alert: using first available channel", channels[0].id);
+          setSelectedChannels([channels[0].id]);
+        } else {
+          console.log("[v0] Mobile alert: no channels available");
+          setSelectedChannels([]);
+        }
       }
 
       // Initialize challenges from trade
