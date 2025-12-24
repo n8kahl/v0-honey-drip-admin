@@ -3,6 +3,8 @@ import { HDTagTradeType } from "../common/HDTagTradeType";
 import { cn } from "../../../lib/utils";
 import { useTradeStore } from "../../../stores";
 import { useRef, useEffect, useState } from "react";
+import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { Wifi, WifiOff } from "lucide-react";
 
 interface HDActiveTradeRowProps {
   trade: Trade;
@@ -12,16 +14,34 @@ interface HDActiveTradeRowProps {
 
 /**
  * Active trade row with P&L display.
- * Uses the same P&L calculation as NowPanelManage for consistency.
+ * Features real-time P&L updates via WebSocket/REST streaming.
  * Features P&L bump animation on value changes.
  */
 export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowProps) {
-  // Calculate P&L the same way as NowPanelManage
-  // Use contract.bid (current market price) or mid as fallback
+  // Get contract details for streaming
+  const contractTicker = trade.contract?.id || null;
   const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
-  const currentContractPrice = trade.contract?.bid || trade.contract?.mid || entryPrice;
-  const pnlDollar = currentContractPrice - entryPrice;
-  const displayPnl = entryPrice > 0 ? (pnlDollar / entryPrice) * 100 : (trade.movePercent ?? 0);
+
+  // Subscribe to LIVE price data via WebSocket/REST transport
+  const {
+    pnlPercent: livePnlPercent,
+    currentPrice: liveCurrentPrice,
+    source,
+    asOf,
+    isStale,
+  } = useActiveTradePnL(contractTicker, entryPrice);
+
+  // Use live data if available, fallback to stale trade data
+  const currentPrice =
+    liveCurrentPrice > 0
+      ? liveCurrentPrice
+      : trade.contract?.bid || trade.contract?.mid || entryPrice;
+  const displayPnl =
+    liveCurrentPrice > 0
+      ? livePnlPercent
+      : entryPrice > 0
+        ? ((currentPrice - entryPrice) / entryPrice) * 100
+        : (trade.movePercent ?? 0);
   const isProfit = displayPnl >= 0;
 
   // P&L bump animation state
@@ -38,7 +58,7 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
       return () => clearTimeout(timeout);
     }
     prevPnlRef.current = displayPnl;
-  }, [displayPnl]);
+  }, [displayPnl, liveCurrentPrice]); // Added liveCurrentPrice to trigger on live updates
 
   const handleClick = () => {
     if (onClick) {
@@ -73,18 +93,26 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
           </div>
         </div>
 
-        {/* Right: P&L */}
+        {/* Right: Live Indicator + P&L */}
         <div className="flex flex-col items-end gap-1">
-          <span
-            className={cn(
-              "text-[var(--text-high)] font-mono text-sm font-medium tabular-nums",
-              isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]",
-              pnlBump && "animate-pnl-bump"
-            )}
-          >
-            {isProfit ? "+" : ""}
-            {displayPnl.toFixed(2)}%
-          </span>
+          <div className="flex items-center gap-2">
+            {/* Live data indicator */}
+            {source === "websocket" && !isStale ? (
+              <Wifi className="w-3 h-3 text-green-500" />
+            ) : isStale ? (
+              <WifiOff className="w-3 h-3 text-amber-500" />
+            ) : null}
+            <span
+              className={cn(
+                "text-[var(--text-high)] font-mono text-sm font-medium tabular-nums",
+                isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]",
+                pnlBump && "animate-pnl-bump"
+              )}
+            >
+              {isProfit ? "+" : ""}
+              {displayPnl.toFixed(2)}%
+            </span>
+          </div>
           <div className="flex items-center gap-1">
             <span
               className={cn(
