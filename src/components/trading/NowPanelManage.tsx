@@ -152,8 +152,8 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
   return (
     <div className="flex-shrink-0 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
       {/* Row 0: Data Health Indicator */}
-      <div className="px-4 py-1.5 flex items-center justify-between bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
-        <div className="flex items-center gap-2">
+      <div className="px-4 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {liveModel.overallHealth === "healthy" ? (
             <Wifi className="w-3.5 h-3.5 text-green-400" />
           ) : liveModel.overallHealth === "degraded" ? (
@@ -162,15 +162,18 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
             <WifiOff className="w-3.5 h-3.5 text-red-400" />
           )}
           <span
-            className={cn("text-[10px] font-medium uppercase tracking-wide", healthStyle.className)}
+            className={cn(
+              "text-[10px] font-medium uppercase tracking-wide whitespace-nowrap",
+              healthStyle.className
+            )}
           >
             {healthStyle.label}
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[10px] text-[var(--text-faint)]">
+        <div className="flex items-center flex-wrap gap-2 text-[10px] text-[var(--text-faint)] ml-auto">
           <span
             className={cn(
-              "px-1.5 py-0.5 rounded border",
+              "px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0",
               getSourceBadgeStyle(liveModel.optionSource)
             )}
           >
@@ -178,7 +181,7 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
           </span>
           <span
             className={cn(
-              "px-1.5 py-0.5 rounded border",
+              "px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0",
               getSourceBadgeStyle(liveModel.greeksSource === "live" ? "rest" : "static")
             )}
           >

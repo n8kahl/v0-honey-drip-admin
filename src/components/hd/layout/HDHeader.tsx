@@ -99,17 +99,21 @@ export function HDHeader({
         </h1>
       </div>
 
-      <div className="flex items-center justify-center gap-2 flex-shrink-0 mx-2">
+      <div className="flex flex-wrap items-center justify-center gap-2 flex-shrink min-w-0 mx-2">
         {spxQuote && (
-          <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)]">
-            <span className="text-xs font-medium text-[var(--text-muted)]">SPX</span>
-            <span className="text-xs font-medium text-[var(--text-high)]">
+          <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)] flex-shrink-0">
+            <span className="text-xs font-medium text-[var(--text-muted)] whitespace-nowrap">
+              SPX
+            </span>
+            <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
               {spxQuote.value.toFixed(2)}
             </span>
             <span
               className={cn(
-                "text-xs font-medium",
-                spxQuote.changePercent > 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                "text-xs font-medium tabular-nums",
+                spxQuote.changePercent > 0
+                  ? "text-[var(--accent-positive)]"
+                  : "text-[var(--accent-negative)]"
               )}
             >
               {spxQuote.changePercent > 0 ? "+" : ""}
@@ -119,38 +123,44 @@ export function HDHeader({
         )}
 
         {vixQuote && (
-          <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)]">
-            <span className="text-xs font-medium text-[var(--text-muted)]">VIX</span>
-            <span className="text-xs font-medium text-[var(--text-high)]">
+          <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)] flex-shrink-0">
+            <span className="text-xs font-medium text-[var(--text-muted)] whitespace-nowrap">
+              VIX
+            </span>
+            <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
               {vixQuote.value.toFixed(2)}
             </span>
           </div>
         )}
 
         {marketDisplay && (
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--border-hairline)] flex-shrink-0">
             <div className="flex items-center gap-1.5">
-              <div className={cn("w-2 h-2 rounded-full", marketDisplay.color)} />
-              <span className={cn("text-xs font-medium", marketDisplay.color)}>
+              <div className={cn("w-2 h-2 rounded-full flex-shrink-0", marketDisplay.color)} />
+              <span className={cn("text-xs font-medium whitespace-nowrap", marketDisplay.color)}>
                 {marketDisplay.label}
               </span>
             </div>
-            <span className="text-xs text-[var(--text-muted)]">{marketDisplay.time}</span>
+            <span className="text-xs text-[var(--text-muted)] tabular-nums">
+              {marketDisplay.time}
+            </span>
           </div>
         )}
 
         <div
           className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded-full border",
+            "flex items-center gap-1.5 px-2 py-1 rounded-full border flex-shrink-0",
             connectionStatus.color === "yellow" && "bg-yellow-500/10 border-yellow-500/20",
-            connectionStatus.color === "red" && "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/20",
-            connectionStatus.color === "green" && "bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/20"
+            connectionStatus.color === "red" &&
+              "bg-[var(--accent-negative)]/10 border-[var(--accent-negative)]/20",
+            connectionStatus.color === "green" &&
+              "bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/20"
           )}
           title={connectionStatus.tooltip}
         >
           <StatusIcon
             className={cn(
-              "w-3 h-3",
+              "w-3 h-3 flex-shrink-0",
               connectionStatus.color === "yellow" && "text-yellow-500",
               connectionStatus.color === "red" && "text-[var(--accent-negative)]",
               connectionStatus.color === "green" && "text-[var(--accent-positive)]"
@@ -158,7 +168,7 @@ export function HDHeader({
           />
           <span
             className={cn(
-              "text-[10px] font-medium hidden lg:inline",
+              "text-[10px] font-medium hidden lg:inline whitespace-nowrap",
               connectionStatus.color === "yellow" && "text-yellow-500",
               connectionStatus.color === "red" && "text-[var(--accent-negative)]",
               connectionStatus.color === "green" && "text-[var(--accent-positive)]"
