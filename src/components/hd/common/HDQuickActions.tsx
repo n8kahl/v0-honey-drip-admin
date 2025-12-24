@@ -6,7 +6,7 @@ interface HDQuickActionsProps {
   onLoadIdea?: () => void;
   onEnter?: () => void;
   onDiscard?: () => void;
-  onTrim?: () => void;
+  onTrim?: (trimPercent?: number) => void;
   onUpdate?: () => void;
   onUpdateSL?: () => void;
   onTrailStop?: () => void;

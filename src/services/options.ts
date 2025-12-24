@@ -1,4 +1,5 @@
 import { Contract } from "../types";
+import { normalizeOptionTicker } from "../lib/optionsSymbol";
 
 export type NormalizedChain = {
   symbol: string;
@@ -34,8 +35,9 @@ export type Norm = {
 function toContract(n: Norm): Contract {
   const expiryDate = new Date(n.expiration);
   const mid = n.bid && n.ask ? (n.bid + n.ask) / 2 : (n.last ?? 0);
+  const normalizedId = normalizeOptionTicker(n.id) || n.id;
   return {
-    id: n.id,
+    id: normalizedId,
     strike: n.strike,
     expiry: n.expiration,
     expiryDate,

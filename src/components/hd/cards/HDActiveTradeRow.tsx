@@ -2,9 +2,10 @@ import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { cn } from "../../../lib/utils";
 import { useTradeStore } from "../../../stores";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { Wifi, WifiOff } from "lucide-react";
+import { calculateRealizedPnL, getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface HDActiveTradeRowProps {
   trade: Trade;
@@ -19,8 +20,11 @@ interface HDActiveTradeRowProps {
  */
 export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowProps) {
   // Get contract details for streaming
-  const contractTicker = trade.contract?.id || null;
-  const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
+  const contractTicker =
+    trade.contract?.id || trade.contract?.ticker || trade.contract?.symbol || null;
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
+  const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
 
   // Subscribe to LIVE price data via WebSocket/REST transport
   const {
@@ -112,6 +116,17 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
               {isProfit ? "+" : ""}
               {displayPnl.toFixed(2)}%
             </span>
+          </div>
+          <div
+            className={cn(
+              "text-[10px] tabular-nums",
+              realizedPnL.realizedPercent >= 0
+                ? "text-[var(--accent-positive)]/80"
+                : "text-[var(--accent-negative)]/80"
+            )}
+          >
+            Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
+            {realizedPnL.realizedPercent.toFixed(1)}%
           </div>
           <div className="flex items-center gap-1">
             <span

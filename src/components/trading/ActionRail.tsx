@@ -69,7 +69,7 @@ export interface ActionRailProps {
   currentTrade: Trade | null;
   showAlert: boolean;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number };
   channels: DiscordChannel[];
   challenges: Challenge[];
   isTransitioning?: boolean; // True when a state transition is in progress
@@ -90,7 +90,7 @@ export interface ActionRailProps {
   onUnload: () => void;
   // Trade action callbacks
   onEnter?: () => void;
-  onTrim: () => void;
+  onTrim: (trimPercent?: number) => void;
   onMoveSL: () => void;
   onTrailStop: () => void;
   onAdd: () => void;
@@ -194,7 +194,7 @@ export function ActionRail({
                 trade={currentTrade!}
                 channels={channels}
                 challenges={challenges}
-                onTrim={(percent) => onTrim()}
+                onTrim={(percent) => onTrim(percent)}
                 onMoveSLToBreakeven={() => onMoveSL()}
                 onTrailStop={onTrailStop}
                 onAdd={onAdd}

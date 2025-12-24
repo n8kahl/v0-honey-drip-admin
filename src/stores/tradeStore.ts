@@ -10,6 +10,7 @@ import {
 import { createClient } from "../lib/supabase/client";
 import { ensureArray } from "../lib/utils/validation";
 import { tradeStoreLogger as log } from "../lib/utils/logger";
+import { getEntryUpdate } from "../lib/tradePnl";
 import {
   reconcileTradeLists,
   assertTradeListsValid,
@@ -532,6 +533,7 @@ export const useTradeStore = create<TradeStore>()(
           const tradesData = await getTrades(userId);
           log.debug("Raw trades loaded from database", { count: tradesData.length, correlationId });
 
+          const entryBackfills: Array<{ id: string; entryPrice?: number; entryTime?: Date }> = [];
           const mappedTrades: Trade[] = tradesData.map((t) => {
             // Use stored contract if available
             const storedContract = t.contract as any;
@@ -605,7 +607,25 @@ export const useTradeStore = create<TradeStore>()(
               message: u.message || "",
               price: u.price ? parseFloat(u.price) : 0,
               pnlPercent: u.pnl_percent ? parseFloat(u.pnl_percent) : undefined,
+              trimPercent: u.trim_percent ? parseFloat(u.trim_percent) : undefined,
             }));
+            const entryUpdate = getEntryUpdate(mappedUpdates);
+            const entryUpdatePrice = entryUpdate?.price;
+            const entryUpdateTime = entryUpdate?.timestamp;
+            const entryPriceValue = t.entry_price ? parseFloat(t.entry_price) : undefined;
+            const entryTimeValue = t.entry_time ? new Date(t.entry_time) : undefined;
+            const entryPrice = entryPriceValue ?? entryUpdatePrice;
+            const entryTime = entryTimeValue ?? entryUpdateTime;
+            if (
+              (entryPriceValue === undefined && entryUpdatePrice) ||
+              (entryTimeValue === undefined && entryUpdateTime)
+            ) {
+              entryBackfills.push({
+                id: t.id,
+                entryPrice: entryUpdatePrice,
+                entryTime: entryUpdateTime,
+              });
+            }
 
             // Calculate movePercent
             let movePercent = (t as any).move_percent
@@ -621,16 +641,16 @@ export const useTradeStore = create<TradeStore>()(
 
             // FIX: currentPrice should prefer DB current_price, fallback to entry_price
             // Bug was: currentPrice: t.entry_price (always used entry, ignored DB current_price)
-            const currentPriceRaw = (t as any).current_price ?? t.entry_price;
+            const currentPriceRaw = (t as any).current_price ?? t.entry_price ?? entryPrice;
             const currentPrice = currentPriceRaw ? parseFloat(currentPriceRaw) : undefined;
 
             return {
               id: t.id,
               ticker: t.ticker,
               contract,
-              entryPrice: t.entry_price ? parseFloat(t.entry_price) : undefined,
+              entryPrice,
               exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
-              entryTime: t.entry_time ? new Date(t.entry_time) : undefined,
+              entryTime,
               exitTime: t.exit_time ? new Date(t.exit_time) : undefined,
               currentPrice,
               targetPrice: (t as any).target_price
@@ -650,6 +670,24 @@ export const useTradeStore = create<TradeStore>()(
                 ? new Date((t as any).confluence_updated_at)
                 : undefined,
             };
+          });
+
+          entryBackfills.forEach((backfill) => {
+            const updates: Record<string, any> = {};
+            if (backfill.entryPrice !== undefined) {
+              updates.entry_price = backfill.entryPrice;
+            }
+            if (backfill.entryTime) {
+              updates.entry_time = backfill.entryTime.toISOString();
+            }
+            if (Object.keys(updates).length > 0) {
+              dbUpdateTrade(backfill.id, updates as any).catch((error) => {
+                log.warn("Failed to backfill entry details", {
+                  tradeId: backfill.id,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              });
+            }
           });
 
           // Log a snapshot of the loaded state

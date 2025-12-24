@@ -68,6 +68,9 @@ export interface AlertDraft {
 
   // Whether to actually send the Discord alert
   sendAlert: boolean;
+
+  // Trim percent for partial exits (if applicable)
+  trimPercent?: number;
 }
 
 /**
@@ -80,6 +83,7 @@ export interface CreateAlertDraftContext {
   underlyingPrice?: number; // Current underlying price
   initialChannels?: string[];
   initialChallenges?: string[];
+  trimPercent?: number;
 }
 
 // ============================================================================
@@ -354,8 +358,16 @@ export function getDefaultComment(intent: TradeActionIntent): string {
  * @returns AlertDraft ready for display in the composer
  */
 export function createAlertDraft(context: CreateAlertDraftContext): AlertDraft {
-  const { intent, trade, currentPrice, underlyingPrice, initialChannels, initialChallenges } =
-    context;
+  const {
+    intent,
+    trade,
+    currentPrice,
+    underlyingPrice,
+    initialChannels,
+    initialChallenges,
+    trimPercent,
+  } = context;
+  const defaultTrimPercent = intent === "TRIM" ? 50 : undefined;
 
   return {
     intent,
@@ -366,6 +378,7 @@ export function createAlertDraft(context: CreateAlertDraftContext): AlertDraft {
     challenges: initialChallenges || trade.challenges || [],
     comment: getDefaultComment(intent),
     sendAlert: true, // Default to sending alert
+    trimPercent: trimPercent ?? defaultTrimPercent,
   };
 }
 

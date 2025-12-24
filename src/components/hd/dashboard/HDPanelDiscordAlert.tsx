@@ -1,16 +1,16 @@
-import { useState, useEffect } from 'react';
-import { Trade, Challenge, DiscordChannel, AlertType } from '../../../types';
-import { cn, formatPrice } from '../../../lib/utils';
-import { Button } from '../../ui/button';
-import { Checkbox } from '../../ui/checkbox';
-import { Label } from '../../ui/label';
-import { Textarea } from '../../ui/textarea';
-import { HDShareCardV2 } from '../cards/HDShareCardV2';
+import { useState, useEffect } from "react";
+import { Trade, Challenge, DiscordChannel, AlertType } from "../../../types";
+import { cn, formatPrice } from "../../../lib/utils";
+import { Button } from "../../ui/button";
+import { Checkbox } from "../../ui/checkbox";
+import { Label } from "../../ui/label";
+import { Textarea } from "../../ui/textarea";
+import { HDShareCardV2 } from "../cards/HDShareCardV2";
 
 interface HDPanelDiscordAlertProps {
   trade: Trade | null;
   alertType: AlertType;
-  alertOptions?: { updateKind?: 'trim' | 'generic' | 'sl' };
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number };
   availableChannels: DiscordChannel[];
   challenges: Challenge[];
   onSend: (channels: string[], challengeIds: string[], comment?: string) => void;
@@ -30,13 +30,13 @@ export function HDPanelDiscordAlert({
   onCancel,
   className,
   overridePreviewText,
-  showShareCard = false
+  showShareCard = false,
 }: HDPanelDiscordAlertProps) {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedChallenges, setSelectedChallenges] = useState<string[]>([]);
-  const [comment, setComment] = useState('');
+  const [comment, setComment] = useState("");
   const [attachShareCard, setAttachShareCard] = useState(true); // Default to ON
-  
+
   // Field toggles for alert customization
   const [showEntry, setShowEntry] = useState(false);
   const [showCurrent, setShowCurrent] = useState(false);
@@ -49,68 +49,68 @@ export function HDPanelDiscordAlert({
     if (trade) {
       setSelectedChannels(trade.discordChannels || []);
       setSelectedChallenges(trade.challenges || []);
-      
+
       // Set default comment based on alert type
-      let defaultComment = '';
-      if (alertType === 'update' && alertOptions?.updateKind === 'trim') {
-        defaultComment = 'Trimming here to lock profit.';
-      } else if (alertType === 'update' && alertOptions?.updateKind === 'sl') {
-        defaultComment = 'Updating stop loss.';
-      } else if (alertType === 'update' && alertOptions?.updateKind === 'generic') {
-        defaultComment = 'Quick update on this position.';
-      } else if (alertType === 'trail-stop') {
-        defaultComment = 'Enabling trailing stop on this position.';
-      } else if (alertType === 'add') {
-        defaultComment = 'Adding to position here.';
-      } else if (alertType === 'exit') {
-        defaultComment = 'Exiting position here.';
+      let defaultComment = "";
+      if (alertType === "update" && alertOptions?.updateKind === "trim") {
+        defaultComment = "Trimming here to lock profit.";
+      } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
+        defaultComment = "Updating stop loss.";
+      } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
+        defaultComment = "Quick update on this position.";
+      } else if (alertType === "trail-stop") {
+        defaultComment = "Enabling trailing stop on this position.";
+      } else if (alertType === "add") {
+        defaultComment = "Adding to position here.";
+      } else if (alertType === "exit") {
+        defaultComment = "Exiting position here.";
       }
       setComment(defaultComment);
-      
+
       // Set default field visibility based on alert type
-      if (alertType === 'enter') {
+      if (alertType === "enter") {
         setShowEntry(true);
         setShowCurrent(true);
         setShowTarget(true);
         setShowStopLoss(true);
         setShowPnL(false);
-      } else if (alertType === 'update' && alertOptions?.updateKind === 'trim') {
+      } else if (alertType === "update" && alertOptions?.updateKind === "trim") {
         setShowEntry(false);
         setShowCurrent(true);
         setShowTarget(false);
         setShowStopLoss(false);
         setShowPnL(true);
-      } else if (alertType === 'update' && alertOptions?.updateKind === 'sl') {
+      } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
         setShowEntry(false);
         setShowCurrent(false);
         setShowTarget(false);
         setShowStopLoss(true);
         setShowPnL(false);
-      } else if (alertType === 'update' && alertOptions?.updateKind === 'generic') {
+      } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
         setShowEntry(false);
         setShowCurrent(true);
         setShowTarget(false);
         setShowStopLoss(false);
         setShowPnL(false);
-      } else if (alertType === 'trail-stop') {
+      } else if (alertType === "trail-stop") {
         setShowEntry(false);
         setShowCurrent(false);
         setShowTarget(false);
         setShowStopLoss(true);
         setShowPnL(false);
-      } else if (alertType === 'add') {
+      } else if (alertType === "add") {
         setShowEntry(false);
         setShowCurrent(true);
         setShowTarget(false);
         setShowStopLoss(false);
         setShowPnL(true);
-      } else if (alertType === 'exit') {
+      } else if (alertType === "exit") {
         setShowEntry(false);
         setShowCurrent(true);
         setShowTarget(false);
         setShowStopLoss(false);
         setShowPnL(true);
-      } else if (alertType === 'load') {
+      } else if (alertType === "load") {
         setShowEntry(false);
         setShowCurrent(false);
         setShowTarget(false);
@@ -122,7 +122,12 @@ export function HDPanelDiscordAlert({
 
   if (!trade) {
     return (
-      <div className={cn('flex items-center justify-center h-full bg-[var(--surface-2)] p-6', className)}>
+      <div
+        className={cn(
+          "flex items-center justify-center h-full bg-[var(--surface-2)] p-6",
+          className
+        )}
+      >
         <p className="text-[var(--text-muted)] text-sm text-center">
           Select a contract to preview alert
         </p>
@@ -132,28 +137,30 @@ export function HDPanelDiscordAlert({
 
   const toggleChannel = (channel: string) => {
     setSelectedChannels((prev) =>
-      prev.includes(channel)
-        ? prev.filter((c) => c !== channel)
-        : [...prev, channel]
+      prev.includes(channel) ? prev.filter((c) => c !== channel) : [...prev, channel]
     );
   };
 
   const toggleChallenge = (challengeId: string) => {
     setSelectedChallenges((prev) =>
-      prev.includes(challengeId)
-        ? prev.filter((c) => c !== challengeId)
-        : [...prev, challengeId]
+      prev.includes(challengeId) ? prev.filter((c) => c !== challengeId) : [...prev, challengeId]
     );
   };
 
   const getAlertTitle = () => {
     switch (alertType) {
-      case 'load': return '📋 LOADED';
-      case 'enter': return '🎯 ENTERED';
-      case 'add': return '➕ ADDED';
-      case 'exit': return '🏁 EXITED';
-      case 'update': return '📊 UPDATE';
-      case 'trail-stop': return '🏃‍♂️ TRAIL STOP';
+      case "load":
+        return "📋 LOADED";
+      case "enter":
+        return "🎯 ENTERED";
+      case "add":
+        return "➕ ADDED";
+      case "exit":
+        return "🏁 EXITED";
+      case "update":
+        return "📊 UPDATE";
+      case "trail-stop":
+        return "🏃‍♂️ TRAIL STOP";
     }
   };
 
@@ -162,49 +169,47 @@ export function HDPanelDiscordAlert({
     if (overridePreviewText) {
       return comment.trim() ? `${overridePreviewText}\n\n${comment}` : overridePreviewText;
     }
-    
+
     const { ticker, contract, entryPrice, currentPrice, movePercent, tradeType } = trade;
     const strikeStr = `$${contract.strike}${contract.type}`;
     const expiryStr = contract.expiry;
-    
+
     let message = `**${ticker} ${strikeStr} ${expiryStr}** (${tradeType})\n`;
-    
-    if (alertType === 'load') {
+
+    if (alertType === "load") {
       // For load alerts, just show basic info - no prices or greeks
       message += `\nLoaded for review`;
-    } else if (alertType === 'enter' && entryPrice) {
+    } else if (alertType === "enter" && entryPrice) {
       message += `\nEntry: $${entryPrice.toFixed(2)}`;
       if (trade.targetPrice) message += `\nTarget: $${trade.targetPrice.toFixed(2)}`;
       if (trade.stopLoss) message += `\nStop: $${trade.stopLoss.toFixed(2)}`;
     } else if (currentPrice) {
       message += `\nCurrent: $${currentPrice.toFixed(2)}`;
       if (movePercent !== undefined) {
-        const sign = movePercent >= 0 ? '+' : '';
+        const sign = movePercent >= 0 ? "+" : "";
         message += `\nP&L: ${sign}${movePercent.toFixed(1)}%`;
       }
     }
-    
+
     if (comment.trim()) {
       message += `\n\n${comment}`;
     }
-    
+
     return message;
   };
 
-  const buttonLabel = alertType === 'load' ? 'Load and Alert' : 'Send Alert';
+  const buttonLabel = alertType === "load" ? "Load and Alert" : "Send Alert";
 
   return (
-    <div className={cn('flex flex-col flex-1 min-h-0 bg-[var(--surface-2)]', className)}>
+    <div className={cn("flex flex-col flex-1 min-h-0 bg-[var(--surface-2)]", className)}>
       {/* Header */}
       <div className="px-6 py-4 border-b border-[var(--border-hairline)] flex-shrink-0">
-        <h2 className="text-[var(--text-high)] uppercase tracking-wide text-xs">
-          Alert Preview
-        </h2>
+        <h2 className="text-[var(--text-high)] uppercase tracking-wide text-xs">Alert Preview</h2>
       </div>
 
       <div
         className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6"
-        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
       >
         {/* Share Card Preview - Only show for share flow from History */}
         {showShareCard && (
@@ -218,7 +223,7 @@ export function HDPanelDiscordAlert({
               </span>
             </div>
             <HDShareCardV2 trade={trade} challenges={challenges} />
-            
+
             {/* Toggle to attach card */}
             <div className="flex items-start space-x-2 p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
               <Checkbox
@@ -235,13 +240,14 @@ export function HDPanelDiscordAlert({
                   Attach Share Card image to Discord alert
                 </label>
                 <p className="text-xs text-[var(--text-muted)]">
-                  When enabled, this trade highlight card will be attached to the Discord alert as an image.
+                  When enabled, this trade highlight card will be attached to the Discord alert as
+                  an image.
                 </p>
               </div>
             </div>
           </div>
         )}
-        
+
         {/* Alert Preview */}
         <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-4">
           <div className="text-[var(--brand-primary)] text-xs uppercase tracking-wide mb-2">
@@ -299,7 +305,7 @@ export function HDPanelDiscordAlert({
                     className="text-sm text-[var(--text-high)] cursor-pointer flex items-center gap-2"
                   >
                     {challenge.name}
-                    {challenge.scope === 'honeydrip-wide' && (
+                    {challenge.scope === "honeydrip-wide" && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] uppercase tracking-wide">
                         HD
                       </span>
@@ -313,7 +319,10 @@ export function HDPanelDiscordAlert({
 
         {/* Comment */}
         <div className="space-y-3">
-          <Label htmlFor="alert-comment" className="text-[var(--text-med)] text-xs uppercase tracking-wide">
+          <Label
+            htmlFor="alert-comment"
+            className="text-[var(--text-med)] text-xs uppercase tracking-wide"
+          >
             Add Comment (Optional)
           </Label>
           <Textarea

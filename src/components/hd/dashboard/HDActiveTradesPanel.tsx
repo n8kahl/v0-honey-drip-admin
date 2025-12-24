@@ -1,8 +1,10 @@
+import { useMemo } from "react";
 import { useTradeStore } from "../../../stores";
 import { Trade } from "../../../types";
 import { TrendingUp, TrendingDown, MoveUp, X, Scissors, Wifi } from "lucide-react";
 import { cn, formatPrice, formatPercent } from "../../../lib/utils";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { calculateRealizedPnL, getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface HDActiveTradesPanelProps {
   onTradeClick?: (trade: Trade) => void;
@@ -31,10 +33,12 @@ function EnteredTradeItem({
   onExitClick?: (trade: Trade) => void;
 }) {
   // ✅ FIX: Use live P&L hook instead of stale store data
-  const { currentPrice, pnlPercent, source } = useActiveTradePnL(
-    trade.contract?.id || null,
-    trade.entryPrice || trade.contract?.mid || 0
-  );
+  const contractTicker =
+    trade.contract?.id || trade.contract?.ticker || trade.contract?.symbol || null;
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
+  const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
+  const { currentPrice, pnlPercent, source } = useActiveTradePnL(contractTicker, entryPrice);
 
   // Use live data, fallback to stored movePercent if no live data yet
   const displayPnlPercent = currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
@@ -42,7 +46,6 @@ function EnteredTradeItem({
   const isProfit = displayPnlPercent >= 0;
 
   // Calculate dollar P&L from live percent (entry * percent / 100)
-  const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
   const pnlDollars = entryPrice > 0 ? (entryPrice * displayPnlPercent) / 100 : 0;
 
   return (
@@ -83,6 +86,11 @@ function EnteredTradeItem({
         >
           {isProfit ? "+" : ""}
           {formatPercent(displayPnlPercent)} (${formatPrice(Math.abs(pnlDollars))})
+        </div>
+        <div className="text-xs text-[var(--text-muted)] mt-0.5 tabular-nums">
+          Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
+          {realizedPnL.realizedPercent.toFixed(1)}% ({realizedPnL.realizedDollars >= 0 ? "+" : "-"}
+          {formatPrice(Math.abs(realizedPnL.realizedDollars))})
         </div>
         <div className="text-xs text-[var(--text-muted)] mt-0.5">
           Entry: ${formatPrice(entryPrice)} • Current: ${formatPrice(displayCurrentPrice)}

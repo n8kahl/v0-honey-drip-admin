@@ -7,6 +7,7 @@ import { fetchNormalizedChain } from "../services/options";
 import { fetchQuotes as fetchUnifiedQuotes } from "../services/quotes";
 import { useMarketDataStore } from "../stores/marketDataStore";
 import { calculateNetPnLPercent } from "../services/pnlCalculator";
+import { normalizeOptionTicker } from "../lib/optionsSymbol";
 
 // Group contracts by expiration for backwards compatibility with old MassiveOptionsChain format
 function groupContractsByExpiration(contracts: Contract[]): MassiveOptionsChain {
@@ -251,48 +252,73 @@ export function useActiveTradePnL(
   entryPrice: number,
   quantity: number = 1
 ) {
+  const normalizedTicker = normalizeOptionTicker(contractTicker);
   const [currentPrice, setCurrentPrice] = useState(entryPrice);
+  const [bid, setBid] = useState(0);
+  const [ask, setAsk] = useState(0);
+  const [last, setLast] = useState(0);
   const [pnlPercent, setPnlPercent] = useState(0);
   const [pnlDollars, setPnlDollars] = useState(0);
   const [asOf, setAsOf] = useState(Date.now());
   const [source, setSource] = useState<"websocket" | "rest">("rest");
+  const lastTickerRef = useRef<string | null>(null);
 
   // Stale detection: data older than 10 seconds is considered stale
   const STALE_THRESHOLD_MS = 10_000;
   const isStale = Date.now() - asOf > STALE_THRESHOLD_MS;
 
   useEffect(() => {
-    if (!contractTicker) return;
+    if (normalizedTicker !== lastTickerRef.current) {
+      lastTickerRef.current = normalizedTicker;
+      setCurrentPrice(entryPrice);
+      setBid(0);
+      setAsk(0);
+      setLast(0);
+      setPnlPercent(0);
+      setPnlDollars(0);
+      setAsOf(Date.now());
+      setSource("rest");
+    }
 
-    console.log("[useActiveTradePnL] Starting PnL tracking for contract:", contractTicker);
+    if (!normalizedTicker) return;
+
+    console.log("[useActiveTradePnL] Starting PnL tracking for contract:", normalizedTicker);
 
     const unsubscribe = createTransport(
-      contractTicker,
+      normalizedTicker,
       (data, transportSource, timestamp) => {
-        const price = data.last || ((data.bid || 0) + (data.ask || 0)) / 2;
+        const nextBid = typeof data.bid === "number" ? data.bid : 0;
+        const nextAsk = typeof data.ask === "number" ? data.ask : 0;
+        const nextLast = typeof data.last === "number" ? data.last : 0;
+        const mid = nextBid > 0 && nextAsk > 0 ? (nextBid + nextAsk) / 2 : nextBid || nextAsk || 0;
+        const price = mid > 0 ? mid : nextLast;
 
         if (price > 0) {
           setCurrentPrice(price);
+          setBid((prev) => (nextBid > 0 ? nextBid : prev));
+          setAsk((prev) => (nextAsk > 0 ? nextAsk : prev));
+          setLast((prev) => (nextLast > 0 ? nextLast : prev));
           setAsOf(timestamp);
           setSource(transportSource);
 
           // Calculate GROSS P&L percent (for comparison)
-          const grossPnl = ((price - entryPrice) / entryPrice) * 100;
+          const hasEntry = entryPrice > 0;
+          const grossPnl = hasEntry ? ((price - entryPrice) / entryPrice) * 100 : 0;
 
           // Calculate REALISTIC net P&L accounting for commissions and slippage
           // Standard retail options: $0.65 per contract at entry + $0.65 at exit = $1.30 total
           // Bid-ask spread slippage: ~0.5% for liquid contracts like SPX/SPY
           // This matches real-world trading conditions
-          const pnl = calculateNetPnLPercent(entryPrice, price, quantity);
-          setPnlPercent(pnl);
+          const pnl = hasEntry ? calculateNetPnLPercent(entryPrice, price, quantity) : 0;
+          setPnlPercent(hasEntry ? pnl : 0);
 
           // Calculate P&L in dollars: (currentPrice - entryPrice) * quantity * 100
           // Each option contract = 100 shares
-          const dollars = (price - entryPrice) * quantity * 100;
-          setPnlDollars(dollars);
+          const dollars = hasEntry ? (price - entryPrice) * quantity * 100 : 0;
+          setPnlDollars(hasEntry ? dollars : 0);
 
           console.log(
-            `[useActiveTradePnL] ${transportSource} update for ${contractTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? "+" : ""}${grossPnl.toFixed(1)}%, net: ${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%, $${dollars > 0 ? "+" : ""}${dollars.toFixed(0)})`
+            `[useActiveTradePnL] ${transportSource} update for ${normalizedTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? "+" : ""}${grossPnl.toFixed(1)}%, net: ${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%, $${dollars > 0 ? "+" : ""}${dollars.toFixed(0)})`
           );
         }
       },
@@ -300,9 +326,9 @@ export function useActiveTradePnL(
     );
 
     return unsubscribe;
-  }, [contractTicker, entryPrice, quantity]);
+  }, [normalizedTicker, entryPrice, quantity]);
 
-  return { currentPrice, pnlPercent, pnlDollars, asOf, source, isStale };
+  return { currentPrice, bid, ask, last, pnlPercent, pnlDollars, asOf, source, isStale };
 }
 
 // Hook for checking API connection status

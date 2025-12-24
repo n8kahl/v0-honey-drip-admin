@@ -16,6 +16,7 @@ import {
 import { useOffHoursData, type KeyLevel } from "../../../hooks/useOffHoursData";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface MobileTradeDetailSheetProps {
   open: boolean;
@@ -33,8 +34,9 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
 
   // Get LIVE price data via WebSocket/REST transport (matches desktop pattern)
   const contract = trade?.contract;
-  const entryPrice = trade?.entryPrice || contract?.mid || 0;
-  const contractTicker = contract?.id || null;
+  const entryPrice =
+    trade?.entryPrice || getEntryPriceFromUpdates(trade?.updates || []) || contract?.mid || 0;
+  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
   const {
     pnlPercent: livePnlPercent,
     currentPrice: liveCurrentPrice,

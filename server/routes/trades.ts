@@ -278,6 +278,7 @@ interface TradeUpdateInsert {
   price: number;
   message: string;
   pnl_percent?: number | null;
+  trim_percent?: number | null;
   timestamp?: string;
 }
 
@@ -589,7 +590,7 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
     }
 
     const { tradeId } = req.params;
-    const { type, price, message, pnl_percent, timestamp } = req.body;
+    const { type, price, message, pnl_percent, trim_percent, timestamp } = req.body;
 
     if (!tradeId) {
       return res.status(400).json({ error: "Missing trade ID" });
@@ -615,6 +616,7 @@ router.post("/api/trades/:tradeId/updates", async (req: Request, res: Response) 
       price: price || 0,
       message: message || `${type} action`,
       pnl_percent: pnl_percent || null,
+      trim_percent: trim_percent ?? null,
       timestamp: timestamp || new Date().toISOString(),
     };
 

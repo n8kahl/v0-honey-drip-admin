@@ -168,7 +168,7 @@ export function useLoadedTradeLiveModel(
   contract: Contract | null
 ): LoadedTradeLiveModel {
   // Get contract ticker for streaming
-  const contractTicker = contract?.id || null;
+  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
 
   // ========================================================================
   // Underlying Quote (Tradier REST via useQuotes)
@@ -182,11 +182,7 @@ export function useLoadedTradeLiveModel(
     const quote = underlyingQuotes.get(symbol);
     if (!quote) return DEFAULT_UNDERLYING;
 
-    const freshness = getFreshnessInfo(
-      quote.asOf,
-      quote.source,
-      THRESHOLDS.UNDERLYING
-    );
+    const freshness = getFreshnessInfo(quote.asOf, quote.source, THRESHOLDS.UNDERLYING);
 
     return {
       price: quote.last || 0,
@@ -202,30 +198,29 @@ export function useLoadedTradeLiveModel(
   // Option Quote (Massive WS/REST via useActiveTradePnL)
   // ========================================================================
   // Use entryPrice of 0 since we're just tracking current price, not P&L
-  const { currentPrice: optionPrice, asOf: optionAsOf, source: optionSource } =
-    useActiveTradePnL(contractTicker, 0);
+  const {
+    currentPrice: optionPrice,
+    bid: optionBid,
+    ask: optionAsk,
+    asOf: optionAsOf,
+    source: optionSource,
+    isStale: optionIsStale,
+  } = useActiveTradePnL(contractTicker, 0);
 
   const option = useMemo((): OptionQuote => {
     if (!contract) return DEFAULT_OPTION;
 
-    const freshness = getFreshnessInfo(
-      optionAsOf,
-      optionSource,
-      THRESHOLDS.OPTION
-    );
+    const freshness = getFreshnessInfo(optionAsOf, optionSource, THRESHOLDS.OPTION);
 
     // Use live price if available, otherwise fall back to contract snapshot
-    const liveBid = contract.bid || 0;
-    const liveAsk = contract.ask || 0;
+    const liveBid = optionBid > 0 ? optionBid : contract.bid || 0;
+    const liveAsk = optionAsk > 0 ? optionAsk : contract.ask || 0;
     const liveMid = optionPrice > 0 ? optionPrice : contract.mid || 0;
 
-    // effectiveMid: prefer live price, then calculated mid, then snapshot mid
+    // effectiveMid: prefer live mid, then live price, then snapshot mid
+    const midFromLive = liveBid > 0 && liveAsk > 0 ? (liveBid + liveAsk) / 2 : 0;
     const effectiveMid =
-      optionPrice > 0
-        ? optionPrice
-        : liveBid > 0 && liveAsk > 0
-          ? (liveBid + liveAsk) / 2
-          : contract.mid || 0;
+      midFromLive > 0 ? midFromLive : optionPrice > 0 ? optionPrice : contract.mid || 0;
 
     return {
       bid: liveBid,
@@ -234,10 +229,10 @@ export function useLoadedTradeLiveModel(
       effectiveMid,
       last: optionPrice,
       asOf: optionAsOf > 0 ? optionAsOf : Date.now(),
-      source: optionPrice > 0 ? optionSource : "static",
-      isStale: optionPrice > 0 ? freshness.isStale : true,
+      source: optionPrice > 0 || midFromLive > 0 ? optionSource : "static",
+      isStale: optionPrice > 0 || midFromLive > 0 ? optionIsStale : true,
     };
-  }, [contract, optionPrice, optionAsOf, optionSource]);
+  }, [contract, optionPrice, optionBid, optionAsk, optionAsOf, optionSource, optionIsStale]);
 
   // ========================================================================
   // Live Greeks (polling via useLiveGreeks)
@@ -282,7 +277,10 @@ export function useLoadedTradeLiveModel(
       ...quality,
       spreadPctFormatted: formatSpreadPct(quality.spreadPct),
       liquidityStyle: getLiquidityGradeStyle(quality.liquidityGrade),
-      slippageFormatted: formatSlippageRange(quality.expectedSlippageMin, quality.expectedSlippageMax),
+      slippageFormatted: formatSlippageRange(
+        quality.expectedSlippageMin,
+        quality.expectedSlippageMax
+      ),
     };
   }, [contract, option.bid, option.ask, option.effectiveMid]);
 
@@ -323,7 +321,14 @@ export function useLoadedTradeLiveModel(
       liquidityGrade: execution.liquidityGrade,
       slippage: execution.slippageFormatted,
     }),
-    [option.effectiveMid, underlying.price, greeks.delta, execution.spreadPctFormatted, execution.liquidityGrade, execution.slippageFormatted]
+    [
+      option.effectiveMid,
+      underlying.price,
+      greeks.delta,
+      execution.spreadPctFormatted,
+      execution.liquidityGrade,
+      execution.slippageFormatted,
+    ]
   );
 
   // ========================================================================

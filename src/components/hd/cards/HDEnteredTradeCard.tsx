@@ -20,6 +20,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { addTradeUpdate } from "../../../lib/supabase/database";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
 import { useNavigate } from "react-router-dom";
+import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface HDEnteredTradeCardProps {
   trade: Trade;
@@ -34,10 +35,11 @@ export function HDEnteredTradeCard({
 }: HDEnteredTradeCardProps) {
   const toast = useAppToast();
   const navigate = useNavigate();
-  const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
-    trade.contract.id,
-    trade.entryPrice || trade.contract.mid
-  );
+  const contractTicker =
+    trade.contract.id || trade.contract.ticker || trade.contract.symbol || null;
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract.mid;
+  const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(contractTicker, entryPrice);
   const { tpNearThreshold, autoOpenTrim } = useTPSettings();
   const tp = useTPProximity(trade, currentPrice, { threshold: tpNearThreshold });
   const { user } = useAuth();

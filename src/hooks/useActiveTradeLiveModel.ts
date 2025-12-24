@@ -22,6 +22,8 @@ import type { Trade } from "../types";
 import { useActiveTradePnL, useQuotes } from "./useMassiveData";
 import { useLiveGreeks } from "./useOptionsAdvanced";
 import { roundPrice } from "../lib/utils";
+import { getEntryPriceFromUpdates } from "../lib/tradePnl";
+import { normalizeOptionTicker } from "../lib/optionsSymbol";
 
 // ============================================================================
 // Types
@@ -181,13 +183,18 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   }
 
   const contract = trade.contract;
-  const contractId = contract.id || null;
-  const entryPrice = trade.entryPrice || contract.mid || 0;
+  const contractId = normalizeOptionTicker(
+    contract.id || contract.ticker || contract.symbol || null
+  );
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || contract.mid || 0;
   const quantity = trade.quantity || 1;
 
   // Get live option price via existing hook
   const {
     currentPrice: optionPrice,
+    bid: optionBid,
+    ask: optionAsk,
     pnlPercent: netPnlPercent,
     pnlDollars,
     asOf: optionAsOf,
@@ -244,11 +251,12 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   // Build the live model
   return useMemo(() => {
     // Use live bid/ask if available, otherwise fall back to contract snapshot
-    const bid = contract.bid || 0;
-    const ask = contract.ask || 0;
+    const bid = optionBid > 0 ? optionBid : contract.bid || 0;
+    const ask = optionAsk > 0 ? optionAsk : contract.ask || 0;
 
     // Canonical effectiveMid - ALWAYS use this formula
-    const effectiveMid = bid > 0 && ask > 0 ? roundPrice(bid + (ask - bid) / 2) : optionPrice;
+    const liveMid = bid > 0 && ask > 0 ? roundPrice(bid + (ask - bid) / 2) : 0;
+    const effectiveMid = liveMid > 0 ? liveMid : optionPrice;
 
     const spread = ask - bid;
     const spreadPercent = effectiveMid > 0 ? (spread / effectiveMid) * 100 : 0;
@@ -277,8 +285,10 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     const underlyingPrice = underlyingQuote?.last || 0;
     const underlyingChange = underlyingQuote?.change || 0;
     const underlyingChangePercent = underlyingQuote?.changePercent || 0;
-    const underlyingAsOf = underlyingQuote?.timestamp || 0;
-    const underlyingIsStale = Date.now() - underlyingAsOf > UNDERLYING_STALE_MS;
+    const underlyingAsOf = underlyingQuote?.asOf || 0;
+    const underlyingIsStale = underlyingAsOf
+      ? Date.now() - underlyingAsOf > UNDERLYING_STALE_MS
+      : true;
 
     // Overall health assessment
     // Focus on price data freshness - Greeks being static is acceptable since they don't change rapidly
@@ -337,7 +347,7 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       optionAsOf,
       optionIsStale,
       greeksSource: liveGreeks.source,
-      underlyingSource: underlyingQuote ? "rest" : "none",
+      underlyingSource: underlyingQuote?.source ?? "none",
       underlyingAsOf,
       underlyingIsStale,
       overallHealth,
@@ -352,6 +362,8 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     trade,
     contract,
     optionPrice,
+    optionBid,
+    optionAsk,
     netPnlPercent,
     pnlDollars,
     optionAsOf,

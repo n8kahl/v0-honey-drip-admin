@@ -119,12 +119,14 @@ export interface PriceOverrides {
   stopUnderlyingPrice?: number;
   // For exit alerts - include gains image with Discord message
   includeGainsImage?: boolean;
+  // For trim alerts - percent of position trimmed
+  trimPercent?: number;
 }
 
 interface HDAlertComposerProps {
   trade: Trade;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number };
   availableChannels: DiscordChannel[];
   challenges: Challenge[];
   onSend: (
@@ -1758,6 +1760,12 @@ export function HDAlertComposer({
                   targetPrice,
                   stopLoss,
                   includeGainsImage: alertType === "exit" ? showGainsImage : undefined,
+                  trimPercent:
+                    alertType === "update" &&
+                    (alertOptions?.updateKind === "trim" ||
+                      alertOptions?.updateKind === "take-profit")
+                      ? alertOptions?.trimPercent
+                      : undefined,
                 });
               }}
               disabled={!canSend || selectedChannels.length === 0}

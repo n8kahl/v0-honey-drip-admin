@@ -4,10 +4,11 @@ import { cn, formatPrice } from "../../../lib/utils";
 import { Scissors, Shield, LogOut, Zap, Wifi, WifiOff } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface MobileActiveCardProps {
   trade: Trade;
-  onTrim: () => void;
+  onTrim: (trimPercent?: number) => void;
   onUpdateSL: () => void;
   onExit: () => void;
   onTap?: () => void;
@@ -23,10 +24,11 @@ export function MobileActiveCard({
   active,
 }: MobileActiveCardProps) {
   const contract = trade.contract;
-  const entryPrice = trade.entryPrice || contract?.mid || 0;
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || contract?.mid || 0;
 
   // Get LIVE price data via WebSocket/REST transport (matches desktop HDActiveTradeRow)
-  const contractTicker = contract?.id || null;
+  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
   const {
     pnlPercent: livePnlPercent,
     currentPrice: liveCurrentPrice,

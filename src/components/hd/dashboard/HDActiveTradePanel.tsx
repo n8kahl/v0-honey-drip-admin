@@ -22,6 +22,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import { useActiveTradePnL, useQuotes } from "../../../hooks/useMassiveData";
+import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 import { useKeyLevels } from "../../../hooks/useKeyLevels";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
 import { useThesisValidation } from "../../../hooks/useThesisValidation";
@@ -33,7 +34,7 @@ import { AICoachPanel } from "../ai/AICoachPanel";
 interface HDActiveTradePanelProps {
   trade: Trade;
   onAutoTrim?: () => void;
-  onTrim?: () => void;
+  onTrim?: (trimPercent?: number) => void;
   onTrailStop?: () => void;
   onMoveSL?: () => void;
   onAdd?: () => void;
@@ -52,6 +53,8 @@ function calculatePositionHealth(
 ): { score: number; status: "healthy" | "warning" | "danger"; factors: string[] } {
   let score = 50; // Base score
   const factors: string[] = [];
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
 
   // P&L Factor (0-25 points)
   if (pnlPercent > 20) {
@@ -71,9 +74,8 @@ function calculatePositionHealth(
   }
 
   // Target proximity (0-15 points)
-  if (trade.targetPrice && trade.entryPrice && currentPrice) {
-    const targetProgress =
-      (currentPrice - trade.entryPrice) / (trade.targetPrice - trade.entryPrice);
+  if (trade.targetPrice && entryPrice && currentPrice) {
+    const targetProgress = (currentPrice - entryPrice) / (trade.targetPrice - entryPrice);
     if (targetProgress > 0.8) {
       score += 15;
       factors.push("Near target");
@@ -252,9 +254,13 @@ export function HDActiveTradePanel({
   }, [showCoach, trade, aiCoach.state.isActive]);
 
   // Get real-time P&L (with quantity for dollar calculation)
+  const contractTicker =
+    trade.contract.id || trade.contract.ticker || trade.contract.symbol || null;
+  const entryPriceValue =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract.mid || 0;
   const { currentPrice, pnlPercent, pnlDollars, isStale } = useActiveTradePnL(
-    trade.contract.id,
-    trade.entryPrice || trade.contract.mid,
+    contractTicker,
+    entryPriceValue,
     trade.quantity || 1
   );
 
@@ -292,24 +298,25 @@ export function HDActiveTradePanel({
 
   // Calculate P&L progress (SL to TP)
   const pnlProgress = useMemo(() => {
-    if (!trade.entryPrice || !trade.stopLoss || !trade.targetPrice || !currentPrice) {
+    if (!entryPriceValue || !trade.stopLoss || !trade.targetPrice || !currentPrice) {
       return 0.5; // Default to middle
     }
     const totalRange = trade.targetPrice - trade.stopLoss;
     const currentPosition = currentPrice - trade.stopLoss;
     return Math.max(0, Math.min(1, currentPosition / totalRange));
-  }, [trade, currentPrice]);
+  }, [entryPriceValue, trade, currentPrice]);
 
   const isProfit = (pnlPercent || 0) >= 0;
-  const entryPrice = trade.entryPrice || trade.contract.mid;
+  const entryPrice = entryPriceValue;
 
   // Calculate underlying price change using LIVE quote (not VWAP)
   // Priority: live quote > VWAP fallback
   const underlyingCurrent = liveUnderlyingQuote?.last || keyLevels?.vwap || 0;
   const underlyingAtEntry = trade.underlyingAtEntry || underlyingCurrent;
-  const underlyingChange = underlyingCurrent && underlyingAtEntry > 0
-    ? ((underlyingCurrent - underlyingAtEntry) / underlyingAtEntry) * 100
-    : 0;
+  const underlyingChange =
+    underlyingCurrent && underlyingAtEntry > 0
+      ? ((underlyingCurrent - underlyingAtEntry) / underlyingAtEntry) * 100
+      : 0;
 
   return (
     <div className="space-y-4">

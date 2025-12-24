@@ -22,6 +22,7 @@ import {
   linkChannelsApi,
   linkChallengesApi,
 } from "../lib/api/tradeApi";
+import { calculateNetPnLPercent } from "../services/pnlCalculator";
 import { TRADE_STATE_ORDER, compareState } from "./tradeLifecycle";
 
 // ============================================================================
@@ -442,6 +443,13 @@ export async function commitTradeAction(
 
     if (intent === "TRIM") {
       const currentPrice = editablePrices.current || trade.currentPrice;
+      const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
+      const quantity = trade.quantity || 1;
+      const trimPercent = draft.trimPercent ?? 50;
+      const pnlPercent =
+        entryPrice > 0 && currentPrice
+          ? calculateNetPnLPercent(entryPrice, currentPrice, quantity)
+          : undefined;
       if (currentPrice) {
         await updateTradeApi(userId, trade.id, {
           current_price: currentPrice,
@@ -454,7 +462,9 @@ export async function commitTradeAction(
         trade.id,
         "trim",
         currentPrice,
-        comment || "Position trimmed"
+        comment || "Position trimmed",
+        pnlPercent,
+        trimPercent
       ).catch(() => {});
       result.sideEffects.auditRecorded = true;
 
@@ -502,6 +512,11 @@ export async function commitTradeAction(
     if (intent === "EXIT") {
       const exitPrice = editablePrices.current || trade.currentPrice || 0;
       const entryPrice = trade.entryPrice || 0;
+      const quantity = trade.quantity || 1;
+      const pnlPercent =
+        entryPrice > 0 && exitPrice > 0
+          ? calculateNetPnLPercent(entryPrice, exitPrice, quantity)
+          : undefined;
       const movePercent = entryPrice > 0 ? ((exitPrice - entryPrice) / entryPrice) * 100 : 0;
       const now = new Date();
 
@@ -518,7 +533,8 @@ export async function commitTradeAction(
         trade.id,
         "exit",
         exitPrice,
-        comment || `Exit at $${exitPrice.toFixed(2)}`
+        comment || `Exit at $${exitPrice.toFixed(2)}`,
+        pnlPercent
       ).catch(() => {});
       result.sideEffects.auditRecorded = true;
 

@@ -16,10 +16,22 @@ interface MobileAlertSheetProps {
   onOpenChange: (open: boolean) => void;
   trade: Trade | null;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" };
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number };
   channels: DiscordChannel[];
   challenges: Challenge[];
   onSend: (
+    channels: string[],
+    challenges: string[],
+    comment?: string,
+    priceOverrides?: {
+      entryPrice?: number;
+      currentPrice?: number;
+      targetPrice?: number;
+      stopLoss?: number;
+      trimPercent?: number;
+    }
+  ) => void;
+  onEnterAndAlert?: (
     channels: string[],
     challenges: string[],
     comment?: string,
@@ -37,7 +49,7 @@ interface MobileAlertSheetProps {
  */
 function alertTypeToIntent(
   alertType: AlertType,
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" }
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number }
 ): TradeActionIntent {
   switch (alertType) {
     case "load":
@@ -68,6 +80,7 @@ export function MobileAlertSheet({
   channels,
   challenges,
   onSend,
+  onEnterAndAlert,
 }: MobileAlertSheetProps) {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedChallenges, setSelectedChallenges] = useState<string[]>([]);
@@ -313,13 +326,16 @@ export function MobileAlertSheet({
             targetPrice,
             stopLoss,
           }
-        : undefined;
+        : alertType === "update" && alertOptions?.updateKind === "trim"
+          ? {
+              currentPrice,
+              trimPercent: alertOptions?.trimPercent,
+            }
+          : undefined;
     onSend(selectedChannels, selectedChallenges, comment.trim() || undefined, priceOverrides);
   };
 
   if (!trade) return null;
-
-  const buttonLabel = alertType === "load" ? "Load and Alert" : "Send Alert";
 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
@@ -721,18 +737,70 @@ export function MobileAlertSheet({
 
             {/* Action Buttons */}
             <div className="space-y-2 pb-4">
-              <button
-                onClick={handleSend}
-                disabled={selectedChannels.length === 0}
-                className={cn(
-                  "w-full py-3.5 rounded-[var(--radius)] font-medium text-sm transition-colors min-h-[48px]",
-                  selectedChannels.length > 0
-                    ? "bg-[var(--brand-primary)] text-black"
-                    : "bg-[var(--surface-2)] text-[var(--text-muted)] cursor-not-allowed"
-                )}
-              >
-                {buttonLabel}
-              </button>
+              {/* For "load" alert type with onEnterAndAlert: show both buttons */}
+              {alertType === "load" && onEnterAndAlert ? (
+                <>
+                  {/* Primary: Load and Alert (yellow) */}
+                  <button
+                    onClick={handleSend}
+                    disabled={selectedChannels.length === 0}
+                    className={cn(
+                      "w-full py-3.5 rounded-[var(--radius)] font-medium text-sm transition-colors min-h-[48px]",
+                      selectedChannels.length > 0
+                        ? "bg-[var(--brand-primary)] text-black"
+                        : "bg-[var(--surface-2)] text-[var(--text-muted)] cursor-not-allowed"
+                    )}
+                  >
+                    Load and Alert
+                  </button>
+
+                  {/* Secondary: Enter and Alert (green) */}
+                  <button
+                    onClick={() => {
+                      const priceOverrides =
+                        alertType === "load" || alertType === "enter"
+                          ? {
+                              entryPrice,
+                              currentPrice,
+                              targetPrice,
+                              stopLoss,
+                            }
+                          : undefined;
+                      onEnterAndAlert(
+                        selectedChannels,
+                        selectedChallenges,
+                        comment.trim() || undefined,
+                        priceOverrides
+                      );
+                    }}
+                    disabled={selectedChannels.length === 0}
+                    className={cn(
+                      "w-full py-3.5 rounded-[var(--radius)] font-medium text-sm transition-colors min-h-[48px]",
+                      selectedChannels.length > 0
+                        ? "bg-[var(--accent-positive)] text-white"
+                        : "bg-[var(--surface-2)] text-[var(--text-muted)] cursor-not-allowed"
+                    )}
+                  >
+                    Enter and Alert
+                  </button>
+                </>
+              ) : (
+                /* Default: Single button for other alert types */
+                <button
+                  onClick={handleSend}
+                  disabled={selectedChannels.length === 0}
+                  className={cn(
+                    "w-full py-3.5 rounded-[var(--radius)] font-medium text-sm transition-colors min-h-[48px]",
+                    selectedChannels.length > 0
+                      ? "bg-[var(--brand-primary)] text-black"
+                      : "bg-[var(--surface-2)] text-[var(--text-muted)] cursor-not-allowed"
+                  )}
+                >
+                  {alertType === "load" ? "Load and Alert" : "Send Alert"}
+                </button>
+              )}
+
+              {/* Cancel button */}
               <button
                 onClick={() => onOpenChange(false)}
                 className="w-full py-3 text-[var(--text-muted)] text-sm"

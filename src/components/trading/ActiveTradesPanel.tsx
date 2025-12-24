@@ -8,7 +8,7 @@ interface ActiveTradesPanelProps {
   currentTrade: Trade | null;
   showAlert: boolean;
   alertType: AlertType;
-  alertOptions: { updateKind?: "trim" | "generic" | "sl" };
+  alertOptions: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number };
   channels: DiscordChannel[];
   challenges: Challenge[];
   onSendAlert: (
@@ -26,7 +26,7 @@ interface ActiveTradesPanelProps {
   onCancelAlert: () => void;
   onUnload: () => void;
   onEnter: () => void;
-  onTrim: () => void;
+  onTrim: (trimPercent?: number) => void;
   onUpdate: () => void;
   onUpdateSL: () => void;
   onTrailStop: () => void;

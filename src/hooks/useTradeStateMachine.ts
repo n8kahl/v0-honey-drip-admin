@@ -35,6 +35,8 @@ import { discordAlertLimiter, formatWaitTime } from "../lib/utils/rateLimiter";
 import { roundPrice } from "../lib/utils";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
 import { tradeHookLogger as log } from "../lib/utils/logger";
+import { calculateNetPnLPercent } from "../services/pnlCalculator";
+import { getEntryPriceFromUpdates } from "../lib/tradePnl";
 
 // Domain layer imports
 import {
@@ -92,7 +94,7 @@ interface TradeStateMachineState {
   previewTrade: Trade | null; // Preview trade (WATCHING state only, not persisted)
   tradeState: TradeState;
   alertType: AlertType;
-  alertOptions: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
+  alertOptions: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number };
   showAlert: boolean;
   activeTrades: Trade[];
   focus: FocusTarget;
@@ -137,7 +139,7 @@ interface TradeStateMachineActions {
   handleCancelAlert: () => void;
   handleDiscard: () => void;
   handleUnloadTrade: () => void;
-  handleTrim: () => void;
+  handleTrim: (trimPercent?: number) => void;
   handleTakeProfit: () => void;
   handleUpdate: () => void;
   handleUpdateSL: () => void;
@@ -190,6 +192,7 @@ export function useTradeStateMachine({
   const [alertType, setAlertType] = useState<AlertType>("load");
   const [alertOptions, setAlertOptions] = useState<{
     updateKind?: "trim" | "generic" | "sl" | "take-profit";
+    trimPercent?: number;
   }>({});
   const [showAlert, setShowAlert] = useState(false);
   const [_isCreatingTrade, setIsCreatingTrade] = useState(false); // Unused, kept for potential future use
@@ -203,7 +206,10 @@ export function useTradeStateMachine({
   // HELPER FUNCTIONS
   // ========================================
   const openAlertComposer = useCallback(
-    (type: AlertType, options?: { updateKind?: "trim" | "generic" | "sl" | "take-profit" }) => {
+    (
+      type: AlertType,
+      options?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number }
+    ) => {
       setAlertType(type);
       setAlertOptions(options || {});
       setShowAlert(true);
@@ -954,6 +960,18 @@ export function useTradeStateMachine({
         trade.contract.mid;
       const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
       const message = comment || "";
+      const entryPriceForPnl =
+        trade.entryPrice ??
+        getEntryPriceFromUpdates(trade.updates || []) ??
+        priceOverrides?.entryPrice ??
+        trade.contract?.mid ??
+        0;
+      const quantity = trade.quantity || 1;
+      const trimPercent = priceOverrides?.trimPercent ?? alertOptions?.trimPercent;
+      const updatePnlPercent =
+        entryPriceForPnl > 0
+          ? calculateNetPnLPercent(entryPriceForPnl, effectiveCurrent, quantity)
+          : undefined;
 
       let updateType: TradeUpdate["type"] | null = null;
       let dbUpdates: Record<string, any> = {};
@@ -1082,9 +1100,52 @@ export function useTradeStateMachine({
         }
 
         if (updateType) {
-          await addTradeUpdateApi(userId, trade.id, updateType, effectiveCurrent, message).catch(
-            console.warn
-          );
+          const trimPercentForUpdate = updateType === "trim" ? (trimPercent ?? 50) : undefined;
+          let updateResponse: any = null;
+
+          try {
+            updateResponse = await addTradeUpdateApi(
+              userId,
+              trade.id,
+              updateType,
+              effectiveCurrent,
+              message,
+              updatePnlPercent,
+              trimPercentForUpdate
+            );
+          } catch (error) {
+            console.warn("[useTradeStateMachine] Trade update insert failed", error);
+          }
+
+          const responsePayload = updateResponse || {};
+          const rawPrice =
+            responsePayload.price !== null && responsePayload.price !== undefined
+              ? Number(responsePayload.price)
+              : (effectiveCurrent ?? 0);
+          const rawPnl =
+            responsePayload.pnl_percent !== null && responsePayload.pnl_percent !== undefined
+              ? Number(responsePayload.pnl_percent)
+              : updatePnlPercent;
+          const rawTrim =
+            responsePayload.trim_percent !== null && responsePayload.trim_percent !== undefined
+              ? Number(responsePayload.trim_percent)
+              : trimPercentForUpdate;
+          const timestampValue = responsePayload.timestamp || responsePayload.created_at;
+          const mappedUpdate: TradeUpdate = {
+            id: responsePayload.id || crypto.randomUUID(),
+            type: (responsePayload.type || updateType) as TradeUpdate["type"],
+            timestamp: timestampValue ? new Date(timestampValue) : new Date(),
+            message: responsePayload.message ?? message ?? "",
+            price: Number.isFinite(rawPrice) ? rawPrice : (effectiveCurrent ?? 0),
+            pnlPercent: Number.isFinite(rawPnl ?? NaN) ? rawPnl : undefined,
+            trimPercent: Number.isFinite(rawTrim ?? NaN) ? rawTrim : undefined,
+          };
+
+          const store = useTradeStore.getState();
+          const existingUpdates = store.getTradeById(trade.id)?.updates || [];
+          if (!existingUpdates.some((update) => update.id === mappedUpdate.id)) {
+            store.applyTradePatch(trade.id, { updates: [...existingUpdates, mappedUpdate] });
+          }
         }
 
         // Send TradeThread update for member subscribers (non-blocking)
@@ -1096,7 +1157,7 @@ export function useTradeStateMachine({
             case "trim":
               threadUpdateType = "TRIM";
               threadPayload = {
-                trimPercent: 50, // Default 50% trim
+                trimPercent: trimPercent ?? 50,
                 message: message || "Position trimmed",
               };
               break;
@@ -1111,7 +1172,8 @@ export function useTradeStateMachine({
                 threadUpdateType = "TRIM";
                 threadPayload = {
                   exitPrice: effectiveCurrent,
-                  pnlPercent: trade.movePercent || 0,
+                  pnlPercent: updatePnlPercent ?? (trade.movePercent || 0),
+                  trimPercent: trimPercent ?? 50,
                   message: message || "Taking profit",
                 };
               } else {
@@ -1387,21 +1449,24 @@ export function useTradeStateMachine({
     }
   }, [currentTrade, userId, loadTrades, setFocusedTrade, toast, isMobile, onMobileTabChange]);
 
-  const handleTrim = useCallback(() => {
-    if (!currentTrade) return;
-    // Use domain layer to create draft
-    const draft = startTradeAction("TRIM", { trade: currentTrade });
-    if (draft) {
-      setAlertDraft(draft);
-      // Backward compatibility: also set legacy state
-      setAlertType(intentToAlertType("TRIM"));
-      setAlertOptions({ updateKind: intentToUpdateKind("TRIM") });
-      setShowAlert(true);
-    } else {
-      log.warn("handleTrim: Invalid transition", { state: currentTrade.state });
-      toast.error("Cannot trim from current state");
-    }
-  }, [currentTrade, toast]);
+  const handleTrim = useCallback(
+    (trimPercent?: number) => {
+      if (!currentTrade) return;
+      // Use domain layer to create draft
+      const draft = startTradeAction("TRIM", { trade: currentTrade });
+      if (draft) {
+        setAlertDraft(draft);
+        // Backward compatibility: also set legacy state
+        setAlertType(intentToAlertType("TRIM"));
+        setAlertOptions({ updateKind: intentToUpdateKind("TRIM"), trimPercent });
+        setShowAlert(true);
+      } else {
+        log.warn("handleTrim: Invalid transition", { state: currentTrade.state });
+        toast.error("Cannot trim from current state");
+      }
+    },
+    [currentTrade, toast]
+  );
 
   const handleUpdate = useCallback(() => {
     if (!currentTrade) return;
@@ -1472,7 +1537,7 @@ export function useTradeStateMachine({
         setAlertDraft(draft);
         // Backward compatibility: also set legacy state
         setAlertType("update");
-        setAlertOptions({ updateKind: "take-profit" });
+        setAlertOptions({ updateKind: "take-profit", trimPercent: 50 });
         setShowAlert(true);
       } else {
         log.warn("handleTakeProfit: Invalid transition", { state: trade.state });

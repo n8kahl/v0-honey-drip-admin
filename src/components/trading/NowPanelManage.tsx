@@ -20,10 +20,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import type { Trade, Ticker } from "../../types";
 import { useActiveTradeLiveModel } from "../../hooks/useActiveTradeLiveModel";
-import { useMarketDataStore } from "../../stores/marketDataStore";
+import { useMarketDataStore, type Candle } from "../../stores/marketDataStore";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { getHealthStyle, getSourceBadgeStyle } from "../../lib/market/dataFreshness";
 import { cn, formatPrice } from "../../lib/utils";
+import { calculateRealizedPnL } from "../../lib/tradePnl";
 import { fmtDTE, getPnlStyle } from "../../ui/semantics";
 import {
   Clock,
@@ -62,6 +63,7 @@ interface NowPanelManageProps {
 export function NowPanelManage({ trade }: NowPanelManageProps) {
   // Use canonical live model hook - SINGLE SOURCE OF TRUTH
   const liveModel = useActiveTradeLiveModel(trade);
+  const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
 
   // Get additional context data
   const symbolData = useMarketDataStore((s) => s.symbols[trade.ticker]);
@@ -100,18 +102,18 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden animate-mode-enter">
       {/* Position HUD - Top ~30% */}
-      <PositionHUD trade={trade} liveModel={liveModel} />
+      <PositionHUD trade={trade} liveModel={liveModel} realizedPnL={realizedPnL} />
 
       {/* Greeks Strip */}
       <GreeksStrip liveModel={liveModel} />
 
       {/* Levels / ATR / Positioning - Middle ~40% */}
       <LevelsATRPanel
-        trade={trade}
         currentPrice={liveModel.underlyingPrice}
         keyLevels={keyLevels}
         indicators={indicators}
         mtfTrend={mtfTrend}
+        candles={symbolData?.candles?.["1m"] ?? []}
       />
 
       {/* Trade Tape - Bottom ~30% */}
@@ -127,9 +129,10 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
 interface PositionHUDProps {
   trade: Trade;
   liveModel: NonNullable<ReturnType<typeof useActiveTradeLiveModel>>;
+  realizedPnL: ReturnType<typeof calculateRealizedPnL>;
 }
 
-function PositionHUD({ trade, liveModel }: PositionHUDProps) {
+function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
   const contract = trade.contract;
   const dte = contract?.daysToExpiry ?? 0;
   const dteInfo = fmtDTE(dte);
@@ -213,6 +216,13 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
               <span className={cn("text-lg tabular-nums", pnlStyle.className)}>
                 {liveModel.pnlDollars >= 0 ? "+" : ""}${Math.abs(liveModel.pnlDollars).toFixed(0)}
               </span>
+            </div>
+            <div className="mt-2 text-xs text-[var(--text-faint)] tabular-nums">
+              Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
+              {realizedPnL.realizedPercent.toFixed(1)}% (
+              {realizedPnL.realizedDollars >= 0 ? "+" : "-"}$
+              {formatPrice(Math.abs(realizedPnL.realizedDollars))}) • Remaining{" "}
+              {Math.round(realizedPnL.remainingPercent)}%
             </div>
           </div>
 
@@ -417,14 +427,48 @@ function GreeksStrip({ liveModel }: GreeksStripProps) {
 // ============================================================================
 
 interface LevelsATRPanelProps {
-  trade: Trade;
   currentPrice: number;
   keyLevels: any;
   indicators: any;
   mtfTrend: any;
+  candles: Candle[];
 }
 
-function LevelsATRPanel({ currentPrice, keyLevels, indicators, mtfTrend }: LevelsATRPanelProps) {
+function normalizeCandleTime(time: number): number {
+  return time < 1_000_000_000_000 ? time * 1000 : time;
+}
+
+function getSessionRange(candles: Candle[], fallback: number): { high: number; low: number } {
+  if (!candles || candles.length === 0) {
+    return { high: fallback, low: fallback };
+  }
+
+  const lastTime = normalizeCandleTime(candles[candles.length - 1].time);
+  const lastDateKey = new Date(lastTime).toDateString();
+  let high = -Infinity;
+  let low = Infinity;
+
+  for (const candle of candles) {
+    const timeMs = normalizeCandleTime(candle.time);
+    if (new Date(timeMs).toDateString() !== lastDateKey) continue;
+    high = Math.max(high, candle.high);
+    low = Math.min(low, candle.low);
+  }
+
+  if (!Number.isFinite(high) || !Number.isFinite(low)) {
+    return { high: fallback, low: fallback };
+  }
+
+  return { high, low };
+}
+
+function LevelsATRPanel({
+  currentPrice,
+  keyLevels,
+  indicators,
+  mtfTrend,
+  candles,
+}: LevelsATRPanelProps) {
   const [mtfExpanded, setMtfExpanded] = useState(true);
 
   // Build key levels array
@@ -433,19 +477,23 @@ function LevelsATRPanel({ currentPrice, keyLevels, indicators, mtfTrend }: Level
       [];
 
     if (keyLevels?.vwap) result.push({ label: "VWAP", price: keyLevels.vwap, type: "neutral" });
-    if (keyLevels?.pdh) result.push({ label: "PDH", price: keyLevels.pdh, type: "resistance" });
-    if (keyLevels?.pdl) result.push({ label: "PDL", price: keyLevels.pdl, type: "support" });
-    if (keyLevels?.orh) result.push({ label: "ORH", price: keyLevels.orh, type: "resistance" });
-    if (keyLevels?.orl) result.push({ label: "ORL", price: keyLevels.orl, type: "support" });
+    if (keyLevels?.priorDayHigh)
+      result.push({ label: "PDH", price: keyLevels.priorDayHigh, type: "resistance" });
+    if (keyLevels?.priorDayLow)
+      result.push({ label: "PDL", price: keyLevels.priorDayLow, type: "support" });
+    if (keyLevels?.orbHigh)
+      result.push({ label: "ORH", price: keyLevels.orbHigh, type: "resistance" });
+    if (keyLevels?.orbLow) result.push({ label: "ORL", price: keyLevels.orbLow, type: "support" });
 
     return result.sort((a, b) => a.price - b.price);
   }, [keyLevels]);
 
   // Calculate ATR metrics
   const atrMetrics = useMemo(() => {
-    const atr = indicators?.atr || 0;
-    const dayHigh = keyLevels?.todayHigh || currentPrice;
-    const dayLow = keyLevels?.todayLow || currentPrice;
+    const atr = indicators?.atr14 || 0;
+    const sessionRange = getSessionRange(candles, currentPrice);
+    const dayHigh = sessionRange.high;
+    const dayLow = sessionRange.low;
     const dayRange = dayHigh - dayLow;
     const consumedPct = atr > 0 ? (dayRange / atr) * 100 : 0;
     const roomMultiple = atr > 0 ? Math.max(0, (atr - dayRange) / atr) : 0;
@@ -457,7 +505,7 @@ function LevelsATRPanel({ currentPrice, keyLevels, indicators, mtfTrend }: Level
       roomMultiple,
       isExhausted: consumedPct > 80,
     };
-  }, [indicators, keyLevels, currentPrice]);
+  }, [indicators, candles, currentPrice]);
 
   return (
     <div className="flex-1 overflow-y-auto">

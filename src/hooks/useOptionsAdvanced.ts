@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   optionsAdvanced,
   OptionsTrade,
@@ -11,6 +11,7 @@ import {
   OptionsSnapshot,
 } from "../lib/massive/options-advanced";
 import { streamingManager } from "../lib/massive/streaming-manager";
+import { normalizeOptionTicker } from "../lib/optionsSymbol";
 
 /**
  * Hook for streaming quotes with stale detection for watchlist tickers
@@ -201,6 +202,7 @@ export function useLiveGreeks(
   },
   pollInterval: number = 30000
 ): LiveGreeks {
+  const normalizedTicker = useMemo(() => normalizeOptionTicker(contractTicker), [contractTicker]);
   const [greeks, setGreeks] = useState<LiveGreeks>({
     ...(staticGreeks || {}),
     lastUpdate: 0,
@@ -208,7 +210,7 @@ export function useLiveGreeks(
   });
 
   useEffect(() => {
-    if (!contractTicker) {
+    if (!normalizedTicker) {
       setGreeks({
         ...(staticGreeks || {}),
         lastUpdate: 0,
@@ -222,13 +224,13 @@ export function useLiveGreeks(
     const fetchGreeks = async () => {
       try {
         // Extract underlying from OCC symbol (e.g., "O:SPY250110P00650000" → "SPY")
-        const match = contractTicker.match(/^O:([A-Z]+)/);
+        const match = normalizedTicker.match(/^O:([A-Z]+)/);
         const underlying = match?.[1];
         if (!underlying) return;
 
         // Fetch snapshot for this specific contract
         const response = await fetch(
-          `/api/massive/options/contracts?underlying=${underlying}&ticker=${contractTicker}`
+          `/api/massive/options/contracts?underlying=${underlying}&ticker=${normalizedTicker}`
         );
         if (!response.ok) return;
 
@@ -262,7 +264,7 @@ export function useLiveGreeks(
       active = false;
       clearInterval(interval);
     };
-  }, [contractTicker, pollInterval]);
+  }, [normalizedTicker, pollInterval]);
 
   // Return live Greeks if available, otherwise fall back to static
   return {

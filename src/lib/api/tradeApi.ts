@@ -182,7 +182,8 @@ export async function addTradeUpdateApi(
   action: string,
   price: number,
   message?: string,
-  pnlPercent?: number
+  pnlPercent?: number,
+  trimPercent?: number
 ): Promise<any> {
   const headers = await getAuthHeaders(userId);
 
@@ -195,6 +196,7 @@ export async function addTradeUpdateApi(
         price,
         message: message || `${action} action`,
         pnl_percent: pnlPercent || null,
+        trim_percent: trimPercent ?? null,
         timestamp: new Date().toISOString(),
       }),
     });

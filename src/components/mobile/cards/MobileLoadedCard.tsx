@@ -16,7 +16,7 @@ export function MobileLoadedCard({ trade, onEnter, onDismiss, active }: MobileLo
   const contract = trade.contract;
 
   // Get LIVE price data via WebSocket/REST transport (matches desktop pattern)
-  const contractTicker = contract?.id || null;
+  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
   const {
     currentPrice: liveCurrentPrice,
     source,

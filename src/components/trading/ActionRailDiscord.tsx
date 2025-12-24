@@ -21,7 +21,7 @@ interface ActionRailDiscordProps {
   challenges: Challenge[];
   showAlert: boolean;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit" };
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number };
   expanded: boolean;
   onToggleExpanded: () => void;
   onSendAlert: (
@@ -71,9 +71,7 @@ export function ActionRailDiscord({
   // Toggle channel selection
   const toggleChannel = (channelId: string) => {
     setSelectedChannels((prev) =>
-      prev.includes(channelId)
-        ? prev.filter((id) => id !== channelId)
-        : [...prev, channelId]
+      prev.includes(channelId) ? prev.filter((id) => id !== channelId) : [...prev, channelId]
     );
   };
 

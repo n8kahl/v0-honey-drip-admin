@@ -46,7 +46,10 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertTrade, setAlertTrade] = useState<Trade | null>(null);
   const [alertType, setAlertType] = useState<AlertType>("update");
-  const [alertOptions, setAlertOptions] = useState<{ updateKind?: "trim" | "generic" | "sl" }>({});
+  const [alertOptions, setAlertOptions] = useState<{
+    updateKind?: "trim" | "generic" | "sl";
+    trimPercent?: number;
+  }>({});
 
   // Contract sheet state
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
@@ -128,7 +131,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const openAlertSheet = (
     trade: Trade,
     type: AlertType,
-    options?: { updateKind?: "trim" | "generic" | "sl" }
+    options?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number }
   ) => {
     setAlertTrade(trade);
     setAlertType(type);
@@ -216,6 +219,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       currentPrice?: number;
       targetPrice?: number;
       stopLoss?: number;
+      trimPercent?: number;
     }
   ) => {
     if (!alertTrade || !user?.id) {
@@ -237,6 +241,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         currentPrice: priceOverrides?.currentPrice,
         initialChannels: channels,
         initialChallenges: challengeIds,
+        trimPercent: priceOverrides?.trimPercent ?? alertOptions?.trimPercent,
       });
 
       // Apply price overrides to draft
@@ -252,6 +257,9 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         }
         if (priceOverrides.stopLoss !== undefined) {
           draft.editablePrices.stop = priceOverrides.stopLoss;
+        }
+        if (priceOverrides.trimPercent !== undefined) {
+          draft.trimPercent = priceOverrides.trimPercent;
         }
       }
 
@@ -312,6 +320,100 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         setAlertSheetOpen(false);
         setAlertTrade(null);
       }, 1500);
+    }
+  };
+
+  // Handle Enter and Alert - skip LOADED state, go directly to ENTERED
+  const handleEnterAndAlert = async (
+    channels: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: {
+      entryPrice?: number;
+      currentPrice?: number;
+      targetPrice?: number;
+      stopLoss?: number;
+    }
+  ) => {
+    if (!alertTrade || !user?.id) {
+      toast.error("Not authenticated");
+      return;
+    }
+
+    try {
+      // Use ENTER intent (skips LOADED state)
+      const intent = "ENTER";
+
+      // Create alert draft using domain layer
+      const draft = createAlertDraft({
+        intent,
+        trade: alertTrade,
+        currentPrice: priceOverrides?.currentPrice,
+        initialChannels: channels,
+        initialChallenges: challengeIds,
+      });
+
+      // Apply price overrides to draft
+      if (priceOverrides) {
+        if (priceOverrides.entryPrice !== undefined) {
+          draft.editablePrices.entry = priceOverrides.entryPrice;
+        }
+        if (priceOverrides.currentPrice !== undefined) {
+          draft.editablePrices.current = priceOverrides.currentPrice;
+        }
+        if (priceOverrides.targetPrice !== undefined) {
+          draft.editablePrices.target = priceOverrides.targetPrice;
+        }
+        if (priceOverrides.stopLoss !== undefined) {
+          draft.editablePrices.stop = priceOverrides.stopLoss;
+        }
+      }
+
+      // Set comment if provided
+      if (comment) {
+        draft.comment = comment;
+      }
+
+      // Commit draft (persists to database + sends Discord)
+      const discordService: DiscordAlertService = {
+        sendLoadAlert: discord.sendLoadAlert,
+        sendEntryAlert: discord.sendEntryAlert,
+        sendUpdateAlert: discord.sendUpdateAlert,
+        sendTrailingStopAlert: discord.sendTrailingStopAlert,
+        sendExitAlert: discord.sendExitAlert,
+      };
+
+      const result = await commitAlertDraft(draft, user.id, discordService);
+
+      if (!result.success) {
+        toast.error(result.error || "Failed to enter trade");
+        return;
+      }
+
+      toast.success("Trade entered successfully!");
+
+      // Close alert sheet
+      setAlertSheetOpen(false);
+      setAlertTrade(null);
+
+      // Clear preview trade
+      const tradeStore = useTradeStore.getState();
+      tradeStore.setPreviewTrade(null);
+
+      // Add to active trades
+      if (result.trade) {
+        tradeStore.setActiveTrades([...tradeStore.activeTrades, result.trade]);
+      }
+
+      // Switch to Active tab
+      setActiveTab("active");
+
+      // Reload trades to get latest state
+      await tradeStore.loadTrades(user.id);
+    } catch (error) {
+      console.error("[MobileApp] Failed to enter trade:", error);
+      toast.error("Failed to enter trade");
+      // Keep sheet open on error to allow retry
     }
   };
 
@@ -404,6 +506,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         channels={discordChannels}
         challenges={challenges}
         onSend={handleSendAlert}
+        onEnterAndAlert={handleEnterAndAlert}
       />
 
       {/* Contract sheet */}

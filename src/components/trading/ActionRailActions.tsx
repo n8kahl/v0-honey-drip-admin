@@ -29,7 +29,7 @@ interface ActionRailActionsProps {
   currentTrade: Trade | null;
   onEnter?: () => void;
   onUnload: () => void;
-  onTrim: () => void;
+  onTrim: (trimPercent?: number) => void;
   onMoveSL: () => void;
   onTrailStop: () => void;
   onAdd: () => void;
@@ -133,7 +133,7 @@ function EnteredActions({
   onTakeProfit,
   onExit,
 }: {
-  onTrim: () => void;
+  onTrim: (trimPercent?: number) => void;
   onMoveSL: () => void;
   onTrailStop: () => void;
   onAdd: () => void;
@@ -147,7 +147,7 @@ function EnteredActions({
         <ActionButton
           icon={<Scissors className="w-4 h-4" />}
           label="Trim 50%"
-          onClick={onTrim}
+          onClick={() => onTrim(50)}
           variant="secondary"
         />
         <ActionButton

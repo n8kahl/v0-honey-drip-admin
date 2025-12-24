@@ -233,6 +233,7 @@ export interface TradeUpdate {
   message: string;
   price: number;
   pnlPercent?: number;
+  trimPercent?: number;
 }
 
 export interface TradeEvent {
