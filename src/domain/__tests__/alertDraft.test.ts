@@ -209,8 +209,8 @@ describe("getDefaultEditablePrices", () => {
     const prices = getDefaultEditablePrices("LOAD", trade, 10.0);
 
     expect(prices.current).toBe(10.0);
-    expect(prices.target).toBe(15.0); // 1.5x current
-    expect(prices.stop).toBe(5.0); // 0.5x current
+    expect(prices.target).toBe(20.0); // 2.0x current (Swing - 30 DTE)
+    expect(prices.stop).toBe(3.0); // 0.3x current (Swing - 30 DTE)
   });
 
   it("returns correct prices for ENTER intent", () => {
@@ -520,11 +520,12 @@ describe("updateDraftPrice", () => {
   it("updates price immutably", () => {
     const trade = createMockTrade("id-1", "WATCHING", "SPY");
     const draft = createAlertDraft({ intent: "LOAD", trade });
+    const originalTarget = draft.editablePrices.target;
 
-    const updated = updateDraftPrice(draft, "target", 10.0);
+    const updated = updateDraftPrice(draft, "target", 12.0);
 
-    expect(updated.editablePrices.target).toBe(10.0);
-    expect(draft.editablePrices.target).not.toBe(10.0); // Original unchanged
+    expect(updated.editablePrices.target).toBe(12.0);
+    expect(draft.editablePrices.target).toBe(originalTarget); // Original unchanged
   });
 });
 
