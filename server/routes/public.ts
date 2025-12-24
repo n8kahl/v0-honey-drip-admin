@@ -245,8 +245,142 @@ router.get("/t/:token", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/public/stats/summary
+ * Returns group performance stats for a given time range
+ * Query params:
+ *   - range: "day" | "week" | "month" (default: "day")
+ *     - day: Today (UTC midnight to now)
+ *     - week: Last 7 days (rolling)
+ *     - month: Last 30 days (rolling)
+ */
+router.get("/stats/summary", async (req: Request, res: Response) => {
+  try {
+    const supabase = getSupabase();
+    const range = (req.query.range as "day" | "week" | "month") || "day";
+
+    // Calculate date boundaries based on range
+    const now = new Date();
+    let startDate: Date;
+    const endDate = now;
+
+    switch (range) {
+      case "day":
+        // Today: UTC midnight to now
+        startDate = new Date(now.toISOString().split("T")[0] + "T00:00:00.000Z");
+        break;
+      case "week":
+        // Last 7 days (rolling)
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case "month":
+        // Last 30 days (rolling)
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date(now.toISOString().split("T")[0] + "T00:00:00.000Z");
+    }
+
+    // Query EXITED trades within the range
+    const { data: trades, error } = await supabase
+      .from("trades")
+      .select("*")
+      .eq("show_on_public", true)
+      .in("state", EXITED_TRADE_STATES)
+      .gte("exit_time", startDate.toISOString())
+      .lte("exit_time", endDate.toISOString());
+
+    if (error) throw error;
+
+    // Initialize stats
+    const stats = {
+      range,
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+      total_trades: 0,
+      wins: 0,
+      losses: 0,
+      win_rate: 0,
+      total_pnl_percent: 0,
+      avg_pnl_percent: 0,
+      best_trade: { percent: 0, id: null as string | null },
+      worst_trade: { percent: 0, id: null as string | null },
+      by_type: {
+        Scalp: { count: 0, wins: 0, losses: 0, total_pnl: 0, avg_pnl: 0, win_rate: 0 },
+        Day: { count: 0, wins: 0, losses: 0, total_pnl: 0, avg_pnl: 0, win_rate: 0 },
+        Swing: { count: 0, wins: 0, losses: 0, total_pnl: 0, avg_pnl: 0, win_rate: 0 },
+        LEAP: { count: 0, wins: 0, losses: 0, total_pnl: 0, avg_pnl: 0, win_rate: 0 },
+      } as Record<
+        string,
+        {
+          count: number;
+          wins: number;
+          losses: number;
+          total_pnl: number;
+          avg_pnl: number;
+          win_rate: number;
+        }
+      >,
+      updated_at: now.toISOString(),
+    };
+
+    // Process trades
+    trades?.forEach((trade: PublicTrade) => {
+      const pnl = calculatePnlPercent(trade.entry_price, trade.exit_price);
+      if (pnl === null) return;
+
+      stats.total_trades++;
+      stats.total_pnl_percent += pnl;
+
+      if (pnl > 0) {
+        stats.wins++;
+      } else if (pnl < 0) {
+        stats.losses++;
+      }
+
+      // Track best/worst trades
+      if (pnl > stats.best_trade.percent) {
+        stats.best_trade = { percent: pnl, id: trade.id };
+      }
+      if (pnl < stats.worst_trade.percent) {
+        stats.worst_trade = { percent: pnl, id: trade.id };
+      }
+
+      // Track by type
+      const type = trade.trade_type;
+      if (stats.by_type[type]) {
+        stats.by_type[type].count++;
+        stats.by_type[type].total_pnl += pnl;
+        if (pnl > 0) stats.by_type[type].wins++;
+        else if (pnl < 0) stats.by_type[type].losses++;
+      }
+    });
+
+    // Calculate derived values
+    if (stats.total_trades > 0) {
+      stats.win_rate = (stats.wins / stats.total_trades) * 100;
+      stats.avg_pnl_percent = stats.total_pnl_percent / stats.total_trades;
+    }
+
+    // Calculate per-type averages and win rates
+    Object.keys(stats.by_type).forEach((type) => {
+      const typeStats = stats.by_type[type];
+      if (typeStats.count > 0) {
+        typeStats.avg_pnl = typeStats.total_pnl / typeStats.count;
+        typeStats.win_rate = (typeStats.wins / typeStats.count) * 100;
+      }
+    });
+
+    res.json(stats);
+  } catch (error: any) {
+    console.error("[Public API] Error fetching stats summary:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch stats" });
+  }
+});
+
+/**
  * GET /api/public/stats/today
  * Returns today's group performance stats
+ * @deprecated Use /api/public/stats/summary?range=day instead
  */
 router.get("/stats/today", async (_req: Request, res: Response) => {
   try {

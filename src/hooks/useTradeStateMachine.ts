@@ -36,6 +36,17 @@ import { roundPrice } from "../lib/utils";
 import { getInitialConfluence } from "./useTradeConfluenceMonitor";
 import { tradeHookLogger as log } from "../lib/utils/logger";
 
+// Domain layer imports
+import {
+  startTradeAction,
+  commitTradeAction,
+  validateTransition,
+  intentToAlertType,
+  intentToUpdateKind,
+  type TradeActionIntent,
+  type AlertDraft,
+} from "../domain/tradeActions";
+
 // ============================================================================
 // TRADE STATE MACHINE - Database-First Architecture
 // ============================================================================
@@ -86,6 +97,8 @@ interface TradeStateMachineState {
   activeTrades: Trade[];
   focus: FocusTarget;
   isTransitioning: boolean; // True when a state transition is in progress (prevents duplicate actions)
+  // Domain layer state
+  alertDraft: AlertDraft | null; // New canonical draft from domain layer
 }
 
 interface TradeStateMachineActions {
@@ -156,6 +169,10 @@ export function useTradeStateMachine({
   const setFocusedTrade = useTradeStore((s) => s.setFocusedTrade);
   const loadTrades = useTradeStore((s) => s.loadTrades);
 
+  // Subscribe to currentTradeId directly - this ensures focus computation reacts
+  // when setFocusedTrade(null) clears the trade ID
+  const currentTradeId = useTradeStore((s) => s.currentTradeId);
+
   // Use store's derived selectors - SINGLE SOURCE OF TRUTH (no duplicate logic)
   // These call into the store's getCurrentTrade() and getTradeState() methods
   const currentTrade = useTradeStore((s) => s.getCurrentTrade());
@@ -176,6 +193,9 @@ export function useTradeStateMachine({
   }>({});
   const [showAlert, setShowAlert] = useState(false);
   const [_isCreatingTrade, setIsCreatingTrade] = useState(false); // Unused, kept for potential future use
+
+  // Domain layer state - canonical alert draft
+  const [alertDraft, setAlertDraft] = useState<AlertDraft | null>(null);
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
 
@@ -268,11 +288,23 @@ export function useTradeStateMachine({
         });
       }
 
-      // Set appropriate alertType based on trade state
+      // Set appropriate alertType and alertDraft based on trade state
       if (trade.state === "ENTERED") {
         setAlertType("exit");
+        // Pre-create an EXIT draft for quick access
+        const draft = startTradeAction("EXIT", { trade });
+        if (draft) {
+          setAlertDraft(draft);
+        }
       } else if (trade.state === "LOADED") {
         setAlertType("enter");
+        // Pre-create an ENTER draft for quick access
+        const draft = startTradeAction("ENTER", { trade });
+        if (draft) {
+          setAlertDraft(draft);
+        }
+      } else {
+        setAlertDraft(null);
       }
 
       setShowAlert(false);
@@ -404,6 +436,14 @@ export function useTradeStateMachine({
 
         // Set as preview in store (single source of truth) - atomic update
         setFocusedTrade(previewTradeObj);
+
+        // Use domain layer to create draft with proper defaults
+        const draft = startTradeAction("LOAD", { trade: previewTradeObj });
+        if (draft) {
+          setAlertDraft(draft);
+        }
+
+        // Backward compatibility: set legacy state
         setAlertType("load");
         setShowAlert(true);
 
@@ -921,7 +961,7 @@ export function useTradeStateMachine({
       switch (alertType) {
         case "trim":
           updateType = "trim";
-          // Optionally update current_price for trim
+          // Persist current_price for trim
           if (priceOverrides?.currentPrice) {
             dbUpdates.current_price = priceOverrides.currentPrice;
           }
@@ -933,13 +973,34 @@ export function useTradeStateMachine({
               : alertOptions.updateKind === "take-profit"
                 ? "trim"
                 : "update";
-          // CRITICAL FIX: Persist stop loss for SL updates
+          // CRITICAL FIX: Persist ALL price overrides for updates
           if (alertOptions.updateKind === "sl" && effectiveStopLoss !== undefined) {
             dbUpdates.stop_loss = effectiveStopLoss;
             log.info("Persisting stop loss update", {
               stopLoss: effectiveStopLoss,
               tradeId: trade.id,
             });
+          }
+          if (alertOptions.updateKind === "take-profit") {
+            // Persist target price for take-profit updates
+            if (priceOverrides?.targetPrice !== undefined) {
+              dbUpdates.target_price = priceOverrides.targetPrice;
+            }
+            if (priceOverrides?.currentPrice !== undefined) {
+              dbUpdates.current_price = priceOverrides.currentPrice;
+            }
+          }
+          // For generic updates, persist any edited prices
+          if (alertOptions.updateKind === "generic") {
+            if (priceOverrides?.targetPrice !== undefined) {
+              dbUpdates.target_price = priceOverrides.targetPrice;
+            }
+            if (priceOverrides?.stopLoss !== undefined) {
+              dbUpdates.stop_loss = priceOverrides.stopLoss;
+            }
+            if (priceOverrides?.currentPrice !== undefined) {
+              dbUpdates.current_price = priceOverrides.currentPrice;
+            }
           }
           break;
         case "update-sl":
@@ -963,6 +1024,10 @@ export function useTradeStateMachine({
           break;
         case "add":
           updateType = "add";
+          // Persist current price when adding to position
+          if (priceOverrides?.currentPrice !== undefined) {
+            dbUpdates.current_price = priceOverrides.currentPrice;
+          }
           break;
         case "exit": {
           // CRITICAL FIX: Use effectiveCurrent (from priceOverrides) instead of ignoring user edits
@@ -990,6 +1055,30 @@ export function useTradeStateMachine({
         // Persist to database
         if (Object.keys(dbUpdates).length > 0) {
           await updateTradeApi(userId, trade.id, dbUpdates);
+
+          // OPTIMISTIC UPDATE: Immediately update the store with the new values
+          // This ensures prices are reflected throughout the UI without waiting for loadTrades()
+          const storePatch: Partial<Trade> = {};
+          if (dbUpdates.stop_loss !== undefined) {
+            storePatch.stopLoss = dbUpdates.stop_loss;
+          }
+          if (dbUpdates.target_price !== undefined) {
+            storePatch.targetPrice = dbUpdates.target_price;
+          }
+          if (dbUpdates.current_price !== undefined) {
+            storePatch.currentPrice = dbUpdates.current_price;
+          }
+          if (dbUpdates.entry_price !== undefined) {
+            storePatch.entryPrice = dbUpdates.entry_price;
+          }
+
+          if (Object.keys(storePatch).length > 0) {
+            useTradeStore.getState().applyTradePatch(trade.id, storePatch);
+            log.debug("Optimistic update applied to store", {
+              tradeId: trade.id,
+              fields: Object.keys(storePatch),
+            });
+          }
         }
 
         if (updateType) {
@@ -1248,6 +1337,7 @@ export function useTradeStateMachine({
 
   const handleCancelAlert = useCallback(() => {
     setShowAlert(false);
+    setAlertDraft(null); // Clear domain layer draft
     if (isMobile && onMobileTabChange) {
       onMobileTabChange("live");
     }
@@ -1256,6 +1346,7 @@ export function useTradeStateMachine({
   const handleDiscard = useCallback(() => {
     setFocusedTrade(null); // Atomic clear of both previewTrade and currentTradeId
     setShowAlert(false);
+    setAlertDraft(null); // Clear domain layer draft
   }, [setFocusedTrade]);
 
   const handleUnloadTrade = useCallback(async () => {
@@ -1298,8 +1389,19 @@ export function useTradeStateMachine({
 
   const handleTrim = useCallback(() => {
     if (!currentTrade) return;
-    openAlertComposer("update", { updateKind: "trim" });
-  }, [currentTrade, openAlertComposer]);
+    // Use domain layer to create draft
+    const draft = startTradeAction("TRIM", { trade: currentTrade });
+    if (draft) {
+      setAlertDraft(draft);
+      // Backward compatibility: also set legacy state
+      setAlertType(intentToAlertType("TRIM"));
+      setAlertOptions({ updateKind: intentToUpdateKind("TRIM") });
+      setShowAlert(true);
+    } else {
+      log.warn("handleTrim: Invalid transition", { state: currentTrade.state });
+      toast.error("Cannot trim from current state");
+    }
+  }, [currentTrade, toast]);
 
   const handleUpdate = useCallback(() => {
     if (!currentTrade) return;
@@ -1308,18 +1410,51 @@ export function useTradeStateMachine({
 
   const handleUpdateSL = useCallback(() => {
     if (!currentTrade) return;
-    openAlertComposer("update", { updateKind: "sl" });
-  }, [currentTrade, openAlertComposer]);
+    // Use domain layer to create draft
+    const draft = startTradeAction("UPDATE_SL", { trade: currentTrade });
+    if (draft) {
+      setAlertDraft(draft);
+      // Backward compatibility: also set legacy state
+      setAlertType(intentToAlertType("UPDATE_SL"));
+      setAlertOptions({ updateKind: intentToUpdateKind("UPDATE_SL") });
+      setShowAlert(true);
+    } else {
+      log.warn("handleUpdateSL: Invalid transition", { state: currentTrade.state });
+      toast.error("Cannot update stop loss from current state");
+    }
+  }, [currentTrade, toast]);
 
   const handleTrailStop = useCallback(() => {
     if (!currentTrade) return;
-    openAlertComposer("trail-stop");
-  }, [currentTrade, openAlertComposer]);
+    // Use domain layer to create draft
+    const draft = startTradeAction("TRAIL_STOP", { trade: currentTrade });
+    if (draft) {
+      setAlertDraft(draft);
+      // Backward compatibility: also set legacy state
+      setAlertType(intentToAlertType("TRAIL_STOP"));
+      setAlertOptions({});
+      setShowAlert(true);
+    } else {
+      log.warn("handleTrailStop: Invalid transition", { state: currentTrade.state });
+      toast.error("Cannot activate trailing stop from current state");
+    }
+  }, [currentTrade, toast]);
 
   const handleAdd = useCallback(() => {
     if (!currentTrade) return;
-    openAlertComposer("add");
-  }, [currentTrade, openAlertComposer]);
+    // Use domain layer to create draft
+    const draft = startTradeAction("ADD", { trade: currentTrade });
+    if (draft) {
+      setAlertDraft(draft);
+      // Backward compatibility: also set legacy state
+      setAlertType(intentToAlertType("ADD"));
+      setAlertOptions({});
+      setShowAlert(true);
+    } else {
+      log.warn("handleAdd: Invalid transition", { state: currentTrade.state });
+      toast.error("Cannot add to position from current state");
+    }
+  }, [currentTrade, toast]);
 
   const handleTakeProfit = useCallback(
     (_sendAlert?: boolean) => {
@@ -1330,10 +1465,21 @@ export function useTradeStateMachine({
         : null;
 
       if (!trade) return;
-      // TODO: If _sendAlert is explicitly false, handle immediate take profit without Discord
-      openAlertComposer("update", { updateKind: "take-profit" });
+
+      // Use domain layer - TRIM intent for take profit
+      const draft = startTradeAction("TRIM", { trade });
+      if (draft) {
+        setAlertDraft(draft);
+        // Backward compatibility: also set legacy state
+        setAlertType("update");
+        setAlertOptions({ updateKind: "take-profit" });
+        setShowAlert(true);
+      } else {
+        log.warn("handleTakeProfit: Invalid transition", { state: trade.state });
+        toast.error("Cannot take profit from current state");
+      }
     },
-    [openAlertComposer]
+    [toast]
   );
 
   const handleExit = useCallback(
@@ -1345,24 +1491,54 @@ export function useTradeStateMachine({
         : null;
 
       if (!trade) return;
-      // TODO: If _sendAlert is explicitly false, handle immediate exit without Discord
-      openAlertComposer("exit");
+
+      // Use domain layer to create draft
+      const draft = startTradeAction("EXIT", { trade });
+      if (draft) {
+        setAlertDraft(draft);
+        // Backward compatibility: also set legacy state
+        setAlertType(intentToAlertType("EXIT"));
+        setAlertOptions({});
+        setShowAlert(true);
+      } else {
+        log.warn("handleExit: Invalid transition", { state: trade.state });
+        toast.error("Cannot exit from current state");
+      }
     },
-    [openAlertComposer]
+    [toast]
   );
 
   // ========================================
   // COMPUTED FOCUS TARGET
   // ========================================
   const focus: FocusTarget = useMemo(() => {
-    if (currentTrade && ["LOADED", "ENTERED", "EXITED"].includes(tradeState)) {
-      return { kind: "trade", tradeId: currentTrade.id };
+    // PRIORITY: If currentTradeId is explicitly null, show symbol focus
+    // This ensures clicking a watchlist item clears trade focus immediately
+    // The currentTradeId check is more reliable than currentTrade because
+    // it's a primitive value that Zustand compares with strict equality
+    if (currentTradeId === null) {
+      // Trade ID is explicitly cleared - show symbol if we have one
+      if (activeTicker) {
+        return { kind: "symbol", symbol: activeTicker.symbol };
+      }
+      return null;
     }
+
+    // If we have a currentTrade, show trade focus
+    if (currentTrade) {
+      const effectiveState = currentTrade.state;
+      // Show trade focus for all trade states
+      if (["WATCHING", "LOADED", "ENTERED", "EXITED"].includes(effectiveState)) {
+        return { kind: "trade", tradeId: currentTrade.id };
+      }
+    }
+
+    // Fallback to symbol focus if we have an active ticker
     if (activeTicker) {
       return { kind: "symbol", symbol: activeTicker.symbol };
     }
     return null;
-  }, [currentTrade, tradeState, activeTicker]);
+  }, [currentTradeId, currentTrade, activeTicker]);
 
   return {
     // State (from store + local UI state)
@@ -1377,6 +1553,8 @@ export function useTradeStateMachine({
     activeTrades,
     focus,
     isTransitioning,
+    // Domain layer state
+    alertDraft,
     // Actions
     actions: {
       handleTickerClick,

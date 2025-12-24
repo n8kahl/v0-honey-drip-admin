@@ -4,6 +4,12 @@ import { Trade, AlertType, DiscordChannel, Challenge } from "../../../types";
 import { cn } from "../../../lib/utils";
 import { Check, ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
 import { formatDiscordAlert } from "../../../lib/discordFormatter";
+import {
+  getDefaultFieldToggles,
+  getDefaultEditablePrices,
+  getDefaultComment,
+  type TradeActionIntent,
+} from "../../../domain/alertDraft";
 
 interface MobileAlertSheetProps {
   open: boolean;
@@ -24,6 +30,33 @@ interface MobileAlertSheetProps {
       stopLoss?: number;
     }
   ) => void;
+}
+
+/**
+ * Map AlertType + alertOptions to TradeActionIntent for domain layer
+ */
+function alertTypeToIntent(
+  alertType: AlertType,
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" }
+): TradeActionIntent {
+  switch (alertType) {
+    case "load":
+      return "LOAD";
+    case "enter":
+      return "ENTER";
+    case "exit":
+      return "EXIT";
+    case "add":
+      return "ADD";
+    case "trail-stop":
+      return "TRAIL_STOP";
+    case "update":
+      if (alertOptions?.updateKind === "trim") return "TRIM";
+      if (alertOptions?.updateKind === "sl") return "UPDATE_SL";
+      return "TRIM"; // Default update to TRIM
+    default:
+      return "LOAD";
+  }
 }
 
 export function MobileAlertSheet({
@@ -136,14 +169,18 @@ export function MobileAlertSheet({
     }
   };
 
-  // Initialize state when sheet opens (matching desktop defaults)
+  // Initialize state when sheet opens (matching desktop defaults via domain layer)
   useEffect(() => {
     if (open && trade) {
-      // Initialize price overrides from trade
-      setEntryPrice(trade.entryPrice || trade.contract?.mid || 0);
-      setCurrentPrice(trade.currentPrice || trade.contract?.mid || 0);
-      setTargetPrice(trade.targetPrice || trade.contract?.mid * 1.5 || 0);
-      setStopLoss(trade.stopLoss || trade.contract?.mid * 0.5 || 0);
+      // Convert alertType to TradeActionIntent for domain layer
+      const intent = alertTypeToIntent(alertType, alertOptions);
+
+      // Initialize prices using domain layer defaults
+      const defaultPrices = getDefaultEditablePrices(intent, trade);
+      setEntryPrice(defaultPrices.entry || trade.entryPrice || trade.contract?.mid || 0);
+      setCurrentPrice(defaultPrices.current || trade.currentPrice || trade.contract?.mid || 0);
+      setTargetPrice(defaultPrices.target || trade.targetPrice || 0);
+      setStopLoss(defaultPrices.stop || trade.stopLoss || 0);
 
       // Initialize channels from trade or defaults (3-tier fallback)
       const tradeChannels = Array.isArray(trade.discordChannels) ? trade.discordChannels : [];
@@ -169,8 +206,10 @@ export function MobileAlertSheet({
       const tradeChallenges = Array.isArray(trade.challenges) ? trade.challenges : [];
       setSelectedChallenges(tradeChallenges);
 
-      // Set default comment based on alert type (matching desktop)
-      let defaultComment = "";
+      // Set default comment - use domain layer with mobile-specific overrides for richer text
+      const domainComment = getDefaultComment(intent);
+      let defaultComment = domainComment;
+      // Mobile-specific richer default comments (keep these for better UX)
       if (alertType === "update" && alertOptions?.updateKind === "trim") {
         defaultComment = "Trimming here to lock profit.";
       } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
@@ -186,56 +225,13 @@ export function MobileAlertSheet({
       }
       setComment(defaultComment);
 
-      // Set default field visibility based on alert type (matching desktop exactly)
-      if (alertType === "enter") {
-        setShowEntry(true);
-        setShowCurrent(true);
-        setShowTarget(true);
-        setShowStopLoss(true);
-        setShowPnL(false);
-      } else if (alertType === "update" && alertOptions?.updateKind === "trim") {
-        setShowEntry(false);
-        setShowCurrent(true);
-        setShowTarget(false);
-        setShowStopLoss(false);
-        setShowPnL(true);
-      } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
-        setShowEntry(false);
-        setShowCurrent(false);
-        setShowTarget(false);
-        setShowStopLoss(true);
-        setShowPnL(false);
-      } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
-        setShowEntry(false);
-        setShowCurrent(true);
-        setShowTarget(false);
-        setShowStopLoss(false);
-        setShowPnL(false);
-      } else if (alertType === "trail-stop") {
-        setShowEntry(false);
-        setShowCurrent(false);
-        setShowTarget(false);
-        setShowStopLoss(true);
-        setShowPnL(false);
-      } else if (alertType === "add") {
-        setShowEntry(false);
-        setShowCurrent(true);
-        setShowTarget(false);
-        setShowStopLoss(false);
-        setShowPnL(true);
-      } else if (alertType === "exit") {
-        setShowEntry(false);
-        setShowCurrent(true);
-        setShowTarget(false);
-        setShowStopLoss(false);
-        setShowPnL(true);
-      } else if (alertType === "load") {
-        setShowEntry(false);
-        setShowCurrent(false);
-        setShowTarget(false);
-        setShowStopLoss(false);
-        setShowPnL(false);
-      }
+      // Set default field visibility using domain layer (consistent with desktop)
+      const toggles = getDefaultFieldToggles(intent);
+      setShowEntry(toggles.showEntry);
+      setShowCurrent(toggles.showCurrent);
+      setShowTarget(toggles.showTarget);
+      setShowStopLoss(toggles.showStop);
+      setShowPnL(toggles.showPnL);
     }
   }, [open, trade, channels, alertType, alertOptions]);
 
@@ -527,75 +523,73 @@ export function MobileAlertSheet({
               </div>
             </div>
 
-            {/* Field Toggles (only show for non-load alerts) */}
-            {alertType !== "load" && (
-              <div className="mb-4">
-                <label className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-2">
-                  Include Fields
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {(alertType === "enter" || alertType === "add") && (
-                    <button
-                      onClick={() => setShowEntry(!showEntry)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
-                        showEntry
-                          ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
-                          : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
-                      )}
-                    >
-                      Entry
-                    </button>
+            {/* Field Toggles - now shown for all alert types including load */}
+            <div className="mb-4">
+              <label className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-2">
+                Include Fields
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {(alertType === "enter" || alertType === "add") && (
+                  <button
+                    onClick={() => setShowEntry(!showEntry)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                      showEntry
+                        ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                        : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
+                    )}
+                  >
+                    Entry
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowCurrent(!showCurrent)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                    showCurrent
+                      ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                      : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
                   )}
+                >
+                  Current
+                </button>
+                {(alertType === "enter" || alertType === "add" || alertType === "load") && (
                   <button
-                    onClick={() => setShowCurrent(!showCurrent)}
+                    onClick={() => setShowTarget(!showTarget)}
                     className={cn(
                       "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
-                      showCurrent
+                      showTarget
                         ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
                         : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
                     )}
                   >
-                    Current
+                    Target
                   </button>
-                  {(alertType === "enter" || alertType === "add") && (
-                    <button
-                      onClick={() => setShowTarget(!showTarget)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
-                        showTarget
-                          ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
-                          : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
-                      )}
-                    >
-                      Target
-                    </button>
+                )}
+                <button
+                  onClick={() => setShowStopLoss(!showStopLoss)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                    showStopLoss
+                      ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                      : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
                   )}
-                  <button
-                    onClick={() => setShowStopLoss(!showStopLoss)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
-                      showStopLoss
-                        ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
-                        : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
-                    )}
-                  >
-                    Stop Loss
-                  </button>
-                  <button
-                    onClick={() => setShowPnL(!showPnL)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
-                      showPnL
-                        ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
-                        : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
-                    )}
-                  >
-                    P&L
-                  </button>
-                </div>
+                >
+                  Stop Loss
+                </button>
+                <button
+                  onClick={() => setShowPnL(!showPnL)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-[var(--radius)] text-xs font-medium border transition-colors",
+                    showPnL
+                      ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30 text-[var(--brand-primary)]"
+                      : "bg-[var(--surface-1)] border-[var(--border-hairline)] text-[var(--text-muted)]"
+                  )}
+                >
+                  P&L
+                </button>
               </div>
-            )}
+            </div>
 
             {/* Discord Channels */}
             <div className="mb-4">

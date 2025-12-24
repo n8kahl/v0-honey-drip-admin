@@ -2,16 +2,19 @@
  * DailyScorecard.tsx - Today's Group Performance Display
  *
  * Shows combined gains, win/loss record, trade type breakdown,
- * and admin leaderboard cards.
+ * and admin leaderboard cards. Now supports D/W/M range toggle.
  */
 
-import { TrendingUp, TrendingDown, Target, Flame, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, Flame, BarChart3, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { PublicStatsSummary, AdminStats, StatsRange, PublicTradeType } from "@/types/public";
+import { formatPct, formatWinRate, formatWinLossRecord } from "@/lib/utils/publicFormatters";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-// ============================================================================
-// Types
-// ============================================================================
+// Re-export types for backwards compatibility
+export type { AdminStats } from "@/types/public";
 
+// Legacy type alias for backwards compatibility
 export interface DailyStats {
   date: string;
   total_trades: number;
@@ -20,34 +23,36 @@ export interface DailyStats {
   total_gain_percent: number;
   avg_gain_percent: number;
   best_trade_percent: number;
-  by_type: {
-    Scalp: { count: number; wins: number; losses: number };
-    Day: { count: number; wins: number; losses: number };
-    Swing: { count: number; wins: number; losses: number };
-    LEAP: { count: number; wins: number; losses: number };
-  };
-}
-
-export interface AdminStats {
-  admin_id: string;
-  admin_name: string;
-  total_trades: number;
-  wins: number;
-  losses: number;
-  total_gain_percent: number;
+  by_type: Record<PublicTradeType, { count: number; wins: number; losses: number }>;
 }
 
 interface DailyScorecardProps {
   stats: DailyStats | null;
   leaderboard: AdminStats[];
   isLoading?: boolean;
+  // New props for D/W/M toggle
+  selectedRange?: StatsRange;
+  onRangeChange?: (range: StatsRange) => void;
 }
+
+// Range labels for toggle buttons
+const RANGE_LABELS: Record<StatsRange, string> = {
+  day: "Today",
+  week: "7 Days",
+  month: "30 Days",
+};
 
 // ============================================================================
 // Component
 // ============================================================================
 
-export function DailyScorecard({ stats, leaderboard, isLoading }: DailyScorecardProps) {
+export function DailyScorecard({
+  stats,
+  leaderboard,
+  isLoading,
+  selectedRange = "day",
+  onRangeChange,
+}: DailyScorecardProps) {
   if (isLoading) {
     return <DailyScorecardSkeleton />;
   }
@@ -63,17 +68,64 @@ export function DailyScorecard({ stats, leaderboard, isLoading }: DailyScorecard
   const swings = stats?.by_type?.Swing?.count ?? 0;
   const leaps = stats?.by_type?.LEAP?.count ?? 0;
 
+  // Range title based on selection
+  const rangeTitle =
+    selectedRange === "day"
+      ? "Today's Group Performance"
+      : selectedRange === "week"
+        ? "Last 7 Days Performance"
+        : "Last 30 Days Performance";
+
   return (
     <section className="relative overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-gradient-to-br from-[var(--surface-1)] via-[var(--bg-base)] to-[var(--surface-1)]">
       {/* Background decoration */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,var(--brand-primary)_0%,transparent_50%)] opacity-5" />
 
       <div className="relative p-6 lg:p-8">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <h2 className="text-lg font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-            Today's Group Performance
-          </h2>
+        {/* Header with Range Toggle */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                {rangeTitle}
+              </h2>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-4 h-4 text-[var(--text-faint)]" />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <p className="text-xs">
+                      <strong>Win Rate:</strong> Percentage of exited trades with positive P&L
+                      <br />
+                      <strong>P&L:</strong> ((exit - entry) / entry) × 100
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+
+            {/* D/W/M Toggle */}
+            {onRangeChange && (
+              <div className="flex rounded-lg bg-[var(--surface-2)] p-1">
+                {(["day", "week", "month"] as StatsRange[]).map((range) => (
+                  <button
+                    key={range}
+                    data-testid={`stats-toggle-${range}`}
+                    onClick={() => onRangeChange(range)}
+                    className={cn(
+                      "px-3 py-1 text-sm font-medium rounded-md transition-colors",
+                      selectedRange === range
+                        ? "bg-[var(--brand-primary)] text-black"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-high)]"
+                    )}
+                  >
+                    {RANGE_LABELS[range]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Main Stats Grid */}
@@ -181,9 +233,7 @@ export function DailyScorecard({ stats, leaderboard, isLoading }: DailyScorecard
         {/* Empty State */}
         {!stats && leaderboard.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-[var(--text-muted)]">
-              No trades yet today. Check back soon!
-            </p>
+            <p className="text-[var(--text-muted)]">No trades yet today. Check back soon!</p>
           </div>
         )}
       </div>

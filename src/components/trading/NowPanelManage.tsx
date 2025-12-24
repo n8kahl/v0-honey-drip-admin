@@ -69,6 +69,22 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
   const mtfTrend = symbolData?.mtfTrend;
   const { keyLevels } = useKeyLevels(trade.ticker);
 
+  // Get subscribe action from store
+  const subscribe = useMarketDataStore((s) => s.subscribe);
+  const subscribedSymbols = useMarketDataStore((s) => s.subscribedSymbols);
+
+  // Auto-subscribe symbol when trade enters ENTERED state
+  // This ensures market data (candles, indicators, MTF) are loaded
+  useEffect(() => {
+    if (trade?.ticker && trade.state === "ENTERED") {
+      // Check if not already subscribed
+      if (!subscribedSymbols.has(trade.ticker)) {
+        console.log(`[NowPanelManage] Auto-subscribing ${trade.ticker} for live market data`);
+        subscribe(trade.ticker);
+      }
+    }
+  }, [trade?.ticker, trade?.state, subscribe, subscribedSymbols]);
+
   // Loading state if model not yet available
   if (!liveModel) {
     return (
@@ -145,15 +161,27 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
           ) : (
             <WifiOff className="w-3.5 h-3.5 text-red-400" />
           )}
-          <span className={cn("text-[10px] font-medium uppercase tracking-wide", healthStyle.className)}>
+          <span
+            className={cn("text-[10px] font-medium uppercase tracking-wide", healthStyle.className)}
+          >
             {healthStyle.label}
           </span>
         </div>
         <div className="flex items-center gap-3 text-[10px] text-[var(--text-faint)]">
-          <span className={cn("px-1.5 py-0.5 rounded border", getSourceBadgeStyle(liveModel.optionSource))}>
+          <span
+            className={cn(
+              "px-1.5 py-0.5 rounded border",
+              getSourceBadgeStyle(liveModel.optionSource)
+            )}
+          >
             Options: {liveModel.optionSource === "websocket" ? "WS" : "REST"}
           </span>
-          <span className={cn("px-1.5 py-0.5 rounded border", getSourceBadgeStyle(liveModel.greeksSource === "live" ? "rest" : "static"))}>
+          <span
+            className={cn(
+              "px-1.5 py-0.5 rounded border",
+              getSourceBadgeStyle(liveModel.greeksSource === "live" ? "rest" : "static")
+            )}
+          >
             Greeks: {liveModel.greeksSource === "live" ? "Live" : "Static"}
           </span>
         </div>
@@ -193,10 +221,13 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
                 <div
                   className={cn(
                     "text-lg font-bold tabular-nums",
-                    liveModel.rMultiple >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                    liveModel.rMultiple >= 0
+                      ? "text-[var(--accent-positive)]"
+                      : "text-[var(--accent-negative)]"
                   )}
                 >
-                  {liveModel.rMultiple >= 0 ? "+" : ""}{liveModel.rMultiple.toFixed(2)}R
+                  {liveModel.rMultiple >= 0 ? "+" : ""}
+                  {liveModel.rMultiple.toFixed(2)}R
                 </div>
               </div>
             )}
@@ -247,7 +278,12 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
             <Clock className="w-3 h-3 text-[var(--text-faint)]" />
             <span className="text-[var(--text-muted)]">
               {liveModel.marketOpen ? (
-                <>Close in <span className="font-medium text-[var(--text-high)]">{liveModel.timeToCloseFormatted}</span></>
+                <>
+                  Close in{" "}
+                  <span className="font-medium text-[var(--text-high)]">
+                    {liveModel.timeToCloseFormatted}
+                  </span>
+                </>
               ) : (
                 <span className="text-[var(--accent-negative)]">Market Closed</span>
               )}
@@ -289,7 +325,8 @@ function PositionHUD({ trade, liveModel }: PositionHUDProps) {
                   : "text-[var(--accent-negative)]"
               )}
             >
-              ({liveModel.underlyingChangePercent >= 0 ? "+" : ""}{liveModel.underlyingChangePercent.toFixed(2)}%)
+              ({liveModel.underlyingChangePercent >= 0 ? "+" : ""}
+              {liveModel.underlyingChangePercent.toFixed(2)}%)
             </span>
           </span>
         </div>
@@ -349,7 +386,9 @@ function GreeksStrip({ liveModel }: GreeksStripProps) {
             <span
               className={cn(
                 "text-xs font-medium tabular-nums",
-                liveModel.spreadPercent > 5 ? "text-[var(--accent-negative)]" : "text-[var(--text-high)]"
+                liveModel.spreadPercent > 5
+                  ? "text-[var(--accent-negative)]"
+                  : "text-[var(--text-high)]"
               )}
             >
               {liveModel.spreadPercent.toFixed(1)}%
@@ -382,17 +421,13 @@ interface LevelsATRPanelProps {
   mtfTrend: any;
 }
 
-function LevelsATRPanel({
-  currentPrice,
-  keyLevels,
-  indicators,
-  mtfTrend,
-}: LevelsATRPanelProps) {
+function LevelsATRPanel({ currentPrice, keyLevels, indicators, mtfTrend }: LevelsATRPanelProps) {
   const [mtfExpanded, setMtfExpanded] = useState(true);
 
   // Build key levels array
   const levels = useMemo(() => {
-    const result: { label: string; price: number; type: "support" | "resistance" | "neutral" }[] = [];
+    const result: { label: string; price: number; type: "support" | "resistance" | "neutral" }[] =
+      [];
 
     if (keyLevels?.vwap) result.push({ label: "VWAP", price: keyLevels.vwap, type: "neutral" });
     if (keyLevels?.pdh) result.push({ label: "PDH", price: keyLevels.pdh, type: "resistance" });
@@ -461,10 +496,17 @@ function LevelsATRPanel({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-[var(--text-muted)]">
-              ATR(14): <span className="text-[var(--text-high)] tabular-nums">{atrMetrics.atr.toFixed(2)}</span>
+              ATR(14):{" "}
+              <span className="text-[var(--text-high)] tabular-nums">
+                {atrMetrics.atr.toFixed(2)}
+              </span>
             </span>
             <span className="text-[var(--text-muted)]">
-              Session: <span className="text-[var(--text-high)] tabular-nums">{atrMetrics.consumedPct.toFixed(0)}%</span> consumed
+              Session:{" "}
+              <span className="text-[var(--text-high)] tabular-nums">
+                {atrMetrics.consumedPct.toFixed(0)}%
+              </span>{" "}
+              consumed
             </span>
           </div>
 
@@ -568,9 +610,11 @@ function LevelBar({
 // MTF Components
 // ============================================================================
 
-function MTFQuickStatus({ mtfTrend }: { mtfTrend: any }) {
-  const aligned = Object.values(mtfTrend || {}).filter((t: any) => t?.direction === "up").length;
-  const total = Object.keys(mtfTrend || {}).length || 4;
+function MTFQuickStatus({ mtfTrend }: { mtfTrend: Record<string, string> | undefined }) {
+  // mtfTrend values are strings: "bull" | "bear" | "neutral"
+  // Count bullish trends as "aligned up"
+  const aligned = Object.values(mtfTrend || {}).filter((t) => t === "bull").length;
+  const total = Object.keys(mtfTrend || {}).length || 5;
 
   return (
     <span className="text-[10px] text-[var(--text-faint)] tabular-nums">
@@ -579,10 +623,29 @@ function MTFQuickStatus({ mtfTrend }: { mtfTrend: any }) {
   );
 }
 
-function MTFLadder({ mtfTrend }: { mtfTrend: any }) {
-  const timeframes = ["1m", "5m", "15m", "1h"] as const;
+function MTFLadder({ mtfTrend }: { mtfTrend: Record<string, string> | undefined }) {
+  // Map store timeframe keys to display keys
+  // Store uses "60m", UI might want "1h"
+  const timeframes = [
+    { key: "1m", label: "1m" },
+    { key: "5m", label: "5m" },
+    { key: "15m", label: "15m" },
+    { key: "60m", label: "1h" },
+  ] as const;
 
-  const getTrendArrow = (direction: string) => {
+  // Convert string trend to direction and strength
+  const getTrendInfo = (trend: string | undefined) => {
+    switch (trend) {
+      case "bull":
+        return { direction: "up" as const, strength: 75 };
+      case "bear":
+        return { direction: "down" as const, strength: 25 };
+      default:
+        return { direction: "neutral" as const, strength: 50 };
+    }
+  };
+
+  const getTrendArrow = (direction: "up" | "down" | "neutral") => {
     switch (direction) {
       case "up":
         return <ArrowUp className="w-3 h-3 text-[var(--accent-positive)]" />;
@@ -595,17 +658,17 @@ function MTFLadder({ mtfTrend }: { mtfTrend: any }) {
 
   return (
     <div className="grid grid-cols-4 gap-2">
-      {timeframes.map((tf) => {
-        const trend = mtfTrend?.[tf] || {};
-        const strength = trend.strength || 50;
-        const direction = trend.direction || "neutral";
+      {timeframes.map(({ key, label }) => {
+        // mtfTrend[key] is a string: "bull" | "bear" | "neutral"
+        const trendString = mtfTrend?.[key];
+        const { direction, strength } = getTrendInfo(trendString);
 
         return (
           <div
-            key={tf}
+            key={key}
             className="p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)] text-center"
           >
-            <div className="text-[10px] text-[var(--text-faint)] uppercase mb-1">{tf}</div>
+            <div className="text-[10px] text-[var(--text-faint)] uppercase mb-1">{label}</div>
             <div className="flex items-center justify-center gap-1 mb-1">
               {getTrendArrow(direction)}
               <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
@@ -707,20 +770,27 @@ function TapeEvent({ update }: { update: Trade["updates"][number] }) {
         <div className="flex items-center gap-2">
           <span className="font-medium text-[var(--text-high)]">{getEventLabel()}</span>
           {update.price && (
-            <span className="text-[var(--text-muted)] tabular-nums">@ ${update.price.toFixed(2)}</span>
+            <span className="text-[var(--text-muted)] tabular-nums">
+              @ ${update.price.toFixed(2)}
+            </span>
           )}
           {update.pnlPercent !== undefined && update.pnlPercent !== null && (
             <span
               className={cn(
                 "tabular-nums",
-                update.pnlPercent >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                update.pnlPercent >= 0
+                  ? "text-[var(--accent-positive)]"
+                  : "text-[var(--accent-negative)]"
               )}
             >
-              ({update.pnlPercent >= 0 ? "+" : ""}{update.pnlPercent.toFixed(1)}%)
+              ({update.pnlPercent >= 0 ? "+" : ""}
+              {update.pnlPercent.toFixed(1)}%)
             </span>
           )}
         </div>
-        {update.message && <div className="text-[var(--text-faint)] truncate">{update.message}</div>}
+        {update.message && (
+          <div className="text-[var(--text-faint)] truncate">{update.message}</div>
+        )}
         <div className="text-[var(--text-faint)] tabular-nums">{timestamp}</div>
       </div>
     </div>

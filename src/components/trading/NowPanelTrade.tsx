@@ -3,8 +3,9 @@
  *
  * Displayed when focus.kind === "trade".
  * Shows different views based on trade state:
+ * - WATCHING: TradePreviewCard (contract preview, suggested levels, greeks)
  * - LOADED: TradeDecisionCard (readiness, metrics, checklist)
- * - ENTERED: PositionSnapshot (P&L, risk box, signals)
+ * - ENTERED: Routes to NowPanelManage (handled in NowPanel.tsx)
  * - EXITED: TradeRecap (final P&L, summary)
  */
 
@@ -65,9 +66,9 @@ export function NowPanelTrade({
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden animate-crossfade">
-      {/* Chart Section - Sticky Top */}
-      <div className="flex-shrink-0 h-[40%] min-h-[240px] border-b border-[var(--border-hairline)]">
+    <div className="h-full flex flex-col overflow-hidden min-h-0 animate-crossfade">
+      {/* Chart Section - Fixed height to leave room for content */}
+      <div className="flex-shrink-0 h-[240px] min-h-[180px] border-b border-[var(--border-hairline)]">
         <HDLiveChartContextAware
           ticker={trade.ticker}
           currentTrade={trade}
@@ -79,17 +80,143 @@ export function NowPanelTrade({
         />
       </div>
 
-      {/* Content Section - State-dependent */}
-      <div className="flex-1 overflow-y-auto">
-        {tradeState === "LOADED" && (
-          <TradeDecisionCard trade={trade} currentPrice={currentPrice} />
+      {/* Content Section - State-dependent, scrollable with more space */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {tradeState === "WATCHING" && (
+          <TradePreviewCard trade={trade} currentPrice={currentPrice} />
         )}
-        {tradeState === "ENTERED" && (
-          <PositionSnapshot trade={trade} currentPrice={currentPrice} />
-        )}
-        {tradeState === "EXITED" && (
-          <TradeRecap trade={trade} />
-        )}
+        {tradeState === "LOADED" && <TradeDecisionCard trade={trade} currentPrice={currentPrice} />}
+        {/* Note: ENTERED state routes to NowPanelManage - handled in NowPanel.tsx */}
+        {tradeState === "EXITED" && <TradeRecap trade={trade} />}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// WATCHING State: Trade Preview Card
+// ============================================================================
+
+interface TradePreviewCardProps {
+  trade: Trade;
+  currentPrice: number;
+}
+
+function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
+  const contract = trade.contract;
+  const dte = fmtDTE(contract?.daysToExpiry);
+  const spread = contract ? fmtSpread(contract.bid, contract.ask) : null;
+
+  // Calculate suggested levels based on contract
+  const suggestedTarget = trade.targetPrice || (contract?.mid ? contract.mid * 1.5 : 0);
+  const suggestedStop = trade.stopLoss || (contract?.mid ? contract.mid * 0.5 : 0);
+  const riskReward =
+    suggestedStop > 0
+      ? ((suggestedTarget - (contract?.mid || 0)) / ((contract?.mid || 0) - suggestedStop)).toFixed(
+          1
+        )
+      : "—";
+
+  return (
+    <div className="animate-fade-in-up">
+      {/* Preview Header */}
+      <div className="p-4 border-b border-[var(--border-hairline)] bg-gradient-to-r from-[var(--brand-primary)]/5 to-transparent">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="w-4 h-4 text-[var(--brand-primary)]" />
+          <span className="text-xs font-medium text-[var(--brand-primary)] uppercase tracking-wide">
+            Contract Preview
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl font-semibold text-[var(--text-high)]">{trade.ticker}</span>
+              <span className="text-sm text-[var(--text-muted)]">
+                {contract?.strike}
+                {contract?.type}
+              </span>
+              <span className={cn("text-xs", dte.className)}>{dte.text}</span>
+            </div>
+            <div className="text-sm text-[var(--text-muted)] tabular-nums">
+              Bid {fmtPrice(contract?.bid)} · Ask {fmtPrice(contract?.ask)} · Mid{" "}
+              {fmtPrice(contract?.mid)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Key Metrics */}
+      <div className="p-4 border-b border-[var(--border-hairline)]">
+        <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+          Contract Details
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <RiskBoxCell label="Underlying" value={fmtPrice(currentPrice)} />
+          <RiskBoxCell label="Option Mid" value={fmtPrice(contract?.mid)} />
+          {contract?.delta && <RiskBoxCell label="Delta" value={fmtDelta(contract.delta)} />}
+          {spread && (
+            <RiskBoxCell
+              label="Spread"
+              value={spread.percent}
+              kind={spread.isWide ? "fail" : undefined}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Suggested Levels */}
+      <div className="p-4 border-b border-[var(--border-hairline)]">
+        <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+          Suggested Levels
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <RiskBoxCell label="Target" value={fmtPrice(suggestedTarget)} kind="success" />
+          <RiskBoxCell label="Stop" value={fmtPrice(suggestedStop)} kind="fail" />
+          <RiskBoxCell label="R:R" value={riskReward} />
+        </div>
+      </div>
+
+      {/* Greeks Preview */}
+      {(contract?.delta || contract?.gamma || contract?.theta || contract?.iv) && (
+        <div className="p-4 border-b border-[var(--border-hairline)]">
+          <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+            Greeks
+          </div>
+          <div className="flex items-center justify-between">
+            <GreekCell label="Δ" value={contract?.delta} />
+            <GreekCell label="Γ" value={contract?.gamma} decimals={4} />
+            <GreekCell label="Θ" value={contract?.theta} negative />
+            <GreekCell label="IV" value={contract?.iv} percent />
+          </div>
+        </div>
+      )}
+
+      {/* Volume & Open Interest */}
+      <div className="p-4">
+        <div className="flex flex-wrap gap-2">
+          {contract?.volume !== undefined && (
+            <MetricChip
+              label="Vol"
+              value={
+                contract.volume > 1000
+                  ? `${(contract.volume / 1000).toFixed(1)}K`
+                  : contract.volume.toString()
+              }
+              kind={contract.volume > 500 ? "success" : "neutral"}
+            />
+          )}
+          {contract?.openInterest !== undefined && (
+            <MetricChip
+              label="OI"
+              value={
+                contract.openInterest > 1000
+                  ? `${(contract.openInterest / 1000).toFixed(1)}K`
+                  : contract.openInterest.toString()
+              }
+            />
+          )}
+          {trade.tradeType && <MetricChip label="Type" value={trade.tradeType} />}
+        </div>
       </div>
     </div>
   );
@@ -120,9 +247,7 @@ function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl font-semibold text-[var(--text-high)]">
-                {trade.ticker}
-              </span>
+              <span className="text-xl font-semibold text-[var(--text-high)]">{trade.ticker}</span>
               <span className="text-sm text-[var(--text-muted)]">
                 {contract?.strike}
                 {contract?.type}
@@ -154,9 +279,7 @@ function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
       {/* Metrics Chips */}
       <div className="p-4 border-b border-[var(--border-hairline)]">
         <div className="flex flex-wrap gap-2">
-          {contract?.delta && (
-            <MetricChip label="Δ" value={fmtDelta(contract.delta)} />
-          )}
+          {contract?.delta && <MetricChip label="Δ" value={fmtDelta(contract.delta)} />}
           {spread && (
             <MetricChip
               label="Spread"
@@ -164,16 +287,15 @@ function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
               kind={spread.isWide ? "warn" : "neutral"}
             />
           )}
-          {contract?.iv && (
-            <MetricChip
-              label="IV"
-              value={`${(contract.iv * 100).toFixed(0)}%`}
-            />
-          )}
+          {contract?.iv && <MetricChip label="IV" value={`${(contract.iv * 100).toFixed(0)}%`} />}
           {contract?.volume && (
             <MetricChip
               label="Vol"
-              value={contract.volume > 1000 ? `${(contract.volume / 1000).toFixed(1)}K` : contract.volume.toString()}
+              value={
+                contract.volume > 1000
+                  ? `${(contract.volume / 1000).toFixed(1)}K`
+                  : contract.volume.toString()
+              }
               kind={contract.volume > 500 ? "success" : "neutral"}
             />
           )}
@@ -187,108 +309,49 @@ function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
         </div>
       </div>
 
+      {/* Take Profit / Stop Loss Levels */}
+      {(trade.targetPrice || trade.stopLoss) && (
+        <div className="p-4 border-b border-[var(--border-hairline)]">
+          <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+            Risk Levels
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <RiskBoxCell
+              label="Target"
+              value={fmtPrice(trade.targetPrice)}
+              subValue={
+                contract?.mid && trade.targetPrice
+                  ? fmtPct(((trade.targetPrice - contract.mid) / contract.mid) * 100)
+                  : undefined
+              }
+              kind="success"
+            />
+            <RiskBoxCell
+              label="Stop"
+              value={fmtPrice(trade.stopLoss)}
+              subValue={
+                contract?.mid && trade.stopLoss
+                  ? fmtPct(((trade.stopLoss - contract.mid) / contract.mid) * 100)
+                  : undefined
+              }
+              kind="fail"
+            />
+            <RiskBoxCell
+              label="R:R"
+              value={
+                trade.stopLoss && trade.targetPrice && contract?.mid
+                  ? `${((trade.targetPrice - contract.mid) / (contract.mid - trade.stopLoss)).toFixed(1)}:1`
+                  : "—"
+              }
+            />
+          </div>
+        </div>
+      )}
+
       {/* Entry Checklist Summary */}
       <div className="p-4">
         <ChecklistSummary trade={trade} />
       </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// ENTERED State: Position Snapshot
-// ============================================================================
-
-interface PositionSnapshotProps {
-  trade: Trade;
-  currentPrice: number;
-}
-
-function PositionSnapshot({ trade, currentPrice }: PositionSnapshotProps) {
-  // Calculate P&L
-  const entryPrice = trade.entryPrice || trade.contract?.mid || 0;
-  const currentContractPrice = trade.contract?.mid || 0;
-  const pnlDollar = currentContractPrice - entryPrice;
-  const pnlPercent = entryPrice > 0 ? (pnlDollar / entryPrice) * 100 : 0;
-  const pnlStyle = getPnlStyle(pnlPercent);
-
-  return (
-    <div className="animate-fade-in-up">
-      {/* Large P&L Display */}
-      <div className="p-6 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] text-center">
-        <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-1">
-          Unrealized P&L
-        </div>
-        <div
-          className={cn(
-            "text-4xl font-bold tabular-nums animate-metric-tick",
-            pnlStyle.className
-          )}
-        >
-          {fmtPct(pnlPercent)}
-        </div>
-        <div className={cn("text-lg tabular-nums mt-1", pnlStyle.className)}>
-          {pnlDollar >= 0 ? "+" : ""}
-          {fmtPrice(pnlDollar)}
-        </div>
-      </div>
-
-      {/* Risk Box */}
-      <div className="p-4 border-b border-[var(--border-hairline)]">
-        <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
-          Position
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <RiskBoxCell label="Entry" value={fmtPrice(trade.entryPrice)} />
-          <RiskBoxCell label="Current" value={fmtPrice(currentContractPrice)} />
-          <RiskBoxCell
-            label="Target"
-            value={fmtPrice(trade.targetPrice)}
-            kind="success"
-          />
-          <RiskBoxCell
-            label="Stop"
-            value={fmtPrice(trade.stopLoss)}
-            kind="fail"
-          />
-        </div>
-      </div>
-
-      {/* Greeks Bar */}
-      <div className="p-4 border-b border-[var(--border-hairline)]">
-        <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
-          Greeks
-        </div>
-        <div className="flex items-center justify-between">
-          <GreekCell label="Δ" value={trade.contract?.delta} />
-          <GreekCell label="Γ" value={trade.contract?.gamma} decimals={4} />
-          <GreekCell label="Θ" value={trade.contract?.theta} negative />
-          <GreekCell label="IV" value={trade.contract?.iv} percent />
-        </div>
-      </div>
-
-      {/* Trade Updates Timeline - Compact */}
-      {trade.updates && trade.updates.length > 0 && (
-        <div className="p-4">
-          <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
-            Recent Activity
-          </div>
-          <div className="space-y-2">
-            {trade.updates.slice(-3).map((update, idx) => (
-              <div
-                key={update.id || idx}
-                className="flex items-center gap-2 text-xs text-[var(--text-muted)]"
-              >
-                <Clock className="w-3 h-3 text-[var(--text-faint)]" />
-                <span className="capitalize">{update.type}</span>
-                {update.price && (
-                  <span className="tabular-nums">@ {fmtPrice(update.price)}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -321,9 +384,7 @@ function TradeRecap({ trade }: TradeRecapProps) {
         <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-2">
           {isWin ? "Winner" : "Loss"}
         </div>
-        <div
-          className={cn("text-5xl font-bold tabular-nums", pnlStyle.className)}
-        >
+        <div className={cn("text-5xl font-bold tabular-nums", pnlStyle.className)}>
           {fmtPct(pnlPercent)}
         </div>
         <div className="text-sm text-[var(--text-muted)] mt-2">
@@ -389,27 +450,28 @@ function MetricChip({
 function RiskBoxCell({
   label,
   value,
+  subValue,
   kind,
 }: {
   label: string;
   value: string;
+  subValue?: string;
   kind?: "success" | "fail";
 }) {
   const colorClass =
     kind === "success"
       ? "text-[var(--accent-positive)]"
       : kind === "fail"
-      ? "text-[var(--accent-negative)]"
-      : "text-[var(--text-high)]";
+        ? "text-[var(--accent-negative)]"
+        : "text-[var(--text-high)]";
 
   return (
     <div className="p-2.5 rounded bg-[var(--surface-2)]">
       <div className="text-[10px] text-[var(--text-faint)] uppercase tracking-wide mb-0.5">
         {label}
       </div>
-      <div className={cn("text-sm font-medium tabular-nums", colorClass)}>
-        {value}
-      </div>
+      <div className={cn("text-sm font-medium tabular-nums", colorClass)}>{value}</div>
+      {subValue && <div className={cn("text-xs tabular-nums mt-0.5", colorClass)}>{subValue}</div>}
     </div>
   );
 }
@@ -428,22 +490,14 @@ function GreekCell({
   percent?: boolean;
 }) {
   const formatted =
-    value != null
-      ? percent
-        ? `${(value * 100).toFixed(0)}%`
-        : value.toFixed(decimals)
-      : "—";
+    value != null ? (percent ? `${(value * 100).toFixed(0)}%` : value.toFixed(decimals)) : "—";
 
-  const colorClass = negative
-    ? "text-[var(--accent-negative)]"
-    : "text-[var(--text-high)]";
+  const colorClass = negative ? "text-[var(--accent-negative)]" : "text-[var(--text-high)]";
 
   return (
     <div className="text-center">
       <div className="text-[10px] text-[var(--text-faint)]">{label}</div>
-      <div className={cn("text-sm font-medium tabular-nums", colorClass)}>
-        {formatted}
-      </div>
+      <div className={cn("text-sm font-medium tabular-nums", colorClass)}>{formatted}</div>
     </div>
   );
 }
@@ -475,10 +529,7 @@ function ChecklistSummary({ trade }: { trade: Trade }) {
         {items.map((item, idx) => (
           <span
             key={idx}
-            className={cn(
-              chipStyle(item.passed ? "success" : "warn"),
-              "text-[10px]"
-            )}
+            className={cn(chipStyle(item.passed ? "success" : "warn"), "text-[10px]")}
           >
             {item.passed ? (
               <CheckCircle2 className="w-3 h-3 mr-1 inline" />

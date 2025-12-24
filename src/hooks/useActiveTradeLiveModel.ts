@@ -267,7 +267,10 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     const targetPrice = trade.targetPrice || entryPrice * 1.2; // Default 20% if not set
     const progressToTarget =
       entryPrice > 0 && targetPrice > entryPrice
-        ? Math.min(100, Math.max(0, ((effectiveMid - entryPrice) / (targetPrice - entryPrice)) * 100))
+        ? Math.min(
+            100,
+            Math.max(0, ((effectiveMid - entryPrice) / (targetPrice - entryPrice)) * 100)
+          )
         : 0;
 
     // Underlying data
@@ -278,12 +281,21 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     const underlyingIsStale = Date.now() - underlyingAsOf > UNDERLYING_STALE_MS;
 
     // Overall health assessment
+    // Focus on price data freshness - Greeks being static is acceptable since they don't change rapidly
     let overallHealth: "healthy" | "degraded" | "stale" = "healthy";
     if (optionIsStale && underlyingIsStale) {
       overallHealth = "stale";
-    } else if (optionIsStale || underlyingIsStale || liveGreeks.source === "static") {
+    } else if (optionIsStale) {
+      // Option price is critical for P&L - mark as degraded
+      overallHealth = "degraded";
+    } else if (underlyingIsStale) {
+      // Underlying is secondary - still degraded but less severe
       overallHealth = "degraded";
     }
+    // Note: Greeks being "static" is NOT penalized since:
+    // 1. Greeks don't change as rapidly as prices
+    // 2. Contract snapshot Greeks are sufficient for display
+    // 3. This prevents false "DELAYED" badge when prices are streaming fine
 
     return {
       // Core pricing

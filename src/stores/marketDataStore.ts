@@ -128,6 +128,7 @@ export interface ConfluenceScore {
     volumeConfirm: boolean;
     supportResistance: boolean;
   };
+  highlights?: string[]; // Key confluence factors to display
   lastUpdated: number;
 }
 
@@ -158,6 +159,10 @@ export interface FlowMetrics {
   putPremium: number;
   netDelta: number;
   netGamma: number;
+  // Additional optional properties used by some components
+  timestamp?: number;
+  sweepCount?: number;
+  blockCount?: number;
 }
 
 export interface StrategySignal {
@@ -167,6 +172,15 @@ export interface StrategySignal {
   strength: number;
   message: string;
   timestamp: number;
+  // Additional optional properties for compatibility with strategy.ts StrategySignal
+  createdAt?: string;
+  symbol?: string;
+  strategyId?: string;
+  owner?: string;
+  confidence?: number;
+  payload?: Record<string, unknown> | null;
+  status?: "ACTIVE" | "ACKED" | "DISMISSED";
+  barTimeKey?: string | null;
 }
 
 export interface SymbolData {
@@ -952,6 +966,20 @@ export const useMarketDataStore = create<MarketDataStore>()(
         // Trim to max candles
         const trimmedCandles = candles.slice(-MAX_CANDLES_PER_TIMEFRAME);
 
+        // Auto-rollup higher timeframes when 1m candles are loaded
+        let candles5m = symbolData.candles["5m"];
+        let candles15m = symbolData.candles["15m"];
+        let candles60m = symbolData.candles["60m"];
+
+        if (timeframe === "1m" && trimmedCandles.length > 0) {
+          candles5m = rollupBars(trimmedCandles, "5m");
+          candles15m = rollupBars(trimmedCandles, "15m");
+          candles60m = rollupBars(trimmedCandles, "60m");
+          console.log(
+            `[v0] Rolled up ${trimmedCandles.length} 1m bars → 5m:${candles5m.length}, 15m:${candles15m.length}, 60m:${candles60m.length}`
+          );
+        }
+
         set({
           symbols: {
             ...symbols,
@@ -960,14 +988,20 @@ export const useMarketDataStore = create<MarketDataStore>()(
               candles: {
                 ...symbolData.candles,
                 [timeframe]: trimmedCandles,
+                // Include rolled-up candles when we roll up from 1m
+                ...(timeframe === "1m" && {
+                  "5m": candles5m,
+                  "15m": candles15m,
+                  "60m": candles60m,
+                }),
               },
               lastUpdated: Date.now(),
             },
           },
         });
 
-        // Recompute indicators if this is the primary timeframe
-        if (timeframe === symbolData.primaryTimeframe) {
+        // Recompute indicators if this is the primary timeframe OR if we just rolled up
+        if (timeframe === symbolData.primaryTimeframe || timeframe === "1m") {
           get().recomputeIndicators(normalized);
         }
       },

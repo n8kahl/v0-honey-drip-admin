@@ -26,7 +26,7 @@ export function MobileBottomNav({
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;
-        const shouldFlash = tab.id === "active" && (hasActiveTrades || flashTradeTab);
+        const shouldFlash = tab.id === "live" && (hasActiveTrades || flashTradeTab);
 
         return (
           <button

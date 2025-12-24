@@ -1,183 +1,413 @@
 /**
  * PublicPortal.tsx - Public-facing engagement page
  *
- * High-energy showcase of real-time admin trades, challenges, pre-market analysis,
+ * High-energy showcase of real-time admin trades, alerts, challenges, pre-market analysis,
  * and economic calendar to drive Discord membership signups.
+ *
+ * IMPORTANT: This page uses PUBLIC API endpoints only - NO direct Supabase queries
+ * for core trading data. This ensures proper separation and allows for caching.
  *
  * No authentication required.
  */
 
-import { useEffect, useState, useCallback } from "react";
-import { ExternalLink, Zap, Calendar, Play, Trophy, TrendingUp } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  ExternalLink,
+  Zap,
+  Calendar,
+  Play,
+  Trophy,
+  TrendingUp,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useMemberStatus } from "@/hooks/useMemberStatus";
 import { branding } from "@/lib/config/branding";
 
-// Components
+// Public components
 import {
   DailyScorecard,
   type DailyStats,
   type AdminStats,
 } from "@/components/public/DailyScorecard";
-import { TradeTypeSection } from "@/components/public/TradeTypeSection";
-import { AlertFeed, type TradeAlert } from "@/components/public/AlertFeed";
-import { DemoViewToggle, GatedSection } from "@/components/public/MemberGate";
+import { AlertFeed } from "@/components/public/AlertFeed";
+import { LiveTradeCard } from "@/components/public/LiveTradeCard";
+import { DemoViewToggle } from "@/components/public/MemberGate";
 import { TradeDetailModal } from "@/components/public/TradeDetailModal";
 
-// Existing components
+// Types from canonical source
+import type {
+  PublicTrade,
+  PublicTradeAlert,
+  PublicChallenge,
+  StatsRange,
+  PublicPortalFreshness,
+} from "@/types/public";
+
+// External data fetchers (non-trade data)
 import {
   fetchLatestPremarket,
   getWatchUrl,
   formatPublishedDate,
   type PremarketVideo,
-} from "../lib/youtube/client";
+} from "@/lib/youtube/client";
 import {
   fetchEconomicCalendar,
   fetchEarningsCalendar,
   type EconomicEvent,
   type EarningsEvent,
-} from "../lib/calendar/EconomicCalendar";
+} from "@/lib/calendar/EconomicCalendar";
+
+// Supabase only for realtime subscription (not data fetching)
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
-// Types - matching actual database schema
-interface PublicTrade {
-  id: string;
-  ticker: string;
-  contract: {
-    strike?: number;
-    type?: "C" | "P";
-    expiry?: string;
-  } | null;
-  trade_type: string;
-  state: string;
-  entry_price: number | null;
-  current_price: number | null;
-  target_price: number | null;
-  stop_loss: number | null;
-  public_comment: string | null;
-  admin_name: string | null;
-  created_at: string;
-  updated_at: string;
+// ============================================================================
+// Constants
+// ============================================================================
+
+const ALERT_POLL_INTERVAL = 5000; // 5 seconds
+const TRADES_POLL_INTERVAL = 10000; // 10 seconds
+const CALENDAR_POLL_INTERVAL = 30 * 60 * 1000; // 30 minutes
+const PREMARKET_POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const STALENESS_THRESHOLD = 10000; // 10 seconds
+
+// ============================================================================
+// API Fetchers
+// ============================================================================
+
+async function fetchActiveTrades(): Promise<{
+  activeTrades: PublicTrade[];
+  loadedTrades: PublicTrade[];
+}> {
+  const response = await fetch("/api/public/trades/active");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch trades: ${response.status}`);
+  }
+  const data = await response.json();
+
+  // Split by state
+  const activeTrades = (data.trades || []).filter((t: PublicTrade) => t.state === "ENTERED");
+  const loadedTrades = (data.trades || []).filter((t: PublicTrade) => t.state === "LOADED");
+
+  return { activeTrades, loadedTrades };
 }
 
-// Public Challenge interface - matches API response from /api/public/challenges/active
-interface PublicChallenge {
-  id: string;
-  name: string;
-  description?: string;
-  starting_balance: number;
-  current_balance: number;
-  target_balance: number;
-  start_date: string;
-  end_date: string;
-  scope?: string;
-  progress_percent: number; // Pre-computed by API
-  current_pnl: number; // Computed: current_balance - starting_balance
-  days_elapsed: number;
-  days_remaining: number;
-  total_days: number;
+async function fetchAlerts(isMember: boolean): Promise<{
+  alerts: PublicTradeAlert[];
+  hasMore: boolean;
+}> {
+  const response = await fetch(`/api/public/alerts/recent?member=${isMember}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch alerts: ${response.status}`);
+  }
+  const data = await response.json();
+  return {
+    alerts: data.alerts || [],
+    hasMore: data.has_more || false,
+  };
 }
+
+async function fetchStats(range: StatsRange): Promise<DailyStats | null> {
+  const response = await fetch(`/api/public/stats/summary?range=${range}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch stats: ${response.status}`);
+  }
+  const data = await response.json();
+
+  // Map to DailyStats format for backwards compatibility with DailyScorecard
+  return {
+    date: data.start_date,
+    total_trades: data.total_trades,
+    wins: data.wins,
+    losses: data.losses,
+    total_gain_percent: data.total_pnl_percent,
+    avg_gain_percent: data.avg_pnl_percent,
+    best_trade_percent: data.best_trade?.percent || 0,
+    by_type: {
+      Scalp: data.by_type?.Scalp || { count: 0, wins: 0, losses: 0 },
+      Day: data.by_type?.Day || { count: 0, wins: 0, losses: 0 },
+      Swing: data.by_type?.Swing || { count: 0, wins: 0, losses: 0 },
+      LEAP: data.by_type?.LEAP || { count: 0, wins: 0, losses: 0 },
+    },
+  };
+}
+
+async function fetchLeaderboard(): Promise<AdminStats[]> {
+  const response = await fetch("/api/public/stats/leaderboard");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch leaderboard: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.leaderboard || [];
+}
+
+async function fetchChallenges(): Promise<PublicChallenge[]> {
+  const response = await fetch("/api/public/challenges/active");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch challenges: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.challenges || [];
+}
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export function PublicPortal() {
   const { isMember, setIsMember } = useMemberStatus();
   const DISCORD_INVITE_URL =
     import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/honeydrip";
 
-  // State
+  // Core data state
   const [activeTrades, setActiveTrades] = useState<PublicTrade[]>([]);
   const [loadedTrades, setLoadedTrades] = useState<PublicTrade[]>([]);
+  const [alerts, setAlerts] = useState<PublicTradeAlert[]>([]);
+  const [alertsHasMore, setAlertsHasMore] = useState(false);
+  const [stats, setStats] = useState<DailyStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<AdminStats[]>([]);
   const [challenges, setChallenges] = useState<PublicChallenge[]>([]);
+  const [statsRange, setStatsRange] = useState<StatsRange>("day");
+
+  // External data state
   const [premarketVideo, setPremarketVideo] = useState<PremarketVideo | null>(null);
   const [economicEvents, setEconomicEvents] = useState<EconomicEvent[]>([]);
   const [earnings, setEarnings] = useState<EarningsEvent[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Fetch public trades
-  const fetchPublicTrades = async () => {
+  // Per-module freshness tracking
+  const [freshness, setFreshness] = useState<PublicPortalFreshness>({
+    alerts: { updatedAt: null, isLoading: true, error: null },
+    trades: { updatedAt: null, isLoading: true, error: null },
+    stats: { updatedAt: null, isLoading: true, error: null },
+    challenges: { updatedAt: null, isLoading: true, error: null },
+    calendar: { updatedAt: null, isLoading: true, error: null },
+    premarket: { updatedAt: null, isLoading: true, error: null },
+  });
+
+  // Trade detail modal
+  const [selectedTrade, setSelectedTrade] = useState<PublicTrade | null>(null);
+
+  // Refs for cleanup
+  const alertsPollRef = useRef<NodeJS.Timeout | null>(null);
+  const tradesPollRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ============================================================================
+  // Data Fetching Functions
+  // ============================================================================
+
+  const loadTrades = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from("trades")
-        .select(
-          "id, ticker, contract, trade_type, state, entry_price, current_price, target_price, stop_loss, public_comment, admin_name, created_at, updated_at"
-        )
-        .eq("show_on_public", true)
-        .in("state", ["ENTERED", "LOADED"])
-        .order("created_at", { ascending: false });
+      setFreshness((prev) => ({
+        ...prev,
+        trades: { ...prev.trades, isLoading: true },
+      }));
 
-      if (error) throw error;
+      const { activeTrades, loadedTrades } = await fetchActiveTrades();
+      setActiveTrades(activeTrades);
+      setLoadedTrades(loadedTrades);
 
-      const entered = data?.filter((t) => t.state === "ENTERED") || [];
-      const loaded = data?.filter((t) => t.state === "LOADED") || [];
-
-      setActiveTrades(entered as PublicTrade[]);
-      setLoadedTrades(loaded as PublicTrade[]);
-      setLastUpdated(new Date());
+      setFreshness((prev) => ({
+        ...prev,
+        trades: { updatedAt: new Date(), isLoading: false, error: null },
+      }));
     } catch (error) {
-      console.error("[v0] Error fetching public trades:", error);
+      console.error("[PublicPortal] Error fetching trades:", error);
+      setFreshness((prev) => ({
+        ...prev,
+        trades: {
+          ...prev.trades,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load trades",
+        },
+      }));
     }
-  };
+  }, []);
 
-  // Fetch active challenges via public API (bypasses RLS)
-  const fetchChallenges = async () => {
+  const loadAlerts = useCallback(async () => {
     try {
-      const response = await fetch("/api/public/challenges/active");
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      setChallenges(data.challenges || []);
+      setFreshness((prev) => ({
+        ...prev,
+        alerts: { ...prev.alerts, isLoading: true },
+      }));
+
+      const { alerts, hasMore } = await fetchAlerts(isMember);
+      setAlerts(alerts);
+      setAlertsHasMore(hasMore);
+
+      setFreshness((prev) => ({
+        ...prev,
+        alerts: { updatedAt: new Date(), isLoading: false, error: null },
+      }));
     } catch (error) {
-      console.error("[v0] Error fetching challenges:", error);
+      console.error("[PublicPortal] Error fetching alerts:", error);
+      setFreshness((prev) => ({
+        ...prev,
+        alerts: {
+          ...prev.alerts,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load alerts",
+        },
+      }));
     }
-  };
+  }, [isMember]);
 
-  // Fetch pre-market video
-  const fetchPremarket = async () => {
-    const video = await fetchLatestPremarket();
-    setPremarketVideo(video);
-  };
-
-  // Fetch calendar data
-  const fetchCalendarData = async () => {
+  const loadStats = useCallback(async (range: StatsRange) => {
     try {
-      // Get current week date range
+      setFreshness((prev) => ({
+        ...prev,
+        stats: { ...prev.stats, isLoading: true },
+      }));
+
+      const [statsData, leaderboardData] = await Promise.all([
+        fetchStats(range),
+        fetchLeaderboard(),
+      ]);
+
+      setStats(statsData);
+      setLeaderboard(leaderboardData);
+
+      setFreshness((prev) => ({
+        ...prev,
+        stats: { updatedAt: new Date(), isLoading: false, error: null },
+      }));
+    } catch (error) {
+      console.error("[PublicPortal] Error fetching stats:", error);
+      setFreshness((prev) => ({
+        ...prev,
+        stats: {
+          ...prev.stats,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load stats",
+        },
+      }));
+    }
+  }, []);
+
+  const loadChallenges = useCallback(async () => {
+    try {
+      setFreshness((prev) => ({
+        ...prev,
+        challenges: { ...prev.challenges, isLoading: true },
+      }));
+
+      const challengesData = await fetchChallenges();
+      setChallenges(challengesData);
+
+      setFreshness((prev) => ({
+        ...prev,
+        challenges: { updatedAt: new Date(), isLoading: false, error: null },
+      }));
+    } catch (error) {
+      console.error("[PublicPortal] Error fetching challenges:", error);
+      setFreshness((prev) => ({
+        ...prev,
+        challenges: {
+          ...prev.challenges,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load challenges",
+        },
+      }));
+    }
+  }, []);
+
+  const loadPremarket = useCallback(async () => {
+    try {
+      setFreshness((prev) => ({
+        ...prev,
+        premarket: { ...prev.premarket, isLoading: true },
+      }));
+
+      const video = await fetchLatestPremarket();
+      setPremarketVideo(video);
+
+      setFreshness((prev) => ({
+        ...prev,
+        premarket: { updatedAt: new Date(), isLoading: false, error: null },
+      }));
+    } catch (error) {
+      console.error("[PublicPortal] Error fetching premarket:", error);
+      setFreshness((prev) => ({
+        ...prev,
+        premarket: {
+          ...prev.premarket,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load premarket",
+        },
+      }));
+    }
+  }, []);
+
+  const loadCalendarData = useCallback(async () => {
+    try {
+      setFreshness((prev) => ({
+        ...prev,
+        calendar: { ...prev.calendar, isLoading: true },
+      }));
+
       const now = new Date();
       const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      startOfWeek.setDate(now.getDate() - now.getDay());
       const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 7); // Next Sunday
+      endOfWeek.setDate(startOfWeek.getDate() + 7);
 
       const [econ, earn] = await Promise.all([
         fetchEconomicCalendar(startOfWeek, endOfWeek),
         fetchEarningsCalendar(now, new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)),
       ]);
 
-      // Filter medium+ impact events for current week
       const highImpactEvents = econ.filter((e) =>
         ["medium", "high"].includes(e.impact.toLowerCase())
       );
       setEconomicEvents(highImpactEvents.slice(0, 10));
+      setEarnings(earn.slice(0, 8));
 
-      // Get next 3 days of earnings
-      const upcomingEarnings = earn.slice(0, 8);
-      setEarnings(upcomingEarnings);
+      setFreshness((prev) => ({
+        ...prev,
+        calendar: { updatedAt: new Date(), isLoading: false, error: null },
+      }));
     } catch (error) {
-      console.error("[v0] Error fetching calendar data:", error);
+      console.error("[PublicPortal] Error fetching calendar:", error);
+      setFreshness((prev) => ({
+        ...prev,
+        calendar: {
+          ...prev.calendar,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load calendar",
+        },
+      }));
     }
-  };
+  }, []);
 
-  // Setup real-time subscription
+  // ============================================================================
+  // Effects
+  // ============================================================================
+
+  // Initial data load
   useEffect(() => {
-    // Initial fetch
-    fetchPublicTrades();
-    fetchChallenges();
-    fetchPremarket();
-    fetchCalendarData();
+    loadTrades();
+    loadAlerts();
+    loadStats(statsRange);
+    loadChallenges();
+    loadPremarket();
+    loadCalendarData();
+  }, []);
 
-    // Setup subscription for trades
+  // Reload alerts when member status changes
+  useEffect(() => {
+    loadAlerts();
+  }, [isMember, loadAlerts]);
+
+  // Reload stats when range changes
+  useEffect(() => {
+    loadStats(statsRange);
+  }, [statsRange, loadStats]);
+
+  // Setup realtime subscription for trades
+  useEffect(() => {
     const tradesChannel = supabase
       .channel("public-trades")
       .on(
@@ -189,34 +419,108 @@ export function PublicPortal() {
           filter: "show_on_public=eq.true",
         },
         () => {
-          fetchPublicTrades();
+          loadTrades();
         }
       )
       .subscribe();
 
-    // Refresh calendar every 30 minutes
-    const calendarInterval = setInterval(fetchCalendarData, 30 * 60 * 1000);
-
-    // Refresh pre-market every 15 minutes
-    const premarketInterval = setInterval(fetchPremarket, 15 * 60 * 1000);
+    // Also subscribe to trade_updates for alert feed
+    const updatesChannel = supabase
+      .channel("public-updates")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "trade_updates",
+        },
+        () => {
+          loadAlerts();
+        }
+      )
+      .subscribe();
 
     return () => {
       tradesChannel.unsubscribe();
+      updatesChannel.unsubscribe();
+    };
+  }, [loadTrades, loadAlerts]);
+
+  // Setup polling fallback for alerts (in case realtime fails)
+  useEffect(() => {
+    alertsPollRef.current = setInterval(loadAlerts, ALERT_POLL_INTERVAL);
+    return () => {
+      if (alertsPollRef.current) clearInterval(alertsPollRef.current);
+    };
+  }, [loadAlerts]);
+
+  // Setup calendar refresh interval
+  useEffect(() => {
+    const calendarInterval = setInterval(loadCalendarData, CALENDAR_POLL_INTERVAL);
+    const premarketInterval = setInterval(loadPremarket, PREMARKET_POLL_INTERVAL);
+
+    return () => {
       clearInterval(calendarInterval);
       clearInterval(premarketInterval);
     };
+  }, [loadCalendarData, loadPremarket]);
+
+  // ============================================================================
+  // Freshness Helpers
+  // ============================================================================
+
+  const getGlobalFreshness = useCallback(() => {
+    const latestUpdate = [freshness.trades.updatedAt, freshness.alerts.updatedAt]
+      .filter(Boolean)
+      .reduce(
+        (latest, current) => {
+          if (!latest) return current;
+          if (!current) return latest;
+          return current > latest ? current : latest;
+        },
+        null as Date | null
+      );
+
+    if (!latestUpdate) return { isStale: true, timeAgo: "Loading..." };
+
+    const diffMs = Date.now() - latestUpdate.getTime();
+    const isStale = diffMs > STALENESS_THRESHOLD;
+
+    const seconds = Math.floor(diffMs / 1000);
+    if (seconds < 60) return { isStale, timeAgo: `${seconds}s ago` };
+    const minutes = Math.floor(seconds / 60);
+    return { isStale, timeAgo: `${minutes}m ago` };
+  }, [freshness]);
+
+  const globalFreshness = getGlobalFreshness();
+
+  // ============================================================================
+  // Handlers
+  // ============================================================================
+
+  const handleRangeChange = useCallback((range: StatsRange) => {
+    setStatsRange(range);
   }, []);
 
-  // Check staleness (5 second threshold)
-  const isStale = Date.now() - lastUpdated.getTime() > 5000;
+  const handleViewTrade = useCallback(
+    (tradeId: string) => {
+      const trade =
+        activeTrades.find((t) => t.id === tradeId) || loadedTrades.find((t) => t.id === tradeId);
+      if (trade) setSelectedTrade(trade);
+    },
+    [activeTrades, loadedTrades]
+  );
 
-  // Calculate time since last update
-  const getTimeSinceUpdate = () => {
-    const seconds = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ago`;
-  };
+  const handleViewTradeFromAlert = useCallback(
+    (tradeId: string) => {
+      handleViewTrade(tradeId);
+    },
+    [handleViewTrade]
+  );
+
+  // ============================================================================
+  // Render
+  // ============================================================================
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)] overflow-x-hidden">
@@ -237,11 +541,11 @@ export function PublicPortal() {
               <div
                 className={cn(
                   "w-2 h-2 rounded-full animate-pulse",
-                  isStale ? "bg-amber-400" : "bg-[var(--accent-positive)]"
+                  globalFreshness.isStale ? "bg-amber-400" : "bg-[var(--accent-positive)]"
                 )}
               />
               <span className="text-xs text-[var(--text-muted)]">
-                Updated {getTimeSinceUpdate()}
+                Updated {globalFreshness.timeAgo}
               </span>
             </div>
           </div>
@@ -257,89 +561,139 @@ export function PublicPortal() {
               Join Discord for Live Alerts
             </Button>
           </div>
-
-          {/* Animated ticker tape */}
-          {activeTrades.length > 0 && (
-            <div className="mt-8 overflow-hidden">
-              <div className="flex gap-4 animate-scroll whitespace-nowrap">
-                {activeTrades.concat(activeTrades).map((trade, i) => (
-                  <div
-                    key={`${trade.id}-${i}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]"
-                  >
-                    <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
-                    <span className="font-bold text-[var(--text-high)]">{trade.ticker}</span>
-                    <span className="text-xs text-[var(--text-muted)]">
-                      ${trade.contract?.strike ?? 0} {trade.contract?.type === "C" ? "CALL" : "PUT"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Animated ticker tape */}
+        {activeTrades.length > 0 && (
+          <div className="mt-8 overflow-hidden">
+            <div className="flex gap-4 animate-scroll whitespace-nowrap">
+              {activeTrades.concat(activeTrades).map((trade, i) => (
+                <div
+                  key={`${trade.id}-${i}`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]"
+                >
+                  <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
+                  <span className="font-bold text-[var(--text-high)]">{trade.ticker}</span>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    ${trade.contract?.strike ?? 0} {trade.contract?.type === "C" ? "CALL" : "PUT"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content Grid */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Staleness indicator */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "w-2 h-2 rounded-full",
-                isStale ? "bg-amber-400 animate-pulse" : "bg-[var(--accent-positive)] animate-pulse"
-              )}
-            />
-            <span className="text-sm text-[var(--text-muted)]">
-              {isStale ? "Reconnecting..." : "Live"} · Last updated {getTimeSinceUpdate()}
-            </span>
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Active Trades - Span 4 */}
-          <section className="lg:col-span-4 space-y-4">
-            <h2 className="text-2xl font-bold text-[var(--text-high)] flex items-center gap-2">
-              <Zap className="w-6 h-6 text-[var(--accent-positive)]" />
-              Active Trades
-              <span className="text-sm font-normal text-[var(--text-muted)]">
-                ({activeTrades.length})
-              </span>
-            </h2>
-            {activeTrades.length === 0 ? (
-              <div className="p-8 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-                <p className="text-[var(--text-muted)]">
-                  No active trades right now. Check back soon!
-                </p>
-              </div>
-            ) : (
-              activeTrades.map((trade) => <PublicTradeCard key={trade.id} trade={trade} />)
-            )}
+          {/* Left Column: Alerts + Active Trades */}
+          <section className="lg:col-span-4 space-y-6">
+            {/* Alerts Feed */}
+            <div>
+              <AlertFeed
+                alerts={alerts}
+                isMember={isMember}
+                hasMore={alertsHasMore}
+                isLoading={freshness.alerts.isLoading}
+                onViewTrade={handleViewTradeFromAlert}
+                onJoinDiscord={() => window.open(DISCORD_INVITE_URL, "_blank")}
+              />
+              {freshness.alerts.error && (
+                <div className="mt-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {freshness.alerts.error}
+                </div>
+              )}
+            </div>
+
+            {/* Active Trades */}
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-[var(--text-high)] flex items-center gap-2">
+                <Zap className="w-6 h-6 text-[var(--accent-positive)]" />
+                Active Trades
+                <span className="text-sm font-normal text-[var(--text-muted)]">
+                  ({activeTrades.length})
+                </span>
+              </h2>
+              {freshness.trades.error && (
+                <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {freshness.trades.error}
+                </div>
+              )}
+              {activeTrades.length === 0 && !freshness.trades.isLoading ? (
+                <div className="p-8 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                  <p className="text-[var(--text-muted)]">
+                    No active trades right now—watch loaded setups below.
+                  </p>
+                </div>
+              ) : (
+                activeTrades.map((trade) => (
+                  <LiveTradeCard
+                    key={trade.id}
+                    trade={trade}
+                    onViewDetails={(t) => setSelectedTrade(t)}
+                  />
+                ))
+              )}
+            </div>
           </section>
 
-          {/* Loaded Trades - Span 3 */}
-          <section className="lg:col-span-3 space-y-4">
-            <h2 className="text-2xl font-bold text-[var(--text-high)]">
-              Queued Setups
-              <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
-                ({loadedTrades.length})
-              </span>
-            </h2>
-            {loadedTrades.length === 0 ? (
-              <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-                <p className="text-sm text-[var(--text-muted)]">No queued setups</p>
+          {/* Center Column: Stats + Loaded Trades */}
+          <section className="lg:col-span-5 space-y-6">
+            {/* Daily Scorecard with D/W/M Toggle */}
+            <DailyScorecard
+              stats={stats}
+              leaderboard={leaderboard}
+              isLoading={freshness.stats.isLoading}
+              selectedRange={statsRange}
+              onRangeChange={handleRangeChange}
+            />
+            {freshness.stats.error && (
+              <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                {freshness.stats.error}
               </div>
-            ) : (
-              loadedTrades.map((trade) => <LoadedTradeCard key={trade.id} trade={trade} />)
             )}
+
+            {/* Loaded Trades */}
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-[var(--text-high)]">
+                Loaded Trades
+                <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
+                  ({loadedTrades.length})
+                </span>
+              </h2>
+              {loadedTrades.length === 0 && !freshness.trades.isLoading ? (
+                <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                  <p className="text-sm text-[var(--text-muted)]">
+                    No loaded setups—active trades will appear here first.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {loadedTrades.map((trade) => (
+                    <LiveTradeCard
+                      key={trade.id}
+                      trade={trade}
+                      compact
+                      onViewDetails={(t) => setSelectedTrade(t)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
 
-          {/* Challenges + Calendar - Span 3 */}
+          {/* Right Column: Challenges + Calendar + Premarket */}
           <section className="lg:col-span-3 space-y-6">
             {/* Challenges */}
             <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-[var(--text-high)]">Active Challenges</h2>
+              <h2 className="text-2xl font-bold text-[var(--text-high)] flex items-center gap-2">
+                <Trophy className="w-6 h-6 text-[var(--brand-primary)]" />
+                Active Challenges
+              </h2>
               {challenges.length === 0 ? (
                 <div className="p-6 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
                   <p className="text-sm text-[var(--text-muted)]">No active challenges</p>
@@ -361,12 +715,14 @@ export function PublicPortal() {
                 {economicEvents.slice(0, 5).map((event, i) => (
                   <EconomicEventCard key={i} event={event} />
                 ))}
+                {economicEvents.length === 0 && (
+                  <div className="p-4 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                    <p className="text-xs text-[var(--text-muted)]">No major events this week</p>
+                  </div>
+                )}
               </div>
             </div>
-          </section>
 
-          {/* Pre-Market + Earnings - Span 2 */}
-          <section className="lg:col-span-2 space-y-6">
             {/* Pre-Market Video */}
             <div className="space-y-4">
               <h2 className="text-xl font-bold text-[var(--text-high)] flex items-center gap-2">
@@ -415,6 +771,11 @@ export function PublicPortal() {
                 {earnings.slice(0, 6).map((event, i) => (
                   <EarningsCard key={i} event={event} />
                 ))}
+                {earnings.length === 0 && (
+                  <div className="p-4 text-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
+                    <p className="text-xs text-[var(--text-muted)]">No earnings this week</p>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -432,96 +793,22 @@ export function PublicPortal() {
           Join Discord
         </Button>
       </div>
+
+      {/* Trade Detail Modal */}
+      <TradeDetailModal
+        trade={selectedTrade}
+        isOpen={!!selectedTrade}
+        onClose={() => setSelectedTrade(null)}
+      />
     </div>
   );
 }
 
-// Trade card components
-function PublicTradeCard({ trade }: { trade: PublicTrade }) {
-  const entryPrice = trade.entry_price ?? 0;
-  const currentPrice = trade.current_price ?? entryPrice; // Fall back to entry if no current
-  const strike = trade.contract?.strike ?? 0;
-  const contractType =
-    trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
-  const pnl = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
-  const pnlColor = pnl >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]";
-
-  return (
-    <div className="p-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] hover:scale-[1.02] transition-transform">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="text-xl font-bold text-[var(--text-high)]">{trade.ticker}</h3>
-          <p className="text-sm text-[var(--text-muted)]">
-            ${strike} {contractType}
-          </p>
-          {trade.admin_name && (
-            <p className="text-xs text-[var(--text-faint)]">by {trade.admin_name}</p>
-          )}
-        </div>
-        <div className={cn("text-right", pnlColor)}>
-          <p className="text-3xl font-bold font-mono">
-            {pnl >= 0 ? "+" : ""}
-            {pnl.toFixed(1)}%
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-        <div>
-          <span className="text-[var(--text-faint)]">Entry:</span>
-          <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${entryPrice.toFixed(2)}${(trade.entry_price ?? 0).toFixed(2)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[var(--text-faint)]">Current:</span>
-          <span className="ml-1 font-mono text-[var(--text-high)]">
-            ${(trade.current_price ?? 0).toFixed(2)}
-          </span>
-        </div>
-        {trade.target_price && (
-          <div>
-            <span className="text-[var(--text-faint)]">Target:</span>
-            <span className="ml-1 font-mono text-[var(--accent-positive)]">
-              ${trade.target_price.toFixed(2)}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {trade.public_comment && (
-        <div className="mt-3 p-3 bg-[var(--surface-2)] rounded border-l-2 border-[var(--brand-primary)]">
-          <p className="text-sm text-[var(--text-muted)] italic">{trade.public_comment}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LoadedTradeCard({ trade }: { trade: PublicTrade }) {
-  const strike = trade.contract?.strike ?? 0;
-  const contractType =
-    trade.contract?.type === "C" ? "CALL" : trade.contract?.type === "P" ? "PUT" : "";
-  return (
-    <div className="p-3 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-      <h4 className="font-bold text-[var(--text-high)]">{trade.ticker}</h4>
-      <p className="text-xs text-[var(--text-muted)]">
-        ${strike} {contractType}
-      </p>
-      {trade.admin_name && (
-        <p className="text-xs text-[var(--text-faint)]">by {trade.admin_name}</p>
-      )}
-      {trade.public_comment && (
-        <p className="text-xs text-[var(--text-muted)] mt-2 italic line-clamp-2">
-          {trade.public_comment}
-        </p>
-      )}
-    </div>
-  );
-}
+// ============================================================================
+// Sub-components
+// ============================================================================
 
 function ChallengeCard({ challenge }: { challenge: PublicChallenge }) {
-  // API pre-computes progress and P&L
   const currentPnl = challenge.current_pnl ?? 0;
   const targetGain = challenge.target_balance - challenge.starting_balance;
   const progress = challenge.progress_percent ?? 0;
@@ -597,7 +884,10 @@ function EarningsCard({ event }: { event: EarningsEvent }) {
       <div className="flex items-center justify-between">
         <span className="font-bold text-[var(--text-high)]">{event.symbol}</span>
         <span className="text-xs text-[var(--text-muted)]">
-          {event.datetime.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          {event.datetime.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })}
         </span>
       </div>
       {event.estimate && (

@@ -81,7 +81,7 @@ export function AICoachTile({
         const action = ACTION_LABELS[firstRec.action] || firstRec.action.replace(/_/g, " ");
         return {
           summary: action,
-          subtext: firstRec.reasoning?.slice(0, 50) || null,
+          subtext: firstRec.reason?.slice(0, 50) || null,
           sentiment:
             firstRec.action === "exit"
               ? ("negative" as const)

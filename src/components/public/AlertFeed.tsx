@@ -8,30 +8,16 @@
 import { Radio, Lock, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import type { PublicTradeAlert, PublicAlertType } from "@/types/public";
+import {
+  formatAlertTime,
+  formatContractLabel,
+  formatPrice,
+  formatPct,
+} from "@/lib/utils/publicFormatters";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface TradeAlert {
-  id: string;
-  type: "enter" | "trim" | "update" | "update-sl" | "trail-stop" | "add" | "exit";
-  message: string;
-  price: number;
-  pnl_percent: number | null;
-  trim_percent: number | null;
-  created_at: string;
-  trade: {
-    id: string;
-    ticker: string;
-    trade_type: string;
-    contract: {
-      strike?: number;
-      type?: "call" | "put";
-    } | null;
-    admin_name: string | null;
-  };
-}
+// Re-export for backwards compatibility
+export type TradeAlert = PublicTradeAlert;
 
 interface AlertFeedProps {
   alerts: TradeAlert[];
@@ -46,11 +32,14 @@ interface AlertFeedProps {
 // Alert Type Config
 // ============================================================================
 
-const ALERT_TYPE_CONFIG: Record<string, {
-  emoji: string;
-  label: string;
-  color: string;
-}> = {
+const ALERT_TYPE_CONFIG: Record<
+  PublicAlertType,
+  {
+    emoji: string;
+    label: string;
+    color: string;
+  }
+> = {
   enter: {
     emoji: "🟢",
     label: "ENTRY",
@@ -128,11 +117,7 @@ export function AlertFeed({
           </div>
         ) : (
           alerts.map((alert) => (
-            <AlertItem
-              key={alert.id}
-              alert={alert}
-              onViewTrade={onViewTrade}
-            />
+            <AlertItem key={alert.id} alert={alert} onViewTrade={onViewTrade} />
           ))
         )}
       </div>
@@ -174,11 +159,8 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
   const config = ALERT_TYPE_CONFIG[alert.type] || ALERT_TYPE_CONFIG.update;
   const time = formatAlertTime(alert.created_at);
 
-  // Format contract display
-  const contract = alert.trade?.contract;
-  const contractDisplay = contract?.strike
-    ? `$${contract.strike}${contract.type === "call" ? "C" : "P"}`
-    : "";
+  // Format contract display using canonical formatters
+  const contractDisplay = formatContractLabel(alert.trade?.contract, { short: true });
 
   return (
     <div
@@ -189,9 +171,7 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
       onClick={() => onViewTrade?.(alert.trade.id)}
     >
       {/* Time */}
-      <div className="w-16 flex-shrink-0 text-xs text-[var(--text-faint)] pt-0.5">
-        {time}
-      </div>
+      <div className="w-16 flex-shrink-0 text-xs text-[var(--text-faint)] pt-0.5">{time}</div>
 
       {/* Type Badge */}
       <div className="flex-shrink-0">
@@ -213,9 +193,7 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
 
       {/* Message */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-[var(--text-muted)] truncate">
-          {formatAlertMessage(alert)}
-        </p>
+        <p className="text-sm text-[var(--text-muted)] truncate">{formatAlertMessage(alert)}</p>
       </div>
 
       {/* P&L (if applicable) */}
@@ -223,7 +201,9 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
         <div
           className={cn(
             "flex-shrink-0 text-sm font-mono font-semibold",
-            alert.pnl_percent >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+            alert.pnl_percent >= 0
+              ? "text-[var(--accent-positive)]"
+              : "text-[var(--accent-negative)]"
           )}
         >
           {alert.pnl_percent >= 0 ? "+" : ""}
@@ -238,18 +218,7 @@ function AlertItem({ alert, onViewTrade }: AlertItemProps) {
 // Helper Functions
 // ============================================================================
 
-function formatAlertTime(timestamp: string): string {
-  try {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  } catch {
-    return "";
-  }
-}
+// formatAlertTime moved to @/lib/utils/publicFormatters.ts
 
 function formatAlertMessage(alert: TradeAlert): string {
   // If there's a custom message, use it (truncated)
@@ -265,7 +234,9 @@ function formatAlertMessage(alert: TradeAlert): string {
     case "enter":
       return priceStr ? `Entry at ${priceStr}` : "Entry";
     case "trim":
-      return priceStr ? `Trimmed ${alert.trim_percent || 50}% at ${priceStr}` : `Trimmed ${alert.trim_percent || 50}%`;
+      return priceStr
+        ? `Trimmed ${alert.trim_percent || 50}% at ${priceStr}`
+        : `Trimmed ${alert.trim_percent || 50}%`;
     case "exit":
       return priceStr ? `Closed at ${priceStr}` : "Closed";
     case "update-sl":

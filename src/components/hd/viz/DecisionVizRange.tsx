@@ -18,7 +18,7 @@ import type { Candle, Indicators } from "../../../stores/marketDataStore";
 
 interface DecisionVizRangeProps {
   candles: Candle[];
-  dailyCandles?: Candle[];  // Daily candles for proper ATR(14) calculation
+  dailyCandles?: Candle[]; // Daily candles for proper ATR(14) calculation
   keyLevels: KeyLevels | null;
   indicators: Indicators;
   currentPrice: number;
@@ -169,20 +169,14 @@ export function DecisionVizRange({
 
         {/* Range Labels */}
         <div className="flex justify-between text-[10px] tabular-nums">
-          <span className="text-[var(--accent-negative)]">
-            {fmtPrice(dayLow)}
-          </span>
-          <span className="text-[var(--brand-primary)]">
-            {fmtPrice(currentPrice)}
-          </span>
-          <span className="text-[var(--accent-positive)]">
-            {fmtPrice(dayHigh)}
-          </span>
+          <span className="text-[var(--accent-negative)]">{fmtPrice(dayLow)}</span>
+          <span className="text-[var(--brand-primary)]">{fmtPrice(currentPrice)}</span>
+          <span className="text-[var(--accent-positive)]">{fmtPrice(dayHigh)}</span>
         </div>
       </div>
 
-      {/* Session ATR Gauge */}
-      {atr > 0 && (
+      {/* Session ATR Gauge - Only show when we have PROPER daily ATR */}
+      {dailyAtr > 0 && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[10px]">
             <span className="text-[var(--text-muted)]">Expected Range</span>
@@ -202,8 +196,8 @@ export function DecisionVizRange({
                 atrUsedPct > 100
                   ? "bg-[var(--accent-negative)]"
                   : atrUsedPct > 80
-                  ? "bg-[var(--data-stale)]"
-                  : "bg-[var(--accent-positive)]"
+                    ? "bg-[var(--data-stale)]"
+                    : "bg-[var(--accent-positive)]"
               )}
               style={{ width: `${Math.min(100, atrUsedPct)}%` }}
             />
@@ -213,20 +207,20 @@ export function DecisionVizRange({
           <div className="flex justify-between text-[9px] text-[var(--text-faint)]">
             <span>0%</span>
             <span>50%</span>
-            <span>100% ({fmtPrice(atr)})</span>
+            <span>100% ({fmtPrice(dailyAtr)})</span>
           </div>
         </div>
       )}
 
-      {/* ATR source indicator */}
-      {atr > 0 && dailyAtr === 0 && (
-        <div className="text-[9px] text-[var(--text-faint)] italic">
-          ATR from intraday bars (daily bars unavailable)
+      {/* Warning when using intraday ATR fallback - don't show gauge with wrong values */}
+      {dailyAtr === 0 && indicators.atr14 && indicators.atr14 > 0 && (
+        <div className="text-[10px] text-[var(--data-stale)] italic p-2 bg-[var(--surface-2)] rounded">
+          Daily ATR unavailable (need 15+ daily bars)
         </div>
       )}
 
       {/* No ATR available at all */}
-      {atr === 0 && (
+      {dailyAtr === 0 && (!indicators.atr14 || indicators.atr14 === 0) && (
         <div className="text-[10px] text-[var(--text-faint)] italic">
           {dailyCandles && dailyCandles.length > 0
             ? `Need more daily data (${dailyCandles.length}/15 days)`

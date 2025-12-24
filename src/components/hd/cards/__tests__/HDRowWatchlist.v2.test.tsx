@@ -54,6 +54,7 @@ describe("HDRowWatchlist v2", () => {
     symbol: "SPY",
     name: "SPDR S&P 500 ETF",
     last: 605.23,
+    change: 2.72,
     changePercent: 0.45,
   };
 

@@ -8,38 +8,16 @@
 import { Flame, Target, TrendingUp, BarChart3, Clock, Share2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import type { PublicTrade, PublicTradeType } from "@/types/public";
+import {
+  formatContractLabel,
+  formatExpiry,
+  formatPct,
+  formatPrice,
+} from "@/lib/utils/publicFormatters";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface PublicTrade {
-  id: string;
-  ticker: string;
-  trade_type: "Scalp" | "Day" | "Swing" | "LEAP";
-  state: "LOADED" | "ENTERED" | "EXITED";
-  contract: {
-    strike?: number;
-    type?: "call" | "put";
-    expiration?: string;
-    symbol?: string;
-  } | null;
-  entry_price: number | null;
-  current_price: number | null;
-  target_price: number | null;
-  stop_loss: number | null;
-  exit_price: number | null;
-  admin_id: string | null;
-  admin_name: string | null;
-  share_token: string | null;
-  public_comment: string | null;
-  created_at: string;
-  entry_time: string | null;
-  // Computed fields from API
-  pnl_percent?: number | null;
-  time_in_trade?: string | null;
-  progress_to_target?: number | null;
-}
+// Re-export PublicTrade for backwards compatibility
+export type { PublicTrade } from "@/types/public";
 
 interface LiveTradeCardProps {
   trade: PublicTrade;
@@ -52,7 +30,16 @@ interface LiveTradeCardProps {
 // Trade Type Config
 // ============================================================================
 
-const TRADE_TYPE_CONFIG = {
+const TRADE_TYPE_CONFIG: Record<
+  PublicTradeType,
+  {
+    icon: typeof Flame;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+    label: string;
+  }
+> = {
   Scalp: {
     icon: Flame,
     color: "text-orange-400",
@@ -100,15 +87,11 @@ export function LiveTradeCard({
   const typeConfig = TRADE_TYPE_CONFIG[trade.trade_type] || TRADE_TYPE_CONFIG.Scalp;
   const TypeIcon = typeConfig.icon;
 
-  // Format contract display
-  const contractDisplay = trade.contract
-    ? `$${trade.contract.strike} ${trade.contract.type?.toUpperCase() || ""}`
-    : "";
+  // Format contract display using canonical formatters
+  const contractDisplay = formatContractLabel(trade.contract);
 
-  // Format expiration
-  const expirationDisplay = trade.contract?.expiration
-    ? formatExpiration(trade.contract.expiration)
-    : "";
+  // Format expiration - use expiry (canonical) or fall back to expiration
+  const expirationDisplay = formatExpiry(trade.contract?.expiry);
 
   // Progress bar percentage
   const progress = Math.min(100, Math.max(0, trade.progress_to_target ?? 0));
@@ -154,7 +137,12 @@ export function LiveTradeCard({
         </div>
 
         {/* P&L Display */}
-        <div className={cn("text-right", isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]")}>
+        <div
+          className={cn(
+            "text-right",
+            isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+          )}
+        >
           <p className={cn("font-bold font-mono", compact ? "text-2xl" : "text-3xl")}>
             {isPositive ? "+" : ""}
             {pnl.toFixed(0)}%
@@ -184,8 +172,18 @@ export function LiveTradeCard({
       {trade.state === "ENTERED" && trade.target_price && trade.entry_price && (
         <div className="mb-3">
           <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
-            <span>Target: +{(((trade.target_price - trade.entry_price) / trade.entry_price) * 100).toFixed(0)}%</span>
-            <span>Stop: -{Math.abs(((trade.stop_loss || trade.entry_price) - trade.entry_price) / trade.entry_price * 100).toFixed(0)}%</span>
+            <span>
+              Target: +
+              {(((trade.target_price - trade.entry_price) / trade.entry_price) * 100).toFixed(0)}%
+            </span>
+            <span>
+              Stop: -
+              {Math.abs(
+                (((trade.stop_loss || trade.entry_price) - trade.entry_price) / trade.entry_price) *
+                  100
+              ).toFixed(0)}
+              %
+            </span>
           </div>
           <div className="h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
             <div
@@ -197,7 +195,9 @@ export function LiveTradeCard({
             />
           </div>
           <div className="flex justify-end mt-1">
-            <span className="text-xs text-[var(--text-faint)]">{progress.toFixed(0)}% to target</span>
+            <span className="text-xs text-[var(--text-faint)]">
+              {progress.toFixed(0)}% to target
+            </span>
           </div>
         </div>
       )}
@@ -248,40 +248,23 @@ export function LiveTradeCard({
       {/* Public Comment */}
       {trade.public_comment && !compact && (
         <div className="mt-3 p-3 bg-[var(--surface-2)] rounded border-l-2 border-[var(--brand-primary)]">
-          <p className="text-sm text-[var(--text-muted)] italic">
-            "{trade.public_comment}"
-          </p>
+          <p className="text-sm text-[var(--text-muted)] italic">"{trade.public_comment}"</p>
         </div>
       )}
     </div>
   );
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-function formatExpiration(expiration: string): string {
-  try {
-    const date = new Date(expiration);
-    const now = new Date();
-    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return "0DTE";
-    if (diffDays === 1) return "1DTE";
-    if (diffDays <= 7) return `${diffDays}DTE`;
-
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } catch {
-    return expiration;
-  }
-}
+// Helper functions moved to @/lib/utils/publicFormatters.ts
 
 // ============================================================================
 // Compact Variant for Carousel
 // ============================================================================
 
-export function LiveTradeCardCompact({ trade, onViewDetails }: Omit<LiveTradeCardProps, "compact">) {
+export function LiveTradeCardCompact({
+  trade,
+  onViewDetails,
+}: Omit<LiveTradeCardProps, "compact">) {
   return <LiveTradeCard trade={trade} onViewDetails={onViewDetails} compact />;
 }
 

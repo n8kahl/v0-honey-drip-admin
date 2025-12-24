@@ -55,6 +55,10 @@ export interface Contract {
   theta?: number;
   vega?: number;
   iv?: number;
+  // Optional properties for component compatibility
+  symbol?: string;
+  ticker?: string;
+  contractType?: OptionType;
 }
 
 export interface Challenge {
@@ -128,6 +132,24 @@ export interface TradeConfluence {
   keyLevels?: import("../lib/riskEngine/types").KeyLevels; // Real-time key levels for TP/SL calculations and metric display
   updatedAt: Date;
   isStale?: boolean; // True if data is >60s old
+
+  // Optional ConfluenceScore-compatible properties for component compatibility
+  overall?: number;
+  trend?: number;
+  momentum?: number;
+  volatility?: number;
+  volume?: number;
+  technical?: number;
+  subscores?: Record<string, number>;
+  components?: {
+    trendAlignment?: boolean;
+    aboveVWAP?: boolean;
+    rsiConfirm?: boolean;
+    volumeConfirm?: boolean;
+    supportResistance?: boolean;
+  };
+  highlights?: string[];
+  lastUpdated?: number;
 }
 
 export interface Trade {

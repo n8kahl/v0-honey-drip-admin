@@ -6,6 +6,7 @@ type VoiceState = "idle" | "listening" | "processing";
 type ChartViewportMode = "AUTO" | "MANUAL";
 type WatchlistViewMode = "clean" | "power";
 type WatchlistSortMode = "score" | "change" | "alphabetical";
+export type Tab = "active" | "history" | "radar" | "settings";
 
 interface LogicalRange {
   from: number;
@@ -26,6 +27,14 @@ interface UIStore {
   voiceState: VoiceState;
   focusedTrade: Trade | null;
   flashTradeTab: boolean;
+
+  // Navigation state (legacy - prefer React Router)
+  activeTab: Tab;
+  setActiveTab: (tab: Tab) => void;
+  focusTradeInLive: (tradeId: string) => void;
+  navigateToActive: () => void;
+  navigateToHistory: () => void;
+  navigateToLive: () => void;
 
   // Chart viewport management
   chartViewportMode: ChartViewportMode;
@@ -93,6 +102,9 @@ export const useUIStore = create<UIStore>()(
       savedRanges: {},
       chartScrollToBar: null,
 
+      // Navigation state (legacy)
+      activeTab: "active" as Tab,
+
       // Watchlist preferences
       watchlistViewMode: "clean",
       watchlistSortMode: "score",
@@ -100,6 +112,14 @@ export const useUIStore = create<UIStore>()(
 
       // Simple setters
       setMainCockpitSymbol: (symbol) => set({ mainCockpitSymbol: symbol }),
+      setActiveTab: (tab) => set({ activeTab: tab }),
+      focusTradeInLive: (_tradeId) => {
+        // Legacy - navigation now handled by React Router
+        set({ activeTab: "active" });
+      },
+      navigateToActive: () => set({ activeTab: "active" }),
+      navigateToHistory: () => set({ activeTab: "history" }),
+      navigateToLive: () => set({ activeTab: "active" }),
       registerChartScrollCallback: (callback) => set({ chartScrollToBar: callback }),
       unregisterChartScrollCallback: () => set({ chartScrollToBar: null }),
       scrollChartToBar: (barTimeKey) => {
@@ -181,6 +201,7 @@ export const useUIStore = create<UIStore>()(
           watchlistViewMode: "clean",
           watchlistSortMode: "score",
           expandedWatchlistRow: null,
+          activeTab: "active" as Tab,
         }),
     }),
     { name: "UIStore" }

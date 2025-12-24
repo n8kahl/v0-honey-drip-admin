@@ -58,9 +58,9 @@ vi.mock("../../forms/HDConfirmDialog", () => ({
 
 describe("HDPanelWatchlist sorting", () => {
   const mockWatchlist = [
-    { id: "1", symbol: "SPY", name: "SPY", last: 600, changePercent: 0.5 },
-    { id: "2", symbol: "AAPL", name: "AAPL", last: 200, changePercent: 1.2 },
-    { id: "3", symbol: "MSFT", name: "MSFT", last: 400, changePercent: -0.3 },
+    { id: "1", symbol: "SPY", name: "SPY", last: 600, change: 3.0, changePercent: 0.5 },
+    { id: "2", symbol: "AAPL", name: "AAPL", last: 200, change: 2.4, changePercent: 1.2 },
+    { id: "3", symbol: "MSFT", name: "MSFT", last: 400, change: -1.2, changePercent: -0.3 },
   ];
 
   beforeEach(() => {

@@ -15,7 +15,7 @@ interface HDSessionGuidanceProps {
   ticker: string;
   direction: "call" | "put";
   contract?: Contract;
-  tradeType?: "Scalp" | "Day" | "Swing";
+  tradeType?: "Scalp" | "Day" | "Swing" | "LEAP";
   className?: string;
   compact?: boolean;
   defaultExpanded?: boolean;
@@ -49,11 +49,15 @@ const SESSION_ONELINERS: Record<MarketSession, string> = {
 // Full guidance text
 const SESSION_DETAILS: Record<MarketSession, string> = {
   PRE: "Review news catalysts, set key levels. Spreads are wide - wait for the opening bell for better fills.",
-  OPEN_DRIVE: "First 30 minutes are volatile with widest spreads. Use smaller size, quick decisions. Prime scalping window.",
-  MORNING: "Liquidity is strong, trends tend to continue. Look for pullback entries with proper stops.",
-  LUNCH: "Volume drops, price action gets noisy. False breakouts are common. Consider sitting out or use wide stops.",
+  OPEN_DRIVE:
+    "First 30 minutes are volatile with widest spreads. Use smaller size, quick decisions. Prime scalping window.",
+  MORNING:
+    "Liquidity is strong, trends tend to continue. Look for pullback entries with proper stops.",
+  LUNCH:
+    "Volume drops, price action gets noisy. False breakouts are common. Consider sitting out or use wide stops.",
   AFTERNOON: "Volume returning. Watch for continuation of morning trends or new setups forming.",
-  POWER_HOUR: "Strong moves possible. Theta accelerating for short-dated options. Take profits into close.",
+  POWER_HOUR:
+    "Strong moves possible. Theta accelerating for short-dated options. Take profits into close.",
   AFTER_HOURS: "Market closed. Options don't trade AH. Review positions and plan for tomorrow.",
 };
 

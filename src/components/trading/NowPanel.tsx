@@ -5,7 +5,7 @@
  * - focus === null → Empty state
  * - focus.kind === "symbol" → Symbol analysis (chart, chain, best pick) [SETUP MODE]
  * - focus.kind === "trade" → Trade details (varies by state)
- *   - WATCHING/LOADED → Setup-style view (NowPanelTrade)
+ *   - WATCHING/LOADED → Options chain view (NowPanelSymbol) - allows contract changes
  *   - ENTERED → Management cockpit (NowPanelManage) [MANAGE MODE]
  *   - EXITED → Trade recap (NowPanelTrade)
  *
@@ -76,8 +76,9 @@ export function NowPanel({
 
   // Symbol focus - show chart, options chain, best pick [SETUP MODE]
   if (focus.kind === "symbol") {
-    // Disable auto-select if there's a trade in LOADED/ENTERED state OR if transitioning
-    // This prevents re-triggering contract selection after a trade is loaded
+    // Disable auto-select if:
+    // 1. There's a trade in LOADED/ENTERED state, OR
+    // 2. A transition is in progress
     const hasActiveTrade = tradeState === "LOADED" || tradeState === "ENTERED";
     return (
       <NowPanelSymbol
@@ -104,16 +105,33 @@ export function NowPanel({
       return <NowPanelEmpty message="Trade not found" />;
     }
 
-    // ENTERED state → Management Cockpit [MANAGE MODE]
     // Use trade.state as the primary source of truth since it's directly from the trade object
     // This fixes race conditions where tradeState (from derived selectors) lags behind
     const effectiveState = trade.state;
+
+    // WATCHING/LOADED state → Show symbol view (options chain) with selected contract
+    // This keeps the options chain visible so user can change their contract selection
+    // before entering the trade - they're still in "setup" mode
+    if ((effectiveState === "WATCHING" || effectiveState === "LOADED") && activeTicker) {
+      return (
+        <NowPanelSymbol
+          symbol={activeTicker.symbol}
+          activeTicker={activeTicker}
+          contracts={contracts}
+          onContractSelect={onContractSelect}
+          compositeSignals={compositeSignals}
+          watchlist={watchlist}
+          disableAutoSelect={true} // Already selected, don't re-trigger
+        />
+      );
+    }
+
+    // ENTERED state → Management Cockpit [MANAGE MODE]
     if (effectiveState === "ENTERED") {
       return <NowPanelManage trade={trade} activeTicker={activeTicker} watchlist={watchlist} />;
     }
 
-    // WATCHING/LOADED/EXITED → Standard trade panel [SETUP MODE]
-    // Pass effectiveState instead of tradeState for consistency
+    // EXITED → Trade recap panel [SETUP MODE]
     return (
       <NowPanelTrade
         trade={trade}

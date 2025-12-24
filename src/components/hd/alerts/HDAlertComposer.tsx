@@ -700,33 +700,8 @@ export function HDAlertComposer({
       }
     }
 
-    // Validate stop loss vs entry for enter/load alerts (risk management check)
-    const isLongTrade = trade.tradeType === "Scalp" || trade.contract?.type === "C";
-
-    if (alertType === "load" || alertType === "enter") {
-      const effectiveEntry = entryPrice || trade.entryPrice || trade.contract.mid;
-      const effectiveStop = stopLoss || trade.stopLoss;
-      const effectiveTarget = targetPrice || trade.targetPrice;
-
-      if (effectiveEntry && effectiveStop && effectiveEntry > 0 && effectiveStop > 0) {
-        if (isLongTrade && effectiveStop >= effectiveEntry) {
-          errors.push("Stop loss should be below entry for long positions");
-        }
-        // For short positions (puts), stop should be above entry
-        if (!isLongTrade && effectiveStop <= effectiveEntry) {
-          errors.push("Stop loss should be above entry for short positions");
-        }
-      }
-
-      if (effectiveEntry && effectiveTarget && effectiveEntry > 0 && effectiveTarget > 0) {
-        if (isLongTrade && effectiveTarget <= effectiveEntry) {
-          errors.push("Target should be above entry for long positions");
-        }
-        if (!isLongTrade && effectiveTarget >= effectiveEntry) {
-          errors.push("Target should be below entry for short positions");
-        }
-      }
-    }
+    // Note: Stop loss and target position validation removed per user request
+    // Users can set any stop/target values they prefer
 
     return errors;
   }, [

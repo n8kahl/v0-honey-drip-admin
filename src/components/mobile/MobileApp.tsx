@@ -17,6 +17,7 @@ import { Trade, AlertType, Contract, Ticker, TradeType } from "../../types";
 import { toast } from "sonner";
 import { massive } from "../../lib/massive";
 import { fetchNormalizedChain } from "../../services/options";
+import { createTradeApi, linkChallengesApi } from "../../lib/api/tradeApi";
 
 interface MobileAppProps {
   onLogout?: () => void;
@@ -154,7 +155,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     return "LEAP";
   };
 
-  // Handle contract selection - create LOADED trade and open alert sheet
+  // Handle contract selection - create WATCHING trade (like desktop) and open alert sheet
   const handleContractSelect = (contract: Contract) => {
     if (!contractSheetTicker || !user) return;
 
@@ -163,11 +164,11 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     const tpMultiplier = tradeType === "Scalp" ? 1.3 : tradeType === "Day" ? 1.5 : 2.0;
     const slMultiplier = tradeType === "Scalp" ? 0.7 : tradeType === "Day" ? 0.5 : 0.3;
 
-    // Create trade in LOADED state
-    const newTrade: Trade = {
+    // Create trade in WATCHING state (like desktop - not persisted yet)
+    const previewTrade: Trade = {
       id: crypto.randomUUID(),
       ticker: contractSheetTicker.symbol,
-      state: "LOADED",
+      state: "WATCHING", // Changed from LOADED to WATCHING (matching desktop)
       contract,
       tradeType,
       targetPrice: contract.mid * tpMultiplier,
@@ -178,9 +179,8 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       updates: [],
     };
 
-    // Add to active trades (in-memory, will persist on entry)
-    const currentTrades = useTradeStore.getState().activeTrades;
-    useTradeStore.getState().setActiveTrades([...currentTrades, newTrade]);
+    // Set as preview trade (NOT activeTrades) - matches desktop pattern
+    useTradeStore.getState().setPreviewTrade(previewTrade);
 
     // Close contract sheet and open alert sheet
     setContractSheetOpen(false);
@@ -188,7 +188,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     setContractsForTicker([]);
 
     // Open alert sheet for load alert
-    openAlertSheet(newTrade, "load");
+    openAlertSheet(previewTrade, "load");
   };
 
   // Handle sending alert (desktop pattern: persist channels + challenges)
@@ -252,8 +252,60 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         });
         toast.success("Entry alert sent");
       } else if (alertType === "load") {
-        await discord.sendLoadAlert(selectedChannels, tradeWithPrices, comment);
-        toast.success("Load alert sent");
+        // MOBILE FIX: Persist trade to DB first (matching desktop pattern)
+        // Trade is currently in WATCHING state as previewTrade
+        if (!user?.id) {
+          toast.error("Not authenticated");
+          return;
+        }
+
+        // Create trade in database with LOADED state
+        const dbTrade = await createTradeApi(user.id, {
+          ticker: tradeWithPrices.ticker,
+          tradeType: tradeWithPrices.tradeType,
+          state: "LOADED",
+          contract: tradeWithPrices.contract,
+          currentPrice: priceOverrides?.currentPrice ?? tradeWithPrices.currentPrice,
+          targetPrice: priceOverrides?.targetPrice ?? tradeWithPrices.targetPrice,
+          stopLoss: priceOverrides?.stopLoss ?? tradeWithPrices.stopLoss,
+          discordChannels: channels,
+          challenges: challengeIds,
+        });
+
+        // Link channels to trade
+        if (channels.length > 0 && dbTrade?.id) {
+          for (const channelId of channels) {
+            await fetch(`/api/trades/${dbTrade.id}/channels/${channelId}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            }).catch(console.error);
+          }
+        }
+
+        // Link challenges to trade
+        if (challengeIds.length > 0 && dbTrade?.id) {
+          await linkChallengesApi(user.id, dbTrade.id, challengeIds);
+        }
+
+        // Update store: clear preview, add to activeTrades via applyTradePatch
+        const tradeStore = useTradeStore.getState();
+        tradeStore.setPreviewTrade(null);
+
+        // Create the persisted trade with real DB ID
+        const persistedTrade: Trade = {
+          ...tradeWithPrices,
+          id: dbTrade?.id || tradeWithPrices.id,
+          state: "LOADED",
+          discordChannels: channels,
+          challenges: challengeIds,
+        };
+
+        // Add to activeTrades
+        tradeStore.setActiveTrades([...tradeStore.activeTrades, persistedTrade]);
+
+        // Send Discord alert
+        await discord.sendLoadAlert(selectedChannels, persistedTrade, comment);
+        toast.success("Trade loaded and alert sent");
       }
 
       setAlertSheetOpen(false);

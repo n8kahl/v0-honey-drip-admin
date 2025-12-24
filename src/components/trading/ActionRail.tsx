@@ -209,7 +209,7 @@ export function ActionRail({
             {/* Risk Box - Visible when trade exists */}
             {currentTrade && <ActionRailRiskBox trade={currentTrade} />}
 
-            {/* Discord Controls */}
+            {/* Discord Controls - Force expanded for LOADED state (user needs Enter Trade buttons) */}
             <ActionRailDiscord
               trade={currentTrade}
               channels={channels}
@@ -217,26 +217,28 @@ export function ActionRail({
               showAlert={showAlert}
               alertType={alertType}
               alertOptions={alertOptions}
-              expanded={discordExpanded}
-              onToggleExpanded={() => setDiscordExpanded(!discordExpanded)}
+              expanded={!!isLoadedMode || discordExpanded}
+              onToggleExpanded={() => !isLoadedMode && setDiscordExpanded(!discordExpanded)}
               onSendAlert={onSendAlert}
               onEnterAndAlert={onEnterAndAlert}
               onCancelAlert={onCancelAlert}
             />
 
-            {/* Action Buttons */}
-            <ActionRailActions
-              tradeState={tradeState}
-              currentTrade={currentTrade}
-              onEnter={onEnter}
-              onUnload={onUnload}
-              onTrim={onTrim}
-              onMoveSL={onMoveSL}
-              onTrailStop={onTrailStop}
-              onAdd={onAdd}
-              onExit={onExit}
-              onTakeProfit={onTakeProfit}
-            />
+            {/* Action Buttons - Only for EXITED state (LOADED uses HDAlertComposer buttons) */}
+            {isExitedMode && (
+              <ActionRailActions
+                tradeState={tradeState}
+                currentTrade={currentTrade}
+                onEnter={onEnter}
+                onUnload={onUnload}
+                onTrim={onTrim}
+                onMoveSL={onMoveSL}
+                onTrailStop={onTrailStop}
+                onAdd={onAdd}
+                onExit={onExit}
+                onTakeProfit={onTakeProfit}
+              />
+            )}
           </>
         ) : (
           <EmptyRailState tradeState={tradeState} />

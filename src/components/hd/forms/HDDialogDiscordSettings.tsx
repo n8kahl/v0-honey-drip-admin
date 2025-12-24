@@ -305,10 +305,8 @@ export function HDDialogDiscordSettings({
                     <Label className="text-[11px] text-[var(--text-med)]">Channels</Label>
                     <div className="flex flex-wrap gap-2">
                       {channels.map((ch) => {
-                        const selected = pref.channels.includes(
-                          ch.webhookUrl || ch.webhook_url || ch.id
-                        );
-                        const key = ch.webhookUrl || ch.webhook_url || ch.id;
+                        const selected = pref.channels.includes(ch.webhookUrl || ch.id);
+                        const key = ch.webhookUrl || ch.id;
                         return (
                           <button
                             key={key}

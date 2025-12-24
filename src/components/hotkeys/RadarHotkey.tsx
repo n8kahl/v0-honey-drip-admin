@@ -1,18 +1,17 @@
-"use client";
-
-import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 function isEditable(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName.toLowerCase();
   const editable = (target as HTMLElement).isContentEditable;
-  return editable || tag === 'input' || tag === 'textarea' || tag === 'select';
+  return editable || tag === "input" || tag === "textarea" || tag === "select";
 }
 
 export default function RadarHotkey() {
-  const router = useRouter();
-  const pathname = usePathname();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const pathname = location.pathname;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -21,23 +20,23 @@ export default function RadarHotkey() {
 
       const key = e.key.toLowerCase();
 
-      if (key === 'r') {
+      if (key === "r") {
         e.preventDefault();
-        if (pathname !== '/radar') router.push('/radar');
-        else if (typeof window !== 'undefined' && window.history.length > 1) router.back();
-        else router.push('/');
-      } else if (key === 'escape') {
-        if (pathname === '/radar') {
+        if (pathname !== "/radar") navigate("/radar");
+        else if (typeof window !== "undefined" && window.history.length > 1) navigate(-1);
+        else navigate("/");
+      } else if (key === "escape") {
+        if (pathname === "/radar") {
           e.preventDefault();
-          if (typeof window !== 'undefined' && window.history.length > 1) router.back();
-          else router.push('/');
+          if (typeof window !== "undefined" && window.history.length > 1) navigate(-1);
+          else navigate("/");
         }
       }
     };
 
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [pathname, router]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pathname, navigate]);
 
   return null;
 }

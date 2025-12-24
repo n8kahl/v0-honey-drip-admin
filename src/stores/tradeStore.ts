@@ -121,6 +121,9 @@ interface TradeStore {
   markTradeAsUpdated: (tradeId: string) => void;
   clearUpdatedFlags: () => void;
 
+  // Atomic patch operation - applies updates and ensures trade is in correct list
+  applyTradePatch: (tradeId: string, patch: Partial<Trade>) => Trade | null;
+
   // Reset
   reset: () => void;
 }
@@ -537,7 +540,12 @@ export const useTradeStore = create<TradeStore>()(
 
             // Generate proper OCC symbol for live P&L tracking
             // ALWAYS generate it - we'll use it if stored ID is missing or invalid
-            const generatedOCCSymbol = generateOCCSymbol(t.ticker, t.expiration, optionType, strike);
+            const generatedOCCSymbol = generateOCCSymbol(
+              t.ticker,
+              t.expiration,
+              optionType,
+              strike
+            );
 
             // Use stored ID only if it's a valid OCC symbol, otherwise use generated one
             const storedIdValid = isValidOCCSymbol(storedContract?.id);
@@ -1002,6 +1010,140 @@ export const useTradeStore = create<TradeStore>()(
 
       clearUpdatedFlags: () => {
         set({ updatedTradeIds: new Set() });
+      },
+
+      // ========================================
+      // Atomic Patch Operation
+      // ========================================
+      /**
+       * applyTradePatch - Atomically applies a patch to a trade and moves it to the correct list
+       *
+       * This is the canonical way to update a trade after a state transition.
+       * It ensures:
+       * 1. The trade is found (in activeTrades, historyTrades, or previewTrade)
+       * 2. The patch is applied
+       * 3. The trade is moved to the correct list based on its new state
+       * 4. List invariants are validated
+       *
+       * @param tradeId - The ID of the trade to patch
+       * @param patch - Partial trade updates to apply
+       * @returns The updated trade, or null if not found
+       */
+      applyTradePatch: (tradeId: string, patch: Partial<Trade>): Trade | null => {
+        const correlationId = log.actionStart("applyTradePatch", {
+          tradeId,
+          patchFields: Object.keys(patch),
+          newState: patch.state,
+        });
+
+        const state = get();
+        let foundTrade: Trade | null = null;
+        let source: "active" | "history" | "preview" | null = null;
+
+        // Find the trade
+        const activeIdx = state.activeTrades.findIndex((t) => t.id === tradeId);
+        if (activeIdx !== -1) {
+          foundTrade = state.activeTrades[activeIdx];
+          source = "active";
+        } else {
+          const historyIdx = state.historyTrades.findIndex((t) => t.id === tradeId);
+          if (historyIdx !== -1) {
+            foundTrade = state.historyTrades[historyIdx];
+            source = "history";
+          } else if (state.previewTrade?.id === tradeId) {
+            foundTrade = state.previewTrade;
+            source = "preview";
+          }
+        }
+
+        if (!foundTrade || !source) {
+          log.warn("applyTradePatch: Trade not found", { tradeId, correlationId });
+          return null;
+        }
+
+        // Apply the patch
+        const updatedTrade: Trade = { ...foundTrade, ...patch };
+        const newState = updatedTrade.state;
+
+        log.debug("applyTradePatch: Applying patch", {
+          tradeId,
+          correlationId,
+          oldState: foundTrade.state,
+          newState,
+          source,
+        });
+
+        // Determine target list based on new state
+        let targetList: "active" | "history" | "preview";
+        if (newState === "WATCHING") {
+          targetList = "preview";
+        } else if (newState === "EXITED") {
+          targetList = "history";
+        } else {
+          // LOADED, ENTERED
+          targetList = "active";
+        }
+
+        // Atomically update the store
+        set((s) => {
+          // Remove from old location
+          let newActiveTrades = s.activeTrades;
+          let newHistoryTrades = s.historyTrades;
+          let newPreviewTrade = s.previewTrade;
+
+          if (source === "active") {
+            newActiveTrades = s.activeTrades.filter((t) => t.id !== tradeId);
+          } else if (source === "history") {
+            newHistoryTrades = s.historyTrades.filter((t) => t.id !== tradeId);
+          } else if (source === "preview") {
+            newPreviewTrade = null;
+          }
+
+          // Add to new location
+          if (targetList === "active") {
+            // Check if already exists (shouldn't happen, but defensive)
+            if (!newActiveTrades.some((t) => t.id === tradeId)) {
+              newActiveTrades = [...newActiveTrades, updatedTrade];
+            } else {
+              newActiveTrades = newActiveTrades.map((t) => (t.id === tradeId ? updatedTrade : t));
+            }
+          } else if (targetList === "history") {
+            if (!newHistoryTrades.some((t) => t.id === tradeId)) {
+              newHistoryTrades = [...newHistoryTrades, updatedTrade];
+            } else {
+              newHistoryTrades = newHistoryTrades.map((t) => (t.id === tradeId ? updatedTrade : t));
+            }
+          } else if (targetList === "preview") {
+            newPreviewTrade = updatedTrade;
+          }
+
+          // Validate invariants in development
+          if (process.env.NODE_ENV === "development") {
+            assertTradeListsValid(
+              {
+                activeTrades: newActiveTrades,
+                historyTrades: newHistoryTrades,
+                previewTrade: newPreviewTrade,
+              },
+              "applyTradePatch"
+            );
+          }
+
+          return {
+            activeTrades: newActiveTrades,
+            historyTrades: newHistoryTrades,
+            previewTrade: newPreviewTrade,
+          };
+        });
+
+        log.actionEnd("applyTradePatch", correlationId, {
+          tradeId,
+          source,
+          targetList,
+          newState,
+        });
+
+        return updatedTrade;
       },
 
       // ========================================

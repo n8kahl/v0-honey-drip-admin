@@ -41,6 +41,7 @@ import { DecisionVizSparkline } from "./DecisionVizSparkline";
 import { DecisionVizRange } from "./DecisionVizRange";
 import { chipStyle, getScoreStyle, fmtPrice } from "../../../ui/semantics";
 import { calculateAdvancedConfluence } from "../../../lib/market/confluenceCalculations";
+import { rsiWilder } from "../../../lib/indicators";
 
 // ============================================================================
 // Types
@@ -112,6 +113,21 @@ interface MTFLadderProps {
 }
 
 function MTFLadder({ mtfTrend, indicators, candles, symbolData }: MTFLadderProps) {
+  // Determine if market is currently open (9:30 AM - 4:00 PM ET, Mon-Fri)
+  const isMarketOpen = useMemo(() => {
+    const nowET = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+    const dateET = new Date(nowET);
+    const hour = dateET.getHours();
+    const minute = dateET.getMinutes();
+    const day = dateET.getDay();
+
+    // Mon-Fri (1-5), 9:30 AM - 4:00 PM
+    const isWeekday = day >= 1 && day <= 5;
+    const isMarketHours = (hour > 9 || (hour === 9 && minute >= 30)) && hour < 16;
+
+    return isWeekday && isMarketHours;
+  }, []);
+
   // Check which timeframes have data
   const availableTimeframes = useMemo(() => {
     const tfs: { tf: Timeframe; label: string; hasData: boolean; reason?: string }[] = [
@@ -123,15 +139,17 @@ function MTFLadder({ mtfTrend, indicators, candles, symbolData }: MTFLadderProps
 
     // Check candle data availability
     const now = Date.now();
-    const fiveMinAgo = now - 5 * 60 * 1000;
+
+    // During market hours: 1 hour staleness threshold
+    // After hours/weekends: 24 hours threshold (yesterday's data is fine for analysis)
+    const staleThreshold = isMarketOpen ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
     for (const item of tfs) {
       const tfCandles = symbolData?.candles?.[item.tf];
       if (tfCandles && tfCandles.length > 0) {
         const lastCandle = tfCandles[tfCandles.length - 1];
         const candleAge = now - lastCandle.time;
-        if (candleAge < 60 * 60 * 1000) {
-          // Less than 1 hour old
+        if (candleAge < staleThreshold) {
           item.hasData = true;
         } else {
           item.reason = "stale";
@@ -145,7 +163,7 @@ function MTFLadder({ mtfTrend, indicators, candles, symbolData }: MTFLadderProps
     }
 
     return tfs;
-  }, [mtfTrend, symbolData]);
+  }, [mtfTrend, symbolData, isMarketOpen]);
 
   // Check if any data at all
   const hasAnyData = availableTimeframes.some((tf) => tf.hasData);
@@ -165,6 +183,33 @@ function MTFLadder({ mtfTrend, indicators, candles, symbolData }: MTFLadderProps
     if (bearCount >= 3) return { label: "Bearish Bias", style: "text-[var(--accent-negative)]" };
     return { label: "Mixed", style: "text-[var(--data-stale)]" };
   }, [mtfTrend]);
+
+  // Calculate RSI for each timeframe from their respective candles
+  const perTfRsi = useMemo(() => {
+    const result: Record<Timeframe, number | null> = {
+      "1m": indicators.rsi14 ?? null,
+      "5m": null,
+      "15m": null,
+      "60m": null,
+      "1D": null,
+    };
+
+    // Calculate RSI for higher timeframes if candles are available
+    const timeframesToCalc: Timeframe[] = ["5m", "15m", "60m"];
+    for (const tf of timeframesToCalc) {
+      const tfCandles = symbolData?.candles?.[tf];
+      if (tfCandles && tfCandles.length >= 15) {
+        const closes = tfCandles.map((c) => c.close);
+        const rsiArray = rsiWilder(closes, 14);
+        const lastRsi = rsiArray[rsiArray.length - 1];
+        if (!isNaN(lastRsi)) {
+          result[tf] = lastRsi;
+        }
+      }
+    }
+
+    return result;
+  }, [indicators.rsi14, symbolData]);
 
   // Early returns AFTER all hooks
   if (isLoading) {
@@ -257,7 +302,7 @@ function MTFLadder({ mtfTrend, indicators, candles, symbolData }: MTFLadderProps
                   {strength}
                 </div>
                 <div className="text-[var(--text-muted)] tabular-nums">
-                  {row.tf === "1m" && indicators.rsi14 ? indicators.rsi14.toFixed(0) : "—"}
+                  {perTfRsi[row.tf] !== null ? perTfRsi[row.tf]!.toFixed(0) : "—"}
                 </div>
               </div>
             );
