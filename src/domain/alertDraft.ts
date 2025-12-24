@@ -212,6 +212,27 @@ export function getDefaultFieldToggles(intent: TradeActionIntent): AlertDraftFie
 // ============================================================================
 
 /**
+ * Get DTE-aware price multipliers
+ *
+ * DTE-aware multipliers (aligned with mobile implementation):
+ * - Scalp (≤1 DTE): 1.3x TP / 0.7x SL
+ * - Day (≤7 DTE): 1.5x TP / 0.5x SL
+ * - Swing/LEAP (>7 DTE): 2.0x TP / 0.3x SL
+ */
+function getDTEAwareMultipliers(daysToExpiry: number): {
+  tpMultiplier: number;
+  slMultiplier: number;
+} {
+  if (daysToExpiry <= 1) {
+    return { tpMultiplier: 1.3, slMultiplier: 0.7 };
+  } else if (daysToExpiry <= 7) {
+    return { tpMultiplier: 1.5, slMultiplier: 0.5 };
+  } else {
+    return { tpMultiplier: 2.0, slMultiplier: 0.3 };
+  }
+}
+
+/**
  * Get default editable prices for a given intent and trade
  */
 export function getDefaultEditablePrices(
@@ -223,12 +244,16 @@ export function getDefaultEditablePrices(
   const contractMid = trade.contract?.mid;
   const effectiveCurrent = currentPrice || trade.currentPrice || contractMid || 0;
 
+  // Calculate DTE-aware multipliers
+  const daysToExpiry = trade.contract?.daysToExpiry ?? 0;
+  const { tpMultiplier, slMultiplier } = getDTEAwareMultipliers(daysToExpiry);
+
   switch (intent) {
     case "LOAD":
       return {
         current: effectiveCurrent,
-        target: trade.targetPrice || effectiveCurrent * 1.5,
-        stop: trade.stopLoss || effectiveCurrent * 0.5,
+        target: trade.targetPrice || effectiveCurrent * tpMultiplier,
+        stop: trade.stopLoss || effectiveCurrent * slMultiplier,
         targetUnderlying: trade.targetUnderlyingPrice,
         stopUnderlying: trade.stopUnderlyingPrice,
       };
@@ -237,15 +262,15 @@ export function getDefaultEditablePrices(
       return {
         entry: trade.entryPrice || effectiveCurrent,
         current: effectiveCurrent,
-        target: trade.targetPrice || effectiveCurrent * 1.5,
-        stop: trade.stopLoss || effectiveCurrent * 0.5,
+        target: trade.targetPrice || effectiveCurrent * tpMultiplier,
+        stop: trade.stopLoss || effectiveCurrent * slMultiplier,
         targetUnderlying: trade.targetUnderlyingPrice,
         stopUnderlying: trade.stopUnderlyingPrice,
       };
 
     case "UPDATE_SL":
       return {
-        stop: trade.stopLoss || effectiveCurrent * 0.5,
+        stop: trade.stopLoss || effectiveCurrent * slMultiplier,
       };
 
     case "TRIM":

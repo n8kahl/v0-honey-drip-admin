@@ -17,7 +17,13 @@ import { Trade, AlertType, Contract, Ticker, TradeType } from "../../types";
 import { toast } from "sonner";
 import { massive } from "../../lib/massive";
 import { fetchNormalizedChain } from "../../services/options";
-import { createTradeApi, linkChallengesApi } from "../../lib/api/tradeApi";
+import { createAlertDraft } from "../../domain/alertDraft";
+import { commitAlertDraft, type DiscordAlertService } from "../../domain/alerts/commitAlertDraft";
+import {
+  alertTypeToIntent,
+  type UIAlertType,
+  type UIUpdateKind,
+} from "../../domain/alerts/intentMapping";
 
 interface MobileAppProps {
   onLogout?: () => void;
@@ -41,7 +47,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const [contractsError, setContractsError] = useState<string | null>(null);
 
   // Stores
-  const { activeTrades, historyTrades, loadTrades, updateTrade } = useTradeStore();
+  const { activeTrades, historyTrades, loadTrades } = useTradeStore();
   const { watchlist, loadWatchlist } = useMarketStore();
   const { discordChannels, challenges, loadDiscordChannels, loadChallenges, discordAlertsEnabled } =
     useSettingsStore();
@@ -203,115 +209,94 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       stopLoss?: number;
     }
   ) => {
-    if (!alertTrade) return;
+    if (!alertTrade || !user?.id) {
+      toast.error("Not authenticated");
+      return;
+    }
 
     try {
-      const selectedChannels = discordChannels.filter((c) => channels.includes(c.id));
+      // Convert UI alert type to domain intent
+      const intent = alertTypeToIntent(
+        alertType as UIAlertType,
+        alertOptions.updateKind as UIUpdateKind
+      );
 
-      // Apply price overrides to trade object (matching desktop pattern)
-      const tradeWithPrices = priceOverrides
-        ? {
-            ...alertTrade,
-            entryPrice: priceOverrides.entryPrice ?? alertTrade.entryPrice,
-            currentPrice: priceOverrides.currentPrice ?? alertTrade.currentPrice,
-            targetPrice: priceOverrides.targetPrice ?? alertTrade.targetPrice,
-            stopLoss: priceOverrides.stopLoss ?? alertTrade.stopLoss,
-          }
-        : alertTrade;
+      // Create alert draft using domain layer
+      const draft = createAlertDraft({
+        intent,
+        trade: alertTrade,
+        currentPrice: priceOverrides?.currentPrice,
+        initialChannels: channels,
+        initialChallenges: challengeIds,
+      });
 
-      // Persist challenges if provided (desktop pattern)
-      if (challengeIds.length > 0 && tradeWithPrices.id) {
-        await useTradeStore.getState().linkTradeToChallenges(tradeWithPrices.id, challengeIds);
+      // Apply price overrides to draft
+      if (priceOverrides) {
+        if (priceOverrides.entryPrice !== undefined) {
+          draft.editablePrices.entry = priceOverrides.entryPrice;
+        }
+        if (priceOverrides.currentPrice !== undefined) {
+          draft.editablePrices.current = priceOverrides.currentPrice;
+        }
+        if (priceOverrides.targetPrice !== undefined) {
+          draft.editablePrices.target = priceOverrides.targetPrice;
+        }
+        if (priceOverrides.stopLoss !== undefined) {
+          draft.editablePrices.stop = priceOverrides.stopLoss;
+        }
       }
 
-      if (alertType === "update" && alertOptions.updateKind === "trim") {
-        await discord.sendUpdateAlert(selectedChannels, tradeWithPrices, "trim", comment);
-        toast.success("Trim alert sent");
-      } else if (alertType === "update" && alertOptions.updateKind === "sl") {
-        await discord.sendUpdateAlert(selectedChannels, tradeWithPrices, "update-sl", comment);
-        toast.success("Stop loss update sent");
-      } else if (alertType === "exit") {
-        await discord.sendExitAlert(selectedChannels, tradeWithPrices, comment);
-        // Update trade state to EXITED
-        await updateTrade(tradeWithPrices.id, {
-          state: "EXITED",
-          exitPrice: tradeWithPrices.currentPrice,
-          exitTime: new Date(),
-        });
-        toast.success("Exit alert sent");
-      } else if (alertType === "enter") {
-        await discord.sendEntryAlert(selectedChannels, tradeWithPrices, comment);
-        // Update trade state to ENTERED with price overrides (desktop pattern)
-        await updateTrade(tradeWithPrices.id, {
-          state: "ENTERED",
-          entryPrice: priceOverrides?.entryPrice ?? tradeWithPrices.contract?.mid,
-          currentPrice: priceOverrides?.currentPrice ?? tradeWithPrices.contract?.mid,
-          targetPrice: priceOverrides?.targetPrice,
-          stopLoss: priceOverrides?.stopLoss,
-          entryTime: new Date(),
-        });
-        toast.success("Entry alert sent");
-      } else if (alertType === "load") {
-        // MOBILE FIX: Persist trade to DB first (matching desktop pattern)
-        // Trade is currently in WATCHING state as previewTrade
-        if (!user?.id) {
-          toast.error("Not authenticated");
-          return;
-        }
+      // Set comment if provided
+      if (comment) {
+        draft.comment = comment;
+      }
 
-        // Create trade in database with LOADED state
-        const dbTrade = await createTradeApi(user.id, {
-          ticker: tradeWithPrices.ticker,
-          tradeType: tradeWithPrices.tradeType,
-          state: "LOADED",
-          contract: tradeWithPrices.contract,
-          currentPrice: priceOverrides?.currentPrice ?? tradeWithPrices.currentPrice,
-          targetPrice: priceOverrides?.targetPrice ?? tradeWithPrices.targetPrice,
-          stopLoss: priceOverrides?.stopLoss ?? tradeWithPrices.stopLoss,
-          discordChannels: channels,
-          challenges: challengeIds,
-        });
+      // Commit the alert draft through domain layer
+      const discordService: DiscordAlertService = {
+        sendLoadAlert: discord.sendLoadAlert,
+        sendEntryAlert: discord.sendEntryAlert,
+        sendUpdateAlert: discord.sendUpdateAlert,
+        sendTrailingStopAlert: discord.sendTrailingStopAlert,
+        sendExitAlert: discord.sendExitAlert,
+      };
 
-        // Link channels to trade
-        if (channels.length > 0 && dbTrade?.id) {
-          for (const channelId of channels) {
-            await fetch(`/api/trades/${dbTrade.id}/channels/${channelId}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            }).catch(console.error);
-          }
-        }
+      const result = await commitAlertDraft(draft, user.id, discordService);
 
-        // Link challenges to trade
-        if (challengeIds.length > 0 && dbTrade?.id) {
-          await linkChallengesApi(user.id, dbTrade.id, challengeIds);
-        }
+      if (!result.success) {
+        toast.error(result.error || "Failed to send alert");
+        return;
+      }
 
-        // Update store: clear preview, add to activeTrades via applyTradePatch
-        const tradeStore = useTradeStore.getState();
+      // Update store based on intent
+      const tradeStore = useTradeStore.getState();
+
+      if (intent === "LOAD") {
+        // Clear preview and add to activeTrades
         tradeStore.setPreviewTrade(null);
-
-        // Create the persisted trade with real DB ID
-        const persistedTrade: Trade = {
-          ...tradeWithPrices,
-          id: dbTrade?.id || tradeWithPrices.id,
-          state: "LOADED",
-          discordChannels: channels,
-          challenges: challengeIds,
-        };
-
-        // Add to activeTrades
-        tradeStore.setActiveTrades([...tradeStore.activeTrades, persistedTrade]);
-
-        // Send Discord alert
-        await discord.sendLoadAlert(selectedChannels, persistedTrade, comment);
+        if (result.trade) {
+          tradeStore.setActiveTrades([...tradeStore.activeTrades, result.trade]);
+        }
         toast.success("Trade loaded and alert sent");
+      } else if (
+        intent === "ENTER" ||
+        intent === "UPDATE_SL" ||
+        intent === "TRIM" ||
+        intent === "EXIT"
+      ) {
+        // Reload trades to get updated state
+        await tradeStore.loadTrades(user.id);
+
+        // Success messages
+        if (intent === "ENTER") toast.success("Entry alert sent");
+        else if (intent === "UPDATE_SL") toast.success("Stop loss update sent");
+        else if (intent === "TRIM") toast.success("Trim alert sent");
+        else if (intent === "EXIT") toast.success("Exit alert sent");
       }
 
       setAlertSheetOpen(false);
       setAlertTrade(null);
     } catch (error) {
-      console.error("[v0] Mobile failed to send alert:", error);
+      console.error("[MobileApp] Failed to send alert:", error);
       toast.error("Failed to send alert");
       // Close modal after 1.5s to allow user to see error
       setTimeout(() => {

@@ -20,6 +20,12 @@ import {
 import { HDCalculatorModal } from "../forms/HDCalculatorModal";
 import { HDTradeShareCard } from "../cards/HDTradeShareCard";
 import { useSymbolData } from "../../../stores/marketDataStore";
+import { getDefaultFieldToggles, type AlertDraftFieldToggles } from "../../../domain/alertDraft";
+import {
+  alertTypeToIntent,
+  type UIAlertType,
+  type UIUpdateKind,
+} from "../../../domain/alerts/intentMapping";
 
 // Persistence key prefix for toggle settings
 const TOGGLE_STORAGE_PREFIX = "hd.alertComposer.toggles";
@@ -68,6 +74,38 @@ function saveToggleSettings(key: string, settings: Partial<ToggleSettings>): voi
   } catch (e) {
     console.warn(`[AlertComposer] Failed to save toggle settings to ${key}:`, e);
   }
+}
+
+// Get DTE-aware price multipliers (aligned with domain layer)
+function getDTEAwareMultipliers(daysToExpiry: number): {
+  tpMultiplier: number;
+  slMultiplier: number;
+} {
+  if (daysToExpiry <= 1) {
+    return { tpMultiplier: 1.3, slMultiplier: 0.7 };
+  } else if (daysToExpiry <= 7) {
+    return { tpMultiplier: 1.5, slMultiplier: 0.5 };
+  } else {
+    return { tpMultiplier: 2.0, slMultiplier: 0.3 };
+  }
+}
+
+// Map domain AlertDraftFieldToggles to component ToggleSettings
+function mapDomainTogglesToComponentToggles(domainToggles: AlertDraftFieldToggles): ToggleSettings {
+  return {
+    showEntry: domainToggles.showEntry,
+    showCurrent: domainToggles.showCurrent,
+    showTarget: domainToggles.showTarget,
+    showStopLoss: domainToggles.showStop,
+    showPnL: domainToggles.showPnL,
+    showRiskReward: domainToggles.showRiskReward,
+    showDTE: domainToggles.showDTE,
+    showGreeks: domainToggles.showGreeks,
+    showConfluence: domainToggles.showConfluence,
+    showUnderlying: domainToggles.showUnderlying,
+    showSetupType: domainToggles.showSetupType,
+    showGainsImage: domainToggles.showGainsImage,
+  };
 }
 
 // Price overrides that can be passed from the alert composer to the alert handlers
@@ -278,70 +316,27 @@ export function HDAlertComposer({
 
   // Get default toggle values for a given alert type (used as baseline before applying persisted)
   const getDefaultToggles = useCallback((type: AlertType, updateKind?: string): ToggleSettings => {
-    // Base defaults - conservative
-    const base: ToggleSettings = {
-      showEntry: false,
-      showCurrent: false,
-      showTarget: false,
-      showStopLoss: false,
-      showPnL: false,
-      showConfluence: false,
-      showDTE: true, // DTE is always relevant for options
-      showRiskReward: false,
-      showGreeks: false,
-      showUnderlying: false,
-      showSetupType: false,
-      showGainsImage: false,
-    };
+    // Convert UI alert type to domain intent
+    const intent = alertTypeToIntent(type as UIAlertType, updateKind as UIUpdateKind);
 
-    if (type === "enter") {
-      return {
-        ...base,
-        showEntry: true,
-        showCurrent: true,
-        showTarget: true,
-        showStopLoss: true,
-        showRiskReward: true,
-        showGreeks: true,
-        showUnderlying: true,
-        showSetupType: true,
-      };
-    } else if (type === "update" && updateKind === "trim") {
-      return { ...base, showCurrent: true, showPnL: true };
-    } else if (type === "update" && updateKind === "sl") {
-      return { ...base, showCurrent: true, showStopLoss: true, showPnL: true };
-    } else if (type === "update" && updateKind === "generic") {
-      return { ...base, showCurrent: true, showPnL: true };
-    } else if (type === "update" && updateKind === "take-profit") {
-      return { ...base, showCurrent: true, showTarget: true, showPnL: true };
-    } else if (type === "trail-stop") {
-      return { ...base, showStopLoss: true };
-    } else if (type === "add") {
-      return { ...base, showCurrent: true, showPnL: true };
-    } else if (type === "exit") {
-      return { ...base, showEntry: true, showCurrent: true, showPnL: true, showGainsImage: true };
-    } else if (type === "load") {
-      return {
-        ...base,
-        showCurrent: true,
-        showTarget: true,
-        showStopLoss: true,
-        showRiskReward: true,
-        showGreeks: true,
-        showUnderlying: true,
-        showSetupType: true,
-      };
-    }
-    return base;
+    // Get domain-layer defaults
+    const domainToggles = getDefaultFieldToggles(intent);
+
+    // Map to component toggle format
+    return mapDomainTogglesToComponentToggles(domainToggles);
   }, []);
 
   // Initialize defaults based on alertType - with localStorage persistence support
   useEffect(() => {
+    // Calculate DTE-aware multipliers for default prices
+    const daysToExpiry = trade.contract?.daysToExpiry ?? 0;
+    const { tpMultiplier, slMultiplier } = getDTEAwareMultipliers(daysToExpiry);
+
     // Initialize prices
     setEntryPrice(trade.entryPrice || trade.contract.mid);
     setCurrentPrice(trade.currentPrice || trade.contract.mid);
-    setTargetPrice(trade.targetPrice || trade.contract.mid * 1.5);
-    setStopLoss(trade.stopLoss || trade.contract.mid * 0.5);
+    setTargetPrice(trade.targetPrice || trade.contract.mid * tpMultiplier);
+    setStopLoss(trade.stopLoss || trade.contract.mid * slMultiplier);
 
     // Set default comment with auto-populated info or voice context
     let defaultComment = "";
@@ -352,17 +347,17 @@ export function HDAlertComposer({
     } else if (alertType === "load") {
       defaultComment = `Watching this ${trade.tradeType} setup. Entry around $${formatPrice(trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ""}.`;
     } else if (alertType === "enter") {
-      defaultComment = `Entering at $${formatPrice(trade.entryPrice || trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ""}. Targeting $${formatPrice(trade.targetPrice || trade.contract.mid * 1.5)} with stop at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}.`;
+      defaultComment = `Entering at $${formatPrice(trade.entryPrice || trade.contract.mid)}${underlyingPrice ? ` (${trade.ticker} @ $${formatPrice(underlyingPrice)})` : ""}. Targeting $${formatPrice(trade.targetPrice || trade.contract.mid * tpMultiplier)} with stop at $${formatPrice(trade.stopLoss || trade.contract.mid * slMultiplier)}.`;
     } else if (alertType === "update" && alertOptions?.updateKind === "trim") {
       defaultComment = `Trimming here at $${formatPrice(trade.currentPrice || trade.contract.mid)} to lock in profit. ${trade.movePercent ? `Up ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
     } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
-      defaultComment = `Moving stop loss to $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)} to protect gains. Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)} (${trade.movePercent ? (trade.movePercent > 0 ? "+" : "") + trade.movePercent.toFixed(1) : "0.0"}%).`;
+      defaultComment = `Moving stop loss to $${formatPrice(trade.stopLoss || trade.contract.mid * slMultiplier)} to protect gains. Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)} (${trade.movePercent ? (trade.movePercent > 0 ? "+" : "") + trade.movePercent.toFixed(1) : "0.0"}%).`;
     } else if (alertType === "update" && alertOptions?.updateKind === "generic") {
       defaultComment = `Update: Currently at $${formatPrice(trade.currentPrice || trade.contract.mid)}. ${trade.movePercent ? `P&L: ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
     } else if (alertType === "update" && alertOptions?.updateKind === "take-profit") {
       defaultComment = `Taking profit at target! Exiting partial position at $${formatPrice(trade.currentPrice || trade.targetPrice || trade.contract.mid)}. ${trade.movePercent ? `Locking in ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
     } else if (alertType === "trail-stop") {
-      defaultComment = `Enabling trailing stop at $${formatPrice(trade.stopLoss || trade.contract.mid * 0.5)}. Letting winners run.`;
+      defaultComment = `Enabling trailing stop at $${formatPrice(trade.stopLoss || trade.contract.mid * slMultiplier)}. Letting winners run.`;
     } else if (alertType === "add") {
       defaultComment = `Adding to position at $${formatPrice(trade.currentPrice || trade.contract.mid)}. ${trade.movePercent ? `Currently ${trade.movePercent > 0 ? "+" : ""}${trade.movePercent.toFixed(1)}%.` : ""}`;
     } else if (alertType === "exit") {
