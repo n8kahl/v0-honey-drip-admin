@@ -16,6 +16,7 @@ import type { Trade } from "../../types";
 import type { AlertDraft } from "../alertDraft";
 import { commitTradeAction, type CommitResult } from "../tradeActions";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { validateAlertDraftWithContext } from "./validation";
 
 // ============================================================================
 // Types
@@ -85,6 +86,15 @@ export async function commitAlertDraft(
   discord?: DiscordAlertService
 ): Promise<AlertCommitResult> {
   try {
+    // Validate alert draft with zod schema
+    const validation = validateAlertDraftWithContext(draft);
+    if (!validation.success) {
+      return {
+        success: false,
+        error: `Validation failed: ${validation.errors.join(", ")}`,
+      };
+    }
+
     // Resolve channel IDs to channel objects (needed for Discord alerts)
     const discordChannels = useSettingsStore.getState().discordChannels;
     const resolvedChannels = draft.channels

@@ -194,7 +194,7 @@ importers:
         version: 0.4.6(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       openai:
         specifier: ^6.10.0
-        version: 6.10.0(ws@8.18.3)
+        version: 6.10.0(ws@8.18.3)(zod@4.2.1)
       path:
         specifier: latest
         version: 0.12.7
@@ -264,6 +264,9 @@ importers:
       yaml:
         specifier: latest
         version: 2.8.1
+      zod:
+        specifier: ^4.2.1
+        version: 4.2.1
       zustand:
         specifier: ^4.5.0
         version: 4.5.7(@types/react@18.3.12)(immer@10.2.0)(react@18.3.1)
@@ -6126,6 +6129,9 @@ packages:
     resolution: {integrity: sha512-zK7YHHz4ZXpW89AHXUPbQVGKI7uvkd3hzusTdotCg1UxyaVtg0zFJSTfW/Dq5f7OBBVnq6cZIaC8Ti4hb6dtCA==}
     engines: {node: '>= 14'}
 
+  zod@4.2.1:
+    resolution: {integrity: sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw==}
+
   zustand@4.5.7:
     resolution: {integrity: sha512-CHOUy7mu3lbD6o6LJLfllpjkzhHXSBlX8B9+qPddUsIfeF5S/UZ5q0kmCsnRqT1UHFQZchNFDDzMbQsuesHWlw==}
     engines: {node: '>=12.7.0'}
@@ -11092,9 +11098,10 @@ snapshots:
       onnxruntime-common: 1.14.0
       platform: 1.3.6
 
-  openai@6.10.0(ws@8.18.3):
+  openai@6.10.0(ws@8.18.3)(zod@4.2.1):
     optionalDependencies:
       ws: 8.18.3
+      zod: 4.2.1
 
   optionator@0.9.4:
     dependencies:
@@ -12740,6 +12747,8 @@ snapshots:
       archiver-utils: 5.0.2
       compress-commons: 6.0.2
       readable-stream: 4.7.0
+
+  zod@4.2.1: {}
 
   zustand@4.5.7(@types/react@18.3.12)(immer@10.2.0)(react@18.3.1):
     dependencies:

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { MobileHeader } from "./MobileHeader";
 import { MobileTabNav, type MobileTab } from "./MobileTabNav";
 import { MobileActiveScreen } from "./screens/MobileActiveScreen";
@@ -31,7 +32,15 @@ interface MobileAppProps {
 
 export function MobileApp({ onLogout }: MobileAppProps) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<MobileTab>("active");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Get active tab from URL (with fallback to "active")
+  const activeTab = (searchParams.get("tab") as MobileTab) || "active";
+
+  // Set active tab by updating URL
+  const setActiveTab = (tab: MobileTab) => {
+    setSearchParams({ tab });
+  };
 
   // Alert sheet state
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
