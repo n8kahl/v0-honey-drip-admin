@@ -47,7 +47,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const [alertTrade, setAlertTrade] = useState<Trade | null>(null);
   const [alertType, setAlertType] = useState<AlertType>("update");
   const [alertOptions, setAlertOptions] = useState<{
-    updateKind?: "trim" | "generic" | "sl";
+    updateKind?: "trim" | "generic" | "sl" | "take-profit";
     trimPercent?: number;
   }>({});
 
@@ -131,7 +131,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const openAlertSheet = (
     trade: Trade,
     type: AlertType,
-    options?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number }
+    options?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number }
   ) => {
     setAlertTrade(trade);
     setAlertType(type);

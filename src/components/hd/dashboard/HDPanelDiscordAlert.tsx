@@ -10,7 +10,10 @@ import { HDShareCardV2 } from "../cards/HDShareCardV2";
 interface HDPanelDiscordAlertProps {
   trade: Trade | null;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number };
+  alertOptions?: {
+    updateKind?: "trim" | "generic" | "sl" | "take-profit";
+    trimPercent?: number;
+  };
   availableChannels: DiscordChannel[];
   challenges: Challenge[];
   onSend: (channels: string[], challengeIds: string[], comment?: string) => void;
@@ -52,7 +55,10 @@ export function HDPanelDiscordAlert({
 
       // Set default comment based on alert type
       let defaultComment = "";
-      if (alertType === "update" && alertOptions?.updateKind === "trim") {
+      if (
+        alertType === "update" &&
+        (alertOptions?.updateKind === "trim" || alertOptions?.updateKind === "take-profit")
+      ) {
         defaultComment = "Trimming here to lock profit.";
       } else if (alertType === "update" && alertOptions?.updateKind === "sl") {
         defaultComment = "Updating stop loss.";
@@ -74,7 +80,10 @@ export function HDPanelDiscordAlert({
         setShowTarget(true);
         setShowStopLoss(true);
         setShowPnL(false);
-      } else if (alertType === "update" && alertOptions?.updateKind === "trim") {
+      } else if (
+        alertType === "update" &&
+        (alertOptions?.updateKind === "trim" || alertOptions?.updateKind === "take-profit")
+      ) {
         setShowEntry(false);
         setShowCurrent(true);
         setShowTarget(false);

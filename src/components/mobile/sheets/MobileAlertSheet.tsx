@@ -16,7 +16,10 @@ interface MobileAlertSheetProps {
   onOpenChange: (open: boolean) => void;
   trade: Trade | null;
   alertType: AlertType;
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number };
+  alertOptions?: {
+    updateKind?: "trim" | "generic" | "sl" | "take-profit";
+    trimPercent?: number;
+  };
   channels: DiscordChannel[];
   challenges: Challenge[];
   onSend: (
@@ -49,7 +52,10 @@ interface MobileAlertSheetProps {
  */
 function alertTypeToIntent(
   alertType: AlertType,
-  alertOptions?: { updateKind?: "trim" | "generic" | "sl"; trimPercent?: number }
+  alertOptions?: {
+    updateKind?: "trim" | "generic" | "sl" | "take-profit";
+    trimPercent?: number;
+  }
 ): TradeActionIntent {
   switch (alertType) {
     case "load":
@@ -63,7 +69,8 @@ function alertTypeToIntent(
     case "trail-stop":
       return "TRAIL_STOP";
     case "update":
-      if (alertOptions?.updateKind === "trim") return "TRIM";
+      if (alertOptions?.updateKind === "trim" || alertOptions?.updateKind === "take-profit")
+        return "TRIM";
       if (alertOptions?.updateKind === "sl") return "UPDATE_SL";
       return "TRIM"; // Default update to TRIM
     default:
