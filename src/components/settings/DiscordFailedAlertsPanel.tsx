@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useAuth } from "../../hooks/useAuth";
+import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "sonner";
 import {
   getPendingFailures,
