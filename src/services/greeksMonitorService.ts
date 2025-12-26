@@ -186,10 +186,13 @@ class GreeksMonitorService {
       const optionTicker = trade.contract.id;
 
       // Fetch from Massive via proxy endpoint
-      const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN;
+      const { massive } = await import("../lib/massive");
+      const tokenManager = massive.getTokenManager();
+      const token = await tokenManager.getToken();
+
       const response = await fetch(`/api/massive/snapshot/options/${trade.ticker}?limit=250`, {
         headers: {
-          "x-massive-proxy-token": PROXY_TOKEN || "",
+          "x-massive-proxy-token": token || "",
         },
       });
 

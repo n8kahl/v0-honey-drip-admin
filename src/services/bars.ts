@@ -1,3 +1,5 @@
+import { massive } from "../lib/massive";
+
 export type Bar = {
   timestamp: number; // epoch ms
   open: number;
@@ -20,11 +22,9 @@ export type BarsResponse = {
   bars: Bar[];
 };
 
-const PROXY_TOKEN = (import.meta as any).env?.VITE_MASSIVE_PROXY_TOKEN as string | undefined;
-
 export async function fetchBars(
   symbol: string,
-  timespan: 'minute' | 'hour' | 'day' | 'week' | 'month',
+  timespan: "minute" | "hour" | "day" | "week" | "month",
   multiplier: number,
   from: string, // YYYY-MM-DD
   to: string, // YYYY-MM-DD
@@ -37,16 +37,20 @@ export async function fetchBars(
     from,
     to,
     limit: String(limit),
-    adjusted: 'true',
-    sort: 'asc',
+    adjusted: "true",
+    sort: "asc",
   }).toString();
 
+  // Get fresh token from token manager
+  const tokenManager = massive.getTokenManager();
+  const token = await tokenManager.getToken();
+
   const headers: Record<string, string> = {};
-  if (PROXY_TOKEN) headers['x-massive-proxy-token'] = PROXY_TOKEN;
+  if (token) headers["x-massive-proxy-token"] = token;
 
   const resp = await fetch(`/api/bars?${qs}`, { headers });
   if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
+    const text = await resp.text().catch(() => "");
     throw new Error(`[v0] /api/bars failed ${resp.status}: ${text}`);
   }
 
