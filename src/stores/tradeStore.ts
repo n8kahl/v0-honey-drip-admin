@@ -16,6 +16,7 @@ import {
   assertTradeListsValid,
   type TradeListsInput,
 } from "../domain/tradeLifecycle";
+import { fetchBars } from "../services/bars";
 
 /**
  * Get authentication headers for API calls
@@ -178,6 +179,81 @@ function generateOCCSymbol(
   const strikePadded = String(strikeInt).padStart(8, "0");
 
   return `O:${ticker}${yy}${mm}${dd}${optionType}${strikePadded}`;
+}
+
+const EXPIRATION_CLOSE_TIME_ET = "T16:00:00-05:00";
+const EXPIRATION_LOOKBACK_DAYS = 7;
+
+function getExpirationDateTime(expirationISO: string): Date {
+  return new Date(`${expirationISO}${EXPIRATION_CLOSE_TIME_ET}`);
+}
+
+function isContractExpired(expirationISO: string, now = new Date()): boolean {
+  return now >= getExpirationDateTime(expirationISO);
+}
+
+function formatDateISO(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function calculateIntrinsicValue(
+  type: OptionType | string | undefined,
+  strike: number,
+  underlyingPrice: number
+): number {
+  const isCall = type === "C" || type === "call";
+  const raw = isCall ? underlyingPrice - strike : strike - underlyingPrice;
+  return Math.max(0, raw);
+}
+
+async function getUnderlyingCloseAtOrBefore(
+  symbol: string,
+  expirationISO: string,
+  cache: Map<string, number>
+): Promise<number | null> {
+  const cacheKey = `${symbol}:${expirationISO}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    return Number.isFinite(cached) ? cached : null;
+  }
+
+  try {
+    const sameDay = await fetchBars(symbol, "day", 1, expirationISO, expirationISO, 5);
+    if (sameDay.bars.length > 0) {
+      const close = sameDay.bars[sameDay.bars.length - 1].close;
+      cache.set(cacheKey, close);
+      return close;
+    }
+  } catch (error) {
+    log.warn("Failed to fetch same-day bars for expiration", {
+      symbol,
+      expirationISO,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const lookback = new Date(expirationISO);
+  lookback.setDate(lookback.getDate() - EXPIRATION_LOOKBACK_DAYS);
+  const from = formatDateISO(lookback);
+
+  try {
+    const rangeBars = await fetchBars(symbol, "day", 1, from, expirationISO, 20);
+    if (rangeBars.bars.length > 0) {
+      const close = rangeBars.bars[rangeBars.bars.length - 1].close;
+      cache.set(cacheKey, close);
+      return close;
+    }
+  } catch (error) {
+    log.warn("Failed to fetch lookback bars for expiration", {
+      symbol,
+      expirationISO,
+      from,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  cache.set(cacheKey, NaN);
+  return null;
 }
 
 export const useTradeStore = create<TradeStore>()(
@@ -669,6 +745,26 @@ export const useTradeStore = create<TradeStore>()(
               confluenceUpdatedAt: (t as any).confluence_updated_at
                 ? new Date((t as any).confluence_updated_at)
                 : undefined,
+              // NEW: Entry snapshot (immutable)
+              entry_bid: (t as any).entry_bid ? parseFloat((t as any).entry_bid) : undefined,
+              entry_ask: (t as any).entry_ask ? parseFloat((t as any).entry_ask) : undefined,
+              entry_mid: (t as any).entry_mid ? parseFloat((t as any).entry_mid) : undefined,
+              entry_timestamp: (t as any).entry_timestamp
+                ? new Date((t as any).entry_timestamp)
+                : undefined,
+              // NEW: Live price tracking (mutable)
+              last_option_price: (t as any).last_option_price
+                ? parseFloat((t as any).last_option_price)
+                : undefined,
+              last_option_price_at: (t as any).last_option_price_at
+                ? new Date((t as any).last_option_price_at)
+                : undefined,
+              price_data_source: (t as any).price_data_source as
+                | "websocket"
+                | "rest"
+                | "closing"
+                | "snapshot"
+                | undefined,
             };
           });
 
@@ -690,16 +786,117 @@ export const useTradeStore = create<TradeStore>()(
             }
           });
 
+          const now = new Date();
+          const underlyingCloseCache = new Map<string, number>();
+          const expiredLoadedTrades: Trade[] = [];
+          const expiredEnteredTrades: Trade[] = [];
+          const keptTrades: Trade[] = [];
+
+          for (const trade of mappedTrades) {
+            const expiration = trade.contract?.expiry || trade.contract?.expiration;
+            if (!expiration || !isContractExpired(expiration, now)) {
+              keptTrades.push(trade);
+              continue;
+            }
+
+            if (trade.state === "LOADED") {
+              expiredLoadedTrades.push(trade);
+              continue;
+            }
+
+            if (trade.state === "ENTERED") {
+              expiredEnteredTrades.push(trade);
+              continue;
+            }
+
+            keptTrades.push(trade);
+          }
+
+          const expiredEnteredResolved = await Promise.all(
+            expiredEnteredTrades.map(async (trade) => {
+              const expiration = trade.contract?.expiry || trade.contract?.expiration;
+              if (!expiration) return trade;
+
+              const expiryTime = getExpirationDateTime(expiration);
+              let exitPrice = trade.exitPrice;
+              if (exitPrice === undefined) {
+                const underlyingClose = await getUnderlyingCloseAtOrBefore(
+                  trade.ticker,
+                  expiration,
+                  underlyingCloseCache
+                );
+                if (underlyingClose != null && Number.isFinite(underlyingClose)) {
+                  exitPrice = calculateIntrinsicValue(
+                    trade.contract.type,
+                    trade.contract.strike,
+                    underlyingClose
+                  );
+                } else {
+                  log.warn("Unable to resolve intrinsic value for expired trade", {
+                    tradeId: trade.id,
+                    ticker: trade.ticker,
+                    expiration,
+                  });
+                  exitPrice = 0;
+                }
+              }
+
+              const movePercent =
+                trade.entryPrice && exitPrice !== undefined
+                  ? ((exitPrice - trade.entryPrice) / trade.entryPrice) * 100
+                  : trade.movePercent;
+
+              return {
+                ...trade,
+                state: "EXITED",
+                exitPrice,
+                exitTime: trade.exitTime || expiryTime,
+                currentPrice: exitPrice,
+                movePercent,
+              };
+            })
+          );
+
+          const mappedTradesFinal = [...keptTrades, ...expiredEnteredResolved];
+
+          if (expiredLoadedTrades.length > 0) {
+            expiredLoadedTrades.forEach((trade) => {
+              dbDeleteTrade(trade.id).catch((error) => {
+                log.warn("Failed to delete expired loaded trade", {
+                  tradeId: trade.id,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              });
+            });
+          }
+
+          if (expiredEnteredResolved.length > 0) {
+            expiredEnteredResolved.forEach((trade) => {
+              dbUpdateTrade(trade.id, {
+                state: "EXITED",
+                exit_price: trade.exitPrice ?? 0,
+                exit_time: trade.exitTime ? trade.exitTime.toISOString() : undefined,
+                current_price: trade.exitPrice ?? undefined,
+                move_percent: trade.movePercent ?? undefined,
+              }).catch((error) => {
+                log.warn("Failed to sync expired trade exit", {
+                  tradeId: trade.id,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              });
+            });
+          }
+
           // Log a snapshot of the loaded state
           log.snapshot("Trades loaded from DB", {
-            total: mappedTrades.length,
+            total: mappedTradesFinal.length,
             byState: {
-              WATCHING: mappedTrades.filter((t) => t.state === "WATCHING").length,
-              LOADED: mappedTrades.filter((t) => t.state === "LOADED").length,
-              ENTERED: mappedTrades.filter((t) => t.state === "ENTERED").length,
-              EXITED: mappedTrades.filter((t) => t.state === "EXITED").length,
+              WATCHING: mappedTradesFinal.filter((t) => t.state === "WATCHING").length,
+              LOADED: mappedTradesFinal.filter((t) => t.state === "LOADED").length,
+              ENTERED: mappedTradesFinal.filter((t) => t.state === "ENTERED").length,
+              EXITED: mappedTradesFinal.filter((t) => t.state === "EXITED").length,
             },
-            tickers: mappedTrades.map((t) => `${t.ticker}:${t.state}`),
+            tickers: mappedTradesFinal.map((t) => `${t.ticker}:${t.state}`),
           });
 
           // FIX: Use reconcileTradeLists instead of independent merge
@@ -713,7 +910,7 @@ export const useTradeStore = create<TradeStore>()(
               previewTrade: state.previewTrade,
             };
 
-            const reconciled = reconcileTradeLists(existingLists, mappedTrades);
+            const reconciled = reconcileTradeLists(existingLists, mappedTradesFinal);
 
             // Validate invariants in development
             assertTradeListsValid(reconciled, "loadTrades");
@@ -735,7 +932,7 @@ export const useTradeStore = create<TradeStore>()(
           });
 
           log.actionEnd("loadTrades", correlationId, {
-            dbTradesCount: mappedTrades.length,
+            dbTradesCount: mappedTradesFinal.length,
           });
         } catch (error) {
           log.actionFail("loadTrades", correlationId, error, { userId });

@@ -24,6 +24,8 @@ import { useLiveGreeks } from "./useOptionsAdvanced";
 import { roundPrice } from "../lib/utils";
 import { getEntryPriceFromUpdates } from "../lib/tradePnl";
 import { normalizeOptionTicker } from "../lib/optionsSymbol";
+import * as massive from "../lib/massive/client";
+import { useTradeStore } from "../stores/tradeStore";
 
 // ============================================================================
 // Types
@@ -74,6 +76,13 @@ export interface LiveTradeModel {
   underlyingIsStale: boolean;
   overallHealth: "healthy" | "degraded" | "stale";
 
+  // Price metadata (NEW - for P&L accuracy)
+  priceSource: "websocket" | "rest" | "closing" | "snapshot";
+  priceAsOf: number; // Timestamp of price
+  priceAge: number; // Milliseconds since price updated
+  priceIsStale: boolean; // True if >30s old
+  priceLabel: string; // "Live", "Closing (4:00 PM)", "Cached (5m ago)"
+
   // For display
   entryPrice: number;
   targetPrice: number;
@@ -84,6 +93,24 @@ export interface LiveTradeModel {
 // Staleness thresholds
 const OPTION_STALE_MS = 10_000; // 10 seconds
 const UNDERLYING_STALE_MS = 5_000; // 5 seconds
+
+// ============================================================================
+// Price Label Helper (NEW - for P&L accuracy)
+// ============================================================================
+
+function getPriceLabel(
+  source: "websocket" | "rest" | "closing" | "snapshot",
+  timestamp: number,
+  marketOpen: boolean
+): string {
+  const ageMs = Date.now() - timestamp;
+  const ageMinutes = Math.floor(ageMs / 60000);
+
+  if (source === "websocket") return ageMs < 5000 ? "Live" : `Live (${ageMinutes}m ago)`;
+  if (source === "closing") return "Closing (4:00 PM ET)";
+  if (source === "rest") return ageMs < 10000 ? "Current" : `Current (${ageMinutes}m ago)`;
+  return `Entry Price`;
+}
 
 // ============================================================================
 // Market Close Time Calculation (ET Timezone)
@@ -342,15 +369,109 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     return () => clearInterval(interval);
   }, [trade.entryTime]);
 
+  // Fetch market close price when needed (NEW - for P&L accuracy)
+  const updateTrade = useTradeStore((state) => state.updateTrade);
+  useEffect(() => {
+    const shouldFetchClosing =
+      !timeState.marketOpen &&
+      (!optionBid || optionBid === 0) &&
+      (!optionAsk || optionAsk === 0) &&
+      !isExpired &&
+      (!trade.last_option_price_at ||
+        Date.now() - new Date(trade.last_option_price_at).getTime() > 10 * 60 * 1000);
+
+    if (!shouldFetchClosing || !contractId) return;
+
+    let cancelled = false;
+
+    const fetchClosingPrice = async () => {
+      try {
+        const underlying = contractId.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+        if (!underlying) return;
+
+        const snapshot = await massive.getOptionsSnapshot(underlying);
+        const contractData = snapshot?.results?.find(
+          (c: any) => c.details?.ticker === contractId || c.ticker === contractId
+        );
+
+        if (cancelled || !contractData) return;
+
+        const closingBid = contractData.last_quote?.bid ?? contractData.last_quote?.bp ?? 0;
+        const closingAsk = contractData.last_quote?.ask ?? contractData.last_quote?.ap ?? 0;
+        const closingMid =
+          closingBid > 0 && closingAsk > 0
+            ? (closingBid + closingAsk) / 2
+            : (contractData.last_trade?.price ?? 0);
+
+        if (closingMid > 0) {
+          console.log(
+            `[useActiveTradeLiveModel] Fetched closing price for ${contractId}: $${closingMid.toFixed(2)}`
+          );
+
+          await updateTrade(trade.id, {
+            last_option_price: closingMid,
+            last_option_price_at: new Date(),
+            price_data_source: "closing",
+          });
+        }
+      } catch (error) {
+        console.error("[useActiveTradeLiveModel] Failed to fetch closing price:", error);
+      }
+    };
+
+    const timer = setTimeout(fetchClosingPrice, 5000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    trade.id,
+    timeState.marketOpen,
+    optionBid,
+    optionAsk,
+    isExpired,
+    contractId,
+    trade.last_option_price_at,
+    updateTrade,
+  ]);
+
   // Build the live model
   return useMemo(() => {
-    // Use live bid/ask if available, otherwise fall back to contract snapshot
-    const bid = optionBid > 0 ? optionBid : contract.bid || 0;
-    const ask = optionAsk > 0 ? optionAsk : contract.ask || 0;
+    // FIXED: Priority cascade for price - NEVER fall back to stale contract.bid/ask
+    // 1. Live streaming (optionBid/Ask from WebSocket/REST)
+    // 2. Database last_option_price (most recent known)
+    // 3. Last resort: entry_price (shows 0% P&L but at least correct)
 
-    // Canonical effectiveMid - ALWAYS use this formula
-    const liveMid = bid > 0 && ask > 0 ? roundPrice(bid + (ask - bid) / 2) : 0;
-    const effectiveMid = liveMid > 0 ? liveMid : optionPrice;
+    let bid = 0;
+    let ask = 0;
+    let effectiveMid = 0;
+    let priceSource: "websocket" | "rest" | "closing" | "snapshot" = optionSource;
+    let priceAsOf = optionAsOf;
+
+    // Step 1: Try live streaming data (highest priority)
+    if (optionBid > 0 && optionAsk > 0) {
+      bid = optionBid;
+      ask = optionAsk;
+      effectiveMid = roundPrice(bid + (ask - bid) / 2);
+      priceSource = optionSource; // 'websocket' or 'rest'
+      priceAsOf = optionAsOf;
+    }
+    // Step 2: Try database last_option_price (most recent known)
+    else if (trade.last_option_price && trade.last_option_price > 0) {
+      effectiveMid = trade.last_option_price;
+      priceSource = (trade.price_data_source as any) || "snapshot";
+      priceAsOf = trade.last_option_price_at ? trade.last_option_price_at.getTime() : Date.now();
+      bid = trade.entry_bid || 0; // Use entry snapshot for spread display
+      ask = trade.entry_ask || 0;
+    }
+    // Step 3: Last resort - use entry price (shows 0% P&L)
+    else {
+      effectiveMid = entryPrice;
+      priceSource = "snapshot";
+      priceAsOf = trade.entry_timestamp ? trade.entry_timestamp.getTime() : Date.now();
+      bid = trade.entry_bid || 0;
+      ask = trade.entry_ask || 0;
+    }
 
     const spread = ask - bid;
     const spreadPercent = effectiveMid > 0 ? (spread / effectiveMid) * 100 : 0;
@@ -446,6 +567,13 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       underlyingIsStale,
       overallHealth,
 
+      // Price metadata (NEW - for P&L accuracy)
+      priceSource,
+      priceAsOf,
+      priceAge: Date.now() - priceAsOf,
+      priceIsStale: Date.now() - priceAsOf > 30000,
+      priceLabel: getPriceLabel(priceSource, priceAsOf, timeState.marketOpen),
+
       // For display
       entryPrice: roundPrice(entryPrice),
       targetPrice: roundPrice(targetPrice),
@@ -458,6 +586,7 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     optionPrice,
     optionBid,
     optionAsk,
+    timeState.marketOpen,
     netPnlPercent,
     pnlDollars,
     optionAsOf,

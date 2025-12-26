@@ -48,6 +48,25 @@ import {
 } from "lucide-react";
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+// Format price timestamp with age indicator (NEW - for P&L accuracy)
+function formatTimestamp(timestamp: number): string {
+  const ageMs = Date.now() - timestamp;
+  const seconds = Math.floor(ageMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+
+  if (seconds < 60) return `${seconds}s ago`;
+  if (minutes < 60) return `${minutes}m ago`;
+
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// ============================================================================
 // Props
 // ============================================================================
 
@@ -429,13 +448,30 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
           </span>
           <span className="text-[var(--text-faint)]">→</span>
           <span>
-            <span className="text-[var(--text-faint)]">Live:</span>{" "}
+            <span className="text-[var(--text-faint)]">{liveModel.priceLabel}:</span>{" "}
             <span className={cn("tabular-nums font-medium", pnlStyle.className)}>
               ${liveModel.effectiveMid.toFixed(2)}
             </span>
-            <span className="text-[var(--text-faint)] ml-1">
-              ({liveModel.bid.toFixed(2)}/{liveModel.ask.toFixed(2)})
-            </span>
+            {liveModel.bid > 0 && liveModel.ask > 0 && (
+              <span className="text-[var(--text-faint)] ml-1">
+                ({liveModel.bid.toFixed(2)}/{liveModel.ask.toFixed(2)})
+              </span>
+            )}
+            {/* Show timestamp for non-live prices */}
+            {liveModel.priceSource !== "websocket" && (
+              <span
+                className={cn(
+                  "ml-2 text-[10px] tabular-nums",
+                  liveModel.priceAge < 5000
+                    ? "text-green-400"
+                    : liveModel.priceAge < 30000
+                      ? "text-yellow-400"
+                      : "text-red-400"
+                )}
+              >
+                {formatTimestamp(liveModel.priceAsOf)}
+              </span>
+            )}
           </span>
           <span className="text-[var(--text-faint)]">|</span>
           <span>

@@ -201,6 +201,15 @@ export interface Trade {
     liquidity?: string;
     strength?: string;
   };
+  // Entry Snapshot (Immutable - for audit trail)
+  entry_bid?: number;
+  entry_ask?: number;
+  entry_mid?: number;
+  entry_timestamp?: Date;
+  // Live Price Tracking (Mutable - updates in real-time)
+  last_option_price?: number;
+  last_option_price_at?: Date;
+  price_data_source?: "websocket" | "rest" | "closing" | "snapshot";
 }
 
 // Setup conditions captured at trade entry for thesis validation

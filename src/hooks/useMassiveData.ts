@@ -270,6 +270,7 @@ export function useActiveTradePnL(
   const [asOf, setAsOf] = useState(Date.now());
   const [source, setSource] = useState<"websocket" | "rest">("rest");
   const lastTickerRef = useRef<string | null>(null);
+  const lastDbUpdateRef = useRef<number>(0); // Track last database write time (NEW - for P&L accuracy)
 
   // Stale detection: data older than 10 seconds is considered stale
   const STALE_THRESHOLD_MS = 10_000;
@@ -324,6 +325,23 @@ export function useActiveTradePnL(
           // Each option contract = 100 shares
           const dollars = hasEntry ? (price - entryPrice) * quantity * 100 : 0;
           setPnlDollars(hasEntry ? dollars : 0);
+
+          // NEW: Update database with latest price (debounced to every 10 seconds)
+          const now = Date.now();
+          if (now - lastDbUpdateRef.current > 10000) {
+            lastDbUpdateRef.current = now;
+            // Dynamic import to avoid circular dependency
+            import("../stores/tradeStore").then(({ useTradeStore }) => {
+              useTradeStore
+                .getState()
+                .updateTrade(normalizedTicker, {
+                  last_option_price: price,
+                  last_option_price_at: new Date(timestamp),
+                  price_data_source: transportSource,
+                })
+                .catch((err) => console.error("[useActiveTradePnL] DB update failed:", err));
+            });
+          }
 
           console.log(
             `[useActiveTradePnL] ${transportSource} update for ${normalizedTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? "+" : ""}${grossPnl.toFixed(1)}%, net: ${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%, $${dollars > 0 ? "+" : ""}${dollars.toFixed(0)})`
