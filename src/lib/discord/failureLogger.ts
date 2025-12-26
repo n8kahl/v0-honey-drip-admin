@@ -4,7 +4,9 @@
  * Logs failed Discord webhook deliveries to database for audit and manual retry
  */
 
-import { supabase } from "../supabase/client";
+import { createClient } from "../supabase/client";
+
+const supabase = createClient();
 
 export interface LogFailureParams {
   userId: string;
