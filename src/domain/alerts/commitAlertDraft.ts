@@ -17,6 +17,8 @@ import type { AlertDraft } from "../alertDraft";
 import { commitTradeAction, type CommitResult } from "../tradeActions";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { validateAlertDraftWithContext } from "./validation";
+import { toast } from "sonner";
+import { logDiscordFailure } from "../../lib/discord/failureLogger";
 
 // ============================================================================
 // Types
@@ -115,15 +117,22 @@ export async function commitAlertDraft(
         };
 
         const tradeCopy = coreResult.trade;
+        let results: { success: number; failed: number } | undefined;
+        const alertType = draft.intent.toLowerCase().replace("_", "-");
 
         // Send appropriate Discord alert based on intent
         switch (draft.intent) {
           case "LOAD":
-            await discord.sendLoadAlert(resolvedChannels, tradeCopy, draft.comment, priceOverrides);
+            results = await discord.sendLoadAlert(
+              resolvedChannels,
+              tradeCopy,
+              draft.comment,
+              priceOverrides
+            );
             break;
 
           case "ENTER":
-            await discord.sendEntryAlert(
+            results = await discord.sendEntryAlert(
               resolvedChannels,
               tradeCopy,
               draft.comment,
@@ -132,33 +141,98 @@ export async function commitAlertDraft(
             break;
 
           case "UPDATE_SL":
-            await discord.sendUpdateAlert(resolvedChannels, tradeCopy, "update-sl", draft.comment);
+            results = await discord.sendUpdateAlert(
+              resolvedChannels,
+              tradeCopy,
+              "update-sl",
+              draft.comment
+            );
             break;
 
           case "TRIM":
-            await discord.sendUpdateAlert(resolvedChannels, tradeCopy, "trim", draft.comment);
+            results = await discord.sendUpdateAlert(
+              resolvedChannels,
+              tradeCopy,
+              "trim",
+              draft.comment
+            );
             break;
 
           case "ADD":
-            await discord.sendUpdateAlert(resolvedChannels, tradeCopy, "add", draft.comment);
+            results = await discord.sendUpdateAlert(
+              resolvedChannels,
+              tradeCopy,
+              "add",
+              draft.comment
+            );
             break;
 
           case "TRAIL_STOP":
-            await discord.sendTrailingStopAlert(resolvedChannels, tradeCopy);
+            results = await discord.sendTrailingStopAlert(resolvedChannels, tradeCopy);
             break;
 
           case "EXIT":
           case "SHARE_EXIT":
-            await discord.sendExitAlert(resolvedChannels, tradeCopy, draft.comment);
+            results = await discord.sendExitAlert(resolvedChannels, tradeCopy, draft.comment);
             break;
 
           case "UNLOAD":
             // No alert for unload
             break;
         }
+
+        // Handle failures: log to database and notify user
+        if (results && results.failed > 0) {
+          console.warn(`[commitAlertDraft] ${results.failed} Discord alert(s) failed`);
+
+          // Log each failed channel to database for audit
+          const failedChannels = resolvedChannels.slice(results.success);
+          for (const channel of failedChannels) {
+            await logDiscordFailure({
+              userId,
+              tradeId: tradeCopy.id,
+              alertType,
+              webhookUrl: channel.webhookUrl,
+              channelName: channel.name,
+              payload: { content: draft.comment || "Alert", trade: tradeCopy },
+              errorMessage: "Discord not responding or timeout after 30 seconds",
+            });
+          }
+
+          // Show toast notification with manual retry option
+          toast.error("Discord alert failed", {
+            description: `Failed to send ${alertType} alert to ${results.failed} channel(s). Check Settings > Discord to retry.`,
+            duration: 10000, // 10 seconds
+          });
+        } else if (results && results.success > 0) {
+          // Success toast for confirmation
+          toast.success("Discord alert sent", {
+            description: `Alert sent to ${results.success} channel(s)`,
+            duration: 4000,
+          });
+        }
       } catch (discordError) {
-        console.warn("[commitAlertDraft] Discord alert failed:", discordError);
-        // Don't fail the whole operation for Discord errors
+        console.warn("[commitAlertDraft] Discord alert exception:", discordError);
+
+        // Log the exception as a failure
+        const errorMessage = discordError instanceof Error ? discordError.message : "Unknown error";
+        for (const channel of resolvedChannels) {
+          await logDiscordFailure({
+            userId,
+            tradeId: coreResult.trade?.id,
+            alertType: draft.intent.toLowerCase().replace("_", "-"),
+            webhookUrl: channel.webhookUrl,
+            channelName: channel.name,
+            payload: { content: draft.comment || "Alert" },
+            errorMessage,
+          });
+        }
+
+        // Show error toast
+        toast.error("Discord alert failed", {
+          description: "Discord not responding. Check Settings > Discord to retry.",
+          duration: 10000,
+        });
       }
     }
 

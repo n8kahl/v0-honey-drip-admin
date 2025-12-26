@@ -25,7 +25,7 @@ import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { getHealthStyle, getSourceBadgeStyle } from "../../lib/market/dataFreshness";
 import { cn, formatPrice } from "../../lib/utils";
 import { calculateRealizedPnL } from "../../lib/tradePnl";
-import { fmtDTE, getPnlStyle } from "../../ui/semantics";
+import { fmtDTE, getPnlStyle, formatExpirationShort } from "../../ui/semantics";
 import {
   Clock,
   Target,
@@ -44,6 +44,7 @@ import {
   WifiOff,
   Zap,
   Shield,
+  RefreshCw,
 } from "lucide-react";
 
 // ============================================================================
@@ -118,6 +119,69 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
 
       {/* Trade Tape - Bottom ~30% */}
       <TradeTapeSection trade={trade} />
+
+      {/* Developer Debug Panel - Only in Development */}
+      {import.meta.env.DEV && (
+        <div className="mt-auto p-3 bg-gray-900 border-t border-[var(--border-hairline)]">
+          <div className="text-xs font-mono space-y-1">
+            <div className="text-yellow-400 font-semibold mb-2">🔧 Debug Panel</div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <div>
+                <span className="text-gray-500">Option Source:</span>{" "}
+                <span className="text-white">{liveModel.optionSource}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Option AsOf:</span>{" "}
+                <span className="text-white">
+                  {new Date(liveModel.optionAsOf).toLocaleTimeString()}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Option Stale:</span>{" "}
+                <span className={liveModel.optionIsStale ? "text-red-400" : "text-green-400"}>
+                  {liveModel.optionIsStale ? "YES" : "NO"}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Underlying Source:</span>{" "}
+                <span className="text-white">{liveModel.underlyingSource}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Underlying AsOf:</span>{" "}
+                <span className="text-white">
+                  {liveModel.underlyingAsOf > 0
+                    ? new Date(liveModel.underlyingAsOf).toLocaleTimeString()
+                    : "N/A"}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Underlying Stale:</span>{" "}
+                <span className={liveModel.underlyingIsStale ? "text-red-400" : "text-green-400"}>
+                  {liveModel.underlyingIsStale ? "YES" : "NO"}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Overall Health:</span>{" "}
+                <span
+                  className={
+                    liveModel.overallHealth === "healthy"
+                      ? "text-green-400"
+                      : liveModel.overallHealth === "degraded"
+                        ? "text-yellow-400"
+                        : "text-red-400"
+                  }
+                >
+                  {liveModel.overallHealth.toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Greeks Source:</span>{" "}
+                <span className="text-white">{liveModel.greeksSource}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -157,40 +221,81 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
       {/* Row 0: Data Health Indicator */}
       <div className="px-4 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
         <div className="flex items-center gap-2 flex-shrink-0">
-          {liveModel.overallHealth === "healthy" ? (
-            <Wifi className="w-3.5 h-3.5 text-green-400" />
+          {/* Check if contract has expired */}
+          {contract?.expiry && new Date(contract.expiry) < new Date() ? (
+            <>
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[10px] font-medium uppercase tracking-wide whitespace-nowrap text-amber-400">
+                EXPIRED
+              </span>
+            </>
+          ) : liveModel.optionSource === "rest" &&
+            (liveModel.overallHealth === "degraded" || liveModel.overallHealth === "stale") ? (
+            <>
+              <RefreshCw className="w-3.5 h-3.5 text-orange-400 animate-spin" />
+              <span className="text-[10px] font-medium uppercase tracking-wide whitespace-nowrap text-orange-400">
+                RECONNECTING
+              </span>
+            </>
+          ) : liveModel.overallHealth === "healthy" ? (
+            <>
+              <Wifi className="w-3.5 h-3.5 text-green-400" />
+              <span
+                className={cn(
+                  "text-[10px] font-medium uppercase tracking-wide whitespace-nowrap",
+                  healthStyle.className
+                )}
+              >
+                {healthStyle.label}
+              </span>
+            </>
           ) : liveModel.overallHealth === "degraded" ? (
-            <Wifi className="w-3.5 h-3.5 text-yellow-400" />
+            <>
+              <Wifi className="w-3.5 h-3.5 text-yellow-400" />
+              <span
+                className={cn(
+                  "text-[10px] font-medium uppercase tracking-wide whitespace-nowrap",
+                  healthStyle.className
+                )}
+              >
+                {healthStyle.label}
+              </span>
+            </>
           ) : (
-            <WifiOff className="w-3.5 h-3.5 text-red-400" />
+            <>
+              <WifiOff className="w-3.5 h-3.5 text-red-400" />
+              <span
+                className={cn(
+                  "text-[10px] font-medium uppercase tracking-wide whitespace-nowrap",
+                  healthStyle.className
+                )}
+              >
+                {healthStyle.label}
+              </span>
+            </>
           )}
-          <span
-            className={cn(
-              "text-[10px] font-medium uppercase tracking-wide whitespace-nowrap",
-              healthStyle.className
-            )}
-          >
-            {healthStyle.label}
-          </span>
         </div>
-        <div className="flex items-center flex-wrap gap-2 text-[10px] text-[var(--text-faint)] ml-auto">
-          <span
-            className={cn(
-              "px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0",
-              getSourceBadgeStyle(liveModel.optionSource)
-            )}
-          >
-            Options: {liveModel.optionSource === "websocket" ? "WS" : "REST"}
-          </span>
-          <span
-            className={cn(
-              "px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0",
-              getSourceBadgeStyle(liveModel.greeksSource === "live" ? "rest" : "static")
-            )}
-          >
-            Greeks: {liveModel.greeksSource === "live" ? "Live" : "Static"}
-          </span>
-        </div>
+        {/* Don't show source badges for expired contracts */}
+        {!(contract?.expiry && new Date(contract.expiry) < new Date()) && (
+          <div className="flex items-center flex-wrap gap-2 text-[10px] text-[var(--text-faint)] ml-auto">
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0",
+                getSourceBadgeStyle(liveModel.optionSource)
+              )}
+            >
+              Options: {liveModel.optionSource === "websocket" ? "WS" : "REST"}
+            </span>
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0",
+                getSourceBadgeStyle(liveModel.greeksSource === "live" ? "rest" : "static")
+              )}
+            >
+              Greeks: {liveModel.greeksSource === "live" ? "Live" : "Static"}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Row 1: P&L Display + R-Multiple */}
@@ -285,7 +390,15 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
               {trade.ticker} ${contract?.strike}
               {contract?.type}
             </span>
-            <span className={cn("text-xs font-medium", dteInfo.className)}>{dteInfo.text}</span>
+            <span className={cn("text-xs font-medium flex items-center gap-1", dteInfo.className)}>
+              {dteInfo.text}
+              {contract?.expiry && (
+                <>
+                  <span className="text-[var(--text-faint)]">•</span>
+                  <span className="text-[10px]">Exp: {formatExpirationShort(contract.expiry)}</span>
+                </>
+              )}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-xs">
             <Clock className="w-3 h-3 text-[var(--text-faint)]" />

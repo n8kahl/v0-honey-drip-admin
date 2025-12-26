@@ -173,6 +173,72 @@ function formatHoldTime(minutes: number): string {
 }
 
 // ============================================================================
+// Expired Contract Handler
+// ============================================================================
+
+function buildExpiredTradeModel(trade: Trade, contract: any): LiveTradeModel {
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || contract.mid || 0;
+  const expiredPrice = contract.mid || contract.last || 0; // Last known price
+
+  const pnlGross = entryPrice > 0 ? ((expiredPrice - entryPrice) / entryPrice) * 100 : 0;
+  const quantity = trade.quantity || 1;
+  const pnlDollars = (expiredPrice - entryPrice) * 100 * quantity;
+
+  return {
+    // Core pricing
+    effectiveMid: roundPrice(expiredPrice),
+    bid: contract.bid || 0,
+    ask: contract.ask || 0,
+    spread: roundPrice((contract.ask || 0) - (contract.bid || 0)),
+    spreadPercent: 0,
+
+    // P&L
+    pnlPercent: roundPrice(pnlGross),
+    pnlDollars: roundPrice(pnlDollars),
+    pnlGross: roundPrice(pnlGross),
+
+    // R-Multiple
+    rMultiple: null, // Not relevant for expired
+
+    // Greeks
+    delta: contract.delta || 0,
+    gamma: contract.gamma || 0,
+    theta: contract.theta || 0,
+    vega: contract.vega || 0,
+    iv: contract.iv || 0,
+
+    // Underlying
+    underlyingPrice: 0,
+    underlyingChange: 0,
+    underlyingChangePercent: 0,
+
+    // Time
+    timeToCloseMinutes: 0,
+    timeToCloseFormatted: "Expired",
+    marketOpen: false,
+    holdTimeMinutes: 0,
+    holdTimeFormatted: "0m",
+
+    // Data health - mark as healthy because this is FINAL, not stale
+    optionSource: "rest",
+    optionAsOf: contract.asOf || Date.now(),
+    optionIsStale: false, // Not stale - it's FINAL
+    greeksSource: "static",
+    underlyingSource: "none",
+    underlyingAsOf: 0,
+    underlyingIsStale: false,
+    overallHealth: "healthy", // Change from "stale" to "healthy" for expired
+
+    // For display
+    entryPrice: roundPrice(entryPrice),
+    targetPrice: roundPrice(trade.targetPrice || 0),
+    stopLoss: roundPrice(trade.stopLoss || 0),
+    progressToTarget: 100, // Expired = journey complete
+  };
+}
+
+// ============================================================================
 // Main Hook
 // ============================================================================
 
@@ -183,6 +249,15 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   }
 
   const contract = trade.contract;
+
+  // Check if contract has expired
+  const expiryDate = contract.expiry ? new Date(contract.expiry) : null;
+  const isExpired = expiryDate ? expiryDate < new Date() : false;
+
+  // If expired, return static model with contract snapshot prices
+  if (isExpired) {
+    return buildExpiredTradeModel(trade, contract);
+  }
   const contractId = normalizeOptionTicker(
     contract.id || contract.ticker || contract.symbol || null
   );
@@ -218,6 +293,25 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   // Get underlying price via Tradier (useQuotes)
   const { quotes: underlyingQuotes } = useQuotes([trade.ticker]);
   const underlyingQuote = underlyingQuotes?.get(trade.ticker);
+
+  // Diagnostic logging for missing underlying quotes
+  useEffect(() => {
+    if (!underlyingQuote && underlyingQuotes.size > 0) {
+      console.warn(
+        `[useActiveTradeLiveModel] No underlying quote for ${trade.ticker}. Available quotes:`,
+        Array.from(underlyingQuotes.keys())
+      );
+    } else if (!underlyingQuote) {
+      console.warn(
+        `[useActiveTradeLiveModel] No underlying quote for ${trade.ticker} and quotes map is empty`
+      );
+    } else {
+      console.log(`[useActiveTradeLiveModel] Underlying quote for ${trade.ticker}:`, {
+        last: underlyingQuote.last,
+        asOf: new Date(underlyingQuote.asOf).toISOString(),
+      });
+    }
+  }, [trade.ticker, underlyingQuote, underlyingQuotes]);
 
   // Time tracking
   const [timeState, setTimeState] = useState({

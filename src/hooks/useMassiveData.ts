@@ -224,13 +224,21 @@ export function useQuotes(symbols: string[]) {
     symbols.forEach((symbol) => {
       const isIndex = symbol.startsWith("I:") || ["SPX", "NDX", "VIX", "RUT"].includes(symbol);
 
+      console.warn(
+        `[useQuotes] Creating transport for ${symbol} (isIndex: ${isIndex}, isOption: false)`
+      );
+
       const unsubscribe = createTransport(
         symbol,
         (data, source, timestamp) => {
           console.log(`[useQuotes] Received ${source} update for ${symbol}:`, data);
           handleUpdate(data, source, timestamp);
         },
-        { isIndex, pollInterval: 3000 }
+        {
+          isOption: false, // CRITICAL: Explicitly set to false for stock/index quotes
+          isIndex,
+          pollInterval: 3000,
+        }
       );
 
       unsubscribes.push(unsubscribe);

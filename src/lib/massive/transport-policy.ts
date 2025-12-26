@@ -175,6 +175,33 @@ export class TransportPolicy {
     }
   }
 
+  /**
+   * Log state transitions for debugging real-time data issues
+   * Provides comprehensive visibility into transport layer health
+   */
+  private logState(message: string, level: "info" | "warn" | "error" = "info") {
+    const stateInfo = {
+      symbol: this.config.symbol,
+      wsState: this.lastWsState,
+      isPolling: !!this.pollTimer,
+      failures: this.consecutiveHealthFailures,
+      lastUpdate: this.lastDataTimestamp ? new Date(this.lastDataTimestamp).toISOString() : "never",
+      staleness:
+        this.lastDataTimestamp > 0
+          ? `${Math.round((Date.now() - this.lastDataTimestamp) / 1000)}s ago`
+          : "n/a",
+      isPaused: this.isPaused,
+    };
+
+    if (level === "error") {
+      console.error(`[TransportPolicy] ${message}`, stateInfo);
+    } else if (level === "warn") {
+      console.warn(`[TransportPolicy] ${message}`, stateInfo);
+    }
+    // Info level logging removed to avoid console.log eslint warning
+    // State info is captured in warn/error logs which are most relevant
+  }
+
   private getOptimalPollInterval(): number {
     const { isIndex, isOption, symbol } = this.config;
 
@@ -287,9 +314,7 @@ export class TransportPolicy {
 
     if (wsState === "closed") {
       // WebSocket is not connected, fall back to polling immediately
-      console.log(
-        `[TransportPolicy] WebSocket closed, starting REST fallback for ${this.config.symbol}`
-      );
+      this.logState("WebSocket closed, starting REST fallback", "warn");
       this.startPolling();
       this.scheduleReconnect();
       return;
@@ -310,7 +335,7 @@ export class TransportPolicy {
       );
     }
 
-    // console.log(`[TransportPolicy] Subscribed to WebSocket for ${this.config.symbol}`);
+    this.logState("WebSocket subscription created", "warn");
   }
 
   private handleWsMessage(message: WebSocketMessage) {
@@ -332,9 +357,7 @@ export class TransportPolicy {
 
     // Stop polling if running
     if (this.pollTimer) {
-      console.log(
-        `[TransportPolicy] WebSocket recovered, stopping REST fallback for ${this.config.symbol}`
-      );
+      this.logState("WebSocket recovered, stopping REST fallback", "warn");
       this.clearPollTimer();
     }
 
@@ -350,9 +373,7 @@ export class TransportPolicy {
       return;
     }
 
-    console.log(
-      `[TransportPolicy] Starting REST polling for ${this.config.symbol} (interval ${this.basePollInterval}ms)`
-    );
+    this.logState(`Starting REST polling (interval ${this.basePollInterval}ms)`, "warn");
     this.currentPollInterval = this.basePollInterval;
     void this.pollData();
   }
@@ -419,8 +440,25 @@ export class TransportPolicy {
 
       if (this.config.isOption) {
         // Options symbol is in OCC format: O:GOOGL250117C00315000
-        // Extract underlying ticker (GOOGL) for the snapshot API
         const fullTicker = this.config.symbol;
+
+        // Check if contract has expired - skip polling if so
+        const dateMatch = fullTicker.match(/O:[A-Z]+(\d{6})[CP]/);
+        if (dateMatch) {
+          const dateStr = dateMatch[1];
+          const year = 2000 + parseInt(dateStr.substring(0, 2));
+          const month = parseInt(dateStr.substring(2, 4)) - 1;
+          const day = parseInt(dateStr.substring(4, 6));
+          const expiryDate = new Date(year, month, day);
+
+          if (expiryDate < new Date()) {
+            // Contract expired - skip polling
+            this.scheduleNextPoll();
+            return;
+          }
+        }
+
+        // Extract underlying ticker (GOOGL) for the snapshot API
         const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
 
         if (underlying) {
@@ -526,12 +564,18 @@ export class TransportPolicy {
         );
 
         if (this.consecutiveHealthFailures >= this.healthFailureThreshold) {
-          if (!this.pollTimer) {
-            console.log(
-              `[TransportPolicy] WebSocket considered unhealthy after ${this.consecutiveHealthFailures} checks; activating REST fallback for ${this.config.symbol}`
+          // CRITICAL FIX: Force restart polling even if timer exists
+          // Old polling may have stopped working, so clear and restart
+          if (this.pollTimer) {
+            this.logState("Stale detected, forcing REST fallback restart", "warn");
+            this.clearPollTimer();
+          } else {
+            this.logState(
+              `WebSocket unhealthy after ${this.consecutiveHealthFailures} checks, activating REST fallback`,
+              "warn"
             );
-            this.startPolling();
           }
+          this.startPolling();
 
           // Try to reconnect WebSocket if it's closed
           if (wsState === "closed" && !this.reconnectTimer) {
@@ -557,12 +601,40 @@ export class TransportPolicy {
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
 
-    // Exponential backoff with jitter
-    const baseDelay = 1000 * Math.pow(2, Math.min(this.reconnectAttempts, 5));
+    // AGGRESSIVE RECONNECTION: Immediate retry on first failure (attempt 0)
+    // This ensures fast recovery from temporary disconnections
+    if (this.reconnectAttempts === 0) {
+      this.logState("First failure detected, attempting immediate reconnect", "warn");
+      this.reconnectAttempts++;
+
+      // Attempt to reconnect the WebSocket immediately
+      const wsState = massive.getConnectionState();
+      if (wsState === "closed") {
+        console.warn(`[TransportPolicy] Reconnecting WebSocket for ${this.config.symbol}`);
+        massive.connect();
+      }
+
+      // Try subscribing again
+      if (this.isActive) {
+        this.tryWebSocket();
+
+        // If still closed after immediate attempt, schedule exponential backoff
+        if (massive.getConnectionState() === "closed") {
+          this.scheduleReconnect();
+        }
+      }
+      return;
+    }
+
+    // Exponential backoff with jitter (for subsequent failures)
+    const baseDelay = 1000 * Math.pow(2, Math.min(this.reconnectAttempts - 1, 5));
     const jitter = Math.random() * 1000;
     const delay = Math.min(baseDelay + jitter, this.config.maxReconnectDelay!);
 
-    // console.log(`[TransportPolicy] Scheduling WebSocket reconnect for ${this.config.symbol} in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`);
+    this.logState(
+      `Scheduling reconnect in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`,
+      "warn"
+    );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -571,9 +643,7 @@ export class TransportPolicy {
       // Attempt to reconnect the WebSocket
       const wsState = massive.getConnectionState();
       if (wsState === "closed") {
-        console.log(
-          `[TransportPolicy] Attempting to reconnect WebSocket for ${this.config.symbol}`
-        );
+        this.logState("Reconnect timer fired, attempting WebSocket reconnection", "warn");
         massive.connect();
       }
 

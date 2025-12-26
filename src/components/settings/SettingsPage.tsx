@@ -6,6 +6,7 @@ import { TakeProfitSettings } from "./TakeProfitSettings";
 import { VoiceCommandsSettings } from "./VoiceCommandsSettings";
 import { LiveDataBehaviorSettings } from "./LiveDataBehaviorSettings";
 import { DiscordNotificationSettings } from "./DiscordNotificationSettings";
+import { DiscordFailedAlertsPanel } from "./DiscordFailedAlertsPanel";
 import { StrategyLibraryAdmin } from "../StrategyLibraryAdmin";
 import { BrandingSettingsAdmin } from "../BrandingSettingsAdmin";
 import { useAppToast } from "../../hooks/useAppToast";
@@ -52,6 +53,11 @@ export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPagePro
 
           {/* Integrations */}
           <DiscordNotificationSettings onOpenDiscordSettings={onOpenDiscordSettings} />
+
+          {/* Discord Failed Alerts */}
+          <section className="bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] p-4">
+            <DiscordFailedAlertsPanel />
+          </section>
 
           {/* Super Admin Only: Branding */}
           {isSuperAdmin && (
