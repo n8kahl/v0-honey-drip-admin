@@ -283,6 +283,17 @@ export class MassiveHub {
     if (!msg || typeof msg !== "object") return;
 
     const msgObj = msg as Record<string, unknown>;
+
+    // DIAGNOSTIC: Log all client messages with details
+    console.log(`${this.opts.logPrefix} 📨 Client message:`, {
+      action: msgObj.action,
+      params: typeof msgObj.params === "string" ? msgObj.params.slice(0, 100) : msgObj.params,
+      upstreamOpen: this.upstreamOpen,
+      upstreamAuthd: this.upstreamAuthd,
+      totalTopics: this.topicRefCount.size,
+      clientCount: this.clients.size,
+    });
+
     switch (msgObj.action) {
       case "subscribe": {
         // FIX: Use parseClientParamsToTopics instead of split(",")
@@ -292,6 +303,14 @@ export class MassiveHub {
         // Normalize indices topics (add I: prefix if needed)
         const normalizedTopics =
           this.opts.asset === "indices" ? topics.map(normalizeIndicesTopic) : topics;
+
+        // DIAGNOSTIC: Log subscription details
+        console.log(`${this.opts.logPrefix} 📥 Subscribe request:`, {
+          rawTopics: topics,
+          normalizedTopics,
+          willSendUpstream: this.upstreamAuthd,
+          existingTopics: Array.from(this.topicRefCount.keys()).slice(0, 5),
+        });
 
         for (const topic of normalizedTopics) {
           if (!ctx.subs.has(topic)) {

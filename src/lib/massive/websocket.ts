@@ -330,6 +330,28 @@ export class MassiveWebSocket {
       this.subscribers.get(key)!.add(callback);
     });
 
+    // DIAGNOSTIC: Log subscription attempt details
+    const socketState = this.sockets.options?.readyState;
+    const socketStateStr =
+      socketState === WebSocket.OPEN
+        ? "OPEN"
+        : socketState === WebSocket.CONNECTING
+          ? "CONNECTING"
+          : socketState === WebSocket.CLOSING
+            ? "CLOSING"
+            : socketState === WebSocket.CLOSED
+              ? "CLOSED"
+              : "NO_SOCKET";
+
+    console.log(`[MassiveWS] 📊 Subscription attempt for options:`, {
+      tickers: optionTickers,
+      socketExists: !!this.sockets.options,
+      socketReadyState: socketStateStr,
+      isAuthenticated: this.isAuthenticated.options,
+      currentSubscriptions: Array.from(this.subscriptions.options).slice(0, 5),
+      totalSubscriptions: this.subscriptions.options.size,
+    });
+
     // FIX: Send actual WebSocket subscription if connection is ready
     // This ensures we receive data for these specific option contracts
     if (this.sockets.options && this.isAuthenticated.options) {
@@ -338,14 +360,20 @@ export class MassiveWebSocket {
         `options.trades:${optionTickers.join(",")}`,
       ];
 
-      console.warn(`[MassiveWS] Subscribing to individual option contracts:`, optionTickers);
+      console.warn(
+        `[MassiveWS] ✅ Subscribing to individual option contracts:`,
+        optionTickers,
+        "channels:",
+        channels
+      );
       this.send("options", { action: "subscribe", params: channels });
 
       // Track these subscriptions
       channels.forEach((ch) => this.subscriptions.options.add(ch));
     } else {
       console.warn(
-        `[MassiveWS] Cannot subscribe to options ${optionTickers.join(",")} - WebSocket not ready (state: ${this.getConnectionState("options")})`
+        `[MassiveWS] ❌ Cannot subscribe to options ${optionTickers.join(",")} - WebSocket not ready`,
+        { socketState: socketStateStr, isAuthenticated: this.isAuthenticated.options }
       );
     }
 
