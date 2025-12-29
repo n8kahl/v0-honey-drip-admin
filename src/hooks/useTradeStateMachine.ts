@@ -37,6 +37,7 @@ import { getInitialConfluence } from "./useTradeConfluenceMonitor";
 import { tradeHookLogger as log } from "../lib/utils/logger";
 import { calculateNetPnLPercent } from "../services/pnlCalculator";
 import { getEntryPriceFromUpdates } from "../lib/tradePnl";
+import { ActiveTradePollingService } from "../services/ActiveTradePollingService";
 
 // Domain layer imports
 import {
@@ -857,6 +858,12 @@ export function useTradeStateMachine({
         });
         setShowAlert(false);
 
+        // REGISTER FOR ACTIVE TRADE POLLING - Start polling for real-time P&L updates
+        const enteredTrade = useTradeStore.getState().activeTrades.find((t) => t.id === dbTradeId);
+        if (enteredTrade) {
+          ActiveTradePollingService.registerTrade(enteredTrade);
+        }
+
         // SEND DISCORD ALERT
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
@@ -1303,6 +1310,9 @@ export function useTradeStateMachine({
             activeTrades: state.activeTrades.filter((t) => t.id !== trade.id),
             historyTrades: [...state.historyTrades, exitedTrade],
           }));
+
+          // UNREGISTER FROM ACTIVE TRADE POLLING - Stop polling for this trade
+          ActiveTradePollingService.unregisterTrade(trade.id);
         }
 
         // Reload from database
