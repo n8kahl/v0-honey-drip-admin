@@ -29,6 +29,7 @@ import type { Trade } from "./types";
 import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcutsDialog";
 import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
 import { initWhisper, isWhisperSupported } from "./lib/whisper/client";
+import { ActiveTradePollingService } from "./services/ActiveTradePollingService";
 import "./styles/globals.css";
 
 // Hook to detect mobile viewport
@@ -226,6 +227,9 @@ export default function App() {
           loadWatchlist((user?.id || "00000000-0000-0000-0000-000000000001") as string),
           loadTrades((user?.id || "00000000-0000-0000-0000-000000000001") as string),
         ]);
+
+        // Sync active trade polling with loaded trades
+        ActiveTradePollingService.syncWithStore();
       } catch (error) {
         console.error("[v0] Failed to load user data:", error);
       }
@@ -394,7 +398,9 @@ export default function App() {
             challenges={challenges}
             onTickerClick={() => {}}
             onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
-            onRemoveTicker={(ticker) => useMarketStore.getState().removeTicker(user?.id || "", ticker.id)}
+            onRemoveTicker={(ticker) =>
+              useMarketStore.getState().removeTicker(user?.id || "", ticker.id)
+            }
             onAddChallenge={() => useUIStore.getState().setShowAddChallengeDialog(true)}
             onRemoveChallenge={(challenge) =>
               useSettingsStore.getState().removeChallenge(challenge.id)

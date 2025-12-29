@@ -458,17 +458,15 @@ export class TransportPolicy {
           }
         }
 
-        // Extract underlying ticker (GOOGL) for the snapshot API
-        const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+        // FIX: Use direct contract lookup instead of searching in underlying snapshot
+        // The snapshot API accepts either underlying ticker (SPY) or specific options ticker (O:SPY...)
+        // Using the full ticker guarantees we get this exact contract's data
+        try {
+          const response = await massive.getOptionsSnapshot(fullTicker);
+          // Response may be a single contract or wrapped in results array
+          const contract = response?.results?.[0] || response;
 
-        if (underlying) {
-          const response = await massive.getOptionsSnapshot(underlying);
-          // Find the specific contract in the results by matching the full ticker
-          const contract = response?.results?.find(
-            (c: any) => c.details?.ticker === fullTicker || c.ticker === fullTicker
-          );
-
-          if (contract) {
+          if (contract && (contract.last_quote || contract.last_trade || contract.day)) {
             // Extract price data from the contract's nested structure
             // Massive API returns: { last_trade: { price, p }, last_quote: { bid, bp, ask, ap } }
             data = {
@@ -488,15 +486,100 @@ export class TransportPolicy {
                 contract.last_quote?.sip_timestamp ??
                 Date.now(),
             };
+            console.debug(`[TransportPolicy] Direct contract lookup succeeded for ${fullTicker}`);
           } else {
             console.warn(
-              `[TransportPolicy] Contract ${fullTicker} not found in ${underlying} snapshot`
+              `[TransportPolicy] Direct lookup returned no price data for ${fullTicker}, response:`,
+              JSON.stringify(response).slice(0, 200)
             );
+
+            // FALLBACK: Try underlying snapshot search (in case direct lookup fails)
+            const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+            if (underlying) {
+              console.warn(
+                `[TransportPolicy] Falling back to underlying snapshot for ${underlying}`
+              );
+              const snapshotResponse = await massive.getOptionsSnapshot(underlying);
+              const foundContract = snapshotResponse?.results?.find(
+                (c: any) => c.details?.ticker === fullTicker || c.ticker === fullTicker
+              );
+              if (foundContract) {
+                data = {
+                  symbol: fullTicker,
+                  last:
+                    foundContract.last_trade?.price ??
+                    foundContract.last_trade?.p ??
+                    foundContract.day?.close ??
+                    0,
+                  bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
+                  ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
+                  volume: foundContract.day?.volume ?? 0,
+                  change: foundContract.day?.change ?? 0,
+                  changePercent: foundContract.day?.change_percent ?? 0,
+                  open: foundContract.day?.open ?? 0,
+                  high: foundContract.day?.high ?? 0,
+                  low: foundContract.day?.low ?? 0,
+                  timestamp:
+                    foundContract.last_trade?.sip_timestamp ??
+                    foundContract.last_quote?.sip_timestamp ??
+                    Date.now(),
+                };
+                console.debug(
+                  `[TransportPolicy] Fallback snapshot search succeeded for ${fullTicker}`
+                );
+              } else {
+                console.warn(
+                  `[TransportPolicy] Contract ${fullTicker} not found in ${underlying} snapshot either`
+                );
+              }
+            }
           }
-        } else {
-          console.warn(
-            `[TransportPolicy] Could not extract underlying from options symbol: ${fullTicker}`
+        } catch (directLookupError) {
+          console.error(
+            `[TransportPolicy] Direct contract lookup failed for ${fullTicker}:`,
+            directLookupError
           );
+
+          // FALLBACK: Try underlying snapshot search
+          const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+          if (underlying) {
+            try {
+              console.warn(
+                `[TransportPolicy] Attempting fallback to underlying snapshot for ${underlying}`
+              );
+              const snapshotResponse = await massive.getOptionsSnapshot(underlying);
+              const foundContract = snapshotResponse?.results?.find(
+                (c: any) => c.details?.ticker === fullTicker || c.ticker === fullTicker
+              );
+              if (foundContract) {
+                data = {
+                  symbol: fullTicker,
+                  last:
+                    foundContract.last_trade?.price ??
+                    foundContract.last_trade?.p ??
+                    foundContract.day?.close ??
+                    0,
+                  bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
+                  ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
+                  volume: foundContract.day?.volume ?? 0,
+                  change: foundContract.day?.change ?? 0,
+                  changePercent: foundContract.day?.change_percent ?? 0,
+                  open: foundContract.day?.open ?? 0,
+                  high: foundContract.day?.high ?? 0,
+                  low: foundContract.day?.low ?? 0,
+                  timestamp:
+                    foundContract.last_trade?.sip_timestamp ??
+                    foundContract.last_quote?.sip_timestamp ??
+                    Date.now(),
+                };
+              }
+            } catch (fallbackError) {
+              console.error(
+                `[TransportPolicy] Fallback snapshot also failed for ${fullTicker}:`,
+                fallbackError
+              );
+            }
+          }
         }
       } else if (this.config.isIndex) {
         data = await massive.getIndex(this.config.symbol);
@@ -545,22 +628,50 @@ export class TransportPolicy {
       }
 
       const wsState = massive.getConnectionState();
+      const wsHealth = massive.getHealth();
       const timeSinceLastData = Date.now() - this.lastDataTimestamp;
       const usingRest = !!this.pollTimer;
       const threshold = usingRest ? this.restStaleThresholdMs : this.wsStaleThresholdMs;
       const isStale = timeSinceLastData > threshold; // No data within allowed freshness window
 
+      // DIAGNOSTIC: Log detailed health info every 10 seconds or on issues
+      const shouldLogDiagnostics =
+        this.consecutiveHealthFailures > 0 ||
+        wsState !== "open" ||
+        isStale ||
+        Date.now() % 10000 < 2000; // Every 10 seconds
+
+      if (shouldLogDiagnostics) {
+        console.log(`[TransportPolicy] 📊 Health Diagnostic for ${this.config.symbol}:`, {
+          wsState,
+          wsAuthenticated: wsHealth?.websocket?.options?.authenticated ?? "unknown",
+          wsSubscriptions: wsHealth?.websocket?.options?.activeSubscriptions ?? 0,
+          wsLastMessage: wsHealth?.websocket?.options?.lastMessageTime
+            ? `${((Date.now() - wsHealth.websocket.options.lastMessageTime) / 1000).toFixed(1)}s ago`
+            : "never",
+          timeSinceOurLastData: `${(timeSinceLastData / 1000).toFixed(1)}s`,
+          threshold: `${threshold / 1000}s`,
+          isStale,
+          usingRest,
+          consecutiveFailures: this.consecutiveHealthFailures,
+          hasWsSubscription: !!this.wsUnsubscribe,
+          lastRestPrice: this.lastRestPrice,
+        });
+      }
+
       // Detect state changes
       if (wsState !== this.lastWsState) {
-        // console.log(`[TransportPolicy] WebSocket state changed for ${this.config.symbol}: ${this.lastWsState} → ${wsState}`);
+        console.warn(
+          `[TransportPolicy] 🔄 WebSocket state changed for ${this.config.symbol}: ${this.lastWsState} → ${wsState}`
+        );
         this.lastWsState = wsState;
       }
 
       if (wsState === "closed" || isStale) {
         // Increment consecutive failure counter and only activate REST after threshold
         this.consecutiveHealthFailures += 1;
-        console.debug(
-          `[TransportPolicy] Health check failure #${this.consecutiveHealthFailures} for ${this.config.symbol} (state: ${wsState}, stale: ${isStale})`
+        console.warn(
+          `[TransportPolicy] ⚠️ Health check failure #${this.consecutiveHealthFailures} for ${this.config.symbol} (state: ${wsState}, stale: ${isStale})`
         );
 
         if (this.consecutiveHealthFailures >= this.healthFailureThreshold) {
