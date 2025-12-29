@@ -3,9 +3,9 @@ import { HDTagTradeType } from "../common/HDTagTradeType";
 import { cn } from "../../../lib/utils";
 import { useTradeStore } from "../../../stores";
 import { useRef, useEffect, useState, useMemo } from "react";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
 import { Wifi, WifiOff } from "lucide-react";
-import { calculateRealizedPnL, getEntryPriceFromUpdates } from "../../../lib/tradePnl";
+import { calculateRealizedPnL } from "../../../lib/tradePnl";
 import { formatExpirationShort } from "../../../ui/semantics";
 
 interface HDActiveTradeRowProps {
@@ -16,38 +16,19 @@ interface HDActiveTradeRowProps {
 
 /**
  * Active trade row with P&L display.
- * Features real-time P&L updates via WebSocket/REST streaming.
+ * Uses useActiveTradeLiveModel - the SINGLE SOURCE OF TRUTH for all live trade metrics.
  * Features P&L bump animation on value changes.
  */
 export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowProps) {
-  // Get contract details for streaming
-  const contractTicker =
-    trade.contract?.id || trade.contract?.ticker || trade.contract?.symbol || null;
-  const entryPrice =
-    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
+  // Use canonical live model hook - SAME SOURCE AS NowPanelManage
+  const liveModel = useActiveTradeLiveModel(trade);
   const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
 
-  // Subscribe to LIVE price data via WebSocket/REST transport
-  const {
-    pnlPercent: livePnlPercent,
-    currentPrice: liveCurrentPrice,
-    source,
-    asOf,
-    isStale,
-  } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
-
-  // Use live data if available, fallback to store's current price
-  const currentPrice =
-    liveCurrentPrice > 0
-      ? liveCurrentPrice
-      : trade.currentPrice || trade.last_option_price || entryPrice;
-  const displayPnl =
-    liveCurrentPrice > 0
-      ? livePnlPercent
-      : entryPrice > 0
-        ? ((currentPrice - entryPrice) / entryPrice) * 100
-        : (trade.movePercent ?? 0);
+  // Extract P&L from live model
+  const displayPnl = liveModel?.pnlPercent ?? 0;
   const isProfit = displayPnl >= 0;
+  const source = liveModel?.optionSource ?? "rest";
+  const isStale = liveModel?.optionIsStale ?? false;
 
   // P&L bump animation state
   const [pnlBump, setPnlBump] = useState(false);
@@ -63,7 +44,7 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
       return () => clearTimeout(timeout);
     }
     prevPnlRef.current = displayPnl;
-  }, [displayPnl, liveCurrentPrice]); // Added liveCurrentPrice to trigger on live updates
+  }, [displayPnl]); // Trigger animation when P&L changes
 
   const handleClick = () => {
     if (onClick) {
