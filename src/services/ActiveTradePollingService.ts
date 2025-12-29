@@ -22,7 +22,7 @@ const POLL_INTERVALS: Record<MarketSession, number> = {
   OPEN: 2_000, // 2 seconds during regular hours (fast P&L updates)
   PRE: 5_000, // 5 seconds pre-market
   POST: 5_000, // 5 seconds after-hours
-  CLOSED: 0, // Don't poll when market is closed
+  CLOSED: 10_000, // 10 seconds when closed (for testing/development)
 };
 
 // Minimum interval between polls for the same contract (debounce)
@@ -202,6 +202,8 @@ class ActiveTradePollingServiceImpl {
     console.log("[ActiveTradePolling] Synced with store", {
       enteredTrades: enteredTrades.length,
       registeredContracts: this.contracts.size,
+      session: this.currentSession,
+      pollInterval: POLL_INTERVALS[this.currentSession],
     });
   }
 
@@ -535,7 +537,7 @@ class ActiveTradePollingServiceImpl {
       } as any);
 
       if (priceChanged) {
-        console.debug("[ActiveTradePolling] Updated trade price", {
+        console.log("[ActiveTradePolling] Updated trade price", {
           tradeId: contract.tradeId,
           contractId: result.contractId,
           oldPrice: currentPrice,

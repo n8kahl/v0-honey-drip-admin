@@ -36,11 +36,11 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
     isStale,
   } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
 
-  // Use live data if available, fallback to stale trade data
+  // Use live data if available, fallback to store's current price
   const currentPrice =
     liveCurrentPrice > 0
       ? liveCurrentPrice
-      : trade.contract?.bid || trade.contract?.mid || entryPrice;
+      : trade.currentPrice || trade.last_option_price || entryPrice;
   const displayPnl =
     liveCurrentPrice > 0
       ? livePnlPercent
