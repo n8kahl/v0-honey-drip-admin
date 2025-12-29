@@ -539,6 +539,20 @@ export const useTradeStore = create<TradeStore>()(
             }
           }
 
+          // Convert Date objects to ISO strings for Supabase (fix for 400 errors)
+          if (dbUpdates.last_option_price_at instanceof Date) {
+            dbUpdates.last_option_price_at = dbUpdates.last_option_price_at.toISOString();
+          }
+          if (dbUpdates.entry_timestamp instanceof Date) {
+            dbUpdates.entry_timestamp = dbUpdates.entry_timestamp.toISOString();
+          }
+          if (dbUpdates.entry_time instanceof Date) {
+            dbUpdates.entry_time = dbUpdates.entry_time.toISOString();
+          }
+          if (dbUpdates.exit_time instanceof Date) {
+            dbUpdates.exit_time = dbUpdates.exit_time.toISOString();
+          }
+
           log.debug("DB updates prepared", { tradeId, dbUpdates, correlationId });
 
           // Only try DB update if we have valid fields to update
