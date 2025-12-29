@@ -5,6 +5,7 @@ import { Scissors, Shield, LogOut, Zap, Wifi, WifiOff } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
+import { formatExpirationShort } from "../../../ui/semantics";
 
 interface MobileActiveCardProps {
   trade: Trade;
@@ -34,7 +35,7 @@ export function MobileActiveCard({
     currentPrice: liveCurrentPrice,
     source,
     asOf,
-  } = useActiveTradePnL(contractTicker, entryPrice);
+  } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
 
   // Use live data if available, fallback to stale trade data
   const currentPrice =
@@ -91,7 +92,17 @@ export function MobileActiveCard({
             {contract?.type}
           </span>
           {dte !== null && (
-            <span className={cn("text-xs font-semibold", getDTEColor())}>{dte}DTE</span>
+            <div className="flex items-center gap-1">
+              <span className={cn("text-xs font-semibold", getDTEColor())}>{dte}DTE</span>
+              {contract?.expiry && (
+                <>
+                  <span className="text-[9px] text-[var(--text-faint)]">•</span>
+                  <span className="text-[9px] text-[var(--text-faint)]">
+                    {formatExpirationShort(contract.expiry)}
+                  </span>
+                </>
+              )}
+            </div>
           )}
         </div>
 

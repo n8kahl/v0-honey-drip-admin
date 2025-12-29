@@ -4,6 +4,7 @@ import { HDCard } from "../common/HDCard";
 import { HDChip } from "../common/HDChip";
 import { formatPrice, formatPercent, formatTime, cn } from "../../../lib/utils";
 import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
+import { formatExpirationFull, getDTEStyle } from "../../../ui/semantics";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { useTPProximity } from "../../../hooks/useTPProximity";
 import { useTPSettings } from "../../../hooks/useTPSettings";
@@ -39,7 +40,11 @@ export function HDEnteredTradeCard({
     trade.contract.id || trade.contract.ticker || trade.contract.symbol || null;
   const entryPrice =
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract.mid;
-  const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(contractTicker, entryPrice);
+  const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
+    trade.id,
+    contractTicker,
+    entryPrice
+  );
   const { tpNearThreshold, autoOpenTrim } = useTPSettings();
   const tp = useTPProximity(trade, currentPrice, { threshold: tpNearThreshold });
   const { user } = useAuth();
@@ -140,9 +145,26 @@ export function HDEnteredTradeCard({
             <h2 className="text-[var(--text-high)] font-medium">{trade.ticker}</h2>
             <HDTagTradeType type={trade.tradeType} />
           </div>
-          <div className="text-[var(--text-muted)] text-xs">
-            {trade.contract.strike}
-            {trade.contract.type} • {trade.contract.expiry} • {trade.contract.daysToExpiry}DTE
+          <div className="text-xs flex items-center gap-2">
+            <span className="text-[var(--text-muted)]">
+              {trade.contract.strike}
+              {trade.contract.type}
+            </span>
+            <span
+              className={cn(
+                "px-2 py-0.5 rounded font-semibold text-[10px] flex items-center gap-1 border",
+                getDTEStyle(trade.contract.daysToExpiry).bg,
+                getDTEStyle(trade.contract.daysToExpiry).className
+              )}
+            >
+              {trade.contract.daysToExpiry} DTE
+              {trade.contract.expiry && (
+                <>
+                  <span className="opacity-70">•</span>
+                  <span>Exp: {formatExpirationFull(trade.contract.expiry)}</span>
+                </>
+              )}
+            </span>
           </div>
         </div>
 

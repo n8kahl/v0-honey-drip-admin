@@ -205,7 +205,7 @@ export function useLoadedTradeLiveModel(
     asOf: optionAsOf,
     source: optionSource,
     isStale: optionIsStale,
-  } = useActiveTradePnL(contractTicker, 0);
+  } = useActiveTradePnL(null, contractTicker, 0); // null tradeId = WATCHING state (no DB persistence)
 
   const option = useMemo((): OptionQuote => {
     if (!contract) return DEFAULT_OPTION;

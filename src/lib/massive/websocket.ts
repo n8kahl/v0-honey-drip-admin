@@ -316,22 +316,57 @@ export class MassiveWebSocket {
 
   /**
    * Subscribe to option aggregates (compatibility API)
+   * FIX: Now actually sends WebSocket subscriptions for individual option tickers
    */
   subscribeOptionAggregates(
     optionTickers: string[],
     callback: SubscriptionCallback,
     timespan: "second" | "minute" = "minute"
   ): UnsubscribeFn {
+    // Register local callbacks for message routing
     optionTickers.forEach((ticker) => {
       const key = this.createSubscriberKey("option", ticker);
       if (!this.subscribers.has(key)) this.subscribers.set(key, new Set());
       this.subscribers.get(key)!.add(callback);
     });
 
+    // FIX: Send actual WebSocket subscription if connection is ready
+    // This ensures we receive data for these specific option contracts
+    if (this.sockets.options && this.isAuthenticated.options) {
+      const channels = [
+        `options.quotes:${optionTickers.join(",")}`,
+        `options.trades:${optionTickers.join(",")}`,
+      ];
+
+      console.warn(`[MassiveWS] Subscribing to individual option contracts:`, optionTickers);
+      this.send("options", { action: "subscribe", params: channels });
+
+      // Track these subscriptions
+      channels.forEach((ch) => this.subscriptions.options.add(ch));
+    } else {
+      console.warn(
+        `[MassiveWS] Cannot subscribe to options ${optionTickers.join(",")} - WebSocket not ready (state: ${this.getConnectionState("options")})`
+      );
+    }
+
     return () => {
+      // Remove local callbacks
       optionTickers.forEach((ticker) => {
         this.deregisterSubscription(this.createSubscriberKey("option", ticker), callback);
       });
+
+      // Unsubscribe from WebSocket if still connected
+      if (this.sockets.options && this.isAuthenticated.options) {
+        const channels = [
+          `options.quotes:${optionTickers.join(",")}`,
+          `options.trades:${optionTickers.join(",")}`,
+        ];
+
+        this.send("options", { action: "unsubscribe", params: channels });
+
+        // Remove from tracked subscriptions
+        channels.forEach((ch) => this.subscriptions.options.delete(ch));
+      }
     };
   }
 

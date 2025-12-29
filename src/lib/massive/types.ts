@@ -13,6 +13,11 @@ export interface MassiveQuote {
   open: number;
   previousClose: number;
   timestamp: number;
+  // Abbreviated field names (Massive.com WebSocket may use these)
+  bp?: number; // bid price
+  ap?: number; // ask price
+  p?: number; // price (last trade price)
+  price?: number; // alternative to 'last'
 }
 
 export interface MassiveOption {
@@ -20,8 +25,8 @@ export interface MassiveOption {
   underlying_ticker: string;
   strike_price: number;
   expiration_date: string;
-  contract_type: 'call' | 'put';
-  exercise_style: 'american' | 'european' | 'bermudan';
+  contract_type: "call" | "put";
+  exercise_style: "american" | "european" | "bermudan";
   shares_per_contract: number;
   bid: number;
   ask: number;

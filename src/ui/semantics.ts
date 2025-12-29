@@ -306,6 +306,94 @@ export function getCrossfadeClass(): string {
 }
 
 // ============================================================================
+// Expiration Date Formatting
+// ============================================================================
+
+/**
+ * Format expiration date for inline display
+ * @param expiry ISO date string (e.g., "2025-12-26")
+ * @returns Short format (e.g., "12/26")
+ */
+export function formatExpirationShort(expiry: string | undefined | null): string {
+  if (!expiry) return "";
+  try {
+    const date = new Date(expiry);
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${month}/${day}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Format expiration date for full display
+ * @param expiry ISO date string
+ * @returns Full format (e.g., "Thu, Dec 26")
+ */
+export function formatExpirationFull(expiry: string | undefined | null): string {
+  if (!expiry) return "";
+  try {
+    const date = new Date(expiry);
+    const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
+    const monthName = date.toLocaleDateString("en-US", { month: "short" });
+    const day = date.getDate();
+    return `${dayName}, ${monthName} ${day}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Get DTE badge styling based on days to expiration
+ * @param dte Days to expiration
+ * @returns Style object with className, bg, and label
+ */
+export function getDTEStyle(dte: number | undefined | null): {
+  className: string;
+  bg: string;
+  label: string;
+} {
+  if (dte == null) {
+    return {
+      className: "text-[var(--text-muted)]",
+      bg: "bg-[var(--surface-2)] border-[var(--border-hairline)]",
+      label: "N/A",
+    };
+  }
+
+  if (dte === 0) {
+    return {
+      className: "text-red-400",
+      bg: "bg-red-400/10 border-red-400/30",
+      label: "EXPIRES TODAY",
+    };
+  }
+
+  if (dte === 1) {
+    return {
+      className: "text-amber-400",
+      bg: "bg-amber-400/10 border-amber-400/30",
+      label: "EXPIRES TOMORROW",
+    };
+  }
+
+  if (dte <= 7) {
+    return {
+      className: "text-yellow-400",
+      bg: "bg-yellow-400/10 border-yellow-400/30",
+      label: `${dte} DAYS LEFT`,
+    };
+  }
+
+  return {
+    className: "text-green-400",
+    bg: "bg-green-400/10 border-green-400/30",
+    label: `${dte} DAYS LEFT`,
+  };
+}
+
+// ============================================================================
 // Contrast Helper (for brand buttons)
 // ============================================================================
 

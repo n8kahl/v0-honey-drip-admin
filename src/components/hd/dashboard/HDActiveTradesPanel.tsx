@@ -38,7 +38,11 @@ function EnteredTradeItem({
   const entryPrice =
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
   const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
-  const { currentPrice, pnlPercent, source } = useActiveTradePnL(contractTicker, entryPrice);
+  const { currentPrice, pnlPercent, source } = useActiveTradePnL(
+    trade.id,
+    contractTicker,
+    entryPrice
+  );
 
   // Use live data, fallback to stored movePercent if no live data yet
   const displayPnlPercent = currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);

@@ -256,6 +256,7 @@ export function useQuotes(symbols: string[]) {
 }
 
 export function useActiveTradePnL(
+  tradeId: string | null,
   contractTicker: string | null,
   entryPrice: number,
   quantity: number = 1
@@ -296,63 +297,118 @@ export function useActiveTradePnL(
     const unsubscribe = createTransport(
       normalizedTicker,
       (data, transportSource, timestamp) => {
-        const nextBid = typeof data.bid === "number" ? data.bid : 0;
-        const nextAsk = typeof data.ask === "number" ? data.ask : 0;
-        const nextLast = typeof data.last === "number" ? data.last : 0;
+        // TEMPORARY DEBUG: Remove after confirming data flow
+        console.log("[DEBUG useActiveTradePnL] RAW DATA:", {
+          ticker: normalizedTicker,
+          source: transportSource,
+          dataKeys: Object.keys(data),
+          bid: data.bid,
+          ask: data.ask,
+          last: data.last,
+          bp: data.bp,
+          ap: data.ap,
+          p: data.p,
+        });
+
+        // FIX #1: Handle multiple field name variants (Massive.com uses abbreviations)
+        const nextBid =
+          typeof data.bid === "number" ? data.bid : typeof data.bp === "number" ? data.bp : 0;
+        const nextAsk =
+          typeof data.ask === "number" ? data.ask : typeof data.ap === "number" ? data.ap : 0;
+        const nextLast =
+          typeof data.last === "number"
+            ? data.last
+            : typeof data.p === "number"
+              ? data.p
+              : typeof data.price === "number"
+                ? data.price
+                : 0;
+
         const mid = nextBid > 0 && nextAsk > 0 ? (nextBid + nextAsk) / 2 : nextBid || nextAsk || 0;
         const price = mid > 0 ? mid : nextLast;
 
-        if (price > 0) {
-          setCurrentPrice(price);
+        // FIX #2: Relax filter - update state whenever we receive ANY valid data
+        const hasValidData = nextBid > 0 || nextAsk > 0 || nextLast > 0 || price > 0;
+
+        if (hasValidData) {
+          // Update price only if valid, otherwise keep previous
+          if (price > 0) {
+            setCurrentPrice(price);
+          }
+
+          // Always update bid/ask/last if provided (keeps state fresh)
           setBid((prev) => (nextBid > 0 ? nextBid : prev));
           setAsk((prev) => (nextAsk > 0 ? nextAsk : prev));
           setLast((prev) => (nextLast > 0 ? nextLast : prev));
+
+          // Always update metadata
           setAsOf(timestamp);
           setSource(transportSource);
 
-          // Calculate GROSS P&L percent (for comparison)
+          // FIX #3: Calculate P&L even if current price is 0 (use entry as fallback)
+          const priceForCalc = price > 0 ? price : entryPrice;
           const hasEntry = entryPrice > 0;
-          const grossPnl = hasEntry ? ((price - entryPrice) / entryPrice) * 100 : 0;
 
-          // Calculate REALISTIC net P&L accounting for commissions and slippage
-          // Standard retail options: $0.65 per contract at entry + $0.65 at exit = $1.30 total
-          // Bid-ask spread slippage: ~0.5% for liquid contracts like SPX/SPY
-          // This matches real-world trading conditions
-          const pnl = hasEntry ? calculateNetPnLPercent(entryPrice, price, quantity) : 0;
-          setPnlPercent(hasEntry ? pnl : 0);
+          if (hasEntry) {
+            // Calculate GROSS P&L percent (for comparison)
+            const grossPnl = ((priceForCalc - entryPrice) / entryPrice) * 100;
 
-          // Calculate P&L in dollars: (currentPrice - entryPrice) * quantity * 100
-          // Each option contract = 100 shares
-          const dollars = hasEntry ? (price - entryPrice) * quantity * 100 : 0;
-          setPnlDollars(hasEntry ? dollars : 0);
+            // Calculate REALISTIC net P&L accounting for commissions and slippage
+            const pnl = calculateNetPnLPercent(entryPrice, priceForCalc, quantity);
+            setPnlPercent(pnl);
 
-          // NEW: Update database with latest price (debounced to every 10 seconds)
-          const now = Date.now();
-          if (now - lastDbUpdateRef.current > 10000) {
-            lastDbUpdateRef.current = now;
-            // Dynamic import to avoid circular dependency
-            import("../stores/tradeStore").then(({ useTradeStore }) => {
-              useTradeStore
-                .getState()
-                .updateTrade(normalizedTicker, {
-                  last_option_price: price,
-                  last_option_price_at: new Date(timestamp),
-                  price_data_source: transportSource,
-                })
-                .catch((err) => console.error("[useActiveTradePnL] DB update failed:", err));
+            // Calculate P&L in dollars: (currentPrice - entryPrice) * quantity * 100
+            const dollars = (priceForCalc - entryPrice) * quantity * 100;
+            setPnlDollars(dollars);
+
+            // NEW: Update database with latest price (debounced to every 10 seconds)
+            // Only update if we have a real trade ID (skip for WATCHING state previews)
+            const now = Date.now();
+            if (tradeId && now - lastDbUpdateRef.current > 10000) {
+              lastDbUpdateRef.current = now;
+              // Dynamic import to avoid circular dependency
+              import("../stores/tradeStore").then(({ useTradeStore }) => {
+                useTradeStore
+                  .getState()
+                  .updateTrade(tradeId, {
+                    last_option_price: price > 0 ? price : undefined, // Only persist if valid
+                    last_option_price_at: new Date(timestamp),
+                    price_data_source: transportSource,
+                  })
+                  .catch((err) =>
+                    console.warn(`[useActiveTradePnL] DB update failed for trade ${tradeId}:`, err)
+                  );
+              });
+            }
+
+            console.log(`[useActiveTradePnL] ${transportSource} update for ${normalizedTicker}:`, {
+              price: price > 0 ? `$${price.toFixed(2)}` : "N/A",
+              bid: nextBid > 0 ? `$${nextBid.toFixed(2)}` : "N/A",
+              ask: nextAsk > 0 ? `$${nextAsk.toFixed(2)}` : "N/A",
+              grossPnl: `${grossPnl >= 0 ? "+" : ""}${grossPnl.toFixed(1)}%`,
+              netPnl: `${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%`,
+              dollars: `${dollars >= 0 ? "+" : ""}$${dollars.toFixed(0)}`,
             });
           }
-
-          console.log(
-            `[useActiveTradePnL] ${transportSource} update for ${normalizedTicker}: $${price.toFixed(2)} (gross: ${grossPnl > 0 ? "+" : ""}${grossPnl.toFixed(1)}%, net: ${pnl > 0 ? "+" : ""}${pnl.toFixed(1)}%, $${dollars > 0 ? "+" : ""}${dollars.toFixed(0)})`
-          );
+        } else {
+          // No valid data at all - log warning
+          console.warn(`[useActiveTradePnL] Received invalid data for ${normalizedTicker}`, {
+            source: transportSource,
+            dataKeys: Object.keys(data),
+            bid: data.bid,
+            ask: data.ask,
+            last: data.last,
+            bp: data.bp,
+            ap: data.ap,
+            p: data.p,
+          });
         }
       },
       { isOption: true, pollInterval: 3000 }
     );
 
     return unsubscribe;
-  }, [normalizedTicker, entryPrice, quantity]);
+  }, [normalizedTicker, entryPrice, quantity, tradeId]);
 
   return { currentPrice, bid, ask, last, pnlPercent, pnlDollars, asOf, source, isStale };
 }

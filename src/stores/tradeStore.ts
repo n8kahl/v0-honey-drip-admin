@@ -521,6 +521,14 @@ export const useTradeStore = create<TradeStore>()(
             "move_percent",
             "state",
             "status",
+            // Migration 027: Option price tracking fields
+            "entry_bid",
+            "entry_ask",
+            "entry_mid",
+            "entry_timestamp",
+            "last_option_price",
+            "last_option_price_at",
+            "price_data_source",
           ];
           const dbUpdates: Record<string, any> = {};
           for (const [key, value] of Object.entries(updates)) {

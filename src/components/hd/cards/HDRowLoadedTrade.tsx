@@ -4,6 +4,7 @@ import { formatPrice, cn } from "../../../lib/utils";
 import { X, Zap } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
+import { formatExpirationShort } from "../../../ui/semantics";
 
 interface HDRowLoadedTradeProps {
   trade: Trade;
@@ -48,10 +49,21 @@ export function HDRowLoadedTrade({ trade, active, onClick, onRemove }: HDRowLoad
             <span className="text-[var(--text-high)] font-medium">{trade.ticker}</span>
             <HDTagTradeType type={trade.tradeType} />
           </div>
-          <div className="text-xs text-[var(--text-muted)]">
-            {trade.contract.strike}
-            {trade.contract.type} · {daysToExpiry}
-            <span className={cn("ml-1 font-semibold", getDTEColor())}>DTE</span>
+          <div className="text-xs flex items-center gap-1">
+            <span className="text-[var(--text-muted)]">
+              {trade.contract.strike}
+              {trade.contract.type}
+            </span>
+            <span className="text-[var(--text-muted)]">·</span>
+            <span className={cn("font-semibold", getDTEColor())}>{daysToExpiry} DTE</span>
+            {trade.contract.expiry && (
+              <>
+                <span className="text-[var(--text-faint)]">•</span>
+                <span className="text-[10px] text-[var(--text-faint)]">
+                  Exp: {formatExpirationShort(trade.contract.expiry)}
+                </span>
+              </>
+            )}
           </div>
         </div>
 

@@ -6,6 +6,7 @@ import { useRef, useEffect, useState, useMemo } from "react";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { Wifi, WifiOff } from "lucide-react";
 import { calculateRealizedPnL, getEntryPriceFromUpdates } from "../../../lib/tradePnl";
+import { formatExpirationShort } from "../../../ui/semantics";
 
 interface HDActiveTradeRowProps {
   trade: Trade;
@@ -33,7 +34,7 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
     source,
     asOf,
     isStale,
-  } = useActiveTradePnL(contractTicker, entryPrice);
+  } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
 
   // Use live data if available, fallback to stale trade data
   const currentPrice =
@@ -90,10 +91,34 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
             <span className="text-[var(--text-high)] font-medium">{trade.ticker}</span>
             <HDTagTradeType type={trade.tradeType} />
           </div>
-          <div className="text-xs text-[var(--text-muted)]">
-            {trade.contract?.strike}
-            {trade.contract?.type} · {trade.contract?.daysToExpiry}
-            <span className="ml-1 font-semibold text-green-500">DTE</span>
+          <div className="text-xs flex items-center gap-1">
+            <span className="text-[var(--text-muted)]">
+              {trade.contract?.strike}
+              {trade.contract?.type}
+            </span>
+            <span className="text-[var(--text-muted)]">·</span>
+            <span
+              className={cn(
+                "font-semibold",
+                trade.contract?.daysToExpiry === 0
+                  ? "text-red-500"
+                  : trade.contract?.daysToExpiry <= 3
+                    ? "text-orange-500"
+                    : trade.contract?.daysToExpiry <= 7
+                      ? "text-yellow-500"
+                      : "text-green-500"
+              )}
+            >
+              {trade.contract?.daysToExpiry} DTE
+            </span>
+            {trade.contract?.expiry && (
+              <>
+                <span className="text-[var(--text-faint)]">•</span>
+                <span className="text-[10px] text-[var(--text-faint)]">
+                  Exp: {formatExpirationShort(trade.contract.expiry)}
+                </span>
+              </>
+            )}
           </div>
         </div>
 

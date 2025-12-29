@@ -24,7 +24,7 @@ import { useLiveGreeks } from "./useOptionsAdvanced";
 import { roundPrice } from "../lib/utils";
 import { getEntryPriceFromUpdates } from "../lib/tradePnl";
 import { normalizeOptionTicker } from "../lib/optionsSymbol";
-import * as massive from "../lib/massive/client";
+import { massive } from "../lib/massive";
 import { useTradeStore } from "../stores/tradeStore";
 
 // ============================================================================
@@ -302,7 +302,7 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     asOf: optionAsOf,
     source: optionSource,
     isStale: optionIsStale,
-  } = useActiveTradePnL(contractId, entryPrice, quantity);
+  } = useActiveTradePnL(trade.id, contractId, entryPrice, quantity);
 
   // Get live Greeks
   const liveGreeks = useLiveGreeks(

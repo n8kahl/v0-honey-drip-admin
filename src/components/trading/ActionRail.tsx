@@ -154,8 +154,17 @@ export function ActionRail({
   // This fixes race conditions where tradeState (from derived selectors) lags behind the actual trade state
   const effectiveTradeState = currentTrade?.state ?? tradeState;
 
-  const isSetupMode = effectiveTradeState === "WATCHING" && setupMode?.focusedSymbol;
   const isLoadedMode = effectiveTradeState === "LOADED" && currentTrade;
+
+  // Auto-expand Discord composer for LOADED mode (user needs Enter Trade buttons)
+  // But allow it to be closed via Cancel button
+  useEffect(() => {
+    if (isLoadedMode) {
+      setDiscordExpanded(true);
+    }
+  }, [isLoadedMode]);
+
+  const isSetupMode = effectiveTradeState === "WATCHING" && setupMode?.focusedSymbol;
   const isManageMode = effectiveTradeState === "ENTERED" && currentTrade;
   const isExitedMode = effectiveTradeState === "EXITED" && currentTrade;
   // Show trade content for any persisted trade state (LOADED/ENTERED/EXITED)
@@ -209,7 +218,7 @@ export function ActionRail({
             {/* Risk Box - Visible when trade exists */}
             {currentTrade && <ActionRailRiskBox trade={currentTrade} />}
 
-            {/* Discord Controls - Force expanded for LOADED state (user needs Enter Trade buttons) */}
+            {/* Discord Controls - Auto-expanded for LOADED state, but can be dismissed */}
             <ActionRailDiscord
               trade={currentTrade}
               channels={channels}
@@ -217,8 +226,8 @@ export function ActionRail({
               showAlert={showAlert}
               alertType={alertType}
               alertOptions={alertOptions}
-              expanded={!!isLoadedMode || discordExpanded}
-              onToggleExpanded={() => !isLoadedMode && setDiscordExpanded(!discordExpanded)}
+              expanded={discordExpanded}
+              onToggleExpanded={() => setDiscordExpanded(!discordExpanded)}
               onSendAlert={onSendAlert}
               onEnterAndAlert={onEnterAndAlert}
               onCancelAlert={onCancelAlert}

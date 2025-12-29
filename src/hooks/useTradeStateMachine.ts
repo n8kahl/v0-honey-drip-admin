@@ -294,26 +294,17 @@ export function useTradeStateMachine({
         });
       }
 
-      // Set appropriate alertType and alertDraft based on trade state
-      if (trade.state === "ENTERED") {
-        setAlertType("exit");
-        // Pre-create an EXIT draft for quick access
-        const draft = startTradeAction("EXIT", { trade });
-        if (draft) {
-          setAlertDraft(draft);
-        }
-      } else if (trade.state === "LOADED") {
-        setAlertType("enter");
-        // Pre-create an ENTER draft for quick access
-        const draft = startTradeAction("ENTER", { trade });
-        if (draft) {
-          setAlertDraft(draft);
-        }
-      } else {
-        setAlertDraft(null);
-      }
-
+      // CRITICAL FIX: Don't automatically set alertType="exit" for ENTERED trades
+      // This was causing immediate exits - let user explicitly choose action via ActionRail buttons
+      // Only clear any existing draft to prevent stale state
+      setAlertDraft(null);
       setShowAlert(false);
+
+      log.info("Trade focused, alertType NOT auto-set", {
+        tradeId: trade.id,
+        state: trade.state,
+        reason: "User must explicitly choose action via ActionRail",
+      });
     },
     [setFocusedTrade]
   );
@@ -705,9 +696,56 @@ export function useTradeStateMachine({
 
       setIsTransitioning(true);
       const finalEntryPrice = priceOverrides?.entryPrice || trade.contract.mid;
-      // Round to avoid floating point artifacts (e.g., 1.149999999 → 1.15)
+
+      // VALIDATION: Prevent entry with very low prices that cause degenerate stop loss
+      const MIN_ENTRY_PRICE = 0.05; // $0.05 minimum
+      if (finalEntryPrice < MIN_ENTRY_PRICE) {
+        setIsTransitioning(false);
+        toast.error("Entry price too low", {
+          description: `Contract price must be at least $${MIN_ENTRY_PRICE.toFixed(2)} to enter trade. Current: $${finalEntryPrice.toFixed(2)}`,
+        });
+        log.warn("Entry rejected: price too low", {
+          tradeId: trade.id,
+          ticker: trade.ticker,
+          entryPrice: finalEntryPrice,
+          minRequired: MIN_ENTRY_PRICE,
+        });
+        return;
+      }
+
+      // Calculate TP/SL with hybrid approach for cheap options
       let targetPrice = priceOverrides?.targetPrice ?? roundPrice(finalEntryPrice * 1.5);
-      let stopLoss = priceOverrides?.stopLoss ?? roundPrice(finalEntryPrice * 0.5);
+      let stopLoss: number;
+
+      if (priceOverrides?.stopLoss) {
+        // User provided explicit stop loss
+        stopLoss = priceOverrides.stopLoss;
+      } else if (finalEntryPrice < 0.1) {
+        // For cheap options ($0.05-$0.10), use fixed dollar stop instead of percentage
+        // This prevents stop === entry when using percentage-based calculation
+        stopLoss = Math.max(0.01, roundPrice(finalEntryPrice - 0.05));
+        log.info("Using fixed dollar stop for cheap option", {
+          entryPrice: finalEntryPrice,
+          stopLoss,
+          reason: "entry < $0.10",
+        });
+      } else {
+        // Normal percentage-based stop for options >= $0.10
+        stopLoss = roundPrice(finalEntryPrice * 0.5);
+      }
+
+      // VALIDATION: Ensure stop loss is always different from entry (prevent degenerate condition)
+      const MIN_STOP_DISTANCE = 0.01; // At least $0.01 apart
+      if (Math.abs(stopLoss - finalEntryPrice) < MIN_STOP_DISTANCE) {
+        const originalStop = stopLoss;
+        stopLoss = Math.max(0.01, roundPrice(finalEntryPrice - 0.05));
+        log.warn("Stop loss adjusted to prevent degenerate condition", {
+          entryPrice: finalEntryPrice,
+          originalStop,
+          adjustedStop: stopLoss,
+          reason: "stop too close to entry",
+        });
+      }
 
       // Recalculate TP/SL if not provided
       if (!priceOverrides?.targetPrice || !priceOverrides?.stopLoss) {
@@ -789,6 +827,15 @@ export function useTradeStateMachine({
 
         // RELOAD FROM DATABASE
         await loadTrades(userId);
+
+        // CRITICAL FIX: Reset alertType to prevent stale state causing accidental exits
+        // After entry, clear alert state so next action starts fresh
+        setAlertType("update"); // Neutral state
+        setShowAlert(false);
+        log.info("Alert type reset after successful entry", {
+          tradeId: dbTradeId,
+          reason: "Prevent accidental exit from stale alertType",
+        });
 
         // EXPLICIT CHALLENGE LINKING - Ensures junction table is populated
         // This fixes race condition where server's async insert may not complete

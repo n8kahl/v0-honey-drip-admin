@@ -42,7 +42,7 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
     currentPrice: liveCurrentPrice,
     source,
     asOf,
-  } = useActiveTradePnL(contractTicker, entryPrice);
+  } = useActiveTradePnL(trade?.id || null, contractTicker, entryPrice);
 
   if (!trade) return null;
 

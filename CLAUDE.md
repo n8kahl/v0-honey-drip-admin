@@ -82,6 +82,71 @@ pnpm start:prewarm    # Run weekend pre-warm worker (manual trigger)
 
 ## 📝 Recent Session Changes
 
+### Session: December 26, 2025 - P&L Fix Completion (Migration 027)
+
+**Branch**: TBD
+
+#### Changes Made:
+
+1. **Fixed Critical Database Update Bug in useActiveTradePnL**
+   - Added `tradeId` parameter to `useActiveTradePnL` hook signature
+   - Changed from using contract ticker to using trade UUID for database updates
+   - Made `tradeId` nullable to support WATCHING state trades (no DB persistence needed)
+   - Database updates now correctly persist `last_option_price` every 10 seconds
+   - Prices now survive page refreshes
+
+2. **Updated All Components Using useActiveTradePnL**
+   - [HDActiveTradeRow.tsx](src/components/hd/cards/HDActiveTradeRow.tsx) - Pass trade.id
+   - [HDEnteredTradeCard.tsx](src/components/hd/cards/HDEnteredTradeCard.tsx) - Pass trade.id
+   - [MobileActiveCard.tsx](src/components/mobile/cards/MobileActiveCard.tsx) - Pass trade.id
+   - [MobileLoadedCard.tsx](src/components/mobile/cards/MobileLoadedCard.tsx) - Pass trade.id
+   - [useActiveTradeLiveModel.ts](src/hooks/useActiveTradeLiveModel.ts) - Pass trade.id
+   - [useLoadedTradeLiveModel.ts](src/hooks/useLoadedTradeLiveModel.ts) - Pass null (WATCHING state)
+   - [HDActiveTradePanel.tsx](src/components/hd/dashboard/HDActiveTradePanel.tsx) - Pass trade.id
+   - [MobileTradeDetailSheet.tsx](src/components/mobile/sheets/MobileTradeDetailSheet.tsx) - Pass trade.id
+   - [HDActiveTradesPanel.tsx](src/components/hd/dashboard/HDActiveTradesPanel.tsx) - Pass trade.id
+
+3. **Migration 027 Ready to Execute**
+   - Added entry snapshot fields: `entry_bid`, `entry_ask`, `entry_mid`, `entry_timestamp` (immutable)
+   - Added live tracking fields: `last_option_price`, `last_option_price_at`, `price_data_source` (mutable)
+   - Backfill logic to populate existing trades from contract JSONB
+   - Run in Supabase SQL Editor: `scripts/027_add_option_price_tracking.sql`
+
+4. **Improved Error Handling**
+   - Database update failures now log trade ID for easier debugging
+   - Skip database updates for WATCHING state trades (null tradeId)
+
+#### Bug Fixed:
+
+**Before**:
+
+```typescript
+.updateTrade(normalizedTicker, { ... }) // ❌ Using contract symbol like "O:SPY250117C00622000"
+```
+
+**After**:
+
+```typescript
+.updateTrade(tradeId, { ... }) // ✅ Using trade UUID
+```
+
+#### Impact:
+
+- ✅ P&L updates in real-time for active trades
+- ✅ P&L persists across page refreshes
+- ✅ No more 0.0% P&L when underlying moves
+- ✅ Closing prices fetch and persist after market close
+- ✅ Data source labels show correct freshness ("Live", "Closing", etc.)
+
+#### Next Steps:
+
+1. Run migration 027 in Supabase SQL Editor
+2. Test end-to-end with real market data
+3. Verify P&L persistence after page refresh
+4. Monitor database updates in browser console
+
+---
+
 ### Session: November 23, 2025 - Loaded Trades & Contract Persistence
 
 **Branch**: `claude/fix-loaded-trades-nav-01C7dP6XiJ9sjtQZmozssYp9`

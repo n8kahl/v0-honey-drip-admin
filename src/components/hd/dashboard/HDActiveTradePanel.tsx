@@ -259,6 +259,7 @@ export function HDActiveTradePanel({
   const entryPriceValue =
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract.mid || 0;
   const { currentPrice, pnlPercent, pnlDollars } = useActiveTradePnL(
+    trade.id,
     contractTicker,
     entryPriceValue,
     trade.quantity || 1
