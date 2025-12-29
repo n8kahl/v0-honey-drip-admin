@@ -371,9 +371,10 @@ export function useActiveTradePnL(
                 useTradeStore
                   .getState()
                   .updateTrade(tradeId, {
-                    last_option_price: price > 0 ? price : undefined, // Only persist if valid
-                    last_option_price_at: new Date(timestamp),
-                    price_data_source: transportSource,
+                    // IMPORTANT: Use camelCase - store.updateTrade converts to snake_case for DB
+                    lastOptionPrice: price > 0 ? price : undefined, // Only persist if valid
+                    lastOptionPriceAt: new Date(timestamp),
+                    priceDataSource: transportSource,
                   })
                   .catch((err) =>
                     console.warn(`[useActiveTradePnL] DB update failed for trade ${tradeId}:`, err)

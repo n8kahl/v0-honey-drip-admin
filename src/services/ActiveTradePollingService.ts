@@ -496,11 +496,12 @@ class ActiveTradePollingServiceImpl {
       }
 
       // Update the trade with new price
+      // IMPORTANT: Use camelCase - store.updateTrade converts to snake_case for DB
       store.updateTrade(contract.tradeId, {
         currentPrice: result.price,
-        last_option_price: result.price,
-        last_option_price_at: new Date(result.timestamp),
-        price_data_source: result.source,
+        lastOptionPrice: result.price,
+        lastOptionPriceAt: new Date(result.timestamp),
+        priceDataSource: result.source,
       } as any);
 
       console.debug("[ActiveTradePolling] Updated trade price", {
