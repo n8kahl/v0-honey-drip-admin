@@ -420,13 +420,30 @@ export async function updateTrade(
     current_price?: number;
     move_percent?: number;
     state?: string;
+    // Migration 027: P&L tracking fields
+    last_option_price?: number;
+    last_option_price_at?: Date;
+    price_data_source?: string;
+    entry_bid?: number;
+    entry_ask?: number;
+    entry_mid?: number;
+    entry_timestamp?: Date;
   }
 ) {
   const supabase = createClient();
 
+  // Convert Date objects to ISO strings for Supabase
+  const dbUpdates: Record<string, any> = { ...updates };
+  if (updates.last_option_price_at instanceof Date) {
+    dbUpdates.last_option_price_at = updates.last_option_price_at.toISOString();
+  }
+  if (updates.entry_timestamp instanceof Date) {
+    dbUpdates.entry_timestamp = updates.entry_timestamp.toISOString();
+  }
+
   const { data, error } = await supabase
     .from("trades")
-    .update(updates)
+    .update(dbUpdates)
     .eq("id", id)
     .select()
     .single();

@@ -12,6 +12,7 @@ import {
 } from "../lib/massive/options-advanced";
 import { streamingManager } from "../lib/massive/streaming-manager";
 import { normalizeOptionTicker } from "../lib/optionsSymbol";
+import { MassiveTokenManager } from "../lib/massive/token-manager";
 
 /**
  * Hook for streaming quotes with stale detection for watchlist tickers
@@ -220,6 +221,7 @@ export function useLiveGreeks(
     }
 
     let active = true;
+    const tokenManager = new MassiveTokenManager();
 
     const fetchGreeks = async () => {
       try {
@@ -228,11 +230,25 @@ export function useLiveGreeks(
         const underlying = match?.[1];
         if (!underlying) return;
 
+        // Get authentication token
+        const token = await tokenManager.getToken();
+
         // Fetch snapshot for this specific contract
         const response = await fetch(
-          `/api/massive/options/contracts?underlying=${underlying}&ticker=${normalizedTicker}`
+          `/api/massive/options/contracts?underlying=${underlying}&ticker=${normalizedTicker}`,
+          {
+            headers: {
+              "x-massive-proxy-token": token,
+            },
+          }
         );
-        if (!response.ok) return;
+        if (!response.ok) {
+          // Refresh token if expired
+          if (response.status === 403) {
+            await tokenManager.refreshToken();
+          }
+          return;
+        }
 
         const data = await response.json();
         const contract = data.results?.[0] || data;

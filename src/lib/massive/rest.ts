@@ -631,9 +631,9 @@ export class MassiveREST {
             continue;
           }
 
-          if (response.status === 401) {
-            // Token expired - refresh and retry
-            console.warn("[MassiveREST] Token expired, refreshing");
+          if (response.status === 401 || response.status === 403) {
+            // Token expired or forbidden - refresh and retry
+            console.warn("[MassiveREST] Token expired/forbidden, refreshing");
             await this.tokenManager.refreshToken();
             continue;
           }

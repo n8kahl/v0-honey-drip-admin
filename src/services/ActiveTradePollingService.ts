@@ -14,6 +14,7 @@
 import { getFallbackSession, type MarketSession } from "../lib/marketSession";
 import { useTradeStore } from "../stores/tradeStore";
 import type { Trade } from "../types";
+import { MassiveTokenManager } from "../lib/massive/token-manager";
 
 // Polling intervals based on market session (in milliseconds)
 // Using 2-second universal polling for real-time P&L updates
@@ -61,9 +62,11 @@ class ActiveTradePollingServiceImpl {
   private currentSession: MarketSession = "CLOSED";
   private lastSessionCheck = 0;
   private sessionCheckInterval = 60_000; // Check session every minute
+  private tokenManager: MassiveTokenManager;
 
   private constructor() {
     // Private constructor for singleton
+    this.tokenManager = new MassiveTokenManager();
   }
 
   static getInstance(): ActiveTradePollingServiceImpl {
@@ -365,9 +368,22 @@ class ActiveTradePollingServiceImpl {
 
     // First, try to get prices from the underlying snapshot (batch fetch)
     try {
-      const response = await fetch(`/api/massive/v3/snapshot/options/${underlying}`);
+      // Get ephemeral token for authentication
+      const token = await this.tokenManager.getToken();
+
+      const response = await fetch(`/api/massive/v3/snapshot/options/${underlying}`, {
+        headers: {
+          "x-massive-proxy-token": token,
+        },
+      });
 
       if (!response.ok) {
+        // Handle 403 token expiry
+        if (response.status === 403) {
+          console.warn("[ActiveTradePolling] Token expired, refreshing");
+          await this.tokenManager.refreshToken();
+          // Retry will happen on next poll cycle
+        }
         throw new Error(`Snapshot request failed: ${response.status}`);
       }
 
@@ -430,12 +446,26 @@ class ActiveTradePollingServiceImpl {
     const now = Date.now();
 
     try {
+      // Get ephemeral token for authentication
+      const token = await this.tokenManager.getToken();
+
       // Use direct contract lookup (the fix we implemented earlier)
       const response = await fetch(
-        `/api/massive/v3/snapshot/options/${encodeURIComponent(contract.contractId)}`
+        `/api/massive/v3/snapshot/options/${encodeURIComponent(contract.contractId)}`,
+        {
+          headers: {
+            "x-massive-proxy-token": token,
+          },
+        }
       );
 
       if (!response.ok) {
+        // Handle 403 token expiry
+        if (response.status === 403) {
+          console.warn("[ActiveTradePolling] Token expired in direct lookup, refreshing");
+          await this.tokenManager.refreshToken();
+          // Retry will happen on next poll cycle
+        }
         throw new Error(`Direct lookup failed: ${response.status}`);
       }
 
