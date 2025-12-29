@@ -16,15 +16,16 @@ import { useTradeStore } from "../stores/tradeStore";
 import type { Trade } from "../types";
 
 // Polling intervals based on market session (in milliseconds)
+// Using 2-second universal polling for real-time P&L updates
 const POLL_INTERVALS: Record<MarketSession, number> = {
-  OPEN: 10_000, // 10 seconds during regular hours
-  PRE: 30_000, // 30 seconds pre-market
-  POST: 30_000, // 30 seconds after-hours
+  OPEN: 2_000, // 2 seconds during regular hours (fast P&L updates)
+  PRE: 5_000, // 5 seconds pre-market
+  POST: 5_000, // 5 seconds after-hours
   CLOSED: 0, // Don't poll when market is closed
 };
 
 // Minimum interval between polls for the same contract (debounce)
-const MIN_POLL_INTERVAL_MS = 5_000;
+const MIN_POLL_INTERVAL_MS = 1_500; // Slightly less than fastest poll interval
 
 // Maximum consecutive errors before backing off
 const MAX_CONSECUTIVE_ERRORS = 3;

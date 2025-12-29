@@ -271,7 +271,6 @@ export function useActiveTradePnL(
   const [asOf, setAsOf] = useState(Date.now());
   const [source, setSource] = useState<"websocket" | "rest">("rest");
   const lastTickerRef = useRef<string | null>(null);
-  const lastDbUpdateRef = useRef<number>(0); // Track last database write time (NEW - for P&L accuracy)
 
   // Stale detection: data older than 10 seconds is considered stale
   const STALE_THRESHOLD_MS = 10_000;
@@ -361,26 +360,9 @@ export function useActiveTradePnL(
             const dollars = (priceForCalc - entryPrice) * quantity * 100;
             setPnlDollars(dollars);
 
-            // NEW: Update database with latest price (debounced to every 10 seconds)
-            // Only update if we have a real trade ID (skip for WATCHING state previews)
-            const now = Date.now();
-            if (tradeId && now - lastDbUpdateRef.current > 10000) {
-              lastDbUpdateRef.current = now;
-              // Dynamic import to avoid circular dependency
-              import("../stores/tradeStore").then(({ useTradeStore }) => {
-                useTradeStore
-                  .getState()
-                  .updateTrade(tradeId, {
-                    // IMPORTANT: Use camelCase - store.updateTrade converts to snake_case for DB
-                    lastOptionPrice: price > 0 ? price : undefined, // Only persist if valid
-                    lastOptionPriceAt: new Date(timestamp),
-                    priceDataSource: transportSource,
-                  })
-                  .catch((err) =>
-                    console.warn(`[useActiveTradePnL] DB update failed for trade ${tradeId}:`, err)
-                  );
-              });
-            }
+            // NOTE: Database updates are now handled by ActiveTradePollingService
+            // which polls every 2 seconds and updates both store and database.
+            // This eliminates duplicate writes and ensures consistent pricing.
 
             console.log(`[useActiveTradePnL] ${transportSource} update for ${normalizedTicker}:`, {
               price: price > 0 ? `$${price.toFixed(2)}` : "N/A",
