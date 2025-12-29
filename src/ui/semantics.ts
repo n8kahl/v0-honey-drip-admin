@@ -227,6 +227,21 @@ export function fmtTimeLeft(ms: number | undefined | null): string {
 }
 
 /**
+ * Format expiration date in short form (e.g., "Jan 15")
+ * @param expiry - Expiration date string (e.g., "2025-01-15" or "01/15/2025")
+ */
+export function formatExpirationShort(expiry: string | undefined | null): string {
+  if (!expiry) return "—";
+  try {
+    const date = new Date(expiry);
+    if (isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return "—";
+  }
+}
+
+/**
  * Format DTE (days to expiration) with color context
  * @param dte - Days to expiration
  */
