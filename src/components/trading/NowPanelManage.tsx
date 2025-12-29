@@ -251,9 +251,9 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
           ) : liveModel.optionSource === "rest" &&
             (liveModel.overallHealth === "degraded" || liveModel.overallHealth === "stale") ? (
             <>
-              <RefreshCw className="w-3.5 h-3.5 text-orange-400 animate-spin" />
-              <span className="text-[10px] font-medium uppercase tracking-wide whitespace-nowrap text-orange-400">
-                RECONNECTING
+              <RefreshCw className="w-3.5 h-3.5 text-yellow-400 animate-spin" />
+              <span className="text-[10px] font-medium uppercase tracking-wide whitespace-nowrap text-yellow-400">
+                {liveModel.optionIsStale ? "STALE DATA" : "REST POLLING"}
               </span>
             </>
           ) : liveModel.overallHealth === "healthy" ? (

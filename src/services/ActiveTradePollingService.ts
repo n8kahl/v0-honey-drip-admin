@@ -490,13 +490,12 @@ class ActiveTradePollingServiceImpl {
         continue;
       }
 
-      // Only update if price changed
+      // Always update timestamp to keep data "fresh" indicator accurate
+      // Even if price hasn't changed (e.g., after hours), we want to show we're still polling
       const currentPrice = trade.currentPrice ?? trade.last_option_price;
-      if (currentPrice === result.price) {
-        continue;
-      }
+      const priceChanged = currentPrice !== result.price;
 
-      // Update the trade with new price
+      // Update the trade with new timestamp (and price if changed)
       // IMPORTANT: Use camelCase - store.updateTrade converts to snake_case for DB
       store.updateTrade(contract.tradeId, {
         currentPrice: result.price,
@@ -505,13 +504,15 @@ class ActiveTradePollingServiceImpl {
         priceDataSource: result.source,
       } as any);
 
-      console.debug("[ActiveTradePolling] Updated trade price", {
-        tradeId: contract.tradeId,
-        contractId: result.contractId,
-        oldPrice: currentPrice,
-        newPrice: result.price,
-        source: result.source,
-      });
+      if (priceChanged) {
+        console.debug("[ActiveTradePolling] Updated trade price", {
+          tradeId: contract.tradeId,
+          contractId: result.contractId,
+          oldPrice: currentPrice,
+          newPrice: result.price,
+          source: result.source,
+        });
+      }
     }
   }
 }
