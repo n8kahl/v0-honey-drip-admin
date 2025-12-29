@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { massive, type MassiveQuote, type MassiveOptionsChain } from "../lib/massive";
-import { MassiveError } from "../lib/massive/proxy";
 import { createTransport } from "../lib/massive/transport-policy";
-import type { Contract } from "../types";
+import type { Contract, Trade } from "../types";
 import { fetchNormalizedChain } from "../services/options";
 import { fetchQuotes as fetchUnifiedQuotes } from "../services/quotes";
 import { useMarketDataStore } from "../stores/marketDataStore";
+import { useTradeStore } from "../stores/tradeStore";
 import { calculateNetPnLPercent } from "../services/pnlCalculator";
 import { normalizeOptionTicker } from "../lib/optionsSymbol";
 
@@ -272,9 +272,26 @@ export function useActiveTradePnL(
   const [source, setSource] = useState<"websocket" | "rest">("rest");
   const lastTickerRef = useRef<string | null>(null);
 
+  // Subscribe to store updates from ActiveTradePollingService
+  // This ensures we get fresh timestamps even when transport fails
+  const storePrice = useTradeStore((state) => {
+    if (!tradeId) return null;
+    const trade = state.activeTrades.find((t: Trade) => t.id === tradeId);
+    return trade
+      ? {
+          price: trade.lastOptionPrice ?? trade.currentPrice,
+          asOf: trade.lastOptionPriceAt ? new Date(trade.lastOptionPriceAt).getTime() : 0,
+          source: trade.priceDataSource ?? "rest",
+        }
+      : null;
+  });
+
+  // Use store data if it's fresher than local state
+  const effectiveAsOf = storePrice?.asOf && storePrice.asOf > asOf ? storePrice.asOf : asOf;
+
   // Stale detection: data older than 10 seconds is considered stale
   const STALE_THRESHOLD_MS = 10_000;
-  const isStale = Date.now() - asOf > STALE_THRESHOLD_MS;
+  const isStale = Date.now() - effectiveAsOf > STALE_THRESHOLD_MS;
 
   useEffect(() => {
     if (normalizedTicker !== lastTickerRef.current) {
@@ -393,7 +410,18 @@ export function useActiveTradePnL(
     return unsubscribe;
   }, [normalizedTicker, entryPrice, quantity, tradeId]);
 
-  return { currentPrice, bid, ask, last, pnlPercent, pnlDollars, asOf, source, isStale };
+  // Return the fresher timestamp (from transport OR store polling service)
+  return {
+    currentPrice,
+    bid,
+    ask,
+    last,
+    pnlPercent,
+    pnlDollars,
+    asOf: effectiveAsOf,
+    source,
+    isStale,
+  };
 }
 
 // Hook for checking API connection status
