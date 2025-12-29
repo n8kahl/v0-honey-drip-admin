@@ -125,12 +125,13 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
         {/* Right: Live Indicator + P&L */}
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
-            {/* Live data indicator */}
-            {source === "websocket" && !isStale ? (
-              <Wifi className="w-3 h-3 text-green-500" />
-            ) : isStale ? (
-              <WifiOff className="w-3 h-3 text-amber-500" />
-            ) : null}
+            {/* Live data indicator (only show for open positions) */}
+            {realizedPnL.remainingPercent > 0 &&
+              (source === "websocket" && !isStale ? (
+                <Wifi className="w-3 h-3 text-green-500" />
+              ) : isStale ? (
+                <WifiOff className="w-3 h-3 text-amber-500" />
+              ) : null)}
             <span
               className={cn(
                 "text-[var(--text-high)] font-mono text-sm font-medium tabular-nums",
@@ -142,27 +143,31 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
               {displayPnl.toFixed(2)}%
             </span>
           </div>
-          <div
-            className={cn(
-              "text-[10px] tabular-nums",
-              realizedPnL.realizedPercent >= 0
-                ? "text-[var(--accent-positive)]/80"
-                : "text-[var(--accent-negative)]/80"
-            )}
-          >
-            Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
-            {realizedPnL.realizedPercent.toFixed(1)}%
-          </div>
+          {realizedPnL.remainingPercent > 0 && realizedPnL.trimmedPercent > 0 && (
+            <div
+              className={cn(
+                "text-[10px] tabular-nums",
+                realizedPnL.realizedPercent >= 0
+                  ? "text-[var(--accent-positive)]/80"
+                  : "text-[var(--accent-negative)]/80"
+              )}
+            >
+              Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
+              {realizedPnL.realizedPercent.toFixed(1)}%
+            </div>
+          )}
           <div className="flex items-center gap-1">
             <span
               className={cn(
                 "px-2 py-0.5 rounded text-[9px] uppercase tracking-wide border",
-                isProfit
-                  ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)] border-[var(--accent-positive)]/30"
-                  : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border-[var(--accent-negative)]/30"
+                realizedPnL.remainingPercent === 0
+                  ? "bg-[var(--text-muted)]/20 text-[var(--text-muted)] border-[var(--text-muted)]/30"
+                  : isProfit
+                    ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)] border-[var(--accent-positive)]/30"
+                    : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border-[var(--accent-negative)]/30"
               )}
             >
-              {isProfit ? "Profit" : "Loss"}
+              {realizedPnL.remainingPercent === 0 ? "Final" : isProfit ? "Profit" : "Loss"}
             </span>
           </div>
         </div>

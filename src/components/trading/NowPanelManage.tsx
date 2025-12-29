@@ -323,7 +323,7 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
           {/* P&L Display */}
           <div>
             <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-1">
-              Unrealized P&L
+              {realizedPnL.remainingPercent === 0 ? "Final P&L" : "Unrealized P&L"}
             </div>
             <div className="flex items-baseline gap-3">
               <span
@@ -334,20 +334,25 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
                   pnlFlash === "down" && "animate-pulse text-[var(--accent-negative)]"
                 )}
               >
-                {liveModel.pnlPercent >= 0 ? "+" : ""}
-                {liveModel.pnlPercent.toFixed(1)}%
+                {realizedPnL.remainingPercent === 0
+                  ? `${realizedPnL.realizedPercent >= 0 ? "+" : ""}${realizedPnL.realizedPercent.toFixed(1)}%`
+                  : `${liveModel.pnlPercent >= 0 ? "+" : ""}${liveModel.pnlPercent.toFixed(1)}%`}
               </span>
               <span className={cn("text-lg tabular-nums", pnlStyle.className)}>
-                {liveModel.pnlDollars >= 0 ? "+" : ""}${Math.abs(liveModel.pnlDollars).toFixed(0)}
+                {realizedPnL.remainingPercent === 0
+                  ? `${realizedPnL.realizedDollars >= 0 ? "+" : "-"}$${Math.abs(realizedPnL.realizedDollars).toFixed(0)}`
+                  : `${liveModel.pnlDollars >= 0 ? "+" : ""}$${Math.abs(liveModel.pnlDollars).toFixed(0)}`}
               </span>
             </div>
-            <div className="mt-2 text-xs text-[var(--text-faint)] tabular-nums">
-              Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
-              {realizedPnL.realizedPercent.toFixed(1)}% (
-              {realizedPnL.realizedDollars >= 0 ? "+" : "-"}$
-              {formatPrice(Math.abs(realizedPnL.realizedDollars))}) • Remaining{" "}
-              {Math.round(realizedPnL.remainingPercent)}%
-            </div>
+            {realizedPnL.remainingPercent > 0 && realizedPnL.trimmedPercent > 0 && (
+              <div className="mt-2 text-xs text-[var(--text-faint)] tabular-nums">
+                Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
+                {realizedPnL.realizedPercent.toFixed(1)}% (
+                {realizedPnL.realizedDollars >= 0 ? "+" : "-"}$
+                {formatPrice(Math.abs(realizedPnL.realizedDollars))}) • Remaining{" "}
+                {Math.round(realizedPnL.remainingPercent)}%
+              </div>
+            )}
           </div>
 
           {/* R-Multiple + Time to Close */}
