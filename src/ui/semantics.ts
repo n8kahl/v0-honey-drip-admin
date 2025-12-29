@@ -320,27 +320,6 @@ export function getCrossfadeClass(): string {
   return "animate-crossfade";
 }
 
-// ============================================================================
-// Expiration Date Formatting
-// ============================================================================
-
-/**
- * Format expiration date for inline display
- * @param expiry ISO date string (e.g., "2025-12-26")
- * @returns Short format (e.g., "12/26")
- */
-export function formatExpirationShort(expiry: string | undefined | null): string {
-  if (!expiry) return "";
-  try {
-    const date = new Date(expiry);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return `${month}/${day}`;
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Format expiration date for full display
  * @param expiry ISO date string
