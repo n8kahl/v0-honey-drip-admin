@@ -377,8 +377,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               Error loading options chain: {optionsError}
             </div>
           )}
-          {/* Subtle, non-blocking stale badge */}
-          {optionsStale && !optionsLoading && !optionsError && (
+          {/* Subtle, non-blocking stale badge - HIDE when trade is focused (NowPanelManage shows its own) */}
+          {optionsStale && !optionsLoading && !optionsError && focus?.kind !== "trade" && (
             <div className="absolute top-2 right-2 z-10 text-xs text-[var(--data-stale)] bg-[var(--data-stale)]/10 border border-[var(--data-stale)]/30 rounded px-2 py-1">
               Stale · {optionsAsOf ? new Date(optionsAsOf).toLocaleTimeString() : "unknown"}
             </div>
