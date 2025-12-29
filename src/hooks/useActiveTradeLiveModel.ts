@@ -24,7 +24,7 @@ import { useLiveGreeks } from "./useOptionsAdvanced";
 import { roundPrice } from "../lib/utils";
 import { getEntryPriceFromUpdates } from "../lib/tradePnl";
 import { normalizeOptionTicker } from "../lib/optionsSymbol";
-import * as massive from "../lib/massive/client";
+import { massive } from "../lib/massive";
 import { useTradeStore } from "../stores/tradeStore";
 
 // ============================================================================
