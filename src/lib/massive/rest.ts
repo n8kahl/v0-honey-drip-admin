@@ -14,6 +14,139 @@ const MASSIVE_API_BASE = "/api/massive";
 const CONTRACT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const AGGREGATES_TTL_MS = 60 * 1000; // 60 seconds
 
+// ============================================================================
+// GLOBAL REQUEST QUEUE - Prevents 429 rate limit errors
+// ============================================================================
+const REQUEST_QUEUE_CONFIG = {
+  maxConcurrent: 5, // Max concurrent requests (increased for faster initial load)
+  minDelayMs: 150, // Min delay between requests (150ms = max ~7/sec)
+  dedupeWindowMs: 1500, // Dedupe identical requests within 1.5s
+};
+
+interface QueuedRequest {
+  url: string;
+  init: RequestInit;
+  resolve: (value: Response) => void;
+  reject: (error: Error) => void;
+  timestamp: number;
+}
+
+// Global queue state (singleton across all MassiveREST instances)
+const requestQueue: QueuedRequest[] = [];
+let activeRequests = 0;
+let lastRequestTime = 0;
+let isProcessingQueue = false;
+
+// Request deduplication cache
+const inflightRequests = new Map<string, Promise<Response>>();
+const recentResponses = new Map<string, { response: Response; timestamp: number }>();
+
+function getDedupeKey(url: string, init: RequestInit): string {
+  // Create unique key from URL and method
+  return `${init.method || "GET"}:${url}`;
+}
+
+async function processRequestQueue(): Promise<void> {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+
+  while (requestQueue.length > 0 && activeRequests < REQUEST_QUEUE_CONFIG.maxConcurrent) {
+    const request = requestQueue.shift();
+    if (!request) continue;
+
+    // Enforce minimum delay between requests
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    if (timeSinceLastRequest < REQUEST_QUEUE_CONFIG.minDelayMs) {
+      await new Promise((r) =>
+        setTimeout(r, REQUEST_QUEUE_CONFIG.minDelayMs - timeSinceLastRequest)
+      );
+    }
+
+    activeRequests++;
+    lastRequestTime = Date.now();
+
+    // Execute request
+    fetch(request.url, request.init)
+      .then((response) => {
+        request.resolve(response);
+      })
+      .catch((error) => {
+        request.reject(error);
+      })
+      .finally(() => {
+        activeRequests--;
+        // Process next request in queue
+        if (requestQueue.length > 0) {
+          processRequestQueue();
+        }
+      });
+  }
+
+  isProcessingQueue = false;
+}
+
+/**
+ * Queue a fetch request with rate limiting and deduplication
+ */
+async function queuedFetch(url: string, init: RequestInit): Promise<Response> {
+  const dedupeKey = getDedupeKey(url, init);
+
+  // Check for recent response (dedupe identical requests within window)
+  const recent = recentResponses.get(dedupeKey);
+  if (recent && Date.now() - recent.timestamp < REQUEST_QUEUE_CONFIG.dedupeWindowMs) {
+    console.debug(`[RequestQueue] Returning cached response for ${dedupeKey}`);
+    return recent.response.clone();
+  }
+
+  // Check for inflight request (dedupe concurrent identical requests)
+  const inflight = inflightRequests.get(dedupeKey);
+  if (inflight) {
+    console.debug(`[RequestQueue] Deduping concurrent request for ${dedupeKey}`);
+    return inflight.then((r) => r.clone());
+  }
+
+  // Create new request promise
+  const requestPromise = new Promise<Response>((resolve, reject) => {
+    requestQueue.push({
+      url,
+      init,
+      resolve,
+      reject,
+      timestamp: Date.now(),
+    });
+  });
+
+  // Track inflight request
+  inflightRequests.set(dedupeKey, requestPromise);
+
+  // Start processing queue
+  processRequestQueue();
+
+  try {
+    const response = await requestPromise;
+
+    // Cache successful responses for deduplication
+    if (response.ok) {
+      recentResponses.set(dedupeKey, { response: response.clone(), timestamp: Date.now() });
+
+      // Clean up old cache entries periodically
+      if (recentResponses.size > 100) {
+        const now = Date.now();
+        for (const [key, value] of recentResponses) {
+          if (now - value.timestamp > REQUEST_QUEUE_CONFIG.dedupeWindowMs * 2) {
+            recentResponses.delete(key);
+          }
+        }
+      }
+    }
+
+    return response;
+  } finally {
+    inflightRequests.delete(dedupeKey);
+  }
+}
+
 export interface MassiveRSI {
   timestamp: number;
   value: number;
@@ -522,9 +655,9 @@ export class MassiveREST {
                 dataLength: Array.isArray(data) ? data.length : "not array",
               });
             } catch (e2: any) {
-              // If both Massive endpoints fail, fallback to Tradier for stocks
-              console.warn("[MassiveREST] v3 aggregates also failed, trying Tradier fallback");
-              return this.getTradierBars(symbol, normalizedTimeframe, from, to, lookback);
+              // If both Massive endpoints fail, return empty (no Tradier fallback)
+              console.warn("[MassiveREST] v3 aggregates also failed for", symbol);
+              return [];
             }
           } else {
             throw e;
@@ -533,12 +666,9 @@ export class MassiveREST {
 
         const results: any[] = data.results || data;
         if (!Array.isArray(results) || results.length === 0) {
-          // Empty results from Massive - try Tradier
-          console.warn(
-            "[MassiveREST] Empty results from Massive, trying Tradier fallback for",
-            symbol
-          );
-          return this.getTradierBars(symbol, normalizedTimeframe, from, to, lookback);
+          // Empty results from Massive - this is normal for indices outside market hours
+          console.warn("[MassiveREST] Empty results from Massive for", symbol);
+          return [];
         }
 
         return results.map((bar) => ({
@@ -620,7 +750,7 @@ export class MassiveREST {
           "x-massive-proxy-token": token,
         };
 
-        const response = await fetch(url, { ...init, headers });
+        const response = await queuedFetch(url, { ...init, headers });
 
         if (!response.ok) {
           if (response.status === 429) {
@@ -695,66 +825,6 @@ export class MassiveREST {
 
     console.error("[MassiveREST] Request failed after 3 attempts:", lastError);
     throw new Error(`Request failed after 3 attempts: ${lastError?.message}`);
-  }
-
-  /**
-   * Tradier bars fallback (for stocks when Massive stock plan not available)
-   */
-  private async getTradierBars(
-    symbol: string,
-    multiplier: number,
-    from: Date,
-    to: Date,
-    limit: number
-  ): Promise<MassiveAggregateBar[]> {
-    try {
-      // Map timeframe to Tradier intervals
-      const intervalMap: Record<number, string> = {
-        1: "1min",
-        5: "5min",
-        15: "15min",
-        60: "1hour",
-      };
-      const interval = intervalMap[multiplier] || "5min";
-
-      // Format dates for Tradier
-      const formatDate = (date: Date) => date.toISOString().split("T")[0];
-
-      console.log(`[MassiveREST] 🔄 Fetching Tradier bars for ${symbol} (${interval})`);
-
-      const params = new URLSearchParams({
-        symbol,
-        interval,
-        start: formatDate(from),
-        end: formatDate(to),
-      });
-
-      const url = `${this.baseUrl}/tradier/stocks/bars?${params}`;
-      const token = await this.tokenManager.getToken();
-      const response = await fetch(url, {
-        headers: {
-          "x-massive-proxy-token": token,
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[MassiveREST] Tradier API ${response.status}:`, errorText);
-        throw new Error(
-          `Tradier API error ${response.status}: ${errorText || response.statusText}`
-        );
-      }
-
-      const data = await response.json();
-      const results = data.results || [];
-
-      console.log(`[MassiveREST] ✅ Tradier returned ${results.length} bars for ${symbol}`);
-
-      return results.slice(-limit); // Return last N bars
-    } catch (error) {
-      console.error("[MassiveREST] ❌ Tradier fallback failed:", error);
-      return [];
-    }
   }
 
   /**

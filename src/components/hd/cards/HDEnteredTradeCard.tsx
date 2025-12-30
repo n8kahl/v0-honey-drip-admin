@@ -5,7 +5,7 @@ import { HDChip } from "../common/HDChip";
 import { formatPrice, formatPercent, formatTime, cn } from "../../../lib/utils";
 import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { formatExpirationFull, getDTEStyle } from "../../../ui/semantics";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
 import { useTPProximity } from "../../../hooks/useTPProximity";
 import { useTPSettings } from "../../../hooks/useTPSettings";
 import { useAppToast } from "../../../hooks/useAppToast";
@@ -21,7 +21,6 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { addTradeUpdate } from "../../../lib/supabase/database";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
 import { useNavigate } from "react-router-dom";
-import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface HDEnteredTradeCardProps {
   trade: Trade;
@@ -36,15 +35,17 @@ export function HDEnteredTradeCard({
 }: HDEnteredTradeCardProps) {
   const toast = useAppToast();
   const navigate = useNavigate();
-  const contractTicker =
-    trade.contract.id || trade.contract.ticker || trade.contract.symbol || null;
-  const entryPrice =
-    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract.mid;
-  const { currentPrice, pnlPercent, asOf, source } = useActiveTradePnL(
-    trade.id,
-    contractTicker,
-    entryPrice
-  );
+
+  // Use the canonical live model hook - SINGLE SOURCE OF TRUTH for all P&L
+  const liveModel = useActiveTradeLiveModel(trade);
+
+  // Extract values from the unified live model
+  const currentPrice = liveModel?.effectiveMid ?? 0;
+  const pnlPercent = liveModel?.pnlPercent ?? 0;
+  const asOf = liveModel?.optionAsOf ?? Date.now();
+  const source = liveModel?.optionSource ?? "rest";
+  const entryPrice = liveModel?.entryPrice ?? trade.contract.mid;
+
   const { tpNearThreshold, autoOpenTrim } = useTPSettings();
   const tp = useTPProximity(trade, currentPrice, { threshold: tpNearThreshold });
   const { user } = useAuth();

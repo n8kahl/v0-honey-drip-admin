@@ -3,44 +3,40 @@
  * Phase 4: Tests for bar fetching and aggregation
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock environment variables
-vi.stubEnv('MASSIVE_API_KEY', 'test-api-key');
-vi.stubEnv('TRADIER_ACCESS_TOKEN', 'test-tradier-token');
+vi.stubEnv("MASSIVE_API_KEY", "test-api-key");
 
 // Mock the Massive client
-vi.mock('../../../massive/client.js', () => ({
+vi.mock("../../../massive/client.js", () => ({
   getIndexAggregates: vi.fn(),
 }));
-
-// Mock the Tradier client
-vi.mock('../../../vendors/tradier.js', () => ({
-  tradierGetHistory: vi.fn(),
-}));
+// Tradier mock removed - migrated to Massive-only architecture
 
 // Mock symbol utils
-vi.mock('../../../lib/symbolUtils.js', () => ({
+vi.mock("../../../lib/symbolUtils.js", () => ({
   isIndex: vi.fn((symbol: string) => {
-    const indexSymbols = ['SPX', 'NDX', 'VIX', 'I:SPX', 'I:NDX', 'I:VIX'];
+    const indexSymbols = ["SPX", "NDX", "VIX", "I:SPX", "I:NDX", "I:VIX"];
     return indexSymbols.includes(symbol.toUpperCase());
   }),
-  normalizeSymbolForMassive: vi.fn((symbol: string) => symbol.replace(/^I:/, '').toUpperCase()),
+  normalizeSymbolForMassive: vi.fn((symbol: string) => symbol.replace(/^I:/, "").toUpperCase()),
 }));
 
-import { getIndexAggregates } from '../../../massive/client.js';
-import { tradierGetHistory } from '../../../vendors/tradier.js';
+import { getIndexAggregates } from "../../../massive/client.js";
+// tradierGetHistory import removed - migrated to Massive-only architecture
 
 /**
  * Bar aggregation function (copy from barProvider.ts for unit testing)
  */
 interface RawBar {
-  t: number;  // timestamp in ms
-  o: number;  // open
-  h: number;  // high
-  l: number;  // low
-  c: number;  // close
-  v: number;  // volume
+  t: number; // timestamp in ms
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v: number; // volume
+  vw?: number; // vwap (optional)
 }
 
 function aggregateBars(bars: RawBar[], minutesPerBar: number): RawBar[] {
@@ -85,8 +81,15 @@ function aggregateBars(bars: RawBar[], minutesPerBar: number): RawBar[] {
   return aggregated;
 }
 
-describe('aggregateBars', () => {
-  const createBar = (timestamp: number, open: number, high: number, low: number, close: number, volume: number): RawBar => ({
+describe("aggregateBars", () => {
+  const createBar = (
+    timestamp: number,
+    open: number,
+    high: number,
+    low: number,
+    close: number,
+    volume: number
+  ): RawBar => ({
     t: timestamp,
     o: open,
     h: high,
@@ -95,11 +98,11 @@ describe('aggregateBars', () => {
     v: volume,
   });
 
-  it('returns empty array for empty input', () => {
+  it("returns empty array for empty input", () => {
     expect(aggregateBars([], 60)).toEqual([]);
   });
 
-  it('returns original bars when minutesPerBar <= 1', () => {
+  it("returns original bars when minutesPerBar <= 1", () => {
     const bars = [
       createBar(1000000, 100, 105, 98, 102, 1000),
       createBar(1060000, 102, 107, 100, 104, 1200),
@@ -109,38 +112,40 @@ describe('aggregateBars', () => {
     expect(aggregateBars(bars, 0)).toEqual(bars);
   });
 
-  it('aggregates minute bars to hourly (60 minutes)', () => {
+  it("aggregates minute bars to hourly (60 minutes)", () => {
     // Base timestamp: start of an hour
     const hourStart = Math.floor(Date.now() / (60 * 60 * 1000)) * (60 * 60 * 1000);
 
     // Create 60 minute bars within the same hour
     const bars1m: RawBar[] = [];
     for (let i = 0; i < 60; i++) {
-      bars1m.push(createBar(
-        hourStart + i * 60 * 1000,  // Each minute
-        100 + i,                     // Open increases
-        105 + i,                     // High increases
-        98 + i,                      // Low increases
-        102 + i,                     // Close increases
-        1000 + i * 10               // Volume increases
-      ));
+      bars1m.push(
+        createBar(
+          hourStart + i * 60 * 1000, // Each minute
+          100 + i, // Open increases
+          105 + i, // High increases
+          98 + i, // Low increases
+          102 + i, // Close increases
+          1000 + i * 10 // Volume increases
+        )
+      );
     }
 
     const result = aggregateBars(bars1m, 60);
 
     expect(result).toHaveLength(1);
     expect(result[0].t).toBe(hourStart);
-    expect(result[0].o).toBe(100);      // First bar's open
-    expect(result[0].h).toBe(164);      // Max high: 105 + 59
-    expect(result[0].l).toBe(98);       // Min low: 98
-    expect(result[0].c).toBe(161);      // Last bar's close: 102 + 59
+    expect(result[0].o).toBe(100); // First bar's open
+    expect(result[0].h).toBe(164); // Max high: 105 + 59
+    expect(result[0].l).toBe(98); // Min low: 98
+    expect(result[0].c).toBe(161); // Last bar's close: 102 + 59
     // Volume sum: 1000 + 1010 + 1020 + ... + 1590 = 60 * 1000 + 10 * (0+1+...+59) = 60000 + 10 * 1770 = 77700
     expect(result[0].v).toBe(77700);
   });
 
-  it('handles bars across multiple time buckets', () => {
-    const hour1 = 1700000000000;  // Some timestamp
-    const hour2 = hour1 + 60 * 60 * 1000;  // Next hour
+  it("handles bars across multiple time buckets", () => {
+    const hour1 = 1700000000000; // Some timestamp
+    const hour2 = hour1 + 60 * 60 * 1000; // Next hour
 
     const bars = [
       // First hour - 3 bars
@@ -159,11 +164,11 @@ describe('aggregateBars', () => {
     // First hour bucket
     const bucket1Start = Math.floor(hour1 / (60 * 60 * 1000)) * (60 * 60 * 1000);
     expect(result[0].t).toBe(bucket1Start);
-    expect(result[0].o).toBe(100);       // First bar's open
-    expect(result[0].h).toBe(115);       // Max high across 3 bars
-    expect(result[0].l).toBe(95);        // Min low across 3 bars
-    expect(result[0].c).toBe(107);       // Last bar's close
-    expect(result[0].v).toBe(3000);      // Sum of volumes
+    expect(result[0].o).toBe(100); // First bar's open
+    expect(result[0].h).toBe(115); // Max high across 3 bars
+    expect(result[0].l).toBe(95); // Min low across 3 bars
+    expect(result[0].c).toBe(107); // Last bar's close
+    expect(result[0].v).toBe(3000); // Sum of volumes
 
     // Second hour bucket
     const bucket2Start = Math.floor(hour2 / (60 * 60 * 1000)) * (60 * 60 * 1000);
@@ -175,7 +180,7 @@ describe('aggregateBars', () => {
     expect(result[1].v).toBe(3500);
   });
 
-  it('sorts bars by timestamp before aggregating', () => {
+  it("sorts bars by timestamp before aggregating", () => {
     const baseTime = 1700000000000;
 
     // Bars in random order
@@ -189,101 +194,95 @@ describe('aggregateBars', () => {
 
     // Should still aggregate correctly
     expect(result).toHaveLength(1);
-    expect(result[0].o).toBe(100);  // First bar's open (by time)
-    expect(result[0].c).toBe(107);  // Last bar's close (by time)
+    expect(result[0].o).toBe(100); // First bar's open (by time)
+    expect(result[0].c).toBe(107); // Last bar's close (by time)
   });
 
-  it('correctly tracks high/low across unsorted bars', () => {
+  it("correctly tracks high/low across unsorted bars", () => {
     const baseTime = 1700000000000;
 
     const bars = [
-      createBar(baseTime + 60000, 100, 80, 75, 78, 1000),    // Lowest low: 75
-      createBar(baseTime, 100, 200, 95, 105, 1000),          // Highest high: 200
+      createBar(baseTime + 60000, 100, 80, 75, 78, 1000), // Lowest low: 75
+      createBar(baseTime, 100, 200, 95, 105, 1000), // Highest high: 200
       createBar(baseTime + 120000, 100, 110, 90, 100, 1000),
     ];
 
     const result = aggregateBars(bars, 60);
 
     expect(result).toHaveLength(1);
-    expect(result[0].h).toBe(200);  // Highest high
-    expect(result[0].l).toBe(75);   // Lowest low
+    expect(result[0].h).toBe(200); // Highest high
+    expect(result[0].l).toBe(75); // Lowest low
   });
 });
 
-describe('fetchBarsForRange provider routing', () => {
+describe("fetchBarsForRange provider routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should route indices to Massive', async () => {
-    const mockBars = [
-      { t: 1700000000000, o: 100, h: 105, l: 98, c: 102, v: 1000 },
-    ];
+  it("should route indices to Massive with massive-index source", async () => {
+    const mockBars = [{ t: 1700000000000, o: 100, h: 105, l: 98, c: 102, v: 1000 }];
 
     (getIndexAggregates as any).mockResolvedValue(mockBars);
 
     // Import after mocks are setup
-    const { fetchBarsForRange } = await import('../barProvider.js');
+    const { fetchBarsForRange } = await import("../barProvider.js");
 
-    const result = await fetchBarsForRange('I:SPX', 5, 'minute', 7);
+    const result = await fetchBarsForRange("I:SPX", 5, "minute", 7);
 
-    expect(result.source).toBe('massive-index');
+    expect(result.source).toBe("massive-index");
     expect(getIndexAggregates).toHaveBeenCalled();
-    expect(tradierGetHistory).not.toHaveBeenCalled();
   });
 
-  it('should route equities to Tradier', async () => {
-    const mockBars = [
-      { time: 1700000000, open: 100, high: 105, low: 98, close: 102, volume: 1000 },
-    ];
+  it("should route stocks to Massive with massive-stocks source", async () => {
+    const mockBars = [{ t: 1700000000000, o: 100, h: 105, l: 98, c: 102, v: 1000 }];
 
-    (tradierGetHistory as any).mockResolvedValue(mockBars);
+    (getIndexAggregates as any).mockResolvedValue(mockBars);
 
-    const { fetchBarsForRange } = await import('../barProvider.js');
+    const { fetchBarsForRange } = await import("../barProvider.js");
 
-    const result = await fetchBarsForRange('AAPL', 5, 'minute', 7);
+    const result = await fetchBarsForRange("AAPL", 5, "minute", 7);
 
-    expect(result.source).toBe('tradier-equity');
-    expect(tradierGetHistory).toHaveBeenCalled();
-    expect(getIndexAggregates).not.toHaveBeenCalled();
+    expect(result.source).toBe("massive-stocks");
+    expect(getIndexAggregates).toHaveBeenCalled();
   });
 
-  it('should aggregate minute bars to hourly for equities', async () => {
-    // Create 120 minute bars (2 hours worth)
+  it("should aggregate minute bars to hourly for stocks", async () => {
+    // Create 120 minute bars (2 hours worth) - Massive uses milliseconds
     const mockBars = [];
-    const baseTime = Math.floor(Date.now() / 1000) - 7200; // 2 hours ago in seconds
+    const baseTime = Date.now() - 7200 * 1000; // 2 hours ago in milliseconds
 
     for (let i = 0; i < 120; i++) {
       mockBars.push({
-        time: baseTime + i * 60,  // Tradier uses seconds
-        open: 100 + i * 0.1,
-        high: 101 + i * 0.1,
-        low: 99 + i * 0.1,
-        close: 100.5 + i * 0.1,
-        volume: 1000 + i,
+        t: baseTime + i * 60 * 1000, // Massive uses milliseconds
+        o: 100 + i * 0.1,
+        h: 101 + i * 0.1,
+        l: 99 + i * 0.1,
+        c: 100.5 + i * 0.1,
+        v: 1000 + i,
       });
     }
 
-    (tradierGetHistory as any).mockResolvedValue(mockBars);
+    (getIndexAggregates as any).mockResolvedValue(mockBars);
 
-    const { fetchBarsForRange } = await import('../barProvider.js');
+    const { fetchBarsForRange } = await import("../barProvider.js");
 
-    const result = await fetchBarsForRange('SPY', 1, 'hour', 7);
+    const result = await fetchBarsForRange("SPY", 1, "hour", 7);
 
-    expect(result.source).toBe('tradier-equity');
+    expect(result.source).toBe("massive-stocks");
     // Should have aggregated 120 minute bars into ~2 hourly bars
     expect(result.bars.length).toBeLessThanOrEqual(3);
     expect(result.bars.length).toBeGreaterThan(0);
   });
 });
 
-describe('date range building', () => {
-  it('builds correct date range for 7 days', () => {
+describe("date range building", () => {
+  it("builds correct date range for 7 days", () => {
     const now = new Date();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const to = now.toISOString().split('T')[0];
-    const from = sevenDaysAgo.toISOString().split('T')[0];
+    const to = now.toISOString().split("T")[0];
+    const from = sevenDaysAgo.toISOString().split("T")[0];
 
     // Verify format is YYYY-MM-DD
     expect(to).toMatch(/^\d{4}-\d{2}-\d{2}$/);

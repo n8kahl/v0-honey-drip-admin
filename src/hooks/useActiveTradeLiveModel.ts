@@ -54,10 +54,11 @@ export interface LiveTradeModel {
   vega: number;
   iv: number;
 
-  // Underlying
-  underlyingPrice: number;
+  // Underlying (null when unavailable - show "N/A" instead of $0.00)
+  underlyingPrice: number | null;
   underlyingChange: number;
   underlyingChangePercent: number;
+  underlyingIsUnavailable: boolean;
 
   // Time
   timeToCloseMinutes: number;
@@ -236,9 +237,10 @@ function buildExpiredTradeModel(trade: Trade, contract: any): LiveTradeModel {
     iv: contract.iv || 0,
 
     // Underlying
-    underlyingPrice: 0,
+    underlyingPrice: null,
     underlyingChange: 0,
     underlyingChangePercent: 0,
+    underlyingIsUnavailable: true,
 
     // Time
     timeToCloseMinutes: 0,
@@ -256,6 +258,13 @@ function buildExpiredTradeModel(trade: Trade, contract: any): LiveTradeModel {
     underlyingAsOf: 0,
     underlyingIsStale: false,
     overallHealth: "healthy", // Change from "stale" to "healthy" for expired
+
+    // Price metadata for expired contracts
+    priceSource: "snapshot",
+    priceAsOf: contract.asOf || Date.now(),
+    priceAge: contract.asOf ? Date.now() - contract.asOf : 0,
+    priceIsStale: false, // Expired = final, not stale
+    priceLabel: "Expired",
 
     // For display
     entryPrice: roundPrice(entryPrice),
@@ -333,9 +342,11 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
         `[useActiveTradeLiveModel] No underlying quote for ${trade.ticker} and quotes map is empty`
       );
     } else {
+      const asOfDate = new Date(underlyingQuote.asOf);
+      const asOfStr = isNaN(asOfDate.getTime()) ? "invalid" : asOfDate.toISOString();
       console.log(`[useActiveTradeLiveModel] Underlying quote for ${trade.ticker}:`, {
         last: underlyingQuote.last,
-        asOf: new Date(underlyingQuote.asOf).toISOString(),
+        asOf: asOfStr,
       });
     }
   }, [trade.ticker, underlyingQuote, underlyingQuotes]);
@@ -496,31 +507,37 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
           )
         : 0;
 
-    // Underlying data
-    const underlyingPrice = underlyingQuote?.last || 0;
+    // Underlying data with fallback:
+    // 1. Live quote (best) - shows current price
+    // 2. null - shows "N/A" instead of $0.00
+    const underlyingPrice = underlyingQuote?.last || null;
     const underlyingChange = underlyingQuote?.change || 0;
     const underlyingChangePercent = underlyingQuote?.changePercent || 0;
     const underlyingAsOf = underlyingQuote?.asOf || 0;
-    const underlyingIsStale = underlyingAsOf
-      ? Date.now() - underlyingAsOf > UNDERLYING_STALE_MS
-      : true;
+    // Only mark as stale if we HAVE data but it's old
+    // If we have NO data (underlyingAsOf === 0), it's "unavailable" not "stale"
+    const underlyingIsStale =
+      underlyingAsOf > 0 ? Date.now() - underlyingAsOf > UNDERLYING_STALE_MS : false; // No data = not stale, just unavailable
+    const underlyingIsUnavailable = !underlyingQuote?.last;
 
     // Overall health assessment
     // Focus on price data freshness - Greeks being static is acceptable since they don't change rapidly
+    // IMPORTANT: "unavailable" data should NOT penalize health - only "stale" (old) data does
     let overallHealth: "healthy" | "degraded" | "stale" = "healthy";
     if (optionIsStale && underlyingIsStale) {
       overallHealth = "stale";
     } else if (optionIsStale) {
       // Option price is critical for P&L - mark as degraded
       overallHealth = "degraded";
-    } else if (underlyingIsStale) {
-      // Underlying is secondary - still degraded but less severe
+    } else if (underlyingIsStale && !underlyingIsUnavailable) {
+      // Only penalize if underlying IS stale (has old data), not if it's just unavailable
       overallHealth = "degraded";
     }
     // Note: Greeks being "static" is NOT penalized since:
     // 1. Greeks don't change as rapidly as prices
     // 2. Contract snapshot Greeks are sufficient for display
     // 3. This prevents false "DELAYED" badge when prices are streaming fine
+    // Note: Unavailable underlying (after hours) is NOT penalized - we just show "N/A"
 
     return {
       // Core pricing
@@ -546,9 +563,10 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       iv: liveGreeks.iv ?? contract.iv ?? 0,
 
       // Underlying
-      underlyingPrice: roundPrice(underlyingPrice),
+      underlyingPrice: underlyingPrice !== null ? roundPrice(underlyingPrice) : null,
       underlyingChange: roundPrice(underlyingChange),
       underlyingChangePercent: roundPrice(underlyingChangePercent),
+      underlyingIsUnavailable,
 
       // Time
       timeToCloseMinutes: timeState.timeToCloseMinutes,

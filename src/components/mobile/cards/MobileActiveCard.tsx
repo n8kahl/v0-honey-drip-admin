@@ -3,8 +3,7 @@ import { HDTagTradeType } from "../../hd/common/HDTagTradeType";
 import { cn, formatPrice } from "../../../lib/utils";
 import { Scissors, Shield, LogOut, Zap, Wifi, WifiOff } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
-import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
+import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
 import { formatExpirationShort } from "../../../ui/semantics";
 
 interface MobileActiveCardProps {
@@ -25,30 +24,20 @@ export function MobileActiveCard({
   active,
 }: MobileActiveCardProps) {
   const contract = trade.contract;
-  const entryPrice =
-    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || contract?.mid || 0;
 
-  // Get LIVE price data via WebSocket/REST transport (matches desktop HDActiveTradeRow)
-  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
-  const {
-    pnlPercent: livePnlPercent,
-    currentPrice: liveCurrentPrice,
-    source,
-    asOf,
-  } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
+  // Use the canonical live model hook - SINGLE SOURCE OF TRUTH for all P&L
+  const liveModel = useActiveTradeLiveModel(trade);
 
-  // Use live data if available, fallback to stale trade data
-  const currentPrice =
-    liveCurrentPrice > 0 ? liveCurrentPrice : trade.currentPrice || contract?.mid || 0;
-  const pnlPercent =
-    liveCurrentPrice > 0
-      ? livePnlPercent
-      : trade.movePercent ||
-        (entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0);
+  // Extract values from the unified live model
+  const currentPrice = liveModel?.effectiveMid ?? 0;
+  const pnlPercent = liveModel?.pnlPercent ?? 0;
+  const source = liveModel?.optionSource ?? "rest";
+  const asOf = liveModel?.optionAsOf ?? Date.now();
+  const entryPrice = liveModel?.entryPrice ?? contract?.mid ?? 0;
   const isProfit = pnlPercent >= 0;
 
   // Data freshness check (stale if >10s old)
-  const isStale = Date.now() - asOf > 10000;
+  const isStale = liveModel?.optionIsStale ?? Date.now() - asOf > 10000;
 
   // Get live confluence from market data store
   const symbolData = useSymbolData(trade.ticker);

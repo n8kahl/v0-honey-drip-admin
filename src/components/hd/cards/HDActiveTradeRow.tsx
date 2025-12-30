@@ -24,9 +24,13 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
   const liveModel = useActiveTradeLiveModel(trade);
   const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
 
-  // Extract P&L from live model
-  const displayPnl = liveModel?.pnlPercent ?? 0;
-  const isProfit = displayPnl >= 0;
+  // Extract P&L - use realized P&L when trade state is EXITED
+  // Note: We don't use trim percentages since position sizes aren't tracked
+  const isClosed = trade.state === "EXITED";
+  const displayPnl = isClosed ? realizedPnL.realizedPercent : (liveModel?.pnlPercent ?? 0);
+  // Distinguish between profit (>0), loss (<0), and flat (exactly 0)
+  const pnlStatus: "profit" | "loss" | "flat" =
+    displayPnl > 0.01 ? "profit" : displayPnl < -0.01 ? "loss" : "flat";
   const source = liveModel?.optionSource ?? "rest";
   const isStale = liveModel?.optionIsStale ?? false;
 
@@ -107,7 +111,7 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
             {/* Live data indicator (only show for open positions) */}
-            {realizedPnL.remainingPercent > 0 &&
+            {!isClosed &&
               (source === "websocket" && !isStale ? (
                 <Wifi className="w-3 h-3 text-green-500" />
               ) : isStale ? (
@@ -116,15 +120,19 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
             <span
               className={cn(
                 "text-[var(--text-high)] font-mono text-sm font-medium tabular-nums",
-                isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]",
+                pnlStatus === "profit"
+                  ? "text-[var(--accent-positive)]"
+                  : pnlStatus === "loss"
+                    ? "text-[var(--accent-negative)]"
+                    : "text-[var(--text-muted)]",
                 pnlBump && "animate-pnl-bump"
               )}
             >
-              {isProfit ? "+" : ""}
+              {displayPnl > 0 ? "+" : ""}
               {displayPnl.toFixed(2)}%
             </span>
           </div>
-          {realizedPnL.remainingPercent > 0 && realizedPnL.trimmedPercent > 0 && (
+          {!isClosed && realizedPnL.trimmedPercent > 0 && (
             <div
               className={cn(
                 "text-[10px] tabular-nums",
@@ -141,14 +149,22 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
             <span
               className={cn(
                 "px-2 py-0.5 rounded text-[9px] uppercase tracking-wide border",
-                realizedPnL.remainingPercent === 0
+                isClosed
                   ? "bg-[var(--text-muted)]/20 text-[var(--text-muted)] border-[var(--text-muted)]/30"
-                  : isProfit
+                  : pnlStatus === "profit"
                     ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)] border-[var(--accent-positive)]/30"
-                    : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border-[var(--accent-negative)]/30"
+                    : pnlStatus === "loss"
+                      ? "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)] border-[var(--accent-negative)]/30"
+                      : "bg-[var(--text-muted)]/20 text-[var(--text-muted)] border-[var(--text-muted)]/30"
               )}
             >
-              {realizedPnL.remainingPercent === 0 ? "Final" : isProfit ? "Profit" : "Loss"}
+              {isClosed
+                ? "Closed"
+                : pnlStatus === "profit"
+                  ? "Profit"
+                  : pnlStatus === "loss"
+                    ? "Loss"
+                    : "Flat"}
             </span>
           </div>
         </div>

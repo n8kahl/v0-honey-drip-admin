@@ -29,7 +29,7 @@ config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
 import { downloadSymbolHistory, aggregateBars, cleanupTempFiles } from "../lib/massiveFlatfiles.js";
-import { fetchTradierBars } from "../lib/tradierAPI.js";
+// Tradier import removed - using Yahoo Finance for stocks and Massive S3 for indices
 import YahooFinance from "yahoo-finance2";
 
 // Initialize Yahoo Finance client

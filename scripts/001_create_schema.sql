@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS public.trades (
   -- Trade basics
   ticker TEXT NOT NULL,
   trade_type TEXT NOT NULL CHECK (trade_type IN ('Scalp', 'Day', 'Swing', 'LEAP')),
-  state TEXT NOT NULL CHECK (state IN ('WATCHING', 'LOADED', 'ENTERED', 'EXITED')),
+  state TEXT NOT NULL CHECK (state IN ('watching', 'loaded', 'entered', 'exited')),
   
   -- Contract details (stored as JSONB for flexibility)
   contract JSONB NOT NULL,

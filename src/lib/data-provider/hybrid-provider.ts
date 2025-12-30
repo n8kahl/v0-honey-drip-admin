@@ -28,7 +28,7 @@ import {
   MassiveIndicesProvider,
   MassiveBrokerProvider,
 } from "./massive-provider";
-import { TradierOptionsProvider, TradierBrokerProvider } from "./tradier-provider";
+// Tradier provider removed - migrated to Massive-only architecture
 
 // ============================================================================
 // HEALTH TRACKING
@@ -48,23 +48,16 @@ interface ProviderHealth {
 
 export class HybridOptionsProvider implements OptionsDataProvider {
   private massive: MassiveOptionsProvider;
-  private tradier: TradierOptionsProvider;
   private massiveHealth: ProviderHealth = {
     healthy: true,
     lastSuccess: Date.now(),
     consecutiveErrors: 0,
     responseTimeMs: 0,
   };
-  private tradierHealth: ProviderHealth = {
-    healthy: true,
-    lastSuccess: Date.now(),
-    consecutiveErrors: 0,
-    responseTimeMs: 0,
-  };
 
-  constructor(massiveConfig: any, tradierConfig: any) {
+  constructor(massiveConfig: any, _tradierConfig?: any) {
     this.massive = new MassiveOptionsProvider(massiveConfig);
-    this.tradier = new TradierOptionsProvider(tradierConfig);
+    // Tradier provider removed - migrated to Massive-only architecture
   }
 
   // === EXPIRATIONS ===
@@ -73,28 +66,16 @@ export class HybridOptionsProvider implements OptionsDataProvider {
     underlying: string,
     options?: { minDate?: string; maxDate?: string }
   ): Promise<string[]> {
-    // Try Massive first
     try {
       const start = Date.now();
       const result = await this.massive.getExpirations(underlying, options);
-      this.recordSuccess("massive", Date.now() - start);
+      this.recordSuccess(Date.now() - start);
       return result;
     } catch (error) {
-      this.recordError("massive", error);
-      console.warn("[HybridProvider] Massive expirations failed, trying Tradier");
-    }
-
-    // Fallback to Tradier
-    try {
-      const start = Date.now();
-      const result = await this.tradier.getExpirations(underlying, options);
-      this.recordSuccess("tradier", Date.now() - start);
-      return result;
-    } catch (error) {
-      this.recordError("tradier", error);
+      this.recordError(error);
       throw new DataProviderError(
-        "Both providers failed to fetch expirations",
-        "ALL_PROVIDERS_FAILED",
+        "Failed to fetch expirations",
+        "EXPIRATIONS_FETCH_FAILED",
         "hybrid",
         undefined,
         error as Error
@@ -105,59 +86,27 @@ export class HybridOptionsProvider implements OptionsDataProvider {
   // === OPTIONS CHAIN ===
 
   async getOptionChain(underlying: string, options?: ChainQueryOptions): Promise<OptionChainData> {
-    // Try Massive first
     try {
       const start = Date.now();
       const result = await this.massive.getOptionChain(underlying, options);
       const responseTime = Date.now() - start;
 
-      this.recordSuccess("massive", responseTime);
+      this.recordSuccess(responseTime);
 
       // Validate result quality
       const quality = result.quality;
       if (quality.quality === "poor" && quality.confidence < 40) {
         console.warn(
-          `[HybridProvider] Massive returned poor quality (confidence: ${quality.confidence}), trying Tradier`
+          `[HybridProvider] Massive returned poor quality (confidence: ${quality.confidence})`
         );
-        throw new Error("Poor quality result");
-      }
-
-      if (result.contracts.length === 0) {
-        console.warn("[HybridProvider] Massive returned empty chain, trying Tradier");
-        throw new Error("Empty chain");
       }
 
       return result;
     } catch (error) {
-      this.recordError("massive", error);
-      console.warn("[HybridProvider] Massive chain failed, trying Tradier");
-    }
-
-    // Fallback to Tradier
-    try {
-      const start = Date.now();
-      const result = await this.tradier.getOptionChain(underlying, options);
-      const responseTime = Date.now() - start;
-
-      this.recordSuccess("tradier", responseTime);
-
-      // Mark as fallback
-      result.quality = {
-        ...result.quality,
-        warnings: [
-          ...result.quality.warnings,
-          "Using Tradier fallback due to Massive unavailability",
-        ],
-        hasWarnings: true,
-        fallbackReason: "Massive provider failed or returned poor quality",
-      };
-
-      return result;
-    } catch (error) {
-      this.recordError("tradier", error);
+      this.recordError(error);
       throw new DataProviderError(
-        "Both providers failed to fetch option chain",
-        "ALL_PROVIDERS_FAILED",
+        "Failed to fetch option chain",
+        "CHAIN_FETCH_FAILED",
         "hybrid",
         undefined,
         error as Error
@@ -173,39 +122,16 @@ export class HybridOptionsProvider implements OptionsDataProvider {
     expiration: string,
     type: "call" | "put"
   ): Promise<OptionContractData> {
-    // Try Massive first
     try {
       const start = Date.now();
       const result = await this.massive.getOptionContract(underlying, strike, expiration, type);
-      this.recordSuccess("massive", Date.now() - start);
+      this.recordSuccess(Date.now() - start);
       return result;
     } catch (error) {
-      this.recordError("massive", error);
-      console.warn("[HybridProvider] Massive contract fetch failed, trying Tradier");
-    }
-
-    // Fallback to Tradier
-    try {
-      const start = Date.now();
-      const result = await this.tradier.getOptionContract(underlying, strike, expiration, type);
-      this.recordSuccess("tradier", Date.now() - start);
-
-      result.quality = {
-        ...result.quality,
-        warnings: [
-          ...result.quality.warnings,
-          "Using Tradier fallback due to Massive unavailability",
-        ],
-        hasWarnings: true,
-        fallbackReason: "Massive provider failed",
-      };
-
-      return result;
-    } catch (error) {
-      this.recordError("tradier", error);
+      this.recordError(error);
       throw new DataProviderError(
-        "Both providers failed to fetch contract",
-        "ALL_PROVIDERS_FAILED",
+        "Failed to fetch contract",
+        "CONTRACT_FETCH_FAILED",
         "hybrid",
         undefined,
         error as Error
@@ -219,11 +145,10 @@ export class HybridOptionsProvider implements OptionsDataProvider {
     underlying: string,
     timeRange?: { startTime?: number; endTime?: number }
   ): Promise<OptionFlowData> {
-    // Try Massive first (has flow data)
     try {
       const start = Date.now();
       const result = await this.massive.getFlowData(underlying, timeRange);
-      this.recordSuccess("massive", Date.now() - start);
+      this.recordSuccess(Date.now() - start);
 
       // Check if result is meaningful
       if (result.flowScore > 0) {
@@ -233,8 +158,7 @@ export class HybridOptionsProvider implements OptionsDataProvider {
       console.warn("[HybridProvider] Massive flow data failed");
     }
 
-    // Tradier doesn't have flow data
-    // Return synthetic data
+    // Return synthetic data if no flow data available
     return {
       sweepCount: 0,
       blockCount: 0,
@@ -275,28 +199,24 @@ export class HybridOptionsProvider implements OptionsDataProvider {
   getHealth() {
     return {
       massive: this.massiveHealth,
-      tradier: this.tradierHealth,
       primaryHealthy: this.massiveHealth.healthy,
-      canFallback: this.tradierHealth.healthy,
     };
   }
 
-  private recordSuccess(provider: "massive" | "tradier", responseTimeMs: number) {
-    const health = provider === "massive" ? this.massiveHealth : this.tradierHealth;
-    health.healthy = true;
-    health.lastSuccess = Date.now();
-    health.consecutiveErrors = 0;
-    health.responseTimeMs = responseTimeMs;
+  private recordSuccess(responseTimeMs: number) {
+    this.massiveHealth.healthy = true;
+    this.massiveHealth.lastSuccess = Date.now();
+    this.massiveHealth.consecutiveErrors = 0;
+    this.massiveHealth.responseTimeMs = responseTimeMs;
   }
 
-  private recordError(provider: "massive" | "tradier", error: any) {
-    const health = provider === "massive" ? this.massiveHealth : this.tradierHealth;
-    health.consecutiveErrors++;
-    health.lastError = String(error?.message || error);
+  private recordError(error: any) {
+    this.massiveHealth.consecutiveErrors++;
+    this.massiveHealth.lastError = String(error?.message || error);
 
     // Mark as unhealthy after 3 consecutive errors
-    if (health.consecutiveErrors >= 3) {
-      health.healthy = false;
+    if (this.massiveHealth.consecutiveErrors >= 3) {
+      this.massiveHealth.healthy = false;
     }
   }
 }
@@ -443,48 +363,29 @@ export class HybridIndicesProvider implements IndicesDataProvider {
 
 export class HybridBrokerProvider implements BrokerDataProvider {
   private massive: MassiveBrokerProvider;
-  private tradier: TradierBrokerProvider;
   private massiveHealth: ProviderHealth = {
     healthy: true,
     lastSuccess: Date.now(),
     consecutiveErrors: 0,
     responseTimeMs: 0,
   };
-  private tradierHealth: ProviderHealth = {
-    healthy: true,
-    lastSuccess: Date.now(),
-    consecutiveErrors: 0,
-    responseTimeMs: 0,
-  };
 
-  constructor(massiveConfig: any, tradierConfig: any) {
+  constructor(massiveConfig: any, _tradierConfig?: any) {
     this.massive = new MassiveBrokerProvider(massiveConfig);
-    this.tradier = new TradierBrokerProvider(tradierConfig);
+    // Tradier provider removed - migrated to Massive-only architecture
   }
 
   async getEquityQuote(symbol: string): Promise<EquityQuote> {
-    // Try Massive first
     try {
       const start = Date.now();
       const result = await this.massive.getEquityQuote(symbol);
-      this.recordSuccess("massive", Date.now() - start);
+      this.recordSuccess(Date.now() - start);
       return result;
     } catch (error) {
-      this.recordError("massive", error);
-      console.warn("[HybridProvider] Massive quote failed, trying Tradier");
-    }
-
-    // Fallback to Tradier
-    try {
-      const start = Date.now();
-      const result = await this.tradier.getEquityQuote(symbol);
-      this.recordSuccess("tradier", Date.now() - start);
-      return result;
-    } catch (error) {
-      this.recordError("tradier", error);
+      this.recordError(error);
       throw new DataProviderError(
-        "Both providers failed to fetch quote",
-        "ALL_PROVIDERS_FAILED",
+        "Failed to fetch quote",
+        "QUOTE_FETCH_FAILED",
         "hybrid",
         undefined,
         error as Error
@@ -499,28 +400,16 @@ export class HybridBrokerProvider implements BrokerDataProvider {
     to: string,
     limit?: number
   ): Promise<Bar[]> {
-    // Try Massive first
     try {
       const start = Date.now();
       const result = await this.massive.getBars(symbol, interval, from, to, limit);
-      this.recordSuccess("massive", Date.now() - start);
+      this.recordSuccess(Date.now() - start);
       return result;
     } catch (error) {
-      this.recordError("massive", error);
-      console.warn("[HybridProvider] Massive bars failed, trying Tradier");
-    }
-
-    // Fallback to Tradier
-    try {
-      const start = Date.now();
-      const result = await this.tradier.getBars(symbol, interval, from, to, limit);
-      this.recordSuccess("tradier", Date.now() - start);
-      return result;
-    } catch (error) {
-      this.recordError("tradier", error);
+      this.recordError(error);
       throw new DataProviderError(
-        "Both providers failed to fetch bars",
-        "ALL_PROVIDERS_FAILED",
+        "Failed to fetch bars",
+        "BARS_FETCH_FAILED",
         "hybrid",
         undefined,
         error as Error
@@ -536,27 +425,23 @@ export class HybridBrokerProvider implements BrokerDataProvider {
   getHealth() {
     return {
       massive: this.massiveHealth,
-      tradier: this.tradierHealth,
       primaryHealthy: this.massiveHealth.healthy,
-      canFallback: this.tradierHealth.healthy,
     };
   }
 
-  private recordSuccess(provider: "massive" | "tradier", responseTimeMs: number) {
-    const health = provider === "massive" ? this.massiveHealth : this.tradierHealth;
-    health.healthy = true;
-    health.lastSuccess = Date.now();
-    health.consecutiveErrors = 0;
-    health.responseTimeMs = responseTimeMs;
+  private recordSuccess(responseTimeMs: number) {
+    this.massiveHealth.healthy = true;
+    this.massiveHealth.lastSuccess = Date.now();
+    this.massiveHealth.consecutiveErrors = 0;
+    this.massiveHealth.responseTimeMs = responseTimeMs;
   }
 
-  private recordError(provider: "massive" | "tradier", error: any) {
-    const health = provider === "massive" ? this.massiveHealth : this.tradierHealth;
-    health.consecutiveErrors++;
-    health.lastError = String(error?.message || error);
+  private recordError(error: any) {
+    this.massiveHealth.consecutiveErrors++;
+    this.massiveHealth.lastError = String(error?.message || error);
 
-    if (health.consecutiveErrors >= 3) {
-      health.healthy = false;
+    if (this.massiveHealth.consecutiveErrors >= 3) {
+      this.massiveHealth.healthy = false;
     }
   }
 }

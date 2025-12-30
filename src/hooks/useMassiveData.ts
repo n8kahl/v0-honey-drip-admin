@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { massive, type MassiveQuote, type MassiveOptionsChain } from "../lib/massive";
-import { createTransport } from "../lib/massive/transport-policy";
+import { streamingManager } from "../lib/massive/streaming-manager";
 import type { Contract, Trade } from "../types";
 import { fetchNormalizedChain } from "../services/options";
 import { fetchQuotes as fetchUnifiedQuotes } from "../services/quotes";
@@ -228,16 +228,19 @@ export function useQuotes(symbols: string[]) {
         `[useQuotes] Creating transport for ${symbol} (isIndex: ${isIndex}, isOption: false)`
       );
 
-      const unsubscribe = createTransport(
+      const unsubscribe = streamingManager.subscribe(
         symbol,
-        (data, source, timestamp) => {
-          console.log(`[useQuotes] Received ${source} update for ${symbol}:`, data);
-          handleUpdate(data, source, timestamp);
+        ["quotes"], // Channel for stock/index quotes
+        (streamData) => {
+          console.log(
+            `[useQuotes] Received ${streamData.source} update for ${symbol}:`,
+            streamData.data
+          );
+          handleUpdate(streamData.data, streamData.source, streamData.timestamp);
         },
         {
           isOption: false, // CRITICAL: Explicitly set to false for stock/index quotes
           isIndex,
-          pollInterval: 3000,
         }
       );
 
@@ -310,9 +313,14 @@ export function useActiveTradePnL(
 
     console.log("[useActiveTradePnL] Starting PnL tracking for contract:", normalizedTicker);
 
-    const unsubscribe = createTransport(
+    const unsubscribe = streamingManager.subscribe(
       normalizedTicker,
-      (data, transportSource, timestamp) => {
+      ["options"], // Channel for options contracts
+      (streamData) => {
+        const data = streamData.data;
+        const transportSource = streamData.source;
+        const timestamp = streamData.timestamp;
+
         // TEMPORARY DEBUG: Remove after confirming data flow
         console.log("[DEBUG useActiveTradePnL] RAW DATA:", {
           ticker: normalizedTicker,
@@ -404,7 +412,7 @@ export function useActiveTradePnL(
           });
         }
       },
-      { isOption: true, pollInterval: 3000 }
+      { isOption: true }
     );
 
     return unsubscribe;

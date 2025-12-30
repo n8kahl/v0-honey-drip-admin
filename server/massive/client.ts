@@ -259,6 +259,59 @@ export async function getIndicesSnapshot(tickers: string[]) {
   return res.data;
 }
 
+/**
+ * Fetch stock snapshots from Massive.com
+ * Endpoint: /v2/snapshot/locale/us/markets/stocks/tickers
+ */
+export interface StockSnapshotResult {
+  ticker: string;
+  last: number;
+  change: number;
+  changePercent: number;
+  prevClose: number;
+  asOf: number;
+}
+
+export async function getStockSnapshot(tickers: string[]): Promise<StockSnapshotResult[]> {
+  if (tickers.length === 0) return [];
+
+  const tickerParam = tickers.join(",");
+  const path = `/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${encodeURIComponent(tickerParam)}`;
+
+  const res = await callMassive<any>(path);
+  if (!res.ok) {
+    throw new Error(
+      `Massive error ${res.status}: ${res.error ?? "failed to fetch stock snapshot"}`
+    );
+  }
+
+  const payload = res.data;
+  const items: any[] = Array.isArray(payload?.tickers)
+    ? payload.tickers
+    : Array.isArray(payload?.results)
+      ? payload.results
+      : [];
+
+  return items.map((item: any) => {
+    const ticker = item.ticker || "";
+    const day = item.day || {};
+    const prevDay = item.prevDay || {};
+    const last = item.lastTrade?.p || item.lastQuote?.P || day.c || 0;
+    const prevClose = prevDay.c || 0;
+    const change = prevClose > 0 ? last - prevClose : 0;
+    const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+    return {
+      ticker,
+      last,
+      change,
+      changePercent,
+      prevClose,
+      asOf: item.updated || Date.now(),
+    };
+  });
+}
+
 const holidaysCache = new Map<number, string[]>();
 
 export async function getMarketHolidays(year?: number): Promise<string[]> {

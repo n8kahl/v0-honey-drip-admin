@@ -1,27 +1,35 @@
 import { getIndexAggregates } from "../../massive/client.js";
 import { isIndex, normalizeSymbolForMassive } from "../../lib/symbolUtils.js";
-import { tradierGetHistory } from "../../vendors/tradier.js";
+// Tradier import removed - migrated to Massive-only architecture
 
-const MASSIVE_INDEX_MIN_DELAY_MS = 350; // ~3 rps max
-let massiveIndexQueue: Promise<number> = Promise.resolve(0);
+const MASSIVE_MIN_DELAY_MS = 350; // ~3 rps max
+let massiveQueue: Promise<number> = Promise.resolve(0);
 
 type Timespan = "minute" | "hour" | "day";
 
-export type RawBar = { t: number; o: number; h: number; l: number; c: number; v: number };
+export type RawBar = {
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+  vw?: number;
+};
 
-export type FetchBarsResult = { bars: RawBar[]; source: "massive-index" | "tradier-equity" };
+export type FetchBarsResult = { bars: RawBar[]; source: "massive-index" | "massive-stocks" };
 
-async function throttleMassiveIndex<T>(task: () => Promise<T>): Promise<T> {
-  massiveIndexQueue = massiveIndexQueue.then(async (lastStart) => {
+async function throttleMassive<T>(task: () => Promise<T>): Promise<T> {
+  massiveQueue = massiveQueue.then(async (lastStart) => {
     const now = Date.now();
     const elapsed = now - lastStart;
-    if (elapsed < MASSIVE_INDEX_MIN_DELAY_MS) {
-      await new Promise((r) => setTimeout(r, MASSIVE_INDEX_MIN_DELAY_MS - elapsed));
+    if (elapsed < MASSIVE_MIN_DELAY_MS) {
+      await new Promise((r) => setTimeout(r, MASSIVE_MIN_DELAY_MS - elapsed));
     }
     return Date.now();
   });
 
-  await massiveIndexQueue.catch(() => Date.now());
+  await massiveQueue.catch(() => Date.now());
   return task();
 }
 
@@ -85,11 +93,11 @@ function aggregateBars(bars: RawBar[], minutesPerBar: number): RawBar[] {
 
 /**
  * Provider-aware bar fetcher:
- * - Indices → Massive (unlimited indices plan, supports minute/hour/day)
- * - Equities → Tradier (we do NOT have Massive stocks)
+ * - All symbols now use Massive.com (Tradier removed)
+ * - Indices use I: prefix, stocks use raw symbol
  *
- * For equities with hourly timespan, we fetch 1-minute bars and aggregate
- * since Tradier doesn't support hourly intervals directly.
+ * For hourly timespan, we fetch 1-minute bars and aggregate
+ * since Massive may not support hourly for all symbols directly.
  */
 export async function fetchBarsForRange(
   symbol: string,
@@ -99,64 +107,42 @@ export async function fetchBarsForRange(
 ): Promise<FetchBarsResult> {
   // Support minute and hour timespans
   if (timespan !== "minute" && timespan !== "hour") {
-    throw new Error(`Unsupported timespan ${timespan}. Only "minute" and "hour" are wired for scanners.`);
+    throw new Error(
+      `Unsupported timespan ${timespan}. Only "minute" and "hour" are wired for scanners.`
+    );
   }
 
   const { from, to } = buildDateRange(rangeDays);
   const clean = symbol.replace(/^I:/, "").toUpperCase();
+  const isIndexSymbol = isIndex(symbol);
+  const normalized = normalizeSymbolForMassive(symbol);
+  const provider: FetchBarsResult["source"] = isIndexSymbol ? "massive-index" : "massive-stocks";
 
-  if (isIndex(symbol)) {
-    const provider: FetchBarsResult["source"] = "massive-index";
-    const normalized = normalizeSymbolForMassive(symbol);
-    console.log(
-      `[BarProvider] Using Massive indices for ${clean} (${mult}${timespan}) from ${from} to ${to}`
-    );
-    try {
-      const rawBars = await throttleMassiveIndex(() =>
-        getIndexAggregates(normalized, mult, timespan, from, to)
-      );
-      return { source: provider, bars: rawBars };
-    } catch (err: any) {
-      err.provider = provider;
-      throw err;
-    }
-  }
-
-  // Equities: always route to Tradier
-  // For hourly bars, fetch 1-minute bars and aggregate (Tradier doesn't support hourly directly)
+  // For hourly bars, fetch minute bars and aggregate
   const isHourly = timespan === "hour";
   const fetchMult = isHourly ? 1 : mult;
-  const fetchInterval = `${fetchMult}min` as "1min" | "5min" | "15min";
+  const fetchTimespan: Timespan = isHourly ? "minute" : timespan;
 
   console.log(
-    `[BarProvider] Using Tradier for ${clean} (${fetchInterval}${isHourly ? " → aggregating to hourly" : ""}) from ${from} to ${to}`
+    `[BarProvider] Using Massive for ${clean} (${fetchMult}${fetchTimespan}${isHourly ? " → aggregating to hourly" : ""}) from ${from} to ${to}`
   );
-  const provider: FetchBarsResult["source"] = "tradier-equity";
+
   try {
-    const tradierBars = await tradierGetHistory(clean, fetchInterval, from, to);
-    let normalized: RawBar[] = tradierBars
-      .map((bar) => {
-        // bar.time is seconds; convert to ms for downstream consumers
-        const tSeconds = Number(bar.time) || 0;
-        if (!Number.isFinite(tSeconds) || tSeconds <= 0) return null;
-        return {
-          t: tSeconds * 1000,
-          o: bar.open,
-          h: bar.high,
-          l: bar.low,
-          c: bar.close,
-          v: bar.volume,
-        };
-      })
-      .filter(Boolean) as RawBar[];
+    const rawBars = await throttleMassive(() =>
+      getIndexAggregates(normalized, fetchMult, fetchTimespan, from, to)
+    );
+
+    let bars: RawBar[] = rawBars;
 
     // Aggregate to hourly if requested
-    if (isHourly) {
-      normalized = aggregateBars(normalized, mult * 60); // mult hours * 60 minutes
-      console.log(`[BarProvider] Aggregated ${tradierBars.length} 1m bars → ${normalized.length} ${mult}h bars`);
+    if (isHourly && rawBars.length > 0) {
+      bars = aggregateBars(rawBars, mult * 60); // mult hours * 60 minutes
+      console.log(
+        `[BarProvider] Aggregated ${rawBars.length} 1m bars → ${bars.length} ${mult}h bars`
+      );
     }
 
-    return { source: provider, bars: normalized };
+    return { source: provider, bars };
   } catch (err: any) {
     err.provider = provider;
     throw err;

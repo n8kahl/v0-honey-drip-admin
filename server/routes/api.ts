@@ -8,14 +8,9 @@ import {
   getOptionChain,
   listOptionContracts,
   getIndicesSnapshot,
+  getStockSnapshot,
 } from "../massive/client.js";
-import {
-  tradierGetUnderlyingPrice,
-  tradierGetBatchQuotes,
-  tradierGetExpirations,
-  tradierGetNormalizedForExpiration,
-  tradierGetHistory,
-} from "../vendors/tradier.js";
+// Tradier imports removed - migrated to Massive-only architecture
 import {
   isV2AggsPath,
   rememberFailure,
@@ -404,51 +399,7 @@ router.get("/massive/options/bars", requireProxyToken, async (req, res) => {
   }
 });
 
-// Tradier stock bars endpoint - fallback for stocks when user doesn't have Massive stocks plan
-// Uses Tradier /markets/timesales for intraday (1min, 5min, 15min) and /markets/history for daily
-router.get("/massive/tradier/stocks/bars", requireProxyToken, async (req, res) => {
-  const {
-    symbol,
-    interval = "5min",
-    start,
-    end,
-  } = req.query as {
-    symbol?: string;
-    interval?: "1min" | "5min" | "15min" | "daily" | "weekly" | "monthly";
-    start?: string;
-    end?: string;
-  };
-
-  if (!symbol) {
-    return res.status(400).json({ error: "Missing query param: symbol" });
-  }
-
-  try {
-    console.log(
-      `[Tradier] Fetching ${symbol} bars: interval=${interval}, start=${start}, end=${end}`
-    );
-
-    // Use vendor tradierGetHistory which supports both intraday and daily
-    const bars = await tradierGetHistory(symbol, interval, start, end);
-    console.log(`[Tradier] ✅ Received ${bars.length} bars for ${symbol}`);
-
-    // Return in Massive-compatible format
-    res.json({
-      results: bars.map((bar) => ({
-        t: bar.time * 1000, // Convert seconds to milliseconds
-        o: bar.open,
-        h: bar.high,
-        l: bar.low,
-        c: bar.close,
-        v: bar.volume,
-        vw: (bar.open + bar.high + bar.low + bar.close) / 4, // Approximate VWAP
-      })),
-    });
-  } catch (error: any) {
-    console.error("[Tradier] ❌ Stock bars error for", symbol, ":", error.message || error);
-    res.status(502).json({ error: "External API error" });
-  }
-});
+// Tradier stock bars endpoint removed - migrated to Massive-only architecture
 
 router.get("/massive/options/chain", requireProxyToken, async (req, res) => {
   try {
@@ -514,15 +465,7 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
     const symbol = String(req.query.symbol || req.query.underlying || "").toUpperCase();
     console.log(`[v0] 🔥 /api/options/chain called for ${symbol} (unified endpoint)`);
     if (!symbol) return res.status(400).json({ error: "symbol required" });
-    // Provider: 'massive' | 'tradier'
-    // Priority: query.provider > env OPTIONS_PROVIDER > presence of TRADIER_ACCESS_TOKEN
-    let provider = String((req.query as any).provider || "").toLowerCase();
-    if (!provider) {
-      const envProvider = String(process.env.OPTIONS_PROVIDER || "").toLowerCase();
-      if (envProvider === "massive" || envProvider === "tradier") provider = envProvider;
-      else if (process.env.TRADIER_ACCESS_TOKEN) provider = "tradier";
-      else provider = "massive";
-    }
+    // Provider: Massive-only (Tradier removed)
     // window = optional number of expirations to include (Webull-like)
     const windowParam = Array.isArray(req.query.window)
       ? req.query.window[0]
@@ -552,72 +495,56 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
       : String((req.query as any).endDate || "");
     const endDate = /^\d{4}-\d{2}-\d{2}$/.test(endDateParam) ? endDateParam : undefined;
 
-    // Provider branch: Tradier vs Massive (default)
-    const useTradier = provider === "tradier";
+    // Massive-only: Get underlying price and expirations
     let expirations: string[] = [];
-    if (useTradier) {
-      try {
-        price = await tradierGetUnderlyingPrice(symbol);
-      } catch (e) {
-        console.warn("[v0] Tradier underlying price failed; defaulting to 0", e);
-        price = 0;
-      }
-      expirations = await tradierGetExpirations(symbol, todayStr, endDate);
-      if (typeof expWindow === "number" && expWindow > 0)
-        expirations = expirations.slice(0, expWindow);
-      console.log(`[v0] Tradier ${symbol} expirations: ${expirations.length}`);
+    const indexLike = ["SPX", "NDX", "VIX", "RUT"].includes(symbol) || symbol.startsWith("I:");
+    if (indexLike) {
+      const snap = await getIndicesSnapshot([symbol.replace(/^I:/, "")]);
+      const v = Array.isArray(snap?.results) ? snap.results[0]?.value : snap?.value;
+      price = typeof v === "number" ? v : 0;
     } else {
-      const indexLike = ["SPX", "NDX", "VIX", "RUT"].includes(symbol) || symbol.startsWith("I:");
-      if (indexLike) {
-        const snap = await getIndicesSnapshot([symbol.replace(/^I:/, "")]);
-        const v = Array.isArray(snap?.results) ? snap.results[0]?.value : snap?.value;
-        price = typeof v === "number" ? v : 0;
-      } else {
-        const optSnap = await getOptionChain(symbol.replace(/^I:/, ""), 1);
-        const u = optSnap?.results?.[0]?.underlying_asset?.price;
-        price = typeof u === "number" ? u : 0;
-      }
-      console.log(`[v0] ${symbol} underlying price: $${price.toFixed(2)}`);
-
-      // Prefer reference contracts for a complete expiration calendar
-      try {
-        const params: any = {
-          underlying_ticker: symbol.replace(/^I:/, ""),
-          "expiration_date.gte": todayStr,
-          limit: "1000",
-        };
-        if (endDate) params["expiration_date.lte"] = endDate;
-        const ref = await listOptionContracts(params as any);
-        const refResults: any[] = Array.isArray(ref?.results) ? ref.results : [];
-        const expSet = new Set<string>(
-          refResults
-            .map((c: any) => c.expiration_date || c.details?.expiration_date)
-            .filter(Boolean)
-        );
-        expirations = Array.from(expSet).sort();
-      } catch (err) {
-        console.warn(`[v0] reference contracts failed, falling back to snapshot expirations:`, err);
-        // Fallback: take expirations from a single snapshot page
-        const contractsSnap = await getOptionChain(symbol.replace(/^I:/, ""), 250);
-        const contractsList = Array.isArray(contractsSnap?.results) ? contractsSnap.results : [];
-        const expSet = new Set<string>(
-          contractsList
-            .map((c: any) => c.details?.expiration_date || c.expiration_date)
-            .filter(Boolean)
-        );
-        expirations = Array.from(expSet).sort();
-      }
-
-      // Trim to endDate and optional expWindow
-      if (endDate) expirations = expirations.filter((date) => date <= endDate);
-      if (typeof expWindow === "number" && expWindow > 0) {
-        expirations = expirations.slice(0, expWindow);
-      }
-      console.log(
-        `[v0] ${symbol} selected expirations: ${expirations.length}${endDate ? ` (endDate=${endDate}` : ""}${expWindow ? `${endDate ? "," : " ("} window=${expWindow}` : ""}${endDate || expWindow ? ")" : ""}`,
-        expirations.slice(0, 10)
-      );
+      const optSnap = await getOptionChain(symbol.replace(/^I:/, ""), 1);
+      const u = optSnap?.results?.[0]?.underlying_asset?.price;
+      price = typeof u === "number" ? u : 0;
     }
+    console.log(`[v0] ${symbol} underlying price: $${price.toFixed(2)}`);
+
+    // Prefer reference contracts for a complete expiration calendar
+    try {
+      const params: any = {
+        underlying_ticker: symbol.replace(/^I:/, ""),
+        "expiration_date.gte": todayStr,
+        limit: "1000",
+      };
+      if (endDate) params["expiration_date.lte"] = endDate;
+      const ref = await listOptionContracts(params as any);
+      const refResults: any[] = Array.isArray(ref?.results) ? ref.results : [];
+      const expSet = new Set<string>(
+        refResults.map((c: any) => c.expiration_date || c.details?.expiration_date).filter(Boolean)
+      );
+      expirations = Array.from(expSet).sort();
+    } catch (err) {
+      console.warn(`[v0] reference contracts failed, falling back to snapshot expirations:`, err);
+      // Fallback: take expirations from a single snapshot page
+      const contractsSnap = await getOptionChain(symbol.replace(/^I:/, ""), 250);
+      const contractsList = Array.isArray(contractsSnap?.results) ? contractsSnap.results : [];
+      const expSet = new Set<string>(
+        contractsList
+          .map((c: any) => c.details?.expiration_date || c.expiration_date)
+          .filter(Boolean)
+      );
+      expirations = Array.from(expSet).sort();
+    }
+
+    // Trim to endDate and optional expWindow
+    if (endDate) expirations = expirations.filter((date) => date <= endDate);
+    if (typeof expWindow === "number" && expWindow > 0) {
+      expirations = expirations.slice(0, expWindow);
+    }
+    console.log(
+      `[v0] ${symbol} selected expirations: ${expirations.length}${endDate ? ` (endDate=${endDate}` : ""}${expWindow ? `${endDate ? "," : " ("} window=${expWindow}` : ""}${endDate || expWindow ? ")" : ""}`,
+      expirations.slice(0, 10)
+    );
 
     // 4) Normalize and group by expiration
     // Greeks & Mid-Price Policy:
@@ -645,68 +572,59 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
 
     // 3) Fetch contract pages per expiration and normalize (parallel to avoid N+1)
     let normalized: Norm[] = [];
-    if (useTradier) {
-      const normsArrays = await Promise.all(
-        expirations.map((date) => tradierGetNormalizedForExpiration(symbol, date, today))
-      );
-      for (const norms of normsArrays) {
-        normalized.push(...(norms as any as Norm[]));
-      }
-    } else {
-      const snapshots = await Promise.all(
-        expirations.map((date) =>
-          getOptionChain(symbol.replace(/^I:/, ""), 250, { expiration_date: date })
-        )
-      );
-      const pages: any[] = [];
-      for (const snap of snapshots) {
-        const arr = Array.isArray(snap?.results) ? snap.results : [];
-        pages.push(...arr);
-      }
-
-      normalized = pages
-        .map((c: any) => {
-          // Snapshot data structure: c has details, greeks, last_quote, last_trade, etc.
-          const details = c.details || {};
-          const ticker = details.ticker || c.ticker;
-          const expiration = details.expiration_date || c.expiration_date;
-          const strike = details.strike_price || c.strike_price;
-          const contractType = details.contract_type || c.contract_type || c.type || "";
-
-          const exp = new Date(expiration);
-          // Use market calendar for accurate DTE (trading days, not calendar days)
-          const dte = calculateDTE(exp, today);
-          const side = contractType.toString().toUpperCase().startsWith("C") ? "C" : "P";
-
-          // Greeks from snapshot
-          const greeks = c.greeks || {};
-
-          // Price sourcing with NBBO mid preference
-          const bid = c.last_quote?.bid || c.last_quote?.bp;
-          const ask = c.last_quote?.ask || c.last_quote?.ap;
-          const last =
-            (c.last_trade?.price || c.last_trade?.p) ?? (bid && ask ? undefined : (ask ?? bid));
-
-          return {
-            id: ticker,
-            ticker: ticker,
-            type: side,
-            strike: Number(strike) || 0,
-            expiration: expiration,
-            dte,
-            iv: c.implied_volatility,
-            delta: greeks?.delta,
-            gamma: greeks?.gamma,
-            theta: greeks?.theta,
-            vega: greeks?.vega,
-            bid,
-            ask,
-            last,
-            oi: c.open_interest,
-          } as Norm;
-        })
-        .filter((n: Norm) => Number.isFinite(n.strike) && n.strike > 0);
+    const snapshots = await Promise.all(
+      expirations.map((date) =>
+        getOptionChain(symbol.replace(/^I:/, ""), 250, { expiration_date: date })
+      )
+    );
+    const pages: any[] = [];
+    for (const snap of snapshots) {
+      const arr = Array.isArray(snap?.results) ? snap.results : [];
+      pages.push(...arr);
     }
+
+    normalized = pages
+      .map((c: any) => {
+        // Snapshot data structure: c has details, greeks, last_quote, last_trade, etc.
+        const details = c.details || {};
+        const ticker = details.ticker || c.ticker;
+        const expiration = details.expiration_date || c.expiration_date;
+        const strike = details.strike_price || c.strike_price;
+        const contractType = details.contract_type || c.contract_type || c.type || "";
+
+        const exp = new Date(expiration);
+        // Use market calendar for accurate DTE (trading days, not calendar days)
+        const dte = calculateDTE(exp, today);
+        const side = contractType.toString().toUpperCase().startsWith("C") ? "C" : "P";
+
+        // Greeks from snapshot
+        const greeks = c.greeks || {};
+
+        // Price sourcing with NBBO mid preference
+        const bid = c.last_quote?.bid || c.last_quote?.bp;
+        const ask = c.last_quote?.ask || c.last_quote?.ap;
+        const last =
+          (c.last_trade?.price || c.last_trade?.p) ?? (bid && ask ? undefined : (ask ?? bid));
+
+        return {
+          id: ticker,
+          ticker: ticker,
+          type: side,
+          strike: Number(strike) || 0,
+          expiration: expiration,
+          dte,
+          iv: c.implied_volatility,
+          delta: greeks?.delta,
+          gamma: greeks?.gamma,
+          theta: greeks?.theta,
+          vega: greeks?.vega,
+          bid,
+          ask,
+          last,
+          oi: c.open_interest,
+        } as Norm;
+      })
+      .filter((n: Norm) => Number.isFinite(n.strike) && n.strike > 0);
 
     const byExp = new Map<string, Norm[]>();
     for (const n of normalized) {
@@ -842,7 +760,7 @@ router.get("/bars", requireProxyToken, async (req, res) => {
       }));
       source = "database";
     } else {
-      // **STEP 2**: Database miss - fetch from Massive API or Tradier fallback
+      // **STEP 2**: Database miss - fetch from Massive API
       const isIndexSymbol = isIndex(symbol);
       const massiveSymbol = normalizeSymbolForMassive(symbol);
 
@@ -881,68 +799,12 @@ router.get("/bars", requireProxyToken, async (req, res) => {
           );
         }
       } catch (massiveError: any) {
-        // **FALLBACK**: For stocks (non-indices), try Tradier if Massive fails
-        const errorMsg = String(massiveError?.message || massiveError || "").toLowerCase();
-        const isForbidden = errorMsg.includes("403") || errorMsg.includes("forbidden");
-
-        if (!isIndexSymbol && process.env.TRADIER_ACCESS_TOKEN) {
-          console.log(
-            `[API] Massive failed for ${symbol} (${isForbidden ? "403 Forbidden" : "error"}), trying Tradier fallback...`
-          );
-
-          try {
-            // Map timespan to Tradier intervals
-            const intervalMap: Record<string, string> = {
-              minute: "1min",
-              "5minute": "5min",
-              "15minute": "15min",
-              hour: "daily",
-              day: "daily",
-            };
-            const tradierInterval =
-              intervalMap[`${multiplier}${timespan}`] || intervalMap[timespan] || "5min";
-
-            const tradierBars = await tradierGetHistory(symbol, tradierInterval as any, from, to);
-            console.log(
-              `[API] ✅ Tradier fallback succeeded: ${tradierBars.length} bars for ${symbol}`
-            );
-
-            // Normalize Tradier response to match our format
-            normalized = tradierBars.map((bar: any) => ({
-              timestamp: bar.time * 1000, // Tradier returns seconds, convert to milliseconds
-              open: Number(bar.open) || 0,
-              high: Number(bar.high) || 0,
-              low: Number(bar.low) || 0,
-              close: Number(bar.close) || 0,
-              volume: Number(bar.volume) || 0,
-              vwap: undefined,
-              trades: undefined,
-            }));
-
-            source = "tradier-fallback";
-
-            // Store Tradier data in database too
-            if (tradierBars.length > 0) {
-              const tradierResults = tradierBars.map((bar: any) => ({
-                t: bar.time * 1000,
-                o: bar.open,
-                h: bar.high,
-                l: bar.low,
-                c: bar.close,
-                v: bar.volume,
-              }));
-              storeHistoricalBars(symbol, timeframe, tradierResults).catch((err) =>
-                console.warn("[API] Failed to store Tradier bars in database:", err)
-              );
-            }
-          } catch (tradierError) {
-            console.error(`[API] ❌ Tradier fallback also failed for ${symbol}:`, tradierError);
-            throw massiveError; // Re-throw original Massive error
-          }
-        } else {
-          // No fallback available or symbol is an index
-          throw massiveError;
-        }
+        // Tradier fallback removed - Massive-only architecture
+        console.error(
+          `[API] ❌ Massive API failed for ${symbol}:`,
+          massiveError?.message || massiveError
+        );
+        throw massiveError;
       }
     }
 
@@ -1025,24 +887,23 @@ router.get("/quotes", requireProxyToken, async (req, res) => {
       }
     }
 
-    // Fetch stocks via Tradier batch quotes (single API call for all stocks)
+    // Fetch stocks via Massive stock snapshot (single API call for all stocks)
     if (stockSymbols.length) {
       try {
-        console.log(`[v0] /api/quotes: Fetching ${stockSymbols.length} stock(s) from Tradier: ${stockSymbols.join(",")}`);
-        const tradierQuotes = await tradierGetBatchQuotes(stockSymbols);
+        const stockQuotes = await getStockSnapshot(stockSymbols);
 
-        for (const quote of tradierQuotes) {
+        for (const quote of stockQuotes) {
           results.push({
-            symbol: quote.symbol,
+            symbol: quote.ticker,
             last: quote.last,
             change: quote.change,
             changePercent: quote.changePercent,
             asOf: quote.asOf,
-            source: "tradier",
+            source: "stocks",
           });
         }
       } catch (err) {
-        console.error(`[v0] /api/quotes: Tradier batch fetch error`, err);
+        console.error(`[v0] /api/quotes: Massive stock fetch error`, err);
 
         // Add error results for all stock symbols
         for (const s of stockSymbols) {
@@ -1279,9 +1140,11 @@ router.all("/massive/*", requireProxyToken, async (req, res) => {
     }
 
     const status = lower.includes("403") || lower.includes("forbidden") ? 403 : 502;
+    // Log full error server-side for debugging, but don't expose to client
+    console.error(`[v0] Massive proxy error (${status}): ${msg}`);
     res.status(status).json({
-      error: status === 403 ? "Massive 403: Forbidden" : "Massive request failed",
-      message: msg,
+      error: status === 403 ? "Forbidden" : "External API error",
+      // DO NOT include message: msg (exposes internals/stack traces)
     });
   }
 });

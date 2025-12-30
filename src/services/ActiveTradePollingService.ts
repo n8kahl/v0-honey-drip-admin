@@ -14,15 +14,15 @@
 import { getFallbackSession, type MarketSession } from "../lib/marketSession";
 import { useTradeStore } from "../stores/tradeStore";
 import type { Trade } from "../types";
-import { MassiveTokenManager } from "../lib/massive/token-manager";
+import { massive } from "../lib/massive";
 
 // Polling intervals based on market session (in milliseconds)
-// Using 2-second universal polling for real-time P&L updates
+// Using longer intervals to prevent rate limiting while still providing timely updates
 const POLL_INTERVALS: Record<MarketSession, number> = {
-  OPEN: 2_000, // 2 seconds during regular hours (fast P&L updates)
-  PRE: 5_000, // 5 seconds pre-market
-  POST: 5_000, // 5 seconds after-hours
-  CLOSED: 10_000, // 10 seconds when closed (for testing/development)
+  OPEN: 5_000, // 5 seconds during regular hours (balanced P&L updates vs rate limits)
+  PRE: 10_000, // 10 seconds pre-market
+  POST: 10_000, // 10 seconds after-hours
+  CLOSED: 30_000, // 30 seconds when closed (for testing/development)
 };
 
 // Minimum interval between polls for the same contract (debounce)
@@ -62,11 +62,9 @@ class ActiveTradePollingServiceImpl {
   private currentSession: MarketSession = "CLOSED";
   private lastSessionCheck = 0;
   private sessionCheckInterval = 60_000; // Check session every minute
-  private tokenManager: MassiveTokenManager;
 
   private constructor() {
     // Private constructor for singleton
-    this.tokenManager = new MassiveTokenManager();
   }
 
   static getInstance(): ActiveTradePollingServiceImpl {
@@ -369,27 +367,9 @@ class ActiveTradePollingServiceImpl {
     const now = Date.now();
 
     // First, try to get prices from the underlying snapshot (batch fetch)
+    // Uses the unified massive client which goes through the rate limiter
     try {
-      // Get ephemeral token for authentication
-      const token = await this.tokenManager.getToken();
-
-      const response = await fetch(`/api/massive/v3/snapshot/options/${underlying}`, {
-        headers: {
-          "x-massive-proxy-token": token,
-        },
-      });
-
-      if (!response.ok) {
-        // Handle 403 token expiry
-        if (response.status === 403) {
-          console.warn("[ActiveTradePolling] Token expired, refreshing");
-          await this.tokenManager.refreshToken();
-          // Retry will happen on next poll cycle
-        }
-        throw new Error(`Snapshot request failed: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await massive.getOptionsSnapshot(underlying);
       const snapshotResults = data.results || [];
 
       // Create a map for quick lookup
@@ -448,30 +428,8 @@ class ActiveTradePollingServiceImpl {
     const now = Date.now();
 
     try {
-      // Get ephemeral token for authentication
-      const token = await this.tokenManager.getToken();
-
-      // Use direct contract lookup (the fix we implemented earlier)
-      const response = await fetch(
-        `/api/massive/v3/snapshot/options/${encodeURIComponent(contract.contractId)}`,
-        {
-          headers: {
-            "x-massive-proxy-token": token,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        // Handle 403 token expiry
-        if (response.status === 403) {
-          console.warn("[ActiveTradePolling] Token expired in direct lookup, refreshing");
-          await this.tokenManager.refreshToken();
-          // Retry will happen on next poll cycle
-        }
-        throw new Error(`Direct lookup failed: ${response.status}`);
-      }
-
-      const data = await response.json();
+      // Use direct contract lookup through the unified massive client (goes through rate limiter)
+      const data = await massive.getOptionsSnapshot(contract.contractId);
       const result = data.results?.[0] || data;
 
       const price = result.last_trade?.price ?? result.last_trade?.p ?? result.day?.close ?? null;

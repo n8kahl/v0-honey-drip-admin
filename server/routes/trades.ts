@@ -258,7 +258,7 @@ interface TradeInsert {
 }
 
 interface TradeUpdate {
-  state?: string; // Database column is 'state' with constraint trades_status_check for lowercase: loaded, entered, exited
+  state?: string; // Database column is 'state' with constraint trades_status_check for lowercase: watching, loaded, entered, exited
   entry_price?: number;
   entry_time?: string;
   exit_price?: number;
@@ -335,8 +335,8 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     const tradeData: Record<string, any> = {
       user_id: userId,
       ticker: trade.ticker,
-      // Column is 'state' with CHECK constraint 'trades_status_check' for lowercase: loaded, entered, exited
-      // (verified from production database schema query on 2025-12-10)
+      // Column is 'state' with CHECK constraint for lowercase: watching, loaded, entered, exited
+      // (per production database: trades_status_check constraint expects lowercase)
       state: (trade.state || trade.status || "loaded").toLowerCase(),
       // Trade type (required NOT NULL field) - normalized to title case for DB constraint
       // (verified from production database: trades_trade_type_check accepts 'Scalp', 'Day', 'Swing', 'LEAP')
@@ -450,16 +450,16 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
     console.log(`[Trades API] Updating trade ${tradeId}:`, Object.keys(updates));
 
     // Validate input - normalize to lowercase for database constraint
-    // (verified from production database: state IN ('loaded', 'entered', 'exited'))
+    // (per production database: trades_status_check constraint expects lowercase)
     const lowerState = (updates.state || updates.status)?.toLowerCase();
-    if (lowerState && !["loaded", "entered", "exited"].includes(lowerState)) {
+    if (lowerState && !["watching", "loaded", "entered", "exited"].includes(lowerState)) {
       return res
         .status(400)
-        .json({ error: "Invalid state value. Must be: loaded, entered, or exited" });
+        .json({ error: "Invalid state value. Must be: watching, loaded, entered, or exited" });
     }
 
     // Update trade
-    // NOTE: Database column is 'state' with constraint 'trades_status_check' for lowercase values
+    // NOTE: Database column is 'state' with constraint for lowercase values
     const updateData: TradeUpdate = {
       state: lowerState,
       entry_price: updates.entry_price,

@@ -21,7 +21,8 @@ import {
   HeartPulse,
   FileCheck,
 } from "lucide-react";
-import { useActiveTradePnL, useQuotes } from "../../../hooks/useMassiveData";
+import { useQuotes } from "../../../hooks/useMassiveData";
+import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 import { useKeyLevels } from "../../../hooks/useKeyLevels";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
@@ -253,17 +254,14 @@ export function HDActiveTradePanel({
     }
   }, [showCoach, trade, aiCoach.state.isActive]);
 
-  // Get real-time P&L (with quantity for dollar calculation)
-  const contractTicker =
-    trade.contract.id || trade.contract.ticker || trade.contract.symbol || null;
-  const entryPriceValue =
-    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract.mid || 0;
-  const { currentPrice, pnlPercent, pnlDollars } = useActiveTradePnL(
-    trade.id,
-    contractTicker,
-    entryPriceValue,
-    trade.quantity || 1
-  );
+  // Use the canonical live model hook - SINGLE SOURCE OF TRUTH for all P&L
+  const liveModel = useActiveTradeLiveModel(trade);
+
+  // Extract values from the unified live model
+  const currentPrice = liveModel?.effectiveMid ?? 0;
+  const pnlPercent = liveModel?.pnlPercent ?? 0;
+  const pnlDollars = liveModel?.pnlDollars ?? 0;
+  const entryPrice = liveModel?.entryPrice ?? trade.contract?.mid ?? 0;
 
   // Get key levels for underlying (only for indices, not stocks)
   const underlyingTicker = normalizeSymbolForAPI(trade.ticker);
@@ -299,16 +297,15 @@ export function HDActiveTradePanel({
 
   // Calculate P&L progress (SL to TP)
   const pnlProgress = useMemo(() => {
-    if (!entryPriceValue || !trade.stopLoss || !trade.targetPrice || !currentPrice) {
+    if (!entryPrice || !trade.stopLoss || !trade.targetPrice || !currentPrice) {
       return 0.5; // Default to middle
     }
     const totalRange = trade.targetPrice - trade.stopLoss;
     const currentPosition = currentPrice - trade.stopLoss;
     return Math.max(0, Math.min(1, currentPosition / totalRange));
-  }, [entryPriceValue, trade, currentPrice]);
+  }, [entryPrice, trade, currentPrice]);
 
   const isProfit = (pnlPercent || 0) >= 0;
-  const entryPrice = entryPriceValue;
 
   // Calculate underlying price change using LIVE quote (not VWAP)
   // Priority: live quote > VWAP fallback

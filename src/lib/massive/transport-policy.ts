@@ -6,6 +6,46 @@ import { massive } from ".";
 import { type WebSocketMessage } from "./websocket";
 import type { MassiveQuote } from "./types";
 
+// ============================================================================
+// GLOBAL MARKET STATUS CACHE (Singleton - shared across all transport instances)
+// This prevents rate limiting from multiple transports all calling isMarketOpen()
+// ============================================================================
+let globalMarketOpen = true; // Assume open until we know otherwise
+let globalMarketStatusTimestamp = 0;
+let globalMarketStatusPromise: Promise<boolean> | null = null;
+const MARKET_STATUS_CACHE_MS = 60_000; // Cache for 60 seconds
+
+async function getGlobalMarketStatus(): Promise<boolean> {
+  const now = Date.now();
+
+  // Return cached value if still valid
+  if (now - globalMarketStatusTimestamp < MARKET_STATUS_CACHE_MS) {
+    return globalMarketOpen;
+  }
+
+  // Deduplicate concurrent requests - if already fetching, return the same promise
+  if (globalMarketStatusPromise) {
+    return globalMarketStatusPromise;
+  }
+
+  // Fetch fresh status
+  globalMarketStatusPromise = (async () => {
+    try {
+      const status = await massive.getMarketStatus();
+      const marketState = status?.market?.toLowerCase?.() ?? "";
+      globalMarketOpen = marketState.includes("open");
+      globalMarketStatusTimestamp = Date.now();
+    } catch (error) {
+      console.warn("[TransportPolicy] Failed to fetch market status, assuming open:", error);
+      // On error, keep previous value or assume open
+    }
+    globalMarketStatusPromise = null;
+    return globalMarketOpen;
+  })();
+
+  return globalMarketStatusPromise;
+}
+
 function toNumber(value: unknown): number {
   return typeof value === "number" && !Number.isNaN(value) ? value : 0;
 }
@@ -88,7 +128,7 @@ export type TransportCallback = (
 
 // Global REST data cache to prevent redundant API calls across multiple transports
 const restDataCache = new Map<string, { data: MassiveQuote; timestamp: number }>();
-const REST_CACHE_TTL_MS = 2000; // 2 seconds - still fresh but reduces duplicate calls
+const REST_CACHE_TTL_MS = 3000; // 3 seconds - matches minimum poll interval to prevent duplicate API calls
 
 export class TransportPolicy {
   private config: TransportConfig;
@@ -113,8 +153,7 @@ export class TransportPolicy {
   // Staleness thresholds per architecture: >3s WebSocket, >4s REST
   private readonly wsStaleThresholdMs = 3000; // consider WS data stale after 3s
   private readonly restStaleThresholdMs = 4000; // consider REST data stale after 4s
-  private lastMarketStatusCheck = 0;
-  private marketOpen = true;
+  private marketOpen = true; // Local cache, updated from global singleton
   // Message batching: accumulate updates and flush every 100ms
   private batchBuffer: Array<{
     quote: MassiveQuote;
@@ -790,20 +829,8 @@ export class TransportPolicy {
   }
 
   private async isMarketOpen(): Promise<boolean> {
-    const now = Date.now();
-    if (now - this.lastMarketStatusCheck < 60_000) {
-      return this.marketOpen;
-    }
-
-    this.lastMarketStatusCheck = now;
-    try {
-      const status = await massive.getMarketStatus();
-      const marketState = status?.market?.toLowerCase?.() ?? "";
-      this.marketOpen = marketState.includes("open");
-    } catch (error) {
-      // Fall back to recent activity if status endpoint fails
-      this.marketOpen = now - this.lastDataTimestamp < 3 * 60 * 1000;
-    }
+    // Use global singleton cache to prevent multiple API calls from different transport instances
+    this.marketOpen = await getGlobalMarketStatus();
     return this.marketOpen;
   }
 

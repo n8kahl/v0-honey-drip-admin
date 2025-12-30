@@ -434,6 +434,15 @@ export async function updateTrade(
 
   // Convert Date objects to ISO strings for Supabase
   const dbUpdates: Record<string, any> = { ...updates };
+
+  // Normalize state/status to lowercase (database constraint requires lowercase)
+  if (dbUpdates.state) {
+    dbUpdates.state = dbUpdates.state.toLowerCase();
+  }
+  if (dbUpdates.status) {
+    dbUpdates.status = dbUpdates.status.toLowerCase();
+  }
+
   if (updates.last_option_price_at instanceof Date) {
     dbUpdates.last_option_price_at = updates.last_option_price_at.toISOString();
   }

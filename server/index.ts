@@ -68,13 +68,20 @@ app.use(
 );
 
 // Rate limit API paths
-// Skip rate limiting entirely for /api/massive since it has its own upstream limits
 const generalLimiter = rateLimit({ windowMs: 60_000, max: 1200 });
+// Separate rate limiter for Massive proxy - more permissive but still protected
+const massiveLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300, // 300/min for Massive proxy (5 req/sec)
+  message: { error: "Rate limit exceeded for Massive API proxy" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 app.use("/api", (req, res, next) => {
-  // Skip rate limiting for Massive proxy to avoid false 429s; upstream Massive has its own limits
+  // Apply Massive-specific rate limiting
   if (req.path.startsWith("/massive")) {
-    return next();
+    return massiveLimiter(req, res, next);
   }
   return generalLimiter(req, res, next);
 });

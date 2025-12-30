@@ -576,6 +576,48 @@ export const useMarketDataStore = create<MarketDataStore>()(
             gotData = true;
           }
 
+          // Fetch 15m bars with retry (100 bars = ~25 hours of data for EMA50)
+          const bars15m = await fetchWithRetry(
+            () => massive.getAggregates(normalized, "15", 100),
+            `Fetch 15m bars for ${normalized}`
+          );
+
+          if (bars15m && bars15m.length > 0) {
+            const candles15m: Candle[] = bars15m.map((bar) => ({
+              time: bar.t,
+              timestamp: bar.t,
+              open: bar.o,
+              high: bar.h,
+              low: bar.l,
+              close: bar.c,
+              volume: bar.v,
+              vwap: bar.vw,
+            }));
+            get().updateCandles(normalized, "15m", candles15m);
+            gotData = true;
+          }
+
+          // Fetch 60m/1h bars with retry (100 bars = ~4 days of data for EMA50)
+          const bars60m = await fetchWithRetry(
+            () => massive.getAggregates(normalized, "60", 100),
+            `Fetch 60m bars for ${normalized}`
+          );
+
+          if (bars60m && bars60m.length > 0) {
+            const candles60m: Candle[] = bars60m.map((bar) => ({
+              time: bar.t,
+              timestamp: bar.t,
+              open: bar.o,
+              high: bar.h,
+              low: bar.l,
+              close: bar.c,
+              volume: bar.v,
+              vwap: bar.vw,
+            }));
+            get().updateCandles(normalized, "60m", candles60m);
+            gotData = true;
+          }
+
           // Fetch Daily bars with retry (last 200 days = ~6 months of data)
           const barsDaily = await fetchWithRetry(
             () => massive.getAggregates(normalized, "1D", 200),
@@ -884,41 +926,30 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
               get().updateCandles(normalized, "1m", candles1m);
               console.log(`[v0] ✅ Loaded ${candles1m.length} 1m bars for ${normalized}`);
-
-              // Force immediate confluence calculation after initial load
-              get().recomputeSymbol(normalized, { force: true });
-            } else {
-              console.warn(`[v0] ⚠️ No bars returned for ${normalized} - market may be closed`);
-
-              // Try fetching last 5 days of 1D bars as fallback
-              console.log(`[v0] 🔄 Trying daily bars fallback for ${normalized}...`);
-              const barsDaily = await massive.getAggregates(normalized, "1D", 5);
-              console.log(
-                `[v0] 📊 Received ${barsDaily?.length || 0} daily bars`,
-                barsDaily?.slice(0, 2)
-              );
-
-              if (barsDaily && barsDaily.length > 0) {
-                const candlesDaily: Candle[] = barsDaily.map((bar) => ({
-                  time: bar.t,
-                  timestamp: bar.t,
-                  open: bar.o,
-                  high: bar.h,
-                  low: bar.l,
-                  close: bar.c,
-                  volume: bar.v,
-                  vwap: bar.vw,
-                }));
-
-                get().updateCandles(normalized, "1D", candlesDaily);
-                console.log(
-                  `[v0] ✅ Loaded ${candlesDaily.length} daily bars for ${normalized} (market closed fallback)`
-                );
-
-                // Force immediate confluence calculation after fallback load
-                get().recomputeSymbol(normalized, { force: true });
-              }
             }
+
+            // Always fetch daily bars for ATR(14) calculation (needs 15+ days)
+            console.log(`[v0] 🔄 Fetching daily bars for ${normalized} ATR...`);
+            const barsDaily = await massive.getAggregates(normalized, "1D", 20);
+
+            if (barsDaily && barsDaily.length > 0) {
+              const candlesDaily: Candle[] = barsDaily.map((bar) => ({
+                time: bar.t,
+                timestamp: bar.t,
+                open: bar.o,
+                high: bar.h,
+                low: bar.l,
+                close: bar.c,
+                volume: bar.v,
+                vwap: bar.vw,
+              }));
+
+              get().updateCandles(normalized, "1D", candlesDaily);
+              console.log(`[v0] ✅ Loaded ${candlesDaily.length} daily bars for ${normalized}`);
+            }
+
+            // Force immediate confluence calculation after data load
+            get().recomputeSymbol(normalized, { force: true });
           } catch (error) {
             console.warn(`[v0] ⚠️ Failed to fetch initial bars for ${normalized}:`, error);
           }

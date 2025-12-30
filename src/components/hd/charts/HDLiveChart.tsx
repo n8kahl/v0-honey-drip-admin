@@ -8,12 +8,7 @@ import {
   LineData,
 } from "lightweight-charts";
 import { massive } from "../../../lib/massive";
-import {
-  MassiveError,
-  getIndexBars,
-  getOptionBars,
-  getTradierStockBars,
-} from "../../../lib/massive/proxy";
+import { MassiveError, getIndexBars, getOptionBars } from "../../../lib/massive/proxy";
 import {
   calculateEMA,
   calculateVWAP,
@@ -336,10 +331,8 @@ export function HDLiveChart({
       return;
     }
 
-    // Stock symbols (not option, not index) use Tradier fallback
-    const isStock = !isOption && !isIndex;
-
-    const fetcher = isOption ? getOptionBars : isIndex ? getIndexBars : null; // Stock will use Tradier below
+    // Use Massive for all bar data (options, indices, and stocks)
+    const fetcher = isOption ? getOptionBars : getIndexBars;
     const limit = Math.min(5000, Math.ceil((lookbackDays * 24 * 60) / multiplier) + 50);
 
     const fetchPromise = (async () => {
@@ -348,26 +341,14 @@ export function HDLiveChart({
 
       while (retries < maxRetries) {
         try {
-          let response;
-
-          // Use Tradier for stocks, Massive for indices/options
-          if (isStock) {
-            // Map timeframe to Tradier interval format
-            const tradierInterval =
-              currentTf === "1"
-                ? "1min"
-                : currentTf === "5"
-                  ? "5min"
-                  : currentTf === "15"
-                    ? "15min"
-                    : currentTf === "60"
-                      ? "15min" // Tradier doesn't have 60min, use 15min
-                      : "daily";
-
-            response = await getTradierStockBars(ticker, tradierInterval, fromDate, toDate);
-          } else {
-            response = await fetcher!(symbolParam, multiplier, timespan, fromDate, toDate, limit);
-          }
+          const response = await fetcher(
+            symbolParam,
+            multiplier,
+            timespan,
+            fromDate,
+            toDate,
+            limit
+          );
 
           const results = Array.isArray(response?.results)
             ? response.results

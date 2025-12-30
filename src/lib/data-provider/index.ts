@@ -49,13 +49,13 @@ export type {
   DataProviderMetrics,
   ProviderHealthStatus,
   ProviderConfig,
-} from './types';
+} from "./types";
 
 export {
   DataProviderError,
   ValidationError,
   type ValidationError as ValidationErrorType,
-} from './types';
+} from "./types";
 
 // ============================================================================
 // VALIDATION EXPORTS
@@ -68,7 +68,7 @@ export {
   createQualityFlags,
   DEFAULT_QUALITY_OPTIONS,
   type ValidationResult,
-} from './validation';
+} from "./validation";
 
 // ============================================================================
 // PROVIDER EXPORTS
@@ -78,34 +78,28 @@ export {
   MassiveOptionsProvider,
   MassiveIndicesProvider,
   MassiveBrokerProvider,
-} from './massive-provider';
+} from "./massive-provider";
 
-export {
-  TradierOptionsProvider,
-  TradierBrokerProvider,
-} from './tradier-provider';
+// Tradier provider removed - migrated to Massive-only architecture
 
 export {
   HybridOptionsProvider,
   HybridIndicesProvider,
   HybridBrokerProvider,
   createDataProviders,
-} from './hybrid-provider';
+} from "./hybrid-provider";
 
 // ============================================================================
 // HUB EXPORTS
 // ============================================================================
 
-export {
-  MarketDataHub,
-  createAndInitializeHub,
-} from './market-data-hub';
+export { MarketDataHub, createAndInitializeHub } from "./market-data-hub";
 
 // ============================================================================
 // SINGLETON INSTANCE (OPTIONAL)
 // ============================================================================
 
-let globalHub: InstanceType<typeof import('./market-data-hub').MarketDataHub> | null = null;
+let globalHub: InstanceType<typeof import("./market-data-hub").MarketDataHub> | null = null;
 
 /**
  * Get or create global market data hub instance
@@ -120,16 +114,16 @@ export async function getGlobalHub(config: {
   indexTickers?: string[];
   enableLogging?: boolean;
   enableMetrics?: boolean;
-}): Promise<InstanceType<typeof import('./market-data-hub').MarketDataHub>> {
+}): Promise<InstanceType<typeof import("./market-data-hub").MarketDataHub>> {
   if (!globalHub) {
-    const { createAndInitializeHub } = await import('./market-data-hub');
+    const { createAndInitializeHub } = await import("./market-data-hub");
     globalHub = await createAndInitializeHub({
       massiveApiKey: config.massiveApiKey,
       massiveBaseUrl: config.massiveBaseUrl,
       tradierAccessToken: config.tradierAccessToken,
       tradierBaseUrl: config.tradierBaseUrl,
       watchlistSymbols: config.watchlistSymbols || [],
-      indexTickers: config.indexTickers || ['SPX', 'NDX', 'VIX'],
+      indexTickers: config.indexTickers || ["SPX", "NDX", "VIX"],
       enableLogging: config.enableLogging,
       enableMetrics: config.enableMetrics,
     });
@@ -150,7 +144,9 @@ export async function shutdownGlobalHub(): Promise<void> {
 /**
  * Get current global hub (without initializing)
  */
-export function useGlobalHub(): InstanceType<typeof import('./market-data-hub').MarketDataHub> | null {
+export function useGlobalHub(): InstanceType<
+  typeof import("./market-data-hub").MarketDataHub
+> | null {
   return globalHub;
 }
 
@@ -158,8 +154,8 @@ export function useGlobalHub(): InstanceType<typeof import('./market-data-hub').
 // VERSION
 // ============================================================================
 
-export const VERSION = '1.0.0';
-export const API_VERSION = '1.0.0';
+export const VERSION = "1.0.0";
+export const API_VERSION = "1.0.0";
 
 // ============================================================================
 // CONSTANTS

@@ -20,10 +20,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import type { Trade, Ticker } from "../../types";
 import { useActiveTradeLiveModel } from "../../hooks/useActiveTradeLiveModel";
-import { useMarketDataStore, type Candle } from "../../stores/marketDataStore";
+import { useMarketDataStore, type Candle, type SymbolData } from "../../stores/marketDataStore";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { getHealthStyle, getSourceBadgeStyle } from "../../lib/market/dataFreshness";
 import { cn, formatPrice } from "../../lib/utils";
+import { rsiWilder, atrWilder } from "../../lib/indicators";
 import { calculateRealizedPnL } from "../../lib/tradePnl";
 import { fmtDTE, getPnlStyle, formatExpirationShort } from "../../ui/semantics";
 import {
@@ -84,6 +85,8 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
   // Use canonical live model hook - SINGLE SOURCE OF TRUTH
   const liveModel = useActiveTradeLiveModel(trade);
   const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
+  // Use trade state for "closed" status (not trim %, since position sizes aren't tracked)
+  const isClosed = trade.state === "EXITED";
 
   // Get additional context data
   const symbolData = useMarketDataStore((s) => s.symbols[trade.ticker]);
@@ -122,7 +125,12 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden animate-mode-enter">
       {/* Position HUD - Top ~30% */}
-      <PositionHUD trade={trade} liveModel={liveModel} realizedPnL={realizedPnL} />
+      <PositionHUD
+        trade={trade}
+        liveModel={liveModel}
+        realizedPnL={realizedPnL}
+        isClosed={isClosed}
+      />
 
       {/* Greeks Strip */}
       <GreeksStrip liveModel={liveModel} />
@@ -134,6 +142,8 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
         indicators={indicators}
         mtfTrend={mtfTrend}
         candles={symbolData?.candles?.["1m"] ?? []}
+        dailyCandles={symbolData?.candles?.["1D"] ?? []}
+        symbolData={symbolData}
       />
 
       {/* Trade Tape - Bottom ~30% */}
@@ -213,9 +223,10 @@ interface PositionHUDProps {
   trade: Trade;
   liveModel: NonNullable<ReturnType<typeof useActiveTradeLiveModel>>;
   realizedPnL: ReturnType<typeof calculateRealizedPnL>;
+  isClosed: boolean;
 }
 
-function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
+function PositionHUD({ trade, liveModel, realizedPnL, isClosed }: PositionHUDProps) {
   const contract = trade.contract;
   const dte = contract?.daysToExpiry ?? 0;
   const dteInfo = fmtDTE(dte);
@@ -323,7 +334,7 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
           {/* P&L Display */}
           <div>
             <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide mb-1">
-              {realizedPnL.remainingPercent === 0 ? "Final P&L" : "Unrealized P&L"}
+              {isClosed ? "Final P&L" : "Unrealized P&L"}
             </div>
             <div className="flex items-baseline gap-3">
               <span
@@ -334,17 +345,17 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
                   pnlFlash === "down" && "animate-pulse text-[var(--accent-negative)]"
                 )}
               >
-                {realizedPnL.remainingPercent === 0
+                {isClosed
                   ? `${realizedPnL.realizedPercent >= 0 ? "+" : ""}${realizedPnL.realizedPercent.toFixed(1)}%`
                   : `${liveModel.pnlPercent >= 0 ? "+" : ""}${liveModel.pnlPercent.toFixed(1)}%`}
               </span>
               <span className={cn("text-lg tabular-nums", pnlStyle.className)}>
-                {realizedPnL.remainingPercent === 0
+                {isClosed
                   ? `${realizedPnL.realizedDollars >= 0 ? "+" : "-"}$${Math.abs(realizedPnL.realizedDollars).toFixed(0)}`
                   : `${liveModel.pnlDollars >= 0 ? "+" : ""}$${Math.abs(liveModel.pnlDollars).toFixed(0)}`}
               </span>
             </div>
-            {realizedPnL.remainingPercent > 0 && realizedPnL.trimmedPercent > 0 && (
+            {!isClosed && realizedPnL.trimmedPercent > 0 && (
               <div className="mt-2 text-xs text-[var(--text-faint)] tabular-nums">
                 Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
                 {realizedPnL.realizedPercent.toFixed(1)}% (
@@ -462,39 +473,47 @@ function PositionHUD({ trade, liveModel, realizedPnL }: PositionHUDProps) {
                 ({liveModel.bid.toFixed(2)}/{liveModel.ask.toFixed(2)})
               </span>
             )}
-            {/* Show timestamp for non-live prices */}
+            {/* Show price source label for non-live prices */}
             {liveModel.priceSource !== "websocket" && (
               <span
                 className={cn(
-                  "ml-2 text-[10px] tabular-nums",
-                  liveModel.priceAge < 5000
-                    ? "text-green-400"
-                    : liveModel.priceAge < 30000
-                      ? "text-yellow-400"
-                      : "text-red-400"
+                  "ml-2 text-[10px]",
+                  liveModel.priceSource === "snapshot"
+                    ? "text-[var(--text-muted)]"
+                    : liveModel.priceAge < 5000
+                      ? "text-green-400"
+                      : liveModel.priceAge < 30000
+                        ? "text-yellow-400"
+                        : "text-red-400"
                 )}
               >
-                {formatTimestamp(liveModel.priceAsOf)}
+                {liveModel.priceLabel}
               </span>
             )}
           </span>
           <span className="text-[var(--text-faint)]">|</span>
           <span>
             <span className="text-[var(--text-faint)]">Underlying:</span>{" "}
-            <span className="tabular-nums font-medium text-[var(--text-high)]">
-              ${liveModel.underlyingPrice.toFixed(2)}
-            </span>
-            <span
-              className={cn(
-                "ml-1 tabular-nums",
-                liveModel.underlyingChangePercent >= 0
-                  ? "text-[var(--accent-positive)]"
-                  : "text-[var(--accent-negative)]"
-              )}
-            >
-              ({liveModel.underlyingChangePercent >= 0 ? "+" : ""}
-              {liveModel.underlyingChangePercent.toFixed(2)}%)
-            </span>
+            {liveModel.underlyingPrice !== null ? (
+              <>
+                <span className="tabular-nums font-medium text-[var(--text-high)]">
+                  ${liveModel.underlyingPrice.toFixed(2)}
+                </span>
+                <span
+                  className={cn(
+                    "ml-1 tabular-nums",
+                    liveModel.underlyingChangePercent >= 0
+                      ? "text-[var(--accent-positive)]"
+                      : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  ({liveModel.underlyingChangePercent >= 0 ? "+" : ""}
+                  {liveModel.underlyingChangePercent.toFixed(2)}%)
+                </span>
+              </>
+            ) : (
+              <span className="tabular-nums text-[var(--text-muted)]">N/A</span>
+            )}
           </span>
         </div>
       </div>
@@ -581,20 +600,26 @@ function GreeksStrip({ liveModel }: GreeksStripProps) {
 // ============================================================================
 
 interface LevelsATRPanelProps {
-  currentPrice: number;
+  currentPrice: number | null;
   keyLevels: any;
   indicators: any;
   mtfTrend: any;
   candles: Candle[];
+  dailyCandles: Candle[];
+  symbolData?: SymbolData;
 }
 
 function normalizeCandleTime(time: number): number {
   return time < 1_000_000_000_000 ? time * 1000 : time;
 }
 
-function getSessionRange(candles: Candle[], fallback: number): { high: number; low: number } {
+function getSessionRange(
+  candles: Candle[],
+  fallback: number | null
+): { high: number; low: number } {
+  const safeFallback = fallback ?? 0;
   if (!candles || candles.length === 0) {
-    return { high: fallback, low: fallback };
+    return { high: safeFallback, low: safeFallback };
   }
 
   const lastTime = normalizeCandleTime(candles[candles.length - 1].time);
@@ -610,7 +635,7 @@ function getSessionRange(candles: Candle[], fallback: number): { high: number; l
   }
 
   if (!Number.isFinite(high) || !Number.isFinite(low)) {
-    return { high: fallback, low: fallback };
+    return { high: safeFallback, low: safeFallback };
   }
 
   return { high, low };
@@ -622,6 +647,8 @@ function LevelsATRPanel({
   indicators,
   mtfTrend,
   candles,
+  dailyCandles,
+  symbolData,
 }: LevelsATRPanelProps) {
   const [mtfExpanded, setMtfExpanded] = useState(true);
 
@@ -642,9 +669,22 @@ function LevelsATRPanel({
     return result.sort((a, b) => a.price - b.price);
   }, [keyLevels]);
 
-  // Calculate ATR metrics
+  // Calculate ATR metrics using DAILY ATR (not 1m ATR)
   const atrMetrics = useMemo(() => {
-    const atr = indicators?.atr14 || 0;
+    // Calculate daily ATR from daily candles (proper ATR for session context)
+    let dailyAtr = 0;
+    if (dailyCandles && dailyCandles.length >= 15) {
+      const highs = dailyCandles.map((c) => c.high);
+      const lows = dailyCandles.map((c) => c.low);
+      const closes = dailyCandles.map((c) => c.close);
+      const atrArray = atrWilder(highs, lows, closes, 14);
+      dailyAtr = atrArray[atrArray.length - 1] || 0;
+    }
+
+    // Fallback to indicators.atr14 scaled up if no daily data
+    // (1m ATR * 20 ≈ rough daily range estimate)
+    const atr = dailyAtr > 0 ? dailyAtr : (indicators?.atr14 || 0) * 20;
+
     const sessionRange = getSessionRange(candles, currentPrice);
     const dayHigh = sessionRange.high;
     const dayLow = sessionRange.low;
@@ -659,7 +699,7 @@ function LevelsATRPanel({
       roomMultiple,
       isExhausted: consumedPct > 80,
     };
-  }, [indicators, candles, currentPrice]);
+  }, [indicators, candles, dailyCandles, currentPrice]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -753,7 +793,7 @@ function LevelsATRPanel({
 
         {mtfExpanded && mtfTrend && (
           <div className="px-3 pb-3">
-            <MTFLadder mtfTrend={mtfTrend} />
+            <MTFLadder mtfTrend={mtfTrend} symbolData={symbolData} indicators={indicators} />
           </div>
         )}
       </div>
@@ -770,10 +810,12 @@ function LevelBar({
   currentPrice,
 }: {
   levels: { label: string; price: number; type: "support" | "resistance" | "neutral" }[];
-  currentPrice: number;
+  currentPrice: number | null;
 }) {
-  const minPrice = Math.min(...levels.map((l) => l.price), currentPrice) * 0.998;
-  const maxPrice = Math.max(...levels.map((l) => l.price), currentPrice) * 1.002;
+  // Use first level price as fallback when currentPrice is null
+  const safePrice = currentPrice ?? levels[0]?.price ?? 0;
+  const minPrice = Math.min(...levels.map((l) => l.price), safePrice) * 0.998;
+  const maxPrice = Math.max(...levels.map((l) => l.price), safePrice) * 1.002;
   const range = maxPrice - minPrice;
 
   const getPosition = (price: number) => ((price - minPrice) / range) * 100;
@@ -801,12 +843,14 @@ function LevelBar({
           </span>
         </div>
       ))}
-      <div
-        className="absolute top-0 bottom-0 flex items-center"
-        style={{ left: `${getPosition(currentPrice)}%` }}
-      >
-        <div className="w-2 h-2 bg-[var(--text-high)] rounded-full transform -translate-x-1/2" />
-      </div>
+      {currentPrice !== null && (
+        <div
+          className="absolute top-0 bottom-0 flex items-center"
+          style={{ left: `${getPosition(currentPrice)}%` }}
+        >
+          <div className="w-2 h-2 bg-[var(--text-high)] rounded-full transform -translate-x-1/2" />
+        </div>
+      )}
     </div>
   );
 }
@@ -828,7 +872,13 @@ function MTFQuickStatus({ mtfTrend }: { mtfTrend: Record<string, string> | undef
   );
 }
 
-function MTFLadder({ mtfTrend }: { mtfTrend: Record<string, string> | undefined }) {
+interface MTFLadderProps {
+  mtfTrend: Record<string, string> | undefined;
+  symbolData?: SymbolData;
+  indicators?: any;
+}
+
+function MTFLadder({ mtfTrend, symbolData, indicators }: MTFLadderProps) {
   // Map store timeframe keys to display keys
   // Store uses "60m", UI might want "1h"
   const timeframes = [
@@ -838,27 +888,50 @@ function MTFLadder({ mtfTrend }: { mtfTrend: Record<string, string> | undefined 
     { key: "60m", label: "1h" },
   ] as const;
 
-  // Convert string trend to direction and strength
-  const getTrendInfo = (trend: string | undefined) => {
+  // Calculate RSI for each timeframe from their respective candles (like SetupWorkspace)
+  const perTfRsi = useMemo(() => {
+    const result: Record<string, number | null> = {
+      "1m": indicators?.rsi14 ?? null,
+      "5m": null,
+      "15m": null,
+      "60m": null,
+    };
+
+    // Calculate RSI for higher timeframes if candles are available
+    const timeframesToCalc = ["5m", "15m", "60m"] as const;
+    for (const tf of timeframesToCalc) {
+      const tfCandles = symbolData?.candles?.[tf];
+      if (tfCandles && tfCandles.length >= 15) {
+        const closes = tfCandles.map((c) => c.close);
+        const rsiArray = rsiWilder(closes, 14);
+        const lastRsi = rsiArray[rsiArray.length - 1];
+        if (!isNaN(lastRsi)) {
+          result[tf] = lastRsi;
+        }
+      }
+    }
+
+    return result;
+  }, [indicators?.rsi14, symbolData]);
+
+  // Get trend direction from mtfTrend
+  const getTrendArrow = (trend: string | undefined) => {
     switch (trend) {
       case "bull":
-        return { direction: "up" as const, strength: 75 };
-      case "bear":
-        return { direction: "down" as const, strength: 25 };
-      default:
-        return { direction: "neutral" as const, strength: 50 };
-    }
-  };
-
-  const getTrendArrow = (direction: "up" | "down" | "neutral") => {
-    switch (direction) {
-      case "up":
         return <ArrowUp className="w-3 h-3 text-[var(--accent-positive)]" />;
-      case "down":
+      case "bear":
         return <ArrowDown className="w-3 h-3 text-[var(--accent-negative)]" />;
       default:
         return <ArrowRight className="w-3 h-3 text-[var(--text-faint)]" />;
     }
+  };
+
+  // Get RSI color based on overbought/oversold levels
+  const getRsiStyle = (rsi: number | null) => {
+    if (rsi === null) return "text-[var(--text-muted)]";
+    if (rsi >= 70) return "text-[var(--accent-negative)]"; // Overbought
+    if (rsi <= 30) return "text-[var(--accent-positive)]"; // Oversold
+    return "text-[var(--text-high)]";
   };
 
   return (
@@ -866,7 +939,7 @@ function MTFLadder({ mtfTrend }: { mtfTrend: Record<string, string> | undefined 
       {timeframes.map(({ key, label }) => {
         // mtfTrend[key] is a string: "bull" | "bear" | "neutral"
         const trendString = mtfTrend?.[key];
-        const { direction, strength } = getTrendInfo(trendString);
+        const rsi = perTfRsi[key];
 
         return (
           <div
@@ -875,9 +948,9 @@ function MTFLadder({ mtfTrend }: { mtfTrend: Record<string, string> | undefined 
           >
             <div className="text-[10px] text-[var(--text-faint)] uppercase mb-1">{label}</div>
             <div className="flex items-center justify-center gap-1 mb-1">
-              {getTrendArrow(direction)}
-              <span className="text-xs font-medium text-[var(--text-high)] tabular-nums">
-                {Math.round(strength)}
+              {getTrendArrow(trendString)}
+              <span className={cn("text-xs font-medium tabular-nums", getRsiStyle(rsi))}>
+                {rsi !== null ? Math.round(rsi) : "—"}
               </span>
             </div>
           </div>
