@@ -71,7 +71,10 @@ export type OpportunityType =
   | "kcu_vwap_advanced"
   | "kcu_king_queen"
   | "kcu_orb_breakout"
-  | "kcu_cloud_bounce";
+  | "kcu_cloud_bounce"
+  // Flow-Primary (Phase 3)
+  | "sweep_momentum_long"
+  | "sweep_momentum_short";
 
 /**
  * Asset class classification
@@ -260,6 +263,10 @@ export function getExpectedFrequency(type: OpportunityType): string {
     kcu_king_queen: "2-3 signals/day",
     kcu_orb_breakout: "1-2 signals/day",
     kcu_cloud_bounce: "1-3 signals/day (afternoon)",
+
+    // Flow-Primary (Phase 3)
+    sweep_momentum_long: "2-5 signals/day (when flow active)",
+    sweep_momentum_short: "2-5 signals/day (when flow active)",
   };
 
   return frequencies[type] || "Unknown";
