@@ -177,9 +177,28 @@ class ActiveTradePollingServiceImpl {
   syncWithStore(): void {
     const { activeTrades } = useTradeStore.getState();
 
+    console.warn("[ActiveTradePolling] syncWithStore called", {
+      totalActiveTrades: activeTrades.length,
+      tradeStates: activeTrades.map((t) => ({
+        id: t.id.slice(0, 8),
+        state: t.state,
+        ticker: t.ticker,
+      })),
+    });
+
     // Get all ENTERED trades
     const enteredTrades = activeTrades.filter((t) => t.state === "ENTERED");
     const enteredTradeIds = new Set(enteredTrades.map((t) => t.id));
+
+    console.warn("[ActiveTradePolling] Found ENTERED trades:", {
+      count: enteredTrades.length,
+      trades: enteredTrades.map((t) => ({
+        id: t.id.slice(0, 8),
+        ticker: t.ticker,
+        contractId: t.contract?.id?.slice(0, 20),
+        hasContract: !!t.contract,
+      })),
+    });
 
     // Remove contracts for trades that are no longer ENTERED
     for (const [contractId, contract] of this.contracts) {
@@ -297,8 +316,15 @@ class ActiveTradePollingServiceImpl {
     }
 
     if (this.contracts.size === 0) {
+      console.warn("[ActiveTradePolling] poll() called but no contracts registered");
       return;
     }
+
+    console.warn("[ActiveTradePolling] Starting poll cycle", {
+      contractCount: this.contracts.size,
+      contracts: Array.from(this.contracts.keys()).map((k) => k.slice(0, 25)),
+      session: this.currentSession,
+    });
 
     this.isPolling = true;
     const startTime = Date.now();
@@ -464,8 +490,20 @@ class ActiveTradePollingServiceImpl {
   private applyPollResults(results: PollResult[]): void {
     const store = useTradeStore.getState();
 
+    console.warn("[ActiveTradePolling] Applying poll results", {
+      totalResults: results.length,
+      withPrices: results.filter((r) => r.price !== null).length,
+      withErrors: results.filter((r) => r.error).length,
+      results: results.map((r) => ({
+        contract: r.contractId.slice(0, 25),
+        price: r.price?.toFixed(2) ?? "null",
+        error: r.error?.slice(0, 50),
+      })),
+    });
+
     for (const result of results) {
       if (result.price === null) {
+        console.warn("[ActiveTradePolling] Skipping result with null price:", result.contractId);
         continue;
       }
 
@@ -485,6 +523,17 @@ class ActiveTradePollingServiceImpl {
       const currentPrice = trade.currentPrice ?? trade.last_option_price;
       const priceChanged = currentPrice !== result.price;
 
+      // DEBUG: Log every polling update
+      console.warn(`🔄 [POLLING] Updating trade ${contract.tradeId}:`, {
+        contractId: contract.contractId,
+        price: result.price,
+        bid: result.bid,
+        ask: result.ask,
+        source: result.source,
+        priceChanged,
+        oldPrice: currentPrice,
+      });
+
       // Update the trade with new timestamp (and price if changed)
       // IMPORTANT: Use camelCase - store.updateTrade converts to snake_case for DB
       store.updateTrade(contract.tradeId, {
@@ -493,16 +542,6 @@ class ActiveTradePollingServiceImpl {
         lastOptionPriceAt: new Date(result.timestamp),
         priceDataSource: result.source,
       } as any);
-
-      if (priceChanged) {
-        console.log("[ActiveTradePolling] Updated trade price", {
-          tradeId: contract.tradeId,
-          contractId: result.contractId,
-          oldPrice: currentPrice,
-          newPrice: result.price,
-          source: result.source,
-        });
-      }
     }
   }
 }

@@ -477,46 +477,90 @@ export const useMarketDataStore = create<MarketDataStore>()(
       // ======================================================================
 
       initialize: (watchlistSymbols: string[]) => {
-        set({ isInitializing: true, error: null });
+        // Guard against redundant initialization while already initializing
+        const { isInitializing } = get();
+        if (isInitializing) {
+          console.warn("[v0] ⏳ initialize() skipped - already initializing");
+          return;
+        }
+
+        console.warn(
+          "[v0] 🚀 initialize() CALLED with",
+          watchlistSymbols.length,
+          "symbols:",
+          watchlistSymbols.slice(0, 5).join(", "),
+          watchlistSymbols.length > 5 ? "..." : ""
+        );
 
         const { macroSymbols } = get();
         // Deduplicate symbols without Set spread
         const allSymbolsSet = new Set<string>();
-        watchlistSymbols.forEach((s) => allSymbolsSet.add(s));
-        macroSymbols.forEach((s) => allSymbolsSet.add(s));
+        watchlistSymbols.forEach((s) => allSymbolsSet.add(s.toUpperCase()));
+        macroSymbols.forEach((s) => allSymbolsSet.add(s.toUpperCase()));
         const allSymbols = Array.from(allSymbolsSet);
+        const macroSet = new Set(macroSymbols.map((s) => s.toUpperCase()));
 
-        // Create empty data for all symbols
-        const symbols: Record<string, SymbolData> = {};
-        allSymbols.forEach((symbol) => {
-          const normalized = symbol.toUpperCase();
-          symbols[normalized] = createEmptySymbolData(normalized);
-        });
+        // Use Immer to atomically update symbols without race conditions
+        // This ensures we don't overwrite candles that arrive during initialization
+        const newSymbols: string[] = [];
+        set(
+          produce((draft) => {
+            draft.isInitializing = true;
+            draft.error = null;
 
-        // Convert to Set using Array.from for compatibility
-        const subscribedSet = new Set<string>();
-        allSymbols.forEach((s) => subscribedSet.add(s));
+            // Add new symbols (preserve existing ones with their candles)
+            allSymbols.forEach((symbol) => {
+              const normalized = symbol.toUpperCase();
+              if (!draft.symbols[normalized]) {
+                draft.symbols[normalized] = createEmptySymbolData(normalized);
+                newSymbols.push(normalized);
+              }
+            });
 
-        set({ symbols, subscribedSymbols: subscribedSet });
+            // Remove symbols no longer in watchlist (except macroSymbols)
+            Object.keys(draft.symbols).forEach((sym) => {
+              if (!allSymbolsSet.has(sym) && !macroSet.has(sym)) {
+                delete draft.symbols[sym];
+              }
+            });
+
+            // Update subscribed symbols
+            draft.subscribedSymbols = new Set(allSymbols.map((s) => s.toUpperCase()));
+          })
+        );
+
+        // Log if new symbols were added
+        if (newSymbols.length > 0) {
+          console.log("[v0] 📊 initialize: Added new symbols:", newSymbols.join(", "));
+        }
 
         // Initialize WebSocket connection
         get().connectWebSocket();
 
         // Fetch historical bars for all symbols (async, don't wait)
+        console.warn("[v0] 🔥 About to call fetchHistoricalBars for", allSymbols.length, "symbols");
         get()
           .fetchHistoricalBars(allSymbols)
           .then(() => {
             // Start REST polling as fallback for WebSocket failures
             // This ensures data stays fresh even if WebSocket has 1008 errors
             get().startPolling();
+          })
+          .finally(() => {
+            // Only clear isInitializing AFTER bars are fetched to prevent race conditions
+            set({ isInitializing: false });
+            console.warn("[v0] ✅ initialize() complete - isInitializing set to false");
           });
-
-        set({ isInitializing: false });
       },
 
       /** Fetch historical bars for symbols to populate initial candles */
       fetchHistoricalBars: async (symbols: string[]) => {
-        console.log("[v0] 📥 Fetching historical bars for", symbols.length, "symbols");
+        console.warn(
+          "[v0] 📥 fetchHistoricalBars() ENTERED with",
+          symbols.length,
+          "symbols:",
+          symbols.slice(0, 5).join(", ")
+        );
 
         // Helper: fetch with retry and exponential backoff
         const fetchWithRetry = async <T>(
@@ -551,6 +595,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
         for (const symbol of symbols) {
           const normalized = symbol.toUpperCase();
           let gotData = false;
+          console.warn(`[v0] 🔄 Fetching bars for ${normalized}...`);
 
           // Fetch 1m bars with retry (last 200 bars = ~3 hours of data)
           const bars1m = await fetchWithRetry(
@@ -558,6 +603,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
             `Fetch 1m bars for ${normalized}`
           );
 
+          console.warn(`[v0] ✅ ${normalized} got ${bars1m?.length || 0} 1m bars`);
           if (bars1m && bars1m.length > 0) {
             // Convert to Candle format and update store
             const candles1m: Candle[] = bars1m.map((bar) => ({
@@ -986,179 +1032,169 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
       updateCandles: (symbol: string, timeframe: Timeframe, candles: Candle[]) => {
         const normalized = symbol.toUpperCase();
-        const { symbols } = get();
-        const symbolData = symbols[normalized];
 
-        if (!symbolData) {
-          console.warn("[v0] marketDataStore: Symbol not found:", normalized);
-          return;
+        // Debug logging for sparkline issue
+        const lastCandle = candles?.[candles.length - 1];
+        const lastCandleAge = lastCandle ? (Date.now() - lastCandle.time) / (60 * 60 * 1000) : null;
+        console.warn(
+          `[v0] updateCandles: ${normalized} ${timeframe} received ${candles?.length || 0} candles`,
+          lastCandle
+            ? `(last: ${new Date(lastCandle.time).toISOString()}, age: ${lastCandleAge?.toFixed(2)}h)`
+            : "(no candles)"
+        );
+
+        // SAFETY GUARD: Don't overwrite existing candles with empty data
+        const existingCandles = get().symbols[normalized]?.candles?.[timeframe] || [];
+        if (existingCandles.length > 0 && (!candles || candles.length === 0)) {
+          console.warn(
+            `[v0] ⚠️ BLOCKED: Refusing to overwrite ${existingCandles.length} existing ${timeframe} candles with empty data for ${normalized}`
+          );
+          return; // Don't clear existing candles
         }
 
         // Trim to max candles
         const trimmedCandles = candles.slice(-MAX_CANDLES_PER_TIMEFRAME);
 
-        // Auto-rollup higher timeframes when 1m candles are loaded
-        let candles5m = symbolData.candles["5m"];
-        let candles15m = symbolData.candles["15m"];
-        let candles60m = symbolData.candles["60m"];
+        // Use Immer's produce to avoid race conditions with concurrent async updates
+        // This ensures each update operates on the latest state, not a stale snapshot
+        set(
+          produce((draft) => {
+            if (!draft.symbols[normalized]) {
+              console.warn("[v0] marketDataStore: Symbol not found:", normalized);
+              return;
+            }
 
-        if (timeframe === "1m" && trimmedCandles.length > 0) {
-          candles5m = rollupBars(trimmedCandles, "5m");
-          candles15m = rollupBars(trimmedCandles, "15m");
-          candles60m = rollupBars(trimmedCandles, "60m");
-          console.log(
-            `[v0] Rolled up ${trimmedCandles.length} 1m bars → 5m:${candles5m.length}, 15m:${candles15m.length}, 60m:${candles60m.length}`
-          );
-        }
+            const symbolData = draft.symbols[normalized];
 
-        set({
-          symbols: {
-            ...symbols,
-            [normalized]: {
-              ...symbolData,
-              candles: {
-                ...symbolData.candles,
-                [timeframe]: trimmedCandles,
-                // Include rolled-up candles when we roll up from 1m
-                ...(timeframe === "1m" && {
-                  "5m": candles5m,
-                  "15m": candles15m,
-                  "60m": candles60m,
-                }),
-              },
-              lastUpdated: Date.now(),
-            },
-          },
-        });
+            // Log if we're replacing candles (helps debug race conditions)
+            const beforeCount = symbolData.candles[timeframe]?.length || 0;
+            if (beforeCount > 0 && beforeCount !== trimmedCandles.length) {
+              console.warn(
+                `[v0] 🔄 Replacing ${beforeCount} ${timeframe} candles with ${trimmedCandles.length} for ${normalized}`
+              );
+            }
+
+            // Auto-rollup higher timeframes when 1m candles are loaded
+            if (timeframe === "1m" && trimmedCandles.length > 0) {
+              const candles5m = rollupBars(trimmedCandles, "5m");
+              const candles15m = rollupBars(trimmedCandles, "15m");
+              const candles60m = rollupBars(trimmedCandles, "60m");
+              console.warn(
+                `[v0] Rolled up ${trimmedCandles.length} 1m → 5m:${candles5m.length}, 15m:${candles15m.length}, 60m:${candles60m.length}`
+              );
+              symbolData.candles["5m"] = candles5m;
+              symbolData.candles["15m"] = candles15m;
+              symbolData.candles["60m"] = candles60m;
+            }
+
+            // Update the specified timeframe
+            symbolData.candles[timeframe] = trimmedCandles;
+            symbolData.lastUpdated = Date.now();
+          })
+        );
 
         // Recompute indicators if this is the primary timeframe OR if we just rolled up
-        if (timeframe === symbolData.primaryTimeframe || timeframe === "1m") {
+        const symbolData = get().symbols[normalized];
+        if (symbolData && (timeframe === symbolData.primaryTimeframe || timeframe === "1m")) {
           get().recomputeIndicators(normalized);
         }
       },
 
       mergeBar: (symbol: string, timeframe: Timeframe, bar: Candle) => {
         const normalized = symbol.toUpperCase();
-        const { symbols } = get();
-        const symbolData = symbols[normalized];
 
-        if (!symbolData) {
-          console.warn("[v0] marketDataStore: Symbol not found:", normalized);
-          return;
-        }
+        // Use Immer's produce to avoid race conditions with concurrent updates
+        set(
+          produce((draft) => {
+            const symbolData = draft.symbols[normalized];
 
-        const existingCandles = symbolData.candles[timeframe] || [];
-        let updatedCandles = [...existingCandles];
+            if (!symbolData) {
+              console.warn("[v0] marketDataStore: Symbol not found:", normalized);
+              return;
+            }
 
-        // Check if this bar updates the last candle (same time/timestamp) or adds new
-        const lastCandle = existingCandles[existingCandles.length - 1];
-        const barTime = bar.time || bar.timestamp || 0;
-        const lastTime = lastCandle ? lastCandle.time || lastCandle.timestamp || 0 : 0;
+            const existingCandles = symbolData.candles[timeframe] || [];
 
-        if (lastCandle && lastTime === barTime) {
-          // Update existing candle (snapshot + delta pattern)
-          updatedCandles[updatedCandles.length - 1] = bar;
-        } else {
-          // New candle
-          updatedCandles.push(bar);
+            // Check if this bar updates the last candle (same time/timestamp) or adds new
+            const lastCandle = existingCandles[existingCandles.length - 1];
+            const barTime = bar.time || bar.timestamp || 0;
+            const lastTime = lastCandle ? lastCandle.time || lastCandle.timestamp || 0 : 0;
 
-          // Trim to max length
-          if (updatedCandles.length > MAX_CANDLES_PER_TIMEFRAME) {
-            updatedCandles = updatedCandles.slice(-MAX_CANDLES_PER_TIMEFRAME);
-          }
-        }
+            if (lastCandle && lastTime === barTime) {
+              // Update existing candle (snapshot + delta pattern)
+              existingCandles[existingCandles.length - 1] = bar;
+            } else {
+              // New candle
+              existingCandles.push(bar);
 
-        // Auto-rollup higher timeframes from 1m bars
-        let candles5m = symbolData.candles["5m"];
-        let candles15m = symbolData.candles["15m"];
-        let candles60m = symbolData.candles["60m"];
+              // Trim to max length
+              if (existingCandles.length > MAX_CANDLES_PER_TIMEFRAME) {
+                existingCandles.splice(0, existingCandles.length - MAX_CANDLES_PER_TIMEFRAME);
+              }
+            }
 
-        if (timeframe === "1m") {
-          // Roll up to 5m, 15m, 60m automatically
-          candles5m = rollupBars(updatedCandles, "5m");
-          candles15m = rollupBars(updatedCandles, "15m");
-          candles60m = rollupBars(updatedCandles, "60m");
-        }
+            // Auto-rollup higher timeframes from 1m bars
+            if (timeframe === "1m") {
+              // Roll up to 5m, 15m, 60m automatically
+              symbolData.candles["5m"] = rollupBars(existingCandles, "5m");
+              symbolData.candles["15m"] = rollupBars(existingCandles, "15m");
+              symbolData.candles["60m"] = rollupBars(existingCandles, "60m");
+            }
 
-        set({
-          symbols: {
-            ...symbols,
-            [normalized]: {
-              ...symbolData,
-              candles: {
-                "1m": timeframe === "1m" ? updatedCandles : symbolData.candles["1m"],
-                "5m":
-                  timeframe === "1m"
-                    ? candles5m
-                    : timeframe === "5m"
-                      ? updatedCandles
-                      : symbolData.candles["5m"],
-                "15m":
-                  timeframe === "1m"
-                    ? candles15m
-                    : timeframe === "15m"
-                      ? updatedCandles
-                      : symbolData.candles["15m"],
-                "60m":
-                  timeframe === "1m"
-                    ? candles60m
-                    : timeframe === "60m"
-                      ? updatedCandles
-                      : symbolData.candles["60m"],
-                "1D": symbolData.candles["1D"],
-              },
-              lastUpdated: Date.now(),
-            },
-          },
-        });
+            symbolData.lastUpdated = Date.now();
+          })
+        );
 
         // Recompute comprehensive indicators/signals if this is the primary timeframe
         // Note: recomputeSymbol has built-in conditional logic (only runs on bar close or significant move)
-        if (timeframe === symbolData.primaryTimeframe || timeframe === "1m") {
+        const symbolData = get().symbols[normalized];
+        if (symbolData && (timeframe === symbolData.primaryTimeframe || timeframe === "1m")) {
           get().recomputeSymbol(normalized);
         }
       },
 
       recomputeIndicators: (symbol: string) => {
         const normalized = symbol.toUpperCase();
-        const { symbols } = get();
-        const symbolData = symbols[normalized];
 
-        if (!symbolData) return;
+        // FIXED: Use Immer produce for atomic updates (prevents race conditions)
+        set(
+          produce((draft) => {
+            const symbolData = draft.symbols[normalized];
+            if (!symbolData) return;
 
-        const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
-        if (primaryCandles.length === 0) return;
+            const primaryCandles = symbolData.candles[symbolData.primaryTimeframe];
+            if (primaryCandles.length === 0) return;
 
-        // Compute indicators
-        const indicators = computeIndicatorsFromCandles(primaryCandles);
+            // Compute indicators
+            const indicators = computeIndicatorsFromCandles(primaryCandles);
 
-        // Compute MTF trends
-        const mtfTrend: Record<Timeframe, MTFTrend> = {} as Record<Timeframe, MTFTrend>;
-        (["1m", "5m", "15m", "60m", "1D"] as Timeframe[]).forEach((tf) => {
-          const tfCandles = symbolData.candles[tf];
-          if (tfCandles.length > 0) {
-            const tfIndicators = computeIndicatorsFromCandles(tfCandles);
-            mtfTrend[tf] = determineTrend(tfCandles, tfIndicators);
-          } else {
-            mtfTrend[tf] = "neutral";
-          }
-        });
+            // Compute MTF trends
+            const mtfTrend: Record<Timeframe, MTFTrend> = {} as Record<Timeframe, MTFTrend>;
+            (["1m", "5m", "15m", "60m", "1D"] as Timeframe[]).forEach((tf) => {
+              const tfCandles = symbolData.candles[tf];
+              if (tfCandles.length > 0) {
+                const tfIndicators = computeIndicatorsFromCandles(tfCandles);
+                mtfTrend[tf] = determineTrend(tfCandles, tfIndicators);
+              } else {
+                mtfTrend[tf] = "neutral";
+              }
+            });
 
-        // Compute confluence
-        const confluence = calculateConfluence(normalized, primaryCandles, indicators, mtfTrend);
-
-        set({
-          symbols: {
-            ...symbols,
-            [normalized]: {
-              ...symbolData,
+            // Compute confluence
+            const confluence = calculateConfluence(
+              normalized,
+              primaryCandles,
               indicators,
-              mtfTrend,
-              confluence,
-              lastUpdated: Date.now(),
-            },
-          },
-        });
+              mtfTrend
+            );
+
+            // Mutate the draft directly (Immer handles immutability)
+            symbolData.indicators = indicators;
+            symbolData.mtfTrend = mtfTrend;
+            symbolData.confluence = confluence;
+            symbolData.lastUpdated = Date.now();
+          })
+        );
       },
 
       /**
@@ -1523,12 +1559,16 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
 /** Get all data for a symbol */
 export function useSymbolData(symbol: string) {
-  return useMarketDataStore((state) => state.getSymbolData(symbol));
+  const normalized = symbol.toUpperCase();
+  // Direct state access for proper Zustand reactivity (don't use getSymbolData which calls get())
+  return useMarketDataStore((state) => state.symbols[normalized]);
 }
 
 /** Get candles for a specific timeframe */
 export function useCandles(symbol: string, timeframe: Timeframe) {
-  return useMarketDataStore((state) => state.getCandles(symbol, timeframe));
+  const normalized = symbol.toUpperCase();
+  // Direct state access for proper Zustand reactivity
+  return useMarketDataStore((state) => state.symbols[normalized]?.candles[timeframe] || []);
 }
 
 /** Get latest indicators */

@@ -207,7 +207,15 @@ function formatHoldTime(minutes: number): string {
 function buildExpiredTradeModel(trade: Trade, contract: any): LiveTradeModel {
   const entryPrice =
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || contract.mid || 0;
-  const expiredPrice = contract.mid || contract.last || 0; // Last known price
+
+  // FIX 11: Use database price (most recent) instead of entry snapshot
+  // Priority: last_option_price (from polling) → exitPrice → contract snapshot
+  const expiredPrice =
+    trade.last_option_price || // From ActiveTradePollingService (most recent before expiry)
+    trade.exitPrice || // If trade was manually exited
+    contract.mid || // Entry snapshot (last resort)
+    contract.last ||
+    0;
 
   const pnlGross = entryPrice > 0 ? ((expiredPrice - entryPrice) / entryPrice) * 100 : 0;
   const quantity = trade.quantity || 1;
@@ -279,12 +287,28 @@ function buildExpiredTradeModel(trade: Trade, contract: any): LiveTradeModel {
 // ============================================================================
 
 export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | null {
-  // Early return if no trade
-  if (!trade || !trade.contract) {
+  // Early return if no trade at all
+  if (!trade) {
     return null;
   }
 
-  const contract = trade.contract;
+  // Handle missing contract gracefully - create a minimal contract from trade data
+  // This ensures P&L can still be calculated using database-stored prices
+  const contract = trade.contract || {
+    id: null,
+    ticker: trade.ticker,
+    strike: 0,
+    expiry: null,
+    type: "C" as const,
+    bid: trade.entry_bid || 0,
+    ask: trade.entry_ask || 0,
+    mid: trade.entry_mid || trade.entryPrice || 0,
+    delta: 0,
+    gamma: 0,
+    theta: 0,
+    vega: 0,
+    iv: 0,
+  };
 
   // Check if contract has expired
   const expiryDate = contract.expiry ? new Date(contract.expiry) : null;
@@ -538,6 +562,20 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     // 2. Contract snapshot Greeks are sufficient for display
     // 3. This prevents false "DELAYED" badge when prices are streaming fine
     // Note: Unavailable underlying (after hours) is NOT penalized - we just show "N/A"
+
+    // DEBUG: Log the final P&L calculation
+    console.warn(`📊 [LIVE MODEL] ${trade.ticker}:`, {
+      effectiveMid,
+      entryPrice,
+      pnlPercent: roundPrice(netPnlPercent).toFixed(2) + "%",
+      priceSource,
+      priceAsOf: new Date(priceAsOf).toISOString(),
+      priceLabel: getPriceLabel(priceSource, priceAsOf, timeState.marketOpen),
+      optionBid,
+      optionAsk,
+      storeLastPrice: trade.last_option_price,
+      storeLastPriceAt: trade.last_option_price_at,
+    });
 
     return {
       // Core pricing

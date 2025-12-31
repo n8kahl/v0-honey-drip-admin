@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
+import { produce } from "immer";
 import { Ticker } from "../types";
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from "../lib/supabase/database";
 import { dismissSignalsForOwnerSymbol } from "../lib/supabase/compositeSignals";
@@ -233,19 +234,19 @@ export const useMarketStore = create<MarketStore>()(
         }));
 
         // CRITICAL FIX: Also update marketDataStore timestamps so stale detection works
-        useMarketDataStore.setState((state: any) => {
-          const updatedSymbols = { ...state.symbols };
-          const now = Date.now();
-          quotes.forEach((quote, symbol) => {
-            if (updatedSymbols[symbol]) {
-              updatedSymbols[symbol] = {
-                ...updatedSymbols[symbol],
-                lastUpdated: now,
-              };
-            }
-          });
-          return { symbols: updatedSymbols };
-        });
+        // Use Immer's produce to avoid race conditions with concurrent candle updates
+
+        useMarketDataStore.setState(
+          produce((draft: any) => {
+            const now = Date.now();
+            quotes.forEach((_quote, symbol) => {
+              if (draft.symbols[symbol]) {
+                // Only update timestamp, preserve all other data (especially candles)
+                draft.symbols[symbol].lastUpdated = now;
+              }
+            });
+          }) as any
+        );
       },
 
       updateQuote: (symbol, quote) => {
