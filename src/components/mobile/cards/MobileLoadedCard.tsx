@@ -3,7 +3,7 @@ import { HDTagTradeType } from "../../hd/common/HDTagTradeType";
 import { cn, formatPrice } from "../../../lib/utils";
 import { Play, X, Zap, Wifi, WifiOff } from "lucide-react";
 import { useSymbolData } from "../../../stores/marketDataStore";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
+import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
 import { formatExpirationShort } from "../../../ui/semantics";
 
 interface MobileLoadedCardProps {
@@ -16,19 +16,16 @@ interface MobileLoadedCardProps {
 export function MobileLoadedCard({ trade, onEnter, onDismiss, active }: MobileLoadedCardProps) {
   const contract = trade.contract;
 
-  // Get LIVE price data via WebSocket/REST transport (matches desktop pattern)
-  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
-  const {
-    currentPrice: liveCurrentPrice,
-    source,
-    asOf,
-  } = useActiveTradePnL(trade.id, contractTicker, contract?.mid || 0);
+  // Get LIVE price data via canonical hook (matches desktop pattern)
+  // This hook provides database fallback, market context, and proper stale detection
+  const liveModel = useActiveTradeLiveModel(trade);
 
   // Use live data if available, fallback to stale contract data
-  const mid = liveCurrentPrice > 0 ? liveCurrentPrice : contract?.mid || 0;
+  const mid = liveModel?.effectiveMid ?? contract?.mid ?? 0;
 
-  // Data freshness check (stale if >10s old)
-  const isStale = Date.now() - asOf > 10000;
+  // Data source and staleness from canonical hook
+  const source = liveModel?.optionSource ?? "rest";
+  const isStale = liveModel?.optionIsStale ?? false;
 
   // Get live confluence from market data store
   const symbolData = useSymbolData(trade.ticker);
