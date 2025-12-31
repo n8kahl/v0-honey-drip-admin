@@ -30,7 +30,7 @@ import {
 } from "../../stores/marketDataStore";
 import { cn } from "../../lib/utils";
 import { chipStyle } from "../../ui/semantics";
-import { getAppLogo } from "../../lib/config/branding";
+import { FlowDashboard } from "../hd/flow";
 
 interface NowPanelSymbolProps {
   symbol: string;
@@ -192,16 +192,14 @@ export function NowPanelSymbol({
             />
           </div>
 
-          {/* Right: Logo Area (~50%) */}
-          <div className="w-1/2 flex flex-col items-center justify-center bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)]">
-            <img
-              src={getAppLogo()}
-              alt="Logo"
-              className="max-w-[180px] max-h-[180px] object-contain opacity-40"
-            />
-            {/* Active Signals Summary (below logo) */}
+          {/* Right: Flow Dashboard + Active Signals (~50%) */}
+          <div className="w-1/2 flex flex-col gap-3 overflow-y-auto">
+            {/* Flow Dashboard - institutional flow context */}
+            <FlowDashboard symbol={symbol} defaultExpanded={true} compact={false} />
+
+            {/* Active Signals Summary */}
             {compositeSignals && compositeSignals.length > 0 && (
-              <div className="mt-4 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+              <div className="px-3 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--border-hairline)]">
                 <div className="text-[9px] font-medium text-[var(--text-muted)] uppercase tracking-wide mb-1.5 text-center">
                   Active Signals ({compositeSignals.length})
                 </div>
