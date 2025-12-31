@@ -24,11 +24,12 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     console.log(`[index-mean-reversion-long] ${symbol}: shouldRun=${shouldRun}`);
     if (!shouldRun) return false;
 
-    // 2. RSI oversold - relaxed threshold for weekend analysis
+    // 2. RSI oversold - OPTIMIZED: Tighter thresholds for indices (was 40/35, now 35/25)
     const rsi = features.rsi?.["14"];
     // CRITICAL FIX: Explicitly check for false (undefined should default to weekday, not weekend!)
     const isWeekend = features.session?.isRegularHours === false;
-    const rsiThreshold = isWeekend ? 40 : 35; // More lenient on weekends
+    // OPTIMIZED: Indices need more extreme oversold confirmation
+    const rsiThreshold = isWeekend ? 35 : 25;
     console.log(
       `[index-mean-reversion-long] ${symbol}: RSI=${rsi}, threshold=${rsiThreshold}, isWeekend=${isWeekend}`
     );
@@ -37,9 +38,10 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
       return false;
     }
 
-    // 3. Below VWAP (stretched) - relaxed for weekends, optional if data unavailable
+    // 3. Below VWAP (stretched) - OPTIMIZED: Require more stretched for indices
     const vwapDist = features.vwap?.distancePct;
-    const vwapThreshold = isWeekend ? -0.2 : -0.3; // Less strict on weekends
+    // OPTIMIZED: Increased deviation (was -0.2/-0.3, now -0.3/-0.4)
+    const vwapThreshold = isWeekend ? -0.3 : -0.4;
     console.log(
       `[index-mean-reversion-long] ${symbol}: VWAP dist=${vwapDist}, threshold=${vwapThreshold}`
     );
@@ -68,13 +70,42 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     }
     // Weekend without valid VWAP data: skip check entirely (rely on RSI + patterns)
 
+    // PHASE 2 OPTIMIZATION: ATR-based entry filter (replaces Bollinger Bands)
+    // ATR adapts to volatility - better for indices which can have overnight gaps
+    const atr = features.atr;
+    const ema21 = features.ema?.["21"];
+    const price = features.price?.current;
+    if (atr && ema21 && price && atr > 0) {
+      // Indices: Price must be stretched at least 1.8 ATR below EMA21
+      // TIGHTENED: Was 1.2, increased to 1.8 to filter more low-quality signals
+      const deviationInATR = (ema21 - price) / atr;
+      if (deviationInATR < 1.8) {
+        console.log(
+          `[index-mean-reversion-long] ${symbol}: ❌ Price not stretched enough (${deviationInATR.toFixed(2)} ATR below EMA21, need 1.8+)`
+        );
+        return false;
+      }
+      console.log(
+        `[index-mean-reversion-long] ${symbol}: ✓ Price stretched ${deviationInATR.toFixed(2)} ATR below EMA21`
+      );
+    }
+
+    // PHASE 1 OPTIMIZATION: Volume confirmation for indices
+    // Indices need higher volume to confirm reversal
+    const relativeVolume = features.volume?.relativeToAvg ?? 1;
+    if (relativeVolume < 1.0) {
+      console.log(
+        `[index-mean-reversion-long] ${symbol}: ❌ Volume too low (${relativeVolume.toFixed(2)}x avg)`
+      );
+      return false;
+    }
+
     // 4. Market regime check - REVISED LOGIC
     // Previously blocked ALL downtrends, but that's when oversold bounces happen!
     // Now: Only block extreme downtrends (price far below EMAs) or require bounce confirmation
     const regime = features.pattern?.market_regime;
     const ema9 = features.ema?.["9"];
-    const ema21 = features.ema?.["21"];
-    const price = features.price?.current;
+    // ema21 and price already declared above in ATR section
 
     console.log(`[index-mean-reversion-long] ${symbol}: market_regime=${regime}`);
 
@@ -106,6 +137,26 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
       );
     }
 
+    // PHASE 3: Flow confirmation (don't fight smart money)
+    // If institutional flow shows heavy bearish activity, skip the signal
+    const flow = features.flow;
+    if (flow && flow.flowBias === "bearish" && flow.blockCount > 2) {
+      console.log(
+        `[index-mean-reversion-long] ${symbol}: ❌ Blocked by institutional selling ` +
+          `(${flow.blockCount} blocks, ${flow.flowBias} bias)`
+      );
+      return false;
+    }
+
+    // If flow shows heavy bearish sweeps, also skip
+    if (flow && flow.flowBias === "bearish" && flow.sweepCount >= 3 && flow.flowScore >= 70) {
+      console.log(
+        `[index-mean-reversion-long] ${symbol}: ❌ Blocked by bearish sweeps ` +
+          `(${flow.sweepCount} sweeps, ${flow.flowScore} flow score)`
+      );
+      return false;
+    }
+
     console.log(`[index-mean-reversion-long] ${symbol}: ✅ ALL CHECKS PASSED - SIGNAL DETECTED!`);
     return true;
   },
@@ -113,7 +164,7 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
   scoreFactors: [
     {
       name: "vwap_deviation_magnitude",
-      weight: 0.3,
+      weight: 0.15, // Reduced from 0.3
       evaluate: (features) => {
         const vwapDist = features.vwap?.distancePct || 0;
 
@@ -127,8 +178,31 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
       },
     },
     {
+      // PHASE 2: ATR-normalized deviation scoring for indices
+      name: "atr_deviation",
+      weight: 0.2,
+      evaluate: (features) => {
+        const atr = features.atr;
+        const ema21 = features.ema?.["21"];
+        const price = features.price?.current;
+
+        if (!atr || !ema21 || !price || atr === 0) return 50;
+
+        const deviationInATR = (ema21 - price) / atr;
+
+        // Score based on ATR stretch (indices: lower thresholds)
+        if (deviationInATR >= 2.5) return 100;
+        if (deviationInATR >= 2.0) return 90;
+        if (deviationInATR >= 1.5) return 80;
+        if (deviationInATR >= 1.2) return 70;
+        if (deviationInATR >= 1.0) return 55;
+
+        return 40;
+      },
+    },
+    {
       name: "rsi_extreme",
-      weight: 0.25,
+      weight: 0.15, // Reduced from 0.25
       evaluate: (features) => {
         const rsi = features.rsi?.["14"] || 50;
 
@@ -142,7 +216,7 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     },
     {
       name: "volume_profile",
-      weight: 0.2,
+      weight: 0.1, // Reduced from 0.2
       evaluate: (features) => {
         const rvol = features.volume?.relativeToAvg || 1.0;
 
@@ -156,7 +230,7 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
     },
     {
       name: "market_regime_suitability",
-      weight: 0.15,
+      weight: 0.1, // Reduced from 0.15
       evaluate: (features) => {
         const regime = features.pattern?.market_regime;
 
@@ -170,17 +244,50 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
       },
     },
     {
-      name: "time_based_probability",
+      // PHASE 2: RSI divergence confirmation
+      name: "divergence_confirmation",
+      weight: 0.15,
+      evaluate: (features) => {
+        const div = features.divergence;
+
+        if (!div || div.type !== "bullish") return 50;
+
+        return Math.min(100, 50 + div.confidence * 0.5);
+      },
+    },
+    {
+      // PHASE 2: RSI momentum
+      name: "rsi_momentum",
       weight: 0.1,
+      evaluate: (features) => {
+        const currentRSI = features.rsi?.["14"];
+        const prevRSI = features.prev?.rsi?.["14"];
+
+        if (!currentRSI || !prevRSI) return 50;
+
+        const rsiDelta = currentRSI - prevRSI;
+
+        if (currentRSI < 35 && rsiDelta > 0) {
+          return 90;
+        }
+        if (currentRSI < 30 && rsiDelta <= 0) {
+          return 40;
+        }
+
+        return Math.min(100, Math.max(0, 50 + rsiDelta * 5));
+      },
+    },
+    {
+      name: "time_based_probability",
+      weight: 0.05, // Reduced from 0.1
       evaluate: (features) => {
         const minutesSinceOpen = features.session?.minutesSinceOpen || 0;
 
         // Mean reversion typically stronger mid-day
-        // 60-240 minutes (10 AM - 1 PM) = best
         if (minutesSinceOpen >= 60 && minutesSinceOpen <= 240) return 100;
         if (minutesSinceOpen >= 30 && minutesSinceOpen <= 300) return 80;
 
-        return 60; // Still viable at other times
+        return 60;
       },
     },
   ],

@@ -139,30 +139,34 @@ class OptionsFlowListener {
       params: MASSIVE_API_KEY,
     });
 
-    // Subscribe to trade feeds for watched symbols
-    setTimeout(() => {
-      this.subscribeToSymbols(WATCHED_SYMBOLS);
-    }, 1000);
-
+    // Note: Subscriptions are sent after auth_success in handleStatusMessage
     // Start heartbeat
     this.startHeartbeat();
   }
 
   /**
    * Subscribe to trade feeds for symbols
+   *
+   * Based on user testing: Aggregates format is A.O:<ticker>
+   * So trades format should be T.O:<ticker>
+   *
+   * Priority: SPY first (most liquid), then other symbols
    */
   private subscribeToSymbols(symbols: string[]) {
     console.log(`[FlowListener] 📡 Subscribing to ${symbols.length} symbols...`);
 
-    for (const symbol of symbols) {
-      // Subscribe to trades for this underlying symbol
+    // Prioritize SPY (most liquid) - subscribe first
+    const orderedSymbols = ["SPY", "QQQ", "IWM", "SPX", "NDX"].filter((s) => symbols.includes(s));
+
+    // Subscribe using T.O:<symbol>* format (matching A.O: format from docs)
+    for (const symbol of orderedSymbols) {
+      const channel = `T.O:${symbol}*`;
       this.send({
         action: "subscribe",
-        params: `T.${symbol}.*`, // All option contracts for this symbol
+        params: channel,
       });
-
       this.subscriptions.add(symbol);
-      console.log(`[FlowListener]   ✓ Subscribed to ${symbol} trades`);
+      console.log(`[FlowListener]   ✓ Subscribed to ${symbol} options trades (${channel})`);
     }
   }
 
@@ -171,10 +175,17 @@ class OptionsFlowListener {
    */
   private async handleMessage(data: WebSocket.Data) {
     try {
-      const messages = data.toString().split("\n").filter(Boolean);
+      const rawData = data.toString();
 
-      for (const messageStr of messages) {
-        const message = JSON.parse(messageStr);
+      // Debug: Log first 200 chars of each message
+      console.log(`[FlowListener] 📨 Received: ${rawData.slice(0, 200)}`);
+
+      // Massive.com sends messages as JSON arrays, not newline-delimited
+      const parsed = JSON.parse(rawData);
+      const messages = Array.isArray(parsed) ? parsed : [parsed];
+
+      for (const message of messages) {
+        if (!message || typeof message !== "object") continue;
 
         // Handle different message types
         switch (message.ev) {
@@ -191,7 +202,10 @@ class OptionsFlowListener {
             break;
 
           default:
-            // Ignore other message types
+            // Log unknown event types for debugging
+            if (message.ev) {
+              console.log(`[FlowListener] Unknown event type: ${message.ev}`);
+            }
             break;
         }
       }
@@ -207,6 +221,8 @@ class OptionsFlowListener {
   private handleStatusMessage(message: any) {
     if (message.status === "auth_success") {
       console.log("[FlowListener] 🔐 Authentication successful");
+      // Now that we're authenticated, subscribe to trade feeds
+      this.subscribeToSymbols(WATCHED_SYMBOLS);
     } else if (message.status === "auth_failed") {
       console.error("[FlowListener] ❌ Authentication failed");
       process.exit(1);

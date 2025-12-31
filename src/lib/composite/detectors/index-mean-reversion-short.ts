@@ -1,6 +1,6 @@
-import type { SymbolFeatures } from '../../strategy/engine.js';
-import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
-import { shouldRunDetector } from './utils.js';
+import type { SymbolFeatures } from "../../strategy/engine.js";
+import { createDetector, type OpportunityDetector } from "../OpportunityDetector.js";
+import { shouldRunDetector } from "./utils.js";
 
 /**
  * Index Mean Reversion Short Detector (SPX/NDX)
@@ -11,34 +11,38 @@ import { shouldRunDetector } from './utils.js';
  * Expected Frequency: 3-5 signals/day
  */
 export const indexMeanReversionShortDetector: OpportunityDetector = createDetector({
-  type: 'index_mean_reversion_short',
-  direction: 'SHORT',
-  assetClass: ['INDEX'],
+  type: "index_mean_reversion_short",
+  direction: "SHORT",
+  assetClass: ["INDEX"],
   requiresOptionsData: false,
 
   detect: (features: SymbolFeatures) => {
-    // 1. RSI overbought (> 65)
-    const rsi = features.rsi?.['14'];
-    if (!rsi || rsi <= 65) return false;
+    // 1. RSI overbought - OPTIMIZED: Tighter for indices (was 65, now 75)
+    const rsi = features.rsi?.["14"];
+    if (!rsi || rsi <= 75) return false;
 
-    // 2. Above VWAP (stretched)
+    // 2. Above VWAP (stretched) - OPTIMIZED: Require more (was 0.3, now 0.4)
     const vwapDist = features.vwap?.distancePct;
-    if (!vwapDist || vwapDist <= 0.3) return false;
+    if (!vwapDist || vwapDist <= 0.4) return false;
 
-    // 3. Check if detector should run (market hours or weekend mode)
+    // 3. Volume confirmation - OPTIMIZED: Require elevated volume (1.3x for indices)
+    const relativeVolume = features.volume?.relativeToAvg ?? 1;
+    if (relativeVolume < 1.3) return false;
+
+    // 4. Check if detector should run (market hours or weekend mode)
     if (!shouldRunDetector(features)) return false;
 
-    // 4. Not in extreme uptrend
+    // 5. Not in extreme uptrend
     const regime = features.pattern?.market_regime;
-    if (regime === 'trending_up') return false;
+    if (regime === "trending_up") return false;
 
     return true;
   },
 
   scoreFactors: [
     {
-      name: 'vwap_deviation_magnitude',
-      weight: 0.30,
+      name: "vwap_deviation_magnitude",
+      weight: 0.3,
       evaluate: (features) => {
         const vwapDist = features.vwap?.distancePct || 0;
 
@@ -49,13 +53,13 @@ export const indexMeanReversionShortDetector: OpportunityDetector = createDetect
         if (vwapDist >= 0.3) return 55;
 
         return Math.min(100, vwapDist * 50);
-      }
+      },
     },
     {
-      name: 'rsi_extreme',
+      name: "rsi_extreme",
       weight: 0.25,
       evaluate: (features) => {
-        const rsi = features.rsi?.['14'] || 50;
+        const rsi = features.rsi?.["14"] || 50;
 
         if (rsi >= 80) return 100;
         if (rsi >= 75) return 85;
@@ -63,11 +67,11 @@ export const indexMeanReversionShortDetector: OpportunityDetector = createDetect
         if (rsi >= 65) return 55;
 
         return Math.max(0, (rsi - 50) * 2);
-      }
+      },
     },
     {
-      name: 'volume_profile',
-      weight: 0.20,
+      name: "volume_profile",
+      weight: 0.2,
       evaluate: (features) => {
         const rvol = features.volume?.relativeToAvg || 1.0;
 
@@ -77,26 +81,26 @@ export const indexMeanReversionShortDetector: OpportunityDetector = createDetect
         if (rvol >= 1.2) return 65;
 
         return Math.min(100, rvol * 50);
-      }
+      },
     },
     {
-      name: 'market_regime_suitability',
+      name: "market_regime_suitability",
       weight: 0.15,
       evaluate: (features) => {
         const regime = features.pattern?.market_regime;
 
         // Mean reversion works best in ranging/choppy
-        if (regime === 'ranging') return 100;
-        if (regime === 'choppy') return 90;
-        if (regime === 'volatile') return 70;
-        if (regime === 'trending_down') return 60;
+        if (regime === "ranging") return 100;
+        if (regime === "choppy") return 90;
+        if (regime === "volatile") return 70;
+        if (regime === "trending_down") return 60;
 
         return 40;
-      }
+      },
     },
     {
-      name: 'time_based_probability',
-      weight: 0.10,
+      name: "time_based_probability",
+      weight: 0.1,
       evaluate: (features) => {
         const minutesSinceOpen = features.session?.minutesSinceOpen || 0;
 
@@ -105,7 +109,7 @@ export const indexMeanReversionShortDetector: OpportunityDetector = createDetect
         if (minutesSinceOpen >= 30 && minutesSinceOpen <= 300) return 80;
 
         return 60;
-      }
-    }
-  ]
+      },
+    },
+  ],
 });

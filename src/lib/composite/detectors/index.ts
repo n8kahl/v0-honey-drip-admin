@@ -14,6 +14,10 @@ export { meanReversionShortDetector } from "./mean-reversion-short.js";
 export { trendContinuationLongDetector } from "./trend-continuation-long.js";
 export { trendContinuationShortDetector } from "./trend-continuation-short.js";
 
+// Flow-Primary Detectors (Phase 3 - Smart Money Following)
+export { sweepMomentumLongDetector } from "./sweep-momentum-long.js";
+export { sweepMomentumShortDetector } from "./sweep-momentum-short.js";
+
 // SPX/NDX-Specific Detectors
 export { gammaSqueezeBullishDetector } from "./gamma-squeeze-bullish.js";
 export { gammaSqueezeBearishDetector } from "./gamma-squeeze-bearish.js";
@@ -39,6 +43,8 @@ import { meanReversionLongDetector } from "./mean-reversion-long.js";
 import { meanReversionShortDetector } from "./mean-reversion-short.js";
 import { trendContinuationLongDetector } from "./trend-continuation-long.js";
 import { trendContinuationShortDetector } from "./trend-continuation-short.js";
+import { sweepMomentumLongDetector } from "./sweep-momentum-long.js";
+import { sweepMomentumShortDetector } from "./sweep-momentum-short.js";
 import { gammaSqueezeBullishDetector } from "./gamma-squeeze-bullish.js";
 import { gammaSqueezeBearishDetector } from "./gamma-squeeze-bearish.js";
 import { powerHourReversalBullishDetector } from "./power-hour-reversal-bullish.js";
@@ -62,6 +68,10 @@ export const ALL_DETECTORS: OpportunityDetector[] = [
   meanReversionShortDetector,
   trendContinuationLongDetector,
   trendContinuationShortDetector,
+
+  // Flow-Primary (2) - Phase 3 Smart Money Following
+  sweepMomentumLongDetector,
+  sweepMomentumShortDetector,
 
   // SPX/NDX-Specific (11)
   gammaSqueezeBullishDetector,
@@ -216,3 +226,25 @@ export const BACKTESTABLE_DETECTORS_WITH_KCU: OpportunityDetector[] = [
   ...BACKTESTABLE_DETECTORS,
   ...BACKTESTABLE_KCU_DETECTORS,
 ];
+
+/**
+ * FLOW-PRIMARY DETECTORS (Phase 3)
+ * Use institutional flow (sweeps, blocks) as PRIMARY signal.
+ * Technical indicators are SECONDARY confirmation only.
+ *
+ * These detectors follow smart money and require features.flow data:
+ * - sweep_momentum_long: Multiple bullish sweeps + high flow score
+ * - sweep_momentum_short: Multiple bearish sweeps + low buy pressure
+ *
+ * NOTE: Cannot backtest without historical flow data (30+ days needed)
+ */
+export const FLOW_PRIMARY_DETECTORS: OpportunityDetector[] = [
+  sweepMomentumLongDetector,
+  sweepMomentumShortDetector,
+];
+
+/**
+ * ALL DETECTORS INCLUDING FLOW
+ * Total: 19 detectors (17 original + 2 flow-primary)
+ */
+export const ALL_DETECTORS_WITH_FLOW: OpportunityDetector[] = [...ALL_DETECTORS];

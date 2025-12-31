@@ -1,6 +1,6 @@
-import type { SymbolFeatures } from '../../strategy/engine.js';
-import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
-import { shouldRunDetector } from './utils.js';
+import type { SymbolFeatures } from "../../strategy/engine.js";
+import { createDetector, type OpportunityDetector } from "../OpportunityDetector.js";
+import { shouldRunDetector } from "./utils.js";
 
 /**
  * Mean Reversion Short Detector
@@ -11,36 +11,40 @@ import { shouldRunDetector } from './utils.js';
  * Expected Frequency: 3-5 signals/day per symbol
  */
 export const meanReversionShortDetector: OpportunityDetector = createDetector({
-  type: 'mean_reversion_short',
-  direction: 'SHORT',
-  assetClass: ['EQUITY_ETF', 'STOCK'],
+  type: "mean_reversion_short",
+  direction: "SHORT",
+  assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
 
   detect: (features: SymbolFeatures) => {
-    // 1. RSI overbought (> 65)
-    const rsi = features.rsi?.['14'];
-    if (!rsi || rsi <= 65) return false;
+    // 1. RSI overbought - OPTIMIZED: Tighter threshold (was 65, now 70)
+    const rsi = features.rsi?.["14"];
+    if (!rsi || rsi <= 70) return false;
 
-    // 2. Above VWAP (stretched)
+    // 2. Above VWAP (stretched) - OPTIMIZED: Require more stretched (was 0.3, now 0.5)
     const vwapDist = features.vwap?.distancePct;
-    if (!vwapDist || vwapDist <= 0.3) return false; // Must be at least +0.3% above VWAP
+    if (!vwapDist || vwapDist <= 0.5) return false; // Must be at least +0.5% above VWAP
 
-    // 3. Check if detector should run (market hours or weekend mode)
+    // 3. Volume confirmation - OPTIMIZED: Require elevated volume for quality
+    const relativeVolume = features.volume?.relativeToAvg ?? 1;
+    if (relativeVolume < 1.2) return false; // Skip low-volume setups
+
+    // 4. Check if detector should run (market hours or weekend mode)
     if (!shouldRunDetector(features)) return false;
 
-    // 4. Not in a strong uptrend
+    // 5. Not in a strong uptrend
     const regime = features.pattern?.market_regime;
-    if (regime === 'trending_up') return false; // Don't fight strong uptrends
+    if (regime === "trending_up") return false; // Don't fight strong uptrends
 
     return true;
   },
 
   scoreFactors: [
     {
-      name: 'rsi_extreme',
+      name: "rsi_extreme",
       weight: 0.35,
       evaluate: (features) => {
-        const rsi = features.rsi?.['14'] || 50;
+        const rsi = features.rsi?.["14"] || 50;
 
         // More overbought = higher score
         // RSI 70 = 60, RSI 75 = 80, RSI 80+ = 100
@@ -50,11 +54,11 @@ export const meanReversionShortDetector: OpportunityDetector = createDetector({
         if (rsi >= 65) return 55;
 
         return Math.max(0, (rsi - 50) * 2);
-      }
+      },
     },
     {
-      name: 'vwap_deviation',
-      weight: 0.30,
+      name: "vwap_deviation",
+      weight: 0.3,
       evaluate: (features) => {
         const vwapDist = features.vwap?.distancePct || 0;
 
@@ -66,11 +70,11 @@ export const meanReversionShortDetector: OpportunityDetector = createDetector({
         if (vwapDist >= 0.3) return 55;
 
         return Math.min(100, vwapDist * 40);
-      }
+      },
     },
     {
-      name: 'volume_profile',
-      weight: 0.20,
+      name: "volume_profile",
+      weight: 0.2,
       evaluate: (features) => {
         const rvol = features.volume?.relativeToAvg || 1.0;
 
@@ -81,26 +85,26 @@ export const meanReversionShortDetector: OpportunityDetector = createDetector({
         if (rvol >= 1.2) return 65;
 
         return Math.min(100, rvol * 50);
-      }
+      },
     },
     {
-      name: 'market_regime_suitability',
-      weight: 0.10,
+      name: "market_regime_suitability",
+      weight: 0.1,
       evaluate: (features) => {
         const regime = features.pattern?.market_regime;
 
         // Mean reversion works best in ranging/choppy markets
-        if (regime === 'ranging') return 100;
-        if (regime === 'choppy') return 90;
-        if (regime === 'volatile') return 70;
-        if (regime === 'trending_down') return 60;
-        if (regime === 'trending_up') return 20; // Risky in uptrends
+        if (regime === "ranging") return 100;
+        if (regime === "choppy") return 90;
+        if (regime === "volatile") return 70;
+        if (regime === "trending_down") return 60;
+        if (regime === "trending_up") return 20; // Risky in uptrends
 
         return 50;
-      }
+      },
     },
     {
-      name: 'reversal_confirmation',
+      name: "reversal_confirmation",
       weight: 0.05,
       evaluate: (features) => {
         // Check for early reversal signs
@@ -113,7 +117,7 @@ export const meanReversionShortDetector: OpportunityDetector = createDetector({
         if (hasPatientCandle) score += 20;
 
         return Math.min(100, score);
-      }
-    }
-  ]
+      },
+    },
+  ],
 });
