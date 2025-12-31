@@ -99,18 +99,77 @@ class OptionsFlowListener {
   }
 
   /**
-   * Connect to Massive.com WebSocket
+   * Connect to WebSocket
+   *
+   * Supports two modes:
+   * 1. Hub proxy (default): Connect to local server hub which handles auth
+   * 2. Direct: Connect directly to Massive.com (requires different subscription format)
    */
   private connect() {
     if (isReconnecting) return;
     isReconnecting = true;
 
-    console.log("[FlowListener] 🔌 Connecting to Massive.com options WebSocket...");
+    // Try hub proxy first (requires main server to be running)
+    const useHubProxy = process.env.USE_HUB_PROXY !== "false";
+    const hubUrl = process.env.HUB_URL || "ws://localhost:3000/ws/options";
 
+    if (useHubProxy) {
+      console.log(`[FlowListener] 🔌 Connecting via hub proxy (${hubUrl})...`);
+      this.connectViaHub(hubUrl);
+    } else {
+      console.log("[FlowListener] 🔌 Connecting directly to Massive.com...");
+      this.connectDirect();
+    }
+  }
+
+  /**
+   * Connect via local hub proxy (recommended)
+   * Hub handles authentication, we just need to subscribe
+   */
+  private async connectViaHub(hubUrl: string) {
     try {
-      // Massive.com WebSocket URL for options trades
-      const wsUrl = "wss://socket.massive.com/options";
+      // First, fetch an ephemeral token from the API
+      const apiBase = process.env.API_BASE || "http://localhost:3000";
+      console.log(`[FlowListener] 🔑 Fetching ephemeral token from ${apiBase}/api/ws-token...`);
 
+      const tokenResponse = await fetch(`${apiBase}/api/ws-token`, { method: "POST" });
+      if (!tokenResponse.ok) {
+        throw new Error(`Failed to get token: ${tokenResponse.status}`);
+      }
+      const { token } = (await tokenResponse.json()) as { token: string };
+      console.log("[FlowListener] 🔑 Got ephemeral token");
+
+      // Connect with token
+      const wsUrlWithToken = `${hubUrl}?token=${token}`;
+      this.ws = new WebSocket(wsUrlWithToken);
+
+      this.ws.on("open", () => {
+        console.log("[FlowListener] ✅ Connected to hub proxy");
+        this.isConnected = true;
+        isReconnecting = false;
+        stats.connectionUptime = Date.now();
+
+        // Hub handles auth - subscribe immediately using options.trades format
+        this.subscribeViaHub(WATCHED_SYMBOLS);
+        this.startHeartbeat();
+      });
+
+      this.ws.on("message", (data) => this.handleMessage(data));
+      this.ws.on("error", (error) => this.handleError(error));
+      this.ws.on("close", (code, reason) => this.handleClose(code, reason));
+      this.ws.on("ping", () => this.ws?.pong());
+    } catch (error) {
+      console.error("[FlowListener] Hub connection error:", error);
+      this.scheduleReconnect();
+    }
+  }
+
+  /**
+   * Connect directly to Massive.com (fallback)
+   */
+  private connectDirect() {
+    try {
+      const wsUrl = "wss://socket.massive.com/options";
       this.ws = new WebSocket(wsUrl);
 
       this.ws.on("open", () => this.handleOpen());
@@ -119,13 +178,13 @@ class OptionsFlowListener {
       this.ws.on("close", (code, reason) => this.handleClose(code, reason));
       this.ws.on("ping", () => this.ws?.pong());
     } catch (error) {
-      console.error("[FlowListener] Connection error:", error);
+      console.error("[FlowListener] Direct connection error:", error);
       this.scheduleReconnect();
     }
   }
 
   /**
-   * Handle WebSocket open
+   * Handle WebSocket open (direct connection only)
    */
   private handleOpen() {
     console.log("[FlowListener] ✅ Connected to Massive.com");
@@ -145,6 +204,25 @@ class OptionsFlowListener {
   }
 
   /**
+   * Subscribe via hub proxy using options.trades format
+   */
+  private subscribeViaHub(symbols: string[]) {
+    console.log(`[FlowListener] 📡 Subscribing via hub to ${symbols.length} symbols...`);
+
+    // Use the options.trades format that hub expects (matching websocket.ts buildOptionsChannels)
+    const wildcards = symbols.map((s) => `${s}*`);
+    const tradesChannel = `options.trades:${wildcards.join(",")}`;
+
+    this.send({
+      action: "subscribe",
+      params: tradesChannel,
+    });
+
+    symbols.forEach((s) => this.subscriptions.add(s));
+    console.log(`[FlowListener]   ✓ Subscribed to: ${tradesChannel}`);
+  }
+
+  /**
    * Subscribe to trade feeds for symbols
    *
    * Based on user testing: Aggregates format is A.O:<ticker>
@@ -158,7 +236,7 @@ class OptionsFlowListener {
     // Prioritize SPY (most liquid) - subscribe first
     const orderedSymbols = ["SPY", "QQQ", "IWM", "SPX", "NDX"].filter((s) => symbols.includes(s));
 
-    // Subscribe using T.O:<symbol>* format (matching A.O: format from docs)
+    // Subscribe using T.O:<symbol>* format for trades
     for (const symbol of orderedSymbols) {
       const channel = `T.O:${symbol}*`;
       this.send({
@@ -167,6 +245,21 @@ class OptionsFlowListener {
       });
       this.subscriptions.add(symbol);
       console.log(`[FlowListener]   ✓ Subscribed to ${symbol} options trades (${channel})`);
+    }
+
+    // Also try specific contracts (wildcards may require special tier)
+    // SPY Jan 17 2025 $590 call - should be actively traded
+    const specificContracts = [
+      "T.O:SPY250117C00590000", // Jan 17 2025 $590 call
+      "T.O:SPY250117P00580000", // Jan 17 2025 $580 put
+      "A.O:SPY250117C00590000", // Same but aggregates
+    ];
+    for (const contract of specificContracts) {
+      this.send({
+        action: "subscribe",
+        params: contract,
+      });
+      console.log(`[FlowListener]   ✓ Subscribed to specific contract (${contract}) [DIAGNOSTIC]`);
     }
   }
 
