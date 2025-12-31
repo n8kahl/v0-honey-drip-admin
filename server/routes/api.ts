@@ -7,8 +7,10 @@ import {
   callMassive,
   getOptionChain,
   listOptionContracts,
+  listOptionContractsByUrl,
   getIndicesSnapshot,
   getStockSnapshot,
+  fetchRecentIndexBar,
 } from "../massive/client.js";
 // Tradier imports removed - migrated to Massive-only architecture
 import {
@@ -499,9 +501,37 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
     let expirations: string[] = [];
     const indexLike = ["SPX", "NDX", "VIX", "RUT"].includes(symbol) || symbol.startsWith("I:");
     if (indexLike) {
-      const snap = await getIndicesSnapshot([symbol.replace(/^I:/, "")]);
-      const v = Array.isArray(snap?.results) ? snap.results[0]?.value : snap?.value;
-      price = typeof v === "number" ? v : 0;
+      const cleanSymbol = symbol.replace(/^I:/, "");
+      const snap = await getIndicesSnapshot([cleanSymbol]);
+
+      // CRITICAL FIX: Find the matching ticker in results array (API may return multiple indices)
+      const expectedTicker = `I:${cleanSymbol}`;
+      const results = Array.isArray(snap?.results) ? snap.results : [];
+      const item =
+        results.find((r: { ticker?: string }) => r.ticker === expectedTicker) || results[0];
+
+      let v = Number(item?.value ?? item?.last ?? item?.price ?? item?.close ?? 0);
+
+      // Sanity check: Index prices should be reasonable
+      // SPX ~5900, NDX ~25500, RUT ~2000, VIX can be 10-80
+      const minPrice = cleanSymbol === "VIX" ? 5 : 100;
+      const isValidPrice = Number.isFinite(v) && v > minPrice;
+
+      if (!isValidPrice) {
+        console.warn(
+          `[v0] ${symbol} invalid/low snapshot price: ${v} (min: ${minPrice}), trying bar fallback`
+        );
+        const fallback = await fetchRecentIndexBar(cleanSymbol);
+        v = fallback?.close ?? 0;
+        console.warn(`[v0] ${symbol} bar fallback result: ${v}`);
+      }
+
+      price = v;
+
+      // Final validation - warn if still seems wrong
+      if (price > 0 && price < minPrice) {
+        console.error(`[v0] ⚠️ ${symbol} price ${price} seems too low! ATM strikes will be wrong.`);
+      }
     } else {
       const optSnap = await getOptionChain(symbol.replace(/^I:/, ""), 1);
       const u = optSnap?.results?.[0]?.underlying_asset?.price;
@@ -510,23 +540,66 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
     console.log(`[v0] ${symbol} underlying price: $${price.toFixed(2)}`);
 
     // Prefer reference contracts for a complete expiration calendar
-    try {
-      const params: any = {
-        underlying_ticker: symbol.replace(/^I:/, ""),
-        "expiration_date.gte": todayStr,
-        limit: "1000",
-      };
-      if (endDate) params["expiration_date.lte"] = endDate;
-      const ref = await listOptionContracts(params as any);
-      const refResults: any[] = Array.isArray(ref?.results) ? ref.results : [];
-      const expSet = new Set<string>(
-        refResults.map((c: any) => c.expiration_date || c.details?.expiration_date).filter(Boolean)
-      );
-      expirations = Array.from(expSet).sort();
-    } catch (err) {
-      console.warn(`[v0] reference contracts failed, falling back to snapshot expirations:`, err);
-      // Fallback: take expirations from a single snapshot page
-      const contractsSnap = await getOptionChain(symbol.replace(/^I:/, ""), 250);
+    // Use retry logic to handle transient errors before falling back to snapshot
+    const params: any = {
+      underlying_ticker: symbol.replace(/^I:/, ""),
+      "expiration_date.gte": todayStr,
+      limit: "1000",
+    };
+    if (endDate) params["expiration_date.lte"] = endDate;
+
+    let refSuccess = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        // For indices with many strikes, we need to paginate to get all expirations
+        // SPX has ~500 strikes, so 1000 contracts only covers 1-2 expirations
+        const expSet = new Set<string>();
+        let page = 0;
+        let nextUrl: string | undefined = undefined;
+        const MAX_PAGES = 10; // Limit pagination to avoid infinite loops
+        const MIN_EXPIRATIONS = 15; // Target at least 15 unique expirations
+
+        do {
+          const ref =
+            page === 0
+              ? await listOptionContracts(params as any)
+              : await listOptionContractsByUrl(nextUrl!);
+
+          const refResults: any[] = Array.isArray(ref?.results) ? ref.results : [];
+          refResults.forEach((c: any) => {
+            const exp = c.expiration_date || c.details?.expiration_date;
+            if (exp) expSet.add(exp);
+          });
+
+          nextUrl = ref?.next_url;
+          page++;
+        } while (nextUrl && page < MAX_PAGES && expSet.size < MIN_EXPIRATIONS);
+
+        expirations = Array.from(expSet).sort();
+        refSuccess = true;
+        break;
+      } catch (err: any) {
+        const isRetryable = err?.status === 429 || err?.status >= 500 || err?.code === "ECONNRESET";
+        if (isRetryable && attempt < 3) {
+          const delay = Math.pow(2, attempt) * 500; // 1s, 2s exponential backoff
+          console.warn(
+            `[v0] ${symbol} reference contracts attempt ${attempt} failed (status: ${err?.status}), retrying in ${delay}ms...`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          console.warn(
+            `[v0] ${symbol} reference contracts failed after ${attempt} attempts:`,
+            err?.message || err
+          );
+        }
+      }
+    }
+
+    // Fallback: use snapshot if reference contracts failed
+    if (!refSuccess) {
+      console.warn(`[v0] ${symbol} falling back to snapshot expirations`);
+      // Increased from 250 to 1000 to get more expiration dates
+      const contractsSnap = await getOptionChain(symbol.replace(/^I:/, ""), 1000);
       const contractsList = Array.isArray(contractsSnap?.results) ? contractsSnap.results : [];
       const expSet = new Set<string>(
         contractsList
@@ -534,6 +607,9 @@ router.get("/options/chain", requireProxyToken, async (req, res) => {
           .filter(Boolean)
       );
       expirations = Array.from(expSet).sort();
+      console.warn(
+        `[v0] ${symbol} snapshot fallback: ${expirations.length} expirations from ${contractsList.length} contracts`
+      );
     }
 
     // Trim to endDate and optional expWindow
@@ -885,6 +961,32 @@ router.get("/quotes", requireProxyToken, async (req, res) => {
           source: "indices",
         });
       }
+
+      // Fallback: If snapshot returned empty but we requested indices, try prev bar endpoint
+      const foundSymbols = new Set(
+        items.map((it: any) => (it.ticker || it.symbol || "").replace(/^I:/, ""))
+      );
+      const missingSymbols = indexSymbols.filter((s) => !foundSymbols.has(s));
+
+      if (missingSymbols.length > 0) {
+        for (const symbol of missingSymbols) {
+          try {
+            const barData = await fetchRecentIndexBar(symbol);
+            if (barData && barData.close > 0) {
+              results.push({
+                symbol: barData.symbol,
+                last: barData.close,
+                change: barData.change,
+                changePercent: barData.changePercent,
+                asOf: barData.timestamp,
+                source: "indices-fallback",
+              });
+            }
+          } catch (e) {
+            console.warn(`[quotes] Index fallback failed for ${symbol}:`, e);
+          }
+        }
+      }
     }
 
     // Fetch stocks via Massive stock snapshot (single API call for all stocks)
@@ -1126,6 +1228,14 @@ router.all("/massive/*", requireProxyToken, async (req, res) => {
       );
     }
 
+    // Debug logging for bar requests
+    if (isV2AggsPath(fullPath)) {
+      const resultsCount = Array.isArray(massiveResponse.data?.results)
+        ? massiveResponse.data.results.length
+        : 0;
+      console.warn(`[v0] bars proxy: ${fullPath.split("/")[4]} returned ${resultsCount} bars`);
+    }
+
     res.json(massiveResponse.data);
   } catch (e: any) {
     const msg = String(e?.message || e || "");
@@ -1329,5 +1439,164 @@ router.post("/discord/alert-preferences", async (req, res) => {
 // NOTE: Scanner runs client-side via hooks, server endpoint moved to future iteration
 // import strategiesRouter from './strategies';
 // router.use('/strategies', strategiesRouter);
+
+// ===== Flow Context API =====
+// Provides aggregated options flow metrics for a symbol
+
+type FlowWindow = "short" | "medium" | "long";
+const FLOW_WINDOWS: Record<FlowWindow, number> = {
+  short: 60 * 60 * 1000, // 1 hour
+  medium: 4 * 60 * 60 * 1000, // 4 hours
+  long: 24 * 60 * 60 * 1000, // 24 hours
+};
+
+router.get("/flow-context", async (req, res) => {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ error: "Supabase not configured" });
+    }
+
+    const symbol = (req.query.symbol as string)?.toUpperCase();
+    const window = (req.query.window as FlowWindow) || "medium";
+
+    if (!symbol) {
+      return res.status(400).json({ error: "symbol is required" });
+    }
+
+    if (!FLOW_WINDOWS[window]) {
+      return res.status(400).json({ error: "Invalid window. Use: short, medium, or long" });
+    }
+
+    const now = Date.now();
+    const since = now - FLOW_WINDOWS[window];
+
+    // Query flow history from database
+    const { data, error } = await supabase
+      .from("options_flow_history")
+      .select("*")
+      .eq("symbol", symbol)
+      .gte("timestamp", since)
+      .order("timestamp", { ascending: false });
+
+    if (error) {
+      console.warn(`[FlowContext API] Query error for ${symbol}:`, error.message);
+      return res.status(500).json({ error: "Failed to query flow data" });
+    }
+
+    // Cast to array of flow records
+    const flows = (data || []) as Array<{
+      size?: number;
+      premium?: number;
+      option_type?: string;
+      trade_type?: string;
+      sentiment?: string;
+      timestamp?: number;
+    }>;
+
+    if (flows.length === 0) {
+      return res.json({
+        symbol,
+        window,
+        context: null,
+        message: "No flow data available",
+      });
+    }
+
+    // Aggregate flow data
+    let totalVolume = 0;
+    let totalPremium = 0;
+    let callVolume = 0;
+    let putVolume = 0;
+    let callPremium = 0;
+    let putPremium = 0;
+    let sweepCount = 0;
+    let blockCount = 0;
+    let bullishTrades = 0;
+    let bearishTrades = 0;
+
+    for (const flow of flows) {
+      const volume = flow.size || 0;
+      const premium = flow.premium || 0;
+
+      totalVolume += volume;
+      totalPremium += premium;
+
+      if (flow.option_type === "call") {
+        callVolume += volume;
+        callPremium += premium;
+      } else {
+        putVolume += volume;
+        putPremium += premium;
+      }
+
+      if (flow.trade_type === "SWEEP") sweepCount++;
+      if (flow.trade_type === "BLOCK") blockCount++;
+
+      if (flow.sentiment === "BULLISH") bullishTrades++;
+      if (flow.sentiment === "BEARISH") bearishTrades++;
+    }
+
+    const putCallVolumeRatio = callVolume > 0 ? putVolume / callVolume : 1;
+    const putCallPremiumRatio = callPremium > 0 ? putPremium / callPremium : 1;
+
+    // Determine sentiment
+    const avgRatio = (putCallVolumeRatio + putCallPremiumRatio) / 2;
+    let sentiment: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+    let sentimentStrength = 50;
+
+    if (avgRatio < 0.7) {
+      sentiment = "BULLISH";
+      sentimentStrength = Math.min(100, (1 - avgRatio) * 100);
+    } else if (avgRatio > 1.3) {
+      sentiment = "BEARISH";
+      sentimentStrength = Math.min(100, (avgRatio - 1) * 100);
+    }
+
+    // Calculate institutional score
+    const largeTradePercentage = ((sweepCount + blockCount) / flows.length) * 100;
+    const avgTradeSize = totalPremium / flows.length;
+    let institutionalScore = Math.min(40, largeTradePercentage);
+    if (avgTradeSize > 100000) institutionalScore += 30;
+    else if (avgTradeSize > 50000) institutionalScore += 15;
+    else if (avgTradeSize > 10000) institutionalScore += 5;
+    institutionalScore = Math.min(100, institutionalScore);
+
+    // Most recent trade timestamp
+    const mostRecentTrade = flows[0];
+    const dataAge = now - (mostRecentTrade?.timestamp || now);
+    const isStale = dataAge > 2 * 60 * 60 * 1000; // 2 hours
+
+    return res.json({
+      symbol,
+      window,
+      context: {
+        timestamp: now,
+        tradeCount: flows.length,
+        totalVolume,
+        totalPremium,
+        callVolume,
+        putVolume,
+        callPremium,
+        putPremium,
+        putCallVolumeRatio: Math.round(putCallVolumeRatio * 100) / 100,
+        putCallPremiumRatio: Math.round(putCallPremiumRatio * 100) / 100,
+        sweepCount,
+        blockCount,
+        bullishTrades,
+        bearishTrades,
+        sentiment,
+        sentimentStrength: Math.round(sentimentStrength),
+        institutionalScore: Math.round(institutionalScore),
+        avgTradeSize: Math.round(avgTradeSize),
+        dataAge,
+        isStale,
+      },
+    });
+  } catch (err: any) {
+    console.error("[FlowContext API] Error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to get flow context" });
+  }
+});
 
 export default router;

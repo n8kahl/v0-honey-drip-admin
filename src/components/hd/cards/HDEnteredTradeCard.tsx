@@ -12,6 +12,7 @@ import { useAppToast } from "../../../hooks/useAppToast";
 import { useOptionTrades, useOptionQuote } from "../../../hooks/useOptionsAdvanced";
 import { HDConfluenceChips } from "../signals/HDConfluenceChips";
 import { HDConfluenceDetailPanel } from "../dashboard/HDConfluenceDetailPanel";
+import { FlowDashboard } from "../flow";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
 import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
 import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
@@ -42,8 +43,10 @@ export function HDEnteredTradeCard({
   // Extract values from the unified live model
   const currentPrice = liveModel?.effectiveMid ?? 0;
   const pnlPercent = liveModel?.pnlPercent ?? 0;
-  const asOf = liveModel?.optionAsOf ?? Date.now();
-  const source = liveModel?.optionSource ?? "rest";
+  // Use priceAsOf (reflects actual displayed data) instead of optionAsOf (can be stale)
+  const asOf = liveModel?.priceAsOf ?? Date.now();
+  const source = liveModel?.priceSource ?? "rest";
+  const priceLabel = liveModel?.priceLabel ?? "Loading...";
   const entryPrice = liveModel?.entryPrice ?? trade.contract.mid;
 
   const { tpNearThreshold, autoOpenTrim } = useTPSettings();
@@ -123,14 +126,9 @@ export function HDEnteredTradeCard({
 
   const isPositive = pnlPercent >= 0;
 
-  // Format "as of" timestamp
-  const getAsOfText = () => {
-    const secondsAgo = Math.floor((Date.now() - asOf) / 1000);
-    if (secondsAgo < 5) return "Live";
-    if (secondsAgo < 60) return `${secondsAgo}s ago`;
-    const minutesAgo = Math.floor(secondsAgo / 60);
-    return `${minutesAgo}m ago`;
-  };
+  // Use the pre-computed priceLabel from the live model
+  // This properly reflects "Live", "Entry Price", "Market Closed", etc.
+  const getAsOfText = () => priceLabel;
 
   // Chart is now rendered globally in the middle pane.
 
@@ -234,6 +232,14 @@ export function HDEnteredTradeCard({
         compact={true}
         tpProgress={tp.progress}
         isPositive={pnlPercent !== null && pnlPercent > 0}
+      />
+
+      {/* Options Flow Dashboard - Institutional activity for active trades */}
+      <FlowDashboard
+        symbol={trade.ticker}
+        tradeDirection={trade.contract.type === "C" ? "LONG" : "SHORT"}
+        defaultExpanded={false}
+        compact={true}
       />
 
       {/* Time Decay Warning - Critical for active 0DTE/1DTE trades */}

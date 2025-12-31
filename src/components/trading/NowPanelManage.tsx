@@ -47,6 +47,7 @@ import {
   Shield,
   RefreshCw,
 } from "lucide-react";
+import { FlowDashboard } from "../hd/flow";
 
 // ============================================================================
 // Helper Functions
@@ -135,6 +136,16 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
       {/* Greeks Strip */}
       <GreeksStrip liveModel={liveModel} />
 
+      {/* Options Flow Dashboard */}
+      <div className="px-4 py-2">
+        <FlowDashboard
+          symbol={trade.ticker}
+          tradeDirection={trade.contract?.type === "C" ? "LONG" : "SHORT"}
+          defaultExpanded={false}
+          compact={false}
+        />
+      </div>
+
       {/* Levels / ATR / Positioning - Middle ~40% */}
       <LevelsATRPanel
         currentPrice={liveModel.underlyingPrice}
@@ -148,69 +159,6 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
 
       {/* Trade Tape - Bottom ~30% */}
       <TradeTapeSection trade={trade} />
-
-      {/* Developer Debug Panel - Only in Development */}
-      {import.meta.env.DEV && (
-        <div className="mt-auto p-3 bg-gray-900 border-t border-[var(--border-hairline)]">
-          <div className="text-xs font-mono space-y-1">
-            <div className="text-yellow-400 font-semibold mb-2">🔧 Debug Panel</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <div>
-                <span className="text-gray-500">Option Source:</span>{" "}
-                <span className="text-white">{liveModel.optionSource}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Option AsOf:</span>{" "}
-                <span className="text-white">
-                  {new Date(liveModel.optionAsOf).toLocaleTimeString()}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Option Stale:</span>{" "}
-                <span className={liveModel.optionIsStale ? "text-red-400" : "text-green-400"}>
-                  {liveModel.optionIsStale ? "YES" : "NO"}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Underlying Source:</span>{" "}
-                <span className="text-white">{liveModel.underlyingSource}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Underlying AsOf:</span>{" "}
-                <span className="text-white">
-                  {liveModel.underlyingAsOf > 0
-                    ? new Date(liveModel.underlyingAsOf).toLocaleTimeString()
-                    : "N/A"}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Underlying Stale:</span>{" "}
-                <span className={liveModel.underlyingIsStale ? "text-red-400" : "text-green-400"}>
-                  {liveModel.underlyingIsStale ? "YES" : "NO"}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Overall Health:</span>{" "}
-                <span
-                  className={
-                    liveModel.overallHealth === "healthy"
-                      ? "text-green-400"
-                      : liveModel.overallHealth === "degraded"
-                        ? "text-yellow-400"
-                        : "text-red-400"
-                  }
-                >
-                  {liveModel.overallHealth.toUpperCase()}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Greeks Source:</span>{" "}
-                <span className="text-white">{liveModel.greeksSource}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -887,6 +835,17 @@ function MTFLadder({ mtfTrend, symbolData, indicators }: MTFLadderProps) {
     { key: "15m", label: "15m" },
     { key: "60m", label: "1h" },
   ] as const;
+
+  // DEBUG: Log what data we have
+  console.log("[MTFLadder-Manage] Data check:", {
+    hasSymbolData: !!symbolData,
+    symbol: symbolData?.symbol,
+    candle1m: symbolData?.candles?.["1m"]?.length || 0,
+    candle5m: symbolData?.candles?.["5m"]?.length || 0,
+    candle15m: symbolData?.candles?.["15m"]?.length || 0,
+    candle60m: symbolData?.candles?.["60m"]?.length || 0,
+    mtfTrend: mtfTrend,
+  });
 
   // Calculate RSI for each timeframe from their respective candles (like SetupWorkspace)
   const perTfRsi = useMemo(() => {
