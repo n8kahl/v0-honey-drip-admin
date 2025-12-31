@@ -40,30 +40,63 @@ interface FlowRecord {
   size_percentile: number | null;
   premium_percentile: number | null;
   exchange: string | null;
-  conditions: string[] | null;
+  conditions: number[] | null;
 }
 
 /**
+ * OPRA Condition Codes (Options Price Reporting Authority)
+ * These are numeric codes returned by Massive.com in the `c` field
+ *
+ * Common condition codes:
+ * - 0: Regular trade
+ * - 1: Late
+ * - 2: Form T (extended hours)
+ * - 3: Out of sequence
+ * - 4: Average price
+ * - 12: Intermarket sweep order
+ * - 16: Opening trade
+ * - 17: Stopped stock
+ * - 18: Re-opening
+ * - 19: Closing
+ * - 20: Yellow flag
+ * - 27: Crossed
+ * - 35: Stock option trade
+ * - 36: Multi-leg / combo
+ * - 37: Qualified contingent trade
+ * - 53: Single-leg auction
+ * - 54: Multi-leg auction
+ */
+const SWEEP_CONDITION_CODES = [12]; // Intermarket sweep order
+const MULTI_LEG_CODES = [36, 54]; // Multi-leg / combo, multi-leg auction
+const OPENING_CLOSING_CODES = [16, 18, 19]; // Opening, re-opening, closing
+
+/**
  * Classify trade type based on characteristics
+ * @param size - Number of contracts
+ * @param conditions - Array of OPRA condition codes (integers)
+ * @param spread - Bid-ask spread
+ * @param avgSize - Average trade size for this symbol
  */
 function classifyTrade(
   size: number,
-  conditions: string[],
+  conditions: number[],
   spread: number,
   avgSize: number
 ): "SWEEP" | "BLOCK" | "SPLIT" | "LARGE" | "REGULAR" {
-  // Sweep: Multi-leg execution across exchanges (typically has conditions like "SWEEP")
-  if (conditions.some((c) => c.includes("SWEEP") || c.includes("MLTI"))) {
+  // Sweep: Intermarket sweep order (condition code 12)
+  // Or infer from large size hitting multiple exchanges rapidly
+  if (conditions.some((c) => SWEEP_CONDITION_CODES.includes(c))) {
     return "SWEEP";
   }
 
   // Block: Very large size (>= 500 contracts or 5x avg)
+  // Block trades are typically negotiated off-exchange
   if (size >= 500 || size >= avgSize * 5) {
     return "BLOCK";
   }
 
-  // Split: Multiple fills indicated by conditions
-  if (conditions.some((c) => c.includes("SPLIT") || c.includes("CANC"))) {
+  // Split: Multi-leg trades (combo orders)
+  if (conditions.some((c) => MULTI_LEG_CODES.includes(c))) {
     return "SPLIT";
   }
 
@@ -153,13 +186,15 @@ export async function ingestOptionsFlow(
       .gte("timestamp", timestamp - 20 * 24 * 60 * 60 * 1000) // Last 20 days
       .order("timestamp", { ascending: false });
 
-    const avgSize = recentFlow && recentFlow.length > 0
-      ? recentFlow.reduce((sum, t) => sum + (t.size || 0), 0) / recentFlow.length
-      : 100;
+    const avgSize =
+      recentFlow && recentFlow.length > 0
+        ? recentFlow.reduce((sum, t) => sum + (t.size || 0), 0) / recentFlow.length
+        : 100;
 
-    const avgPremium = recentFlow && recentFlow.length > 0
-      ? recentFlow.reduce((sum, t) => sum + (t.premium || 0), 0) / recentFlow.length
-      : 10000;
+    const avgPremium =
+      recentFlow && recentFlow.length > 0
+        ? recentFlow.reduce((sum, t) => sum + (t.premium || 0), 0) / recentFlow.length
+        : 10000;
 
     // In production, process incoming trades here
     // For now, return success with zero trades

@@ -205,13 +205,16 @@ class OptionsFlowListener {
 
   /**
    * Subscribe via hub proxy using options.trades format
+   *
+   * Per Massive docs: Use `*` for ALL option contracts (not SPY* per-underlying)
+   * We'll filter by underlying symbol on our end.
    */
   private subscribeViaHub(symbols: string[]) {
-    console.log(`[FlowListener] 📡 Subscribing via hub to ${symbols.length} symbols...`);
+    console.log(`[FlowListener] 📡 Subscribing via hub to ALL options trades...`);
+    console.log(`[FlowListener]   Will filter for: ${symbols.join(", ")}`);
 
-    // Use the options.trades format that hub expects (matching websocket.ts buildOptionsChannels)
-    const wildcards = symbols.map((s) => `${s}*`);
-    const tradesChannel = `options.trades:${wildcards.join(",")}`;
+    // Use * for ALL options trades (per docs: "use * to subscribe to all option contracts")
+    const tradesChannel = `options.trades:*`;
 
     this.send({
       action: "subscribe",
@@ -223,44 +226,25 @@ class OptionsFlowListener {
   }
 
   /**
-   * Subscribe to trade feeds for symbols
+   * Subscribe to trade feeds for symbols (direct connection)
    *
-   * Based on user testing: Aggregates format is A.O:<ticker>
-   * So trades format should be T.O:<ticker>
-   *
-   * Priority: SPY first (most liquid), then other symbols
+   * Per Massive docs (https://massive.com/docs/websocket/options/trades):
+   * - Use `*` to subscribe to ALL option contracts
+   * - Use specific ticker like T.O:SPY251219C00650000 for one contract
+   * - Wildcards like SPY* are NOT supported
    */
   private subscribeToSymbols(symbols: string[]) {
-    console.log(`[FlowListener] 📡 Subscribing to ${symbols.length} symbols...`);
+    console.log(`[FlowListener] 📡 Subscribing to ALL options trades...`);
+    console.log(`[FlowListener]   Will filter for: ${symbols.join(", ")}`);
 
-    // Prioritize SPY (most liquid) - subscribe first
-    const orderedSymbols = ["SPY", "QQQ", "IWM", "SPX", "NDX"].filter((s) => symbols.includes(s));
+    // Per docs: use T.* for all options trades (not T.O:SPY*)
+    this.send({
+      action: "subscribe",
+      params: "T.*",
+    });
+    console.log(`[FlowListener]   ✓ Subscribed to ALL options trades (T.*)`);
 
-    // Subscribe using T.O:<symbol>* format for trades
-    for (const symbol of orderedSymbols) {
-      const channel = `T.O:${symbol}*`;
-      this.send({
-        action: "subscribe",
-        params: channel,
-      });
-      this.subscriptions.add(symbol);
-      console.log(`[FlowListener]   ✓ Subscribed to ${symbol} options trades (${channel})`);
-    }
-
-    // Also try specific contracts (wildcards may require special tier)
-    // SPY Jan 17 2025 $590 call - should be actively traded
-    const specificContracts = [
-      "T.O:SPY250117C00590000", // Jan 17 2025 $590 call
-      "T.O:SPY250117P00580000", // Jan 17 2025 $580 put
-      "A.O:SPY250117C00590000", // Same but aggregates
-    ];
-    for (const contract of specificContracts) {
-      this.send({
-        action: "subscribe",
-        params: contract,
-      });
-      console.log(`[FlowListener]   ✓ Subscribed to specific contract (${contract}) [DIAGNOSTIC]`);
-    }
+    symbols.forEach((s) => this.subscriptions.add(s));
   }
 
   /**
@@ -407,9 +391,10 @@ class OptionsFlowListener {
       if (stored) {
         stats.tradesStored++;
 
-        // Check for special trade types
+        // Check for special trade types using OPRA condition codes
+        // Code 12 = Intermarket sweep order
         const conditions = trade.conditions || [];
-        if (conditions.some((c: string) => c.includes("SWEEP"))) {
+        if (conditions.some((c: number) => c === 12)) {
           stats.sweepsDetected++;
         }
         if (trade.size >= 500) {
