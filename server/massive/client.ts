@@ -248,15 +248,91 @@ export async function listOptionContracts(filters: Record<string, string>) {
   return res.data;
 }
 
+/**
+ * Fetch next page of option contracts using the next_url from previous response.
+ * The next_url from Massive already includes all query parameters.
+ */
+export async function listOptionContractsByUrl(nextUrl: string) {
+  // next_url is a full URL - extract the path + query
+  const url = new URL(nextUrl);
+  const path = url.pathname + url.search;
+  const res = await callMassive<any>(path);
+  if (!res.ok) {
+    throw new Error(
+      `Massive error ${res.status}: ${res.error ?? "failed to list contracts (pagination)"}`
+    );
+  }
+  return res.data;
+}
+
 export async function getIndicesSnapshot(tickers: string[]) {
-  const clean = tickers.map((t) => t.replace(/^I:/, "")).join(",");
-  const res = await callMassive<any>(`/v3/snapshot/indices?tickers=${encodeURIComponent(clean)}`);
+  // API needs I: prefix for indices - add if missing
+  const prefixed = tickers.map((t) => (t.startsWith("I:") ? t : `I:${t}`));
+  // Use singular ticker param for single ticker, ticker.any_of for multiple
+  const queryParam =
+    prefixed.length === 1
+      ? `ticker=${encodeURIComponent(prefixed[0])}`
+      : `ticker.any_of=${encodeURIComponent(prefixed.join(","))}`;
+  const res = await callMassive<any>(`/v3/snapshot/indices?${queryParam}`);
   if (!res.ok) {
     throw new Error(
       `Massive error ${res.status}: ${res.error ?? "failed to fetch indices snapshot"}`
     );
   }
   return res.data;
+}
+
+/**
+ * Fallback: Fetch recent bar data for an index when snapshot returns empty
+ * Uses /v2/aggs/ticker/{ticker}/prev to get previous day's close
+ */
+export interface IndexBarResult {
+  symbol: string;
+  close: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  change: number;
+  changePercent: number;
+  timestamp: number;
+}
+
+export async function fetchRecentIndexBar(symbol: string): Promise<IndexBarResult | null> {
+  try {
+    // Ensure symbol has I: prefix for index aggregates endpoint
+    const ticker = symbol.startsWith("I:") ? symbol : `I:${symbol}`;
+    const res = await callMassive<any>(`/v2/aggs/ticker/${encodeURIComponent(ticker)}/prev`);
+
+    if (!res.ok || !res.data?.results?.length) {
+      console.warn(`[Massive] No prev bar data for index ${symbol}`);
+      return null;
+    }
+
+    const bar = res.data.results[0];
+    const close = bar.c || bar.close || 0;
+    const open = bar.o || bar.open || close;
+    const prevClose = bar.pc || bar.preMarket || open; // Use open as fallback for prev close
+
+    // Calculate change from previous close (or open if not available)
+    const change = close - prevClose;
+    const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+    return {
+      symbol: symbol.replace(/^I:/, ""), // Return without I: prefix
+      close,
+      open,
+      high: bar.h || bar.high || close,
+      low: bar.l || bar.low || close,
+      volume: bar.v || bar.volume || 0,
+      change,
+      changePercent,
+      timestamp: bar.t || Date.now(),
+    };
+  } catch (e) {
+    console.warn(`[Massive] Failed to fetch prev bar for index ${symbol}:`, e);
+    return null;
+  }
 }
 
 /**

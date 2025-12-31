@@ -71,6 +71,9 @@ import {
   type RegimeContext,
 } from "../engines/index.js";
 
+// Phase 3: Import Regime Strategy Matrix for VIX-based detector filtering
+import { shouldRunDetectorForRegime as shouldRunDetector } from "./RegimeStrategyMatrix.js";
+
 // Import trading style profiles (to be created in Phase 4)
 // For now, we'll use placeholder types
 interface TradingStyleProfile {
@@ -143,13 +146,14 @@ export interface ScanResult {
   filterReason?: string;
   detectionCount: number;
   scanTimeMs: number;
-  // Phase 1 Enhancement: Additional diagnostic data
+  // Phase 1 & 2 Enhancement: Additional diagnostic data
   phase1Data?: {
     adaptiveThresholds?: AdaptiveThresholdResult;
     ivAnalysis?: IVAnalysis;
     confidence?: ConfidenceResult;
     ivGateResult?: { gate: boolean; reason?: string };
     confidenceFilterResult?: { filter: boolean; reason?: string };
+    flowContext?: FlowContext; // Phase 2: Options flow context
   };
 }
 
@@ -266,6 +270,27 @@ export class CompositeScanner {
       } catch (error) {
         console.warn(`[CompositeScanner] Failed to fetch options data for ${symbol}:`, error);
       }
+    }
+
+    // PHASE 2: Step 2.5 - Fetch and populate flow data for detectors
+    // This makes features.flow available to detector scoreFactors during scoring
+    try {
+      const flowContext = await contextEngines.flowAnalysis.getFlowContext(symbol, "medium");
+      if (flowContext && flowContext.tradeCount > 0) {
+        // Populate features.flow so detectors can use it
+        (features as any).flow = {
+          sweepCount: flowContext.sweepCount,
+          blockCount: flowContext.blockCount,
+          unusualActivity: flowContext.largeTradePercentage > 30,
+          flowScore: flowContext.institutionalScore,
+          flowBias: flowContext.sentiment.toLowerCase() as "bullish" | "bearish" | "neutral",
+          buyPressure: (flowContext.buyPremium / (flowContext.totalPremium || 1)) * 100,
+        };
+        phase1Data.flowContext = flowContext;
+      }
+    } catch (error) {
+      // Flow data is optional - don't fail the scan
+      console.debug(`[CompositeScanner] Flow data unavailable for ${symbol}`);
     }
 
     // Step 3: Run opportunity detection
@@ -502,6 +527,10 @@ export class CompositeScanner {
     const detected: OpportunityDetector[] = [];
     const assetClass = getAssetClass(symbol);
 
+    // Phase 3: Get VIX level and flow bias for regime filtering
+    const vixLevel = (features.environment?.vixLevel as VIXLevel) || "medium";
+    const flowBias = features.flow?.flowBias as "bullish" | "bearish" | "neutral" | undefined;
+
     for (const detector of this.detectors) {
       // Check if detector applies to this asset class
       if (!detector.assetClass.includes(assetClass)) {
@@ -510,6 +539,18 @@ export class CompositeScanner {
 
       // Check if detector requires options data
       if (detector.requiresOptionsData && !optionsData) {
+        continue;
+      }
+
+      // Phase 3: VIX regime gating - skip detectors disabled for current regime
+      const regimeCheck = shouldRunDetector(detector.type, vixLevel, flowBias);
+      if (!regimeCheck.run) {
+        // Log skipped detectors at debug level (can be noisy)
+        if (process.env.DEBUG_REGIME) {
+          console.log(
+            `[CompositeScanner] Skipping ${detector.type} for ${symbol}: ${regimeCheck.reason}`
+          );
+        }
         continue;
       }
 
@@ -639,8 +680,34 @@ export class CompositeScanner {
             swingScore *= 1 + this.optimizedParams.gammaBoosts.longGamma;
           }
 
-          // Apply flow boost placeholder
-          const flowAlignment = (features as any).flowAlignment || "neutral";
+          // PHASE 2: Apply flow boost using real FlowAnalysisEngine data
+          // Determine alignment based on flow sentiment vs trade direction:
+          // - Bullish flow + LONG direction = aligned
+          // - Bearish flow + SHORT direction = aligned
+          // - Bullish flow + SHORT direction = opposed
+          // - Bearish flow + LONG direction = opposed
+          // - Neutral flow = no boost
+          let flowAlignment: "aligned" | "opposed" | "neutral" = "neutral";
+          if (flowContext) {
+            const flowSentiment = flowContext.sentiment;
+            if (flowSentiment === "BULLISH" && direction === "LONG") {
+              flowAlignment = "aligned";
+            } else if (flowSentiment === "BEARISH" && direction === "SHORT") {
+              flowAlignment = "aligned";
+            } else if (flowSentiment === "BULLISH" && direction === "SHORT") {
+              flowAlignment = "opposed";
+            } else if (flowSentiment === "BEARISH" && direction === "LONG") {
+              flowAlignment = "opposed";
+            }
+            // Log flow data for debugging
+            if (flowContext.tradeCount > 0) {
+              console.log(
+                `[CompositeScanner] Flow for ${symbol}: ${flowSentiment} (${flowContext.sentimentStrength.toFixed(0)}%) ` +
+                  `→ ${flowAlignment} for ${direction} | Sweeps: ${flowContext.sweepCount}, Blocks: ${flowContext.blockCount}`
+              );
+            }
+          }
+
           if (flowAlignment === "aligned") {
             scalpScore *= 1 + this.optimizedParams.flowBoosts.aligned;
             dayTradeScore *= 1 + this.optimizedParams.flowBoosts.aligned;

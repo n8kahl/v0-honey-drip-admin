@@ -168,6 +168,10 @@ export function formatOpportunityType(type: OpportunityType): string {
     kcu_king_queen: "KCU King & Queen",
     kcu_orb_breakout: "KCU ORB Breakout",
     kcu_cloud_bounce: "KCU Cloud Bounce",
+
+    // Flow-Primary (Phase 3)
+    sweep_momentum_long: "Sweep Momentum Long",
+    sweep_momentum_short: "Sweep Momentum Short",
   };
 
   return typeMap[type] || type;
