@@ -44,11 +44,44 @@ export interface FuturesSnapshot {
 }
 
 export interface KeyLevel {
-  type: "resistance" | "support" | "pivot" | "vwap" | "gap";
+  type:
+    | "resistance"
+    | "support"
+    | "pivot"
+    | "vwap"
+    | "gap"
+    | "orbH"
+    | "orbL"
+    | "pmh"
+    | "pml"
+    | "pdh"
+    | "pdl"
+    | "pdc"
+    | "wh"
+    | "wl"
+    | "mh"
+    | "ml"
+    | "vwap-u"
+    | "vwap-l"
+    | "pivot-p"
+    | "swing-high"
+    | "swing-low"
+    | "liquidity"
+    | "order-block"
+    | "fvg"
+    | "bos"
+    | "choch"
+    | "gex"
+    | "call-wall"
+    | "put-wall"
+    | "max-pain";
   price: number;
+  priceEnd?: number; // For zones
   label: string;
-  strength: "strong" | "moderate" | "weak";
-  source: string; // e.g., "Prior Day High", "VWAP", "Gamma Wall"
+  strength: "critical" | "strong" | "moderate" | "weak";
+  source: string;
+  isConfluent?: boolean;
+  touchCount?: number;
 }
 
 export interface SymbolKeyLevels {
@@ -403,14 +436,14 @@ export function useOffHoursData(): OffHoursData {
         const now = new Date();
         const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-        const fromDate = sevenDaysAgo.toISOString().split('T')[0]; // YYYY-MM-DD
-        const toDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        const fromDate = sevenDaysAgo.toISOString().split("T")[0]; // YYYY-MM-DD
+        const toDate = now.toISOString().split("T")[0]; // YYYY-MM-DD
 
         const response = await fetch(
           `/api/bars?symbol=${symbol}&timespan=day&multiplier=1&from=${fromDate}&to=${toDate}&limit=7`,
           {
             headers: {
-              'x-massive-proxy-token': token,
+              "x-massive-proxy-token": token,
             },
           }
         );
@@ -423,7 +456,10 @@ export function useOffHoursData(): OffHoursData {
         const data = await response.json();
         const bars = data.bars || [];
 
-        console.log(`[useOffHoursData] ${symbol}: Received ${bars.length} bars from API:`, bars.slice(0, 2));
+        console.log(
+          `[useOffHoursData] ${symbol}: Received ${bars.length} bars from API:`,
+          bars.slice(0, 2)
+        );
 
         if (bars.length === 0) continue;
 
@@ -437,76 +473,301 @@ export function useOffHoursData(): OffHoursData {
         // Calculate key levels
         const levels: KeyLevel[] = [];
 
-        // Prior day high/low
-        levels.push({
-          type: "resistance",
-          price: latestBar.high || currentPrice * 1.01,
-          label: `PDH ${(latestBar.high || 0).toFixed(2)}`,
-          strength: "strong",
-          source: "Prior Day High",
-        });
+        // 1. Compute Base Key Levels (ORB, PMH, PDH, etc.)
+        const { computeKeyLevelsFromBars } = await import("../lib/riskEngine/computeKeyLevels");
+        const baseBars = bars.map((b) => ({
+          time: Math.floor(b.timestamp < 10000000000 ? b.timestamp : b.timestamp / 1000),
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+          volume: b.volume || 0,
+        }));
 
-        levels.push({
-          type: "support",
-          price: latestBar.low || currentPrice * 0.99,
-          label: `PDL ${(latestBar.low || 0).toFixed(2)}`,
-          strength: "strong",
-          source: "Prior Day Low",
-        });
+        const computed = computeKeyLevelsFromBars(baseBars, 15); // 15m ORB
 
-        // Week high/low
-        const weekHigh = Math.max(...bars.map((b) => b.high || 0));
-        const weekLow = Math.min(...bars.map((b) => b.low || Infinity));
-
-        if (weekHigh > (latestBar.high || 0)) {
+        if (computed.priorDayHigh)
           levels.push({
-            type: "resistance",
-            price: weekHigh,
-            label: `WkH ${weekHigh.toFixed(2)}`,
+            type: "pdh",
+            price: computed.priorDayHigh,
+            label: `PDH ${computed.priorDayHigh.toFixed(2)}`,
+            strength: "strong",
+            source: "Prior Day High",
+          });
+        if (computed.priorDayLow)
+          levels.push({
+            type: "pdl",
+            price: computed.priorDayLow,
+            label: `PDL ${computed.priorDayLow.toFixed(2)}`,
+            strength: "strong",
+            source: "Prior Day Low",
+          });
+        if (computed.priorDayClose)
+          levels.push({
+            type: "pdc",
+            price: computed.priorDayClose,
+            label: `PDC ${computed.priorDayClose.toFixed(2)}`,
+            strength: "moderate",
+            source: "Prior Day Close",
+          });
+        if (computed.preMarketHigh)
+          levels.push({
+            type: "pmh",
+            price: computed.preMarketHigh,
+            label: `PMH ${computed.preMarketHigh.toFixed(2)}`,
+            strength: "strong",
+            source: "Pre-Market High",
+          });
+        if (computed.preMarketLow)
+          levels.push({
+            type: "pml",
+            price: computed.preMarketLow,
+            label: `PML ${computed.preMarketLow.toFixed(2)}`,
+            strength: "strong",
+            source: "Pre-Market Low",
+          });
+        if (computed.orbHigh)
+          levels.push({
+            type: "orbH",
+            price: computed.orbHigh,
+            label: `ORBH ${computed.orbHigh.toFixed(2)}`,
+            strength: "strong",
+            source: "15m ORB High",
+          });
+        if (computed.orbLow)
+          levels.push({
+            type: "orbL",
+            price: computed.orbLow,
+            label: `ORBL ${computed.orbLow.toFixed(2)}`,
+            strength: "strong",
+            source: "15m ORB Low",
+          });
+        if (computed.weeklyHigh)
+          levels.push({
+            type: "wh",
+            price: computed.weeklyHigh,
+            label: `WH ${computed.weeklyHigh.toFixed(2)}`,
             strength: "strong",
             source: "Week High",
           });
-        }
-
-        if (weekLow < (latestBar.low || 0) && weekLow > 0) {
+        if (computed.weeklyLow)
           levels.push({
-            type: "support",
-            price: weekLow,
-            label: `WkL ${weekLow.toFixed(2)}`,
+            type: "wl",
+            price: computed.weeklyLow,
+            label: `WL ${computed.weeklyLow.toFixed(2)}`,
             strength: "strong",
             source: "Week Low",
           });
-        }
-
-        // Gap level (if applicable)
-        if (Math.abs(changePercent) > 0.5) {
+        if (computed.monthlyHigh)
           levels.push({
-            type: "gap",
-            price: priorClose,
-            label: `Gap ${priorClose.toFixed(2)}`,
-            strength: Math.abs(changePercent) > 1.5 ? "strong" : "moderate",
-            source: `Gap from ${priorClose.toFixed(2)}`,
+            type: "mh",
+            price: computed.monthlyHigh,
+            label: `MH ${computed.monthlyHigh.toFixed(2)}`,
+            strength: "moderate",
+            source: "Month High",
           });
+        if (computed.monthlyLow)
+          levels.push({
+            type: "ml",
+            price: computed.monthlyLow,
+            label: `ML ${computed.monthlyLow.toFixed(2)}`,
+            strength: "moderate",
+            source: "Month Low",
+          });
+
+        // 2. Indicators
+        if (computed.vwap) {
+          levels.push({
+            type: "vwap",
+            price: computed.vwap,
+            label: `VWAP ${computed.vwap.toFixed(2)}`,
+            strength: "moderate",
+            source: "VWAP",
+          });
+          if (computed.vwapUpperBand)
+            levels.push({
+              type: "vwap-u",
+              price: computed.vwapUpperBand,
+              label: `+1σ ${computed.vwapUpperBand.toFixed(2)}`,
+              strength: "weak",
+              source: "VWAP +1σ",
+            });
+          if (computed.vwapLowerBand)
+            levels.push({
+              type: "vwap-l",
+              price: computed.vwapLowerBand,
+              label: `-1σ ${computed.vwapLowerBand.toFixed(2)}`,
+              strength: "weak",
+              source: "VWAP -1σ",
+            });
         }
+        if (computed.dailyPivot)
+          levels.push({
+            type: "pivot",
+            price: computed.dailyPivot,
+            label: `Pivot ${computed.dailyPivot.toFixed(2)}`,
+            strength: "moderate",
+            source: "Daily Pivot",
+          });
 
-        // Pivot point (simplified)
-        const pivot = (latestBar.high + latestBar.low + latestBar.close) / 3;
-        levels.push({
-          type: "pivot",
-          price: pivot,
-          label: `Pivot ${pivot.toFixed(2)}`,
-          strength: "moderate",
-          source: "Daily Pivot",
+        // 3. SMC Structure
+        const { detectAllStructureLevels, findConfluenceZones } = await import(
+          "../lib/chartEnhancements/structureLevels"
+        );
+        const structBars = bars.map((b) => ({
+          time: Math.floor(b.timestamp < 10000000000 ? b.timestamp : b.timestamp / 1000),
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+          volume: b.volume || 0,
+        }));
+
+        const structureLevels = detectAllStructureLevels(structBars);
+        structureLevels.forEach((sl) => {
+          levels.push({
+            type: sl.type.includes("swing")
+              ? sl.type.startsWith("swing-high")
+                ? "swing-high"
+                : "swing-low"
+              : sl.type.includes("liquidity")
+                ? "liquidity"
+                : sl.type.includes("order-block")
+                  ? "order-block"
+                  : sl.type.includes("fvg")
+                    ? "fvg"
+                    : sl.type.includes("bos")
+                      ? "bos"
+                      : "choch",
+            price: sl.price,
+            priceEnd: sl.priceEnd,
+            label: sl.label,
+            strength:
+              sl.strength === "critical"
+                ? "critical"
+                : sl.strength === "major"
+                  ? "strong"
+                  : "moderate",
+            source: sl.type.toUpperCase().replace(/-/g, " "),
+            touchCount: sl.touches,
+          });
         });
 
-        // VWAP estimate (use pivot as proxy)
-        levels.push({
-          type: "vwap",
-          price: pivot,
-          label: `VWAP ~${pivot.toFixed(2)}`,
-          strength: "moderate",
-          source: "Est. VWAP",
+        // 4. Confluence Detection
+        const zones = findConfluenceZones(structureLevels);
+        zones.forEach((zone) => {
+          zone.levels.forEach((l) => {
+            const levelIdx = levels.findIndex(
+              (extL) => extL.price === l.price && extL.label === l.label
+            );
+            if (levelIdx !== -1) levels[levelIdx].isConfluent = true;
+          });
         });
+
+        // 5. Options Flow Levels (Gamma Wall, OI Walls, Max Pain)
+        try {
+          const snapshot = await massive.getOptionsSnapshot(symbol.replace(/^I:/, ""));
+          const contracts: any[] = snapshot?.results || [];
+
+          if (contracts.length > 0) {
+            let maxGamma = 0;
+            let gammaWall = 0;
+            let maxCallOI = 0;
+            let callWall = 0;
+            let maxPutOI = 0;
+            let putWall = 0;
+
+            // For Max Pain
+            const strikes = new Map<number, { callOI: number; putOI: number }>();
+
+            contracts.forEach((c) => {
+              const strike = Number(c.strike_price || c.strike || 0);
+              const type = (c.contract_type || c.type || "").toLowerCase();
+              const oi = Number(c.open_interest || c.day?.open_interest || 0);
+              const gamma = Math.abs(Number(c.greeks?.gamma || 0));
+              const gex = gamma * oi;
+
+              if (gex > maxGamma) {
+                maxGamma = gex;
+                gammaWall = strike;
+              }
+
+              if (type.startsWith("call")) {
+                if (oi > maxCallOI) {
+                  maxCallOI = oi;
+                  callWall = strike;
+                }
+              } else if (type.startsWith("put")) {
+                if (oi > maxPutOI) {
+                  maxPutOI = oi;
+                  putWall = strike;
+                }
+              }
+
+              if (strike > 0) {
+                const sData = strikes.get(strike) || { callOI: 0, putOI: 0 };
+                if (type.startsWith("call")) sData.callOI += oi;
+                else sData.putOI += oi;
+                strikes.set(strike, sData);
+              }
+            });
+
+            if (gammaWall)
+              levels.push({
+                type: "gex",
+                price: gammaWall,
+                label: `Gamma Wall ${gammaWall}`,
+                strength: "critical",
+                source: "Total Gamma Exposure",
+              });
+            if (callWall)
+              levels.push({
+                type: "call-wall",
+                price: callWall,
+                label: `Call Wall ${callWall}`,
+                strength: "strong",
+                source: "Max Call OI",
+              });
+            if (putWall)
+              levels.push({
+                type: "put-wall",
+                price: putWall,
+                label: `Put Wall ${putWall}`,
+                strength: "strong",
+                source: "Max Put OI",
+              });
+
+            // Max Pain Calculation (Strike where total penalty is min)
+            let minPenalty = Infinity;
+            let maxPain = 0;
+            const uniqueStrikes = Array.from(strikes.keys()).sort((a, b) => a - b);
+
+            uniqueStrikes.forEach((testStrike) => {
+              let penalty = 0;
+              uniqueStrikes.forEach((s) => {
+                const data = strikes.get(s)!;
+                if (s < testStrike)
+                  penalty += (testStrike - s) * data.callOI; // Calls in money
+                else if (s > testStrike) penalty += (s - testStrike) * data.putOI; // Puts in money
+              });
+              if (penalty < minPenalty) {
+                minPenalty = penalty;
+                maxPain = testStrike;
+              }
+            });
+
+            if (maxPain)
+              levels.push({
+                type: "max-pain",
+                price: maxPain,
+                label: `Max Pain ${maxPain}`,
+                strength: "moderate",
+                source: "Min Option Value At Expiry",
+              });
+          }
+        } catch (optionsErr) {
+          console.warn("[useOffHoursData] Failed to fetch options flow levels:", optionsErr);
+        }
 
         // Determine trend
         const trend =
@@ -538,7 +799,7 @@ export function useOffHoursData(): OffHoursData {
             }
 
             const date = new Date(timestamp);
-            const timeStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+            const timeStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
 
             return {
               time: timeStr,
@@ -549,7 +810,10 @@ export function useOffHoursData(): OffHoursData {
             };
           });
 
-        console.log(`[useOffHoursData] ${symbol}: Formatted ${chartBars.length} bars for chart (first bar: ${chartBars[0]?.time}):`, chartBars.slice(0, 2));
+        console.log(
+          `[useOffHoursData] ${symbol}: Formatted ${chartBars.length} bars for chart (first bar: ${chartBars[0]?.time}):`,
+          chartBars.slice(0, 2)
+        );
 
         levelsMap.set(symbol, {
           symbol,

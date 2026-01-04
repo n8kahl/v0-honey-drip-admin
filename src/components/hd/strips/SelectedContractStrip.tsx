@@ -14,7 +14,15 @@
 import type { Contract } from "../../../types";
 import type { LoadedTradeLiveModel } from "../../../hooks/useLoadedTradeLiveModel";
 import { cn } from "../../../lib/utils";
-import { Star, RotateCcw, TrendingUp, TrendingDown, Wifi, Clock, AlertTriangle } from "lucide-react";
+import {
+  Star,
+  RotateCcw,
+  TrendingUp,
+  TrendingDown,
+  Wifi,
+  Clock,
+  AlertTriangle,
+} from "lucide-react";
 import { formatAge } from "../../../lib/market/dataFreshness";
 
 interface SelectedContractStripProps {
@@ -57,9 +65,10 @@ export function SelectedContractStrip({
     : `$${contract.mid.toFixed(2)}`;
 
   // Delta: prefer live Greeks, fallback to contract
-  const delta = hasLiveData && liveModel.greeks.delta !== null
-    ? liveModel.greeks.delta.toFixed(2)
-    : contract.delta?.toFixed(2) ?? "—";
+  const delta =
+    hasLiveData && liveModel.greeks.delta !== null
+      ? liveModel.greeks.delta.toFixed(2)
+      : (contract.delta?.toFixed(2) ?? "—");
 
   // Spread: prefer live calculation, fallback to static
   const spreadPct = hasLiveData
@@ -124,26 +133,28 @@ export function SelectedContractStrip({
         {/* Mid Price with live indicator */}
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-[var(--text-faint)] uppercase">Mid</span>
-          <span className={cn(
-            "text-xs font-medium tabular-nums",
-            isStale ? "text-red-400" : "text-[var(--text-high)]"
-          )}>
+          <span
+            className={cn(
+              "text-xs font-medium tabular-nums",
+              isStale ? "text-red-400" : "text-[var(--text-high)]"
+            )}
+          >
             {effectiveMid}
           </span>
           {hasLiveData && (
-            <Wifi className={cn(
-              "w-3 h-3",
-              dataSource === "websocket" ? "text-green-400" : "text-yellow-400"
-            )} />
+            <Wifi
+              className={cn(
+                "w-3 h-3",
+                dataSource === "websocket" ? "text-green-400" : "text-yellow-400"
+              )}
+            />
           )}
         </div>
 
         {/* Delta */}
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-[var(--text-faint)]">Δ</span>
-          <span className="text-xs text-[var(--text-muted)] tabular-nums">
-            {delta}
-          </span>
+          <span className="text-xs text-[var(--text-muted)] tabular-nums">{delta}</span>
         </div>
 
         {/* Spread */}
@@ -181,9 +192,7 @@ export function SelectedContractStrip({
         {slippage && (
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-[var(--text-faint)] uppercase">Slip</span>
-            <span className="text-xs text-[var(--text-muted)] tabular-nums">
-              {slippage}
-            </span>
+            <span className="text-xs text-[var(--text-muted)] tabular-nums">{slippage}</span>
           </div>
         )}
 
@@ -214,7 +223,7 @@ export function SelectedContractStrip({
         {isStale && (
           <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/20 text-red-400">
             <AlertTriangle className="w-3 h-3" />
-            <span className="text-[9px] font-medium">STALE</span>
+            <span className="text-[9px] font-medium uppercase">Greeks: Stale</span>
           </div>
         )}
         {isDegraded && !isStale && (

@@ -40,6 +40,7 @@ export interface KeyLevels {
   bollingerUpper?: number;
   bollingerLower?: number;
   bollingerMiddle?: number;
+  dailyPivot?: number;
 }
 
 export interface RiskCalculationInput {
