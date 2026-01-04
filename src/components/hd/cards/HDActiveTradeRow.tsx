@@ -4,7 +4,6 @@ import { cn } from "../../../lib/utils";
 import { useTradeStore } from "../../../stores";
 import { useRef, useEffect, useState, useMemo } from "react";
 import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
-import { Wifi, WifiOff } from "lucide-react";
 import { calculateRealizedPnL } from "../../../lib/tradePnl";
 import { formatExpirationShort } from "../../../ui/semantics";
 
@@ -31,8 +30,6 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
   // Distinguish between profit (>0), loss (<0), and flat (exactly 0)
   const pnlStatus: "profit" | "loss" | "flat" =
     displayPnl > 0.01 ? "profit" : displayPnl < -0.01 ? "loss" : "flat";
-  const source = liveModel?.optionSource ?? "rest";
-  const isStale = liveModel?.optionIsStale ?? false;
 
   // P&L bump animation state
   const [pnlBump, setPnlBump] = useState(false);
@@ -85,16 +82,20 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
             <span
               className={cn(
                 "font-semibold",
-                trade.contract?.daysToExpiry === 0
-                  ? "text-red-500"
-                  : trade.contract?.daysToExpiry <= 3
-                    ? "text-orange-500"
-                    : trade.contract?.daysToExpiry <= 7
-                      ? "text-yellow-500"
-                      : "text-green-500"
+                (trade.contract?.daysToExpiry ?? 0) < 0
+                  ? "text-red-600"
+                  : trade.contract?.daysToExpiry === 0
+                    ? "text-red-500"
+                    : trade.contract?.daysToExpiry <= 3
+                      ? "text-orange-500"
+                      : trade.contract?.daysToExpiry <= 7
+                        ? "text-yellow-500"
+                        : "text-green-500"
               )}
             >
-              {trade.contract?.daysToExpiry} DTE
+              {(trade.contract?.daysToExpiry ?? 0) < 0
+                ? "EXPIRED"
+                : `${trade.contract?.daysToExpiry} DTE`}
             </span>
             {trade.contract?.expiry && (
               <>
@@ -107,16 +108,9 @@ export function HDActiveTradeRow({ trade, active, onClick }: HDActiveTradeRowPro
           </div>
         </div>
 
-        {/* Right: Live Indicator + P&L */}
+        {/* Right: P&L */}
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
-            {/* Live data indicator (only show for open positions) */}
-            {!isClosed &&
-              (source === "websocket" && !isStale ? (
-                <Wifi className="w-3 h-3 text-green-500" />
-              ) : isStale ? (
-                <WifiOff className="w-3 h-3 text-amber-500" />
-              ) : null)}
             <span
               className={cn(
                 "text-[var(--text-high)] font-mono text-sm font-medium tabular-nums",

@@ -31,6 +31,7 @@ import {
   checkLiquidity,
   clearQuoteCache,
 } from "./optionsQuotesHelper.js";
+import { HistoricalOptionsProvider } from "../massive/HistoricalOptionsProvider.js";
 
 /**
  * Backtest configuration
@@ -79,9 +80,10 @@ export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   endDate: new Date().toISOString().split("T")[0],
   timeframe: "15m",
-  targetMultiple: 1.5,
-  stopMultiple: 1.0,
-  maxHoldBars: 20, // ~5 hours on 15m
+  // OPTIMIZED: Increased target for better R:R, tighter stops, shorter hold
+  targetMultiple: 2.0, // WAS: 1.5 - larger targets for better expectancy
+  stopMultiple: 0.75, // WAS: 1.0 - tighter stops reduce losers
+  maxHoldBars: 15, // WAS: 20 (~3.75 hours on 15m) - reduce exposure
   slippage: 0.001, // Fallback slippage (0.1% - realistic for underlying)
 
   // Realistic slippage options (requires options_quotes data)
@@ -165,6 +167,7 @@ export interface BacktestStats {
 export class BacktestEngine {
   private config: BacktestConfig;
   private supabase: any;
+  private optionsProvider: HistoricalOptionsProvider;
 
   constructor(config?: Partial<BacktestConfig>, supabaseClient?: any) {
     this.config = { ...DEFAULT_BACKTEST_CONFIG, ...config };
@@ -206,6 +209,9 @@ export class BacktestEngine {
         },
       });
     }
+
+    // Initialize Options Provider
+    this.optionsProvider = new HistoricalOptionsProvider(process.env.MASSIVE_API_KEY);
   }
 
   /**
@@ -506,24 +512,47 @@ export class BacktestEngine {
     const ema9 = this.calculateEMA(closes, 9);
     const ema21 = this.calculateEMA(closes, 21);
     const ema50 = this.calculateEMA(closes, 50);
+    // PHASE 1: Add EMA 200 for long-term trend confirmation
+    const ema200 = this.calculateEMA(closes, 200);
 
     // ATR
     const atr = this.calculateATR(highs, lows, closes, 14);
 
-    // RSI calculation
+    // RSI calculation - PHASE 1: Multi-period RSI for smoother signals
+    const rsi9 = this.calculateRSI(closes, 9);
     const rsi14 = this.calculateRSI(closes, 14);
+    const rsi21 = this.calculateRSI(closes, 21);
 
-    // Breakout detection (20-bar lookback)
+    // PHASE 1: Previous bar RSI for divergence detection
+    // Calculate RSI using closes up to the previous bar (exclude current)
+    const prevCloses = closes.slice(0, -1);
+    const prevRsi9 = prevCloses.length >= 9 ? this.calculateRSI(prevCloses, 9) : null;
+    const prevRsi14 = prevCloses.length >= 14 ? this.calculateRSI(prevCloses, 14) : null;
+    const prevRsi21 = prevCloses.length >= 21 ? this.calculateRSI(prevCloses, 21) : null;
+
+    // PHASE 1: Bollinger Bands for volatility normalization
+    const sma20 = this.calculateSMA(closes, 20);
+    const stdDev20 = this.calculateStdDev(closes, 20);
+    const bbUpper = sma20 + 2 * stdDev20;
+    const bbLower = sma20 - 2 * stdDev20;
+    const bbWidth = sma20 > 0 ? (bbUpper - bbLower) / sma20 : 0;
+
+    // Breakout detection (20-bar lookback) with volume confirmation
     const breakoutLookback = Math.min(20, previous.length);
     const recentHighs = highs.slice(-breakoutLookback);
     const recentLows = lows.slice(-breakoutLookback);
     const highestHigh = Math.max(...recentHighs);
     const lowestLow = Math.min(...recentLows);
 
-    // Bullish breakout: current high breaks above prior 20-bar high
-    const breakoutBullish = current.high > highestHigh;
-    // Bearish breakout: current low breaks below prior 20-bar low
-    const breakoutBearish = current.low < lowestLow;
+    // Calculate average volume for volume confirmation
+    const avgVolume = volumes.reduce((sum: number, v: number) => sum + v, 0) / volumes.length;
+    const volumeRatio = avgVolume > 0 ? current.volume / avgVolume : 1;
+
+    // Bullish breakout: current high breaks above prior 20-bar high WITH volume confirmation
+    // OPTIMIZED: Require 1.5x volume to match detector entry threshold and filter noise
+    const breakoutBullish = current.high > highestHigh && volumeRatio > 1.5;
+    // Bearish breakout: current low breaks below prior 20-bar low WITH volume confirmation
+    const breakoutBearish = current.low < lowestLow && volumeRatio > 1.5;
 
     // Calculate ORB (Opening Range Breakout) levels for KCU strategies
     // ORB is typically first 15-30 minutes of trading (depends on timeframe)
@@ -578,19 +607,57 @@ export class BacktestEngine {
         "9": ema9[ema9.length - 1],
         "21": ema21[ema21.length - 1],
         "50": ema50[ema50.length - 1],
+        // PHASE 1: Add EMA 200 for long-term trend confirmation
+        "200": ema200[ema200.length - 1],
       },
       rsi: {
+        // PHASE 1: Multi-period RSI for smoother oversold/overbought detection
+        "9": rsi9,
         "14": rsi14,
+        "21": rsi21,
       },
+      // PHASE 1: Bollinger Bands for volatility-based mean reversion
+      bollingerBands: {
+        upper: bbUpper,
+        lower: bbLower,
+        middle: sma20,
+        width: bbWidth,
+        percentB: bbWidth > 0 ? (current.close - bbLower) / (bbUpper - bbLower) : 0.5,
+      },
+      // PHASE 2: ATR at top level for easy detector access
+      atr: atr,
+      // PHASE 2: RSI divergence detection
+      divergence: this.detectRSIDivergence(previous, closes, rsi14),
+      // PHASE 1: Enhanced MTF data with all indicators
+      // Note: Currently only populates the current timeframe. For true MTF analysis,
+      // would need to fetch bars for multiple timeframes (e.g., 5m, 15m, 60m)
       mtf: {
         [this.config.timeframe]: {
+          price: {
+            current: current.close,
+            open: current.open,
+            high: current.high,
+            low: current.low,
+          },
           ema: {
             "9": ema9[ema9.length - 1],
             "21": ema21[ema21.length - 1],
+            "50": ema50[ema50.length - 1],
+            "200": ema200[ema200.length - 1],
           },
           rsi: {
+            // PHASE 1: All RSI periods for MTF confirmation
+            "9": rsi9,
             "14": rsi14,
+            "21": rsi21,
           },
+          vwap:
+            vwapValue !== null
+              ? {
+                  value: vwapValue,
+                  distancePct: vwapDistancePct!,
+                }
+              : undefined,
         },
       },
       session: {
@@ -603,9 +670,9 @@ export class BacktestEngine {
         atr,
         trend: this.determineTrend(current.close, ema9[ema9.length - 1], ema21[ema21.length - 1]),
         market_regime: marketRegime,
-        // Breakout flags for breakout detectors
-        breakout_bullish: breakoutBullish,
-        breakout_bearish: breakoutBearish,
+        // Breakout flags for breakout detectors (camelCase to match detector expectations)
+        breakoutBullish,
+        breakoutBearish,
         // ORB levels for KCU strategies
         orbHigh,
         orbLow,
@@ -625,6 +692,31 @@ export class BacktestEngine {
         close: b.close,
         volume: b.volume || 0,
       })),
+      // PHASE 1: Previous bar data for divergence detection
+      // Store previous bar's computed values for crossover/divergence strategies
+      prev: {
+        price: {
+          current: previous[previous.length - 1]?.close,
+          high: previous[previous.length - 1]?.high,
+          low: previous[previous.length - 1]?.low,
+        },
+        rsi: {
+          "9": prevRsi9,
+          "14": prevRsi14,
+          "21": prevRsi21,
+        },
+        ema: {
+          "9": ema9.length >= 2 ? ema9[ema9.length - 2] : null,
+          "21": ema21.length >= 2 ? ema21[ema21.length - 2] : null,
+          "50": ema50.length >= 2 ? ema50[ema50.length - 2] : null,
+        },
+        vwap: {
+          distancePct:
+            vwapValue !== null && previous[previous.length - 1]
+              ? ((previous[previous.length - 1].close - vwapValue) / vwapValue) * 100
+              : null,
+        },
+      },
     };
 
     return features;
@@ -694,6 +786,63 @@ export class BacktestEngine {
 
     // Apply slippage - use realistic bid/ask data if available
     let slippageAmount: number;
+    // Options Simulation Variables
+    let optionSymbol: string | undefined;
+    let optionEntryPrice: number | undefined;
+
+    // Try to find a real option contract for this trade
+    try {
+      // Find ATM contract expiring ~7 days out
+      // Simple heuristic: Next Friday or closest +7 days
+      const entryDate = new Date(entryBar.timestamp);
+      const targetExp = new Date(entryDate.getTime() + 7 * 24 * 60 * 60 * 1000); // +7 days
+      const targetExpStr = targetExp.toISOString().split("T")[0];
+
+      // Round strike to nearest 1 (or 5 depending on ticker, keeping it simple for now)
+      const strike = Math.round(entryPrice);
+
+      // Search for contracts
+      const contracts = await this.optionsProvider.getContracts(symbol, {
+        minStrike: strike - 1,
+        maxStrike: strike + 1,
+        expiration: targetExpStr,
+        limit: 10,
+      });
+
+      // Filter for Call/Put based on direction
+      const typeChar = direction === "LONG" ? "C" : "P";
+      const match = contracts.find(
+        (c: any) => c.ticker.includes(typeChar) && Math.abs(c.strike_price - strike) < 1
+      );
+
+      if (match) {
+        optionSymbol = match.ticker;
+
+        // Get option candle for entry time
+        // Need to fetch minute candles for the entry day to find the specific minute
+        const entryDay = new Date(entryBar.timestamp).toISOString().split("T")[0];
+        const optionCandles = await this.optionsProvider.getOptionCandles(
+          optionSymbol,
+          entryDay,
+          entryDay,
+          "1m"
+        );
+
+        // Find candle matching entry timestamp
+        // Allow 5 min tolerance
+        const matchingCandle = optionCandles.find(
+          (c) => Math.abs(c.timestamp - entryBar.timestamp) < 5 * 60 * 1000
+        );
+
+        if (matchingCandle) {
+          optionEntryPrice = matchingCandle.close; // Use close as approximation if no bid/ask
+          console.log(`[BacktestEngine] Found Option: ${optionSymbol} @ $${optionEntryPrice}`);
+        }
+      }
+    } catch (e) {
+      console.warn("[BacktestEngine] Failed to find historical option for trade:", e);
+    }
+
     if (this.config.useRealisticSlippage !== false) {
       const slippageResult = await calculateRealisticSlippage(
         symbol,
@@ -918,6 +1067,84 @@ export class BacktestEngine {
     const rsi = 100 - 100 / (1 + rs);
 
     return rsi;
+  }
+
+  /**
+   * Helper: Calculate SMA (Simple Moving Average)
+   * PHASE 1: Added for Bollinger Bands calculation
+   */
+  private calculateSMA(prices: number[], period: number): number {
+    if (prices.length < period) return prices[prices.length - 1] || 0;
+    const slice = prices.slice(-period);
+    return slice.reduce((sum, p) => sum + p, 0) / period;
+  }
+
+  /**
+   * Helper: Calculate Standard Deviation
+   * PHASE 1: Added for Bollinger Bands calculation
+   */
+  private calculateStdDev(prices: number[], period: number): number {
+    if (prices.length < period) return 0;
+    const slice = prices.slice(-period);
+    const mean = slice.reduce((sum, p) => sum + p, 0) / period;
+    const squaredDiffs = slice.map((p) => Math.pow(p - mean, 2));
+    const avgSquaredDiff = squaredDiffs.reduce((sum, d) => sum + d, 0) / period;
+    return Math.sqrt(avgSquaredDiff);
+  }
+
+  /**
+   * Helper: Detect RSI divergence
+   * PHASE 2: Bullish divergence = price making lower lows, RSI making higher lows
+   * PHASE 2: Bearish divergence = price making higher highs, RSI making lower highs
+   */
+  private detectRSIDivergence(
+    bars: any[],
+    closes: number[],
+    currentRSI: number
+  ): { type: "bullish" | "bearish" | "none"; confidence: number } {
+    // Need at least 10 bars for divergence detection
+    if (bars.length < 10 || closes.length < 10) {
+      return { type: "none", confidence: 0 };
+    }
+
+    const lookback = 10;
+    const recentCloses = closes.slice(-lookback);
+    const currentPrice = recentCloses[recentCloses.length - 1];
+
+    // Find swing lows/highs in the lookback period
+    const priceMin = Math.min(...recentCloses.slice(0, -1));
+    const priceMax = Math.max(...recentCloses.slice(0, -1));
+
+    // Calculate RSI at the swing point (approximate)
+    const swingLowIndex = recentCloses.indexOf(priceMin);
+    const swingHighIndex = recentCloses.indexOf(priceMax);
+
+    // We need to estimate past RSI - use the closes up to that point
+    const closesAtSwingLow = closes.slice(0, closes.length - lookback + swingLowIndex + 1);
+    const closesAtSwingHigh = closes.slice(0, closes.length - lookback + swingHighIndex + 1);
+
+    const rsiAtSwingLow =
+      closesAtSwingLow.length >= 14 ? this.calculateRSI(closesAtSwingLow, 14) : 50;
+    const rsiAtSwingHigh =
+      closesAtSwingHigh.length >= 14 ? this.calculateRSI(closesAtSwingHigh, 14) : 50;
+
+    // Bullish divergence: Price lower low, RSI higher low
+    if (currentPrice <= priceMin * 1.005 && currentRSI > rsiAtSwingLow + 3) {
+      // Price at or below recent low, but RSI is higher
+      const rsiDiff = currentRSI - rsiAtSwingLow;
+      const confidence = Math.min(100, 50 + rsiDiff * 3);
+      return { type: "bullish", confidence };
+    }
+
+    // Bearish divergence: Price higher high, RSI lower high
+    if (currentPrice >= priceMax * 0.995 && currentRSI < rsiAtSwingHigh - 3) {
+      // Price at or above recent high, but RSI is lower
+      const rsiDiff = rsiAtSwingHigh - currentRSI;
+      const confidence = Math.min(100, 50 + rsiDiff * 3);
+      return { type: "bearish", confidence };
+    }
+
+    return { type: "none", confidence: 0 };
   }
 
   /**

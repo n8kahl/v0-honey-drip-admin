@@ -478,8 +478,9 @@ function AIGuidanceTile({ trade, liveModel, symbolData, expanded, onToggle }: AI
 
   const confidenceStyle = getScoreStyle(guidance.confidence);
 
+  // Use priceAsOf (reflects actual displayed data) instead of optionAsOf
   const lastUpdateMs = Math.max(
-    liveModel.optionAsOf || 0,
+    liveModel.priceAsOf || 0,
     liveModel.underlyingAsOf || 0,
     symbolData?.lastUpdated || 0
   );

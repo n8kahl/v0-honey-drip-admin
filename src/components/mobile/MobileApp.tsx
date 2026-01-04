@@ -227,6 +227,14 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       return;
     }
 
+    // Check Discord enabled before proceeding - matches desktop pattern
+    if (!discordAlertsEnabled) {
+      toast.info("Discord alerts disabled", {
+        description: "Enable in Settings → Discord to send alerts.",
+      });
+      return;
+    }
+
     try {
       // Convert UI alert type to domain intent
       const intent = alertTypeToIntent(
@@ -337,6 +345,14 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   ) => {
     if (!alertTrade || !user?.id) {
       toast.error("Not authenticated");
+      return;
+    }
+
+    // Check Discord enabled before proceeding - matches desktop pattern
+    if (!discordAlertsEnabled) {
+      toast.info("Discord alerts disabled", {
+        description: "Enable in Settings → Discord to send alerts.",
+      });
       return;
     }
 

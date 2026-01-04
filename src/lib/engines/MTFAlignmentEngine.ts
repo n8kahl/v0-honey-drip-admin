@@ -16,6 +16,10 @@
 
 import { createClient } from "../supabase/client.js";
 
+// Throttle warning logs to prevent console spam
+const warnedSymbolTimeframes = new Set<string>();
+const WARN_THROTTLE_MS = 60_000; // Only warn once per minute per symbol+tf
+
 /**
  * Timeframe trend classification
  */
@@ -26,7 +30,7 @@ export type TrendDirection = "STRONG_UP" | "UP" | "NEUTRAL" | "DOWN" | "STRONG_D
  */
 export interface Timeframe {
   name: string;
-  interval: "1" | "5" | "15" | "60" | "1D" | "1W";
+  interval: "1" | "5" | "15" | "60" | "240" | "1D" | "1W";
   weight: number; // Weight in alignment calculation (higher TF = more weight)
   barsNeeded: number; // Number of bars to analyze
 }
@@ -122,8 +126,10 @@ const DEFAULT_MTF_BOOST_CONFIG: MTFBoostConfig = {
   timeframes: [
     { name: "1W", interval: "1W", weight: 3.0, barsNeeded: 20 }, // Weekly: highest weight
     { name: "1D", interval: "1D", weight: 2.0, barsNeeded: 30 }, // Daily: high weight
+    { name: "4H", interval: "240", weight: 1.5, barsNeeded: 40 }, // 4H: medium-high weight
     { name: "1H", interval: "60", weight: 1.0, barsNeeded: 40 }, // 1H: medium weight
     { name: "15m", interval: "15", weight: 0.5, barsNeeded: 50 }, // 15m: low weight
+    { name: "5m", interval: "5", weight: 0.25, barsNeeded: 50 }, // 5m: scalping context
   ],
   alignmentThresholds: {
     fullyAligned: 85,
@@ -310,7 +316,15 @@ export class MTFAlignmentEngine {
         .limit(tf.barsNeeded);
 
       if (error || !data || data.length < tf.barsNeeded / 2) {
-        console.warn(`[MTFAlignmentEngine] Insufficient data for ${symbol} ${tf.name}`);
+        // Throttle warning logs (only log once per symbol+tf per minute)
+        const warnKey = `${symbol}:${tf.name}`;
+        if (!warnedSymbolTimeframes.has(warnKey)) {
+          console.warn(
+            `[MTFAlignmentEngine] Insufficient data for ${symbol} ${tf.name} (will not repeat for 1 min)`
+          );
+          warnedSymbolTimeframes.add(warnKey);
+          setTimeout(() => warnedSymbolTimeframes.delete(warnKey), WARN_THROTTLE_MS);
+        }
         return null;
       }
 
@@ -371,6 +385,7 @@ export class MTFAlignmentEngine {
       "5": "5m",
       "15": "15m",
       "60": "1h",
+      "240": "4h",
       "1D": "day",
       "1W": "week",
     };

@@ -10,7 +10,6 @@ import { MobileNowPlayingSheet } from "./MobileNowPlayingSheet";
 import { MobileWatermark } from "./MobileWatermark";
 
 import { useVoiceCommands } from "../hooks/useVoiceCommands";
-import { streamingManager } from "../lib/massive/streaming-manager";
 import { useTradeStateMachine } from "../hooks/useTradeStateMachine";
 import { useKeyLevels } from "../hooks/useKeyLevels";
 import { NowPanel } from "./trading/NowPanel";
@@ -259,23 +258,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     }
   }, [voice.isListening, voice.hudState, voice.waitingForWakeWord, onVoiceStateChange]);
 
-  useEffect(() => {
-    const handles = watchlist.map((t) =>
-      streamingManager.subscribe(t.symbol, ["quotes"], () => {})
-    );
-    return () => handles.forEach((h) => streamingManager.unsubscribe(h));
-  }, [watchlist]);
-
-  // Subscribe to loaded and entered trades for real-time pricing
-  useEffect(() => {
-    const tradesToSubscribe = activeTrades.filter(
-      (t) => t.state === "LOADED" || t.state === "ENTERED"
-    );
-    const handles = tradesToSubscribe.map((trade) =>
-      streamingManager.subscribe(trade.ticker, ["quotes"], () => {})
-    );
-    return () => handles.forEach((h) => streamingManager.unsubscribe(h));
-  }, [activeTrades]);
+  // NOTE: Removed empty subscription callbacks that were causing console noise
+  // Quote data is fetched via useQuotes() hook in useMassiveData.ts which properly handles updates
 
   const handleTickerClick = (ticker: Ticker) => {
     actions.handleTickerClick(ticker);

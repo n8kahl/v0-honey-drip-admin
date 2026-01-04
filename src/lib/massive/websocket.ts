@@ -124,6 +124,8 @@ export class MassiveWebSocket {
   };
   private watchlistRoots: string[] = [];
   private lastMessageTime: Record<WsEndpoint, number | null> = { options: null, indices: null };
+  // Queue for pending subscriptions when WebSocket is not yet authenticated
+  private pendingOptionSubscriptions: string[] = [];
 
   constructor(tokenManager: MassiveTokenManager) {
     this.tokenManager = tokenManager;
@@ -182,6 +184,20 @@ export class MassiveWebSocket {
         // Subscribe based on endpoint
         if (endpoint === "options") {
           this.subscribeOptionsWatchlist();
+
+          // Process any pending option subscriptions that were queued while disconnected
+          if (this.pendingOptionSubscriptions.length > 0) {
+            console.warn(
+              `[MassiveWS] Processing ${this.pendingOptionSubscriptions.length} pending option subscriptions`
+            );
+            const channels = [
+              `options.quotes:${this.pendingOptionSubscriptions.join(",")}`,
+              `options.trades:${this.pendingOptionSubscriptions.join(",")}`,
+            ];
+            this.send("options", { action: "subscribe", params: channels });
+            channels.forEach((ch) => this.subscriptions.options.add(ch));
+            this.pendingOptionSubscriptions = []; // Clear queue
+          }
         } else if (endpoint === "indices") {
           this.subscribeIndicesFixed();
         }
@@ -371,6 +387,15 @@ export class MassiveWebSocket {
       // Track these subscriptions
       channels.forEach((ch) => this.subscriptions.options.add(ch));
     } else {
+      // Queue subscriptions for when WebSocket becomes authenticated
+      const newTickers = optionTickers.filter((t) => !this.pendingOptionSubscriptions.includes(t));
+      if (newTickers.length > 0) {
+        this.pendingOptionSubscriptions.push(...newTickers);
+        console.warn(
+          `[MassiveWS] ⏳ Queued ${newTickers.length} option subscriptions for when WebSocket connects`,
+          { queued: newTickers, totalPending: this.pendingOptionSubscriptions.length }
+        );
+      }
       console.warn(
         `[MassiveWS] ❌ Cannot subscribe to options ${optionTickers.join(",")} - WebSocket not ready`,
         { socketState: socketStateStr, isAuthenticated: this.isAuthenticated.options }

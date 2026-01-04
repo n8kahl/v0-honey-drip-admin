@@ -81,7 +81,9 @@ export function ActionRailDiscord({
       onToggleExpanded(); // Open composer if no channels selected
       return;
     }
-    onSendAlert(selectedChannels, [], undefined, undefined);
+    // Preserve trade's existing challenge associations
+    const existingChallenges = trade?.challenges ?? [];
+    onSendAlert(selectedChannels, existingChallenges, undefined, undefined);
   };
 
   const hasChannelsSelected = selectedChannels.length > 0;

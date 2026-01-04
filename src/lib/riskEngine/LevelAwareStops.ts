@@ -135,14 +135,6 @@ const LEVEL_STRENGTH_SCORES: Record<"strong" | "moderate" | "weak", number> = {
 };
 
 /**
- * Level type base strength (some level types are inherently stronger)
- */
-const LEVEL_TYPE_BASE_STRENGTH: Record<KeyLevelType, "strong" | "moderate" | "weak"> = {
-  PriorDayHL: "strong",
-  WeekHL: "strong",
-  MonthHL: "strong",
-  VWAP: "moderate",
-  ORB: "moderate",
   Pivot: "moderate",
   Fib: "moderate",
   Bollinger: "weak",
@@ -321,7 +313,8 @@ export function calculateLevelAwareStop(
   keyLevels: KeyLevels | KeyLevel[],
   atr: number,
   tradeType: TradeType = "DAY",
-  config: LevelAwareStopConfig = DEFAULT_LEVEL_AWARE_CONFIG
+  config: LevelAwareStopConfig = DEFAULT_LEVEL_AWARE_CONFIG,
+  ivPercentile?: number
 ): LevelAwareStopResult {
   // Get effective config with trade type overrides
   const effectiveConfig = {
@@ -418,7 +411,21 @@ export function calculateLevelAwareStop(
   const primaryLevel = scoredLevels[0];
 
   // Calculate stop with buffer
-  const buffer = atr * effectiveConfig.bufferATRMultiplier;
+  // Apply IV-based volatility adjustment (Widen stops in high IV, tighten in low IV)
+  let ivMultiplier = 1.0;
+  let ivReasoning = "";
+
+  if (ivPercentile !== undefined) {
+    if (ivPercentile > 80) {
+      ivMultiplier = 1.2; // 20% wider buffer in high IV
+      ivReasoning = " (High IV: widened 20%)";
+    } else if (ivPercentile < 20) {
+      ivMultiplier = 0.9; // 10% tighter buffer in low IV
+      ivReasoning = " (Low IV: tightened 10%)";
+    }
+  }
+
+  const buffer = atr * effectiveConfig.bufferATRMultiplier * ivMultiplier;
   const recommendedStop =
     direction === "long" ? primaryLevel.price - buffer : primaryLevel.price + buffer;
 
@@ -462,7 +469,7 @@ export function calculateLevelAwareStop(
     levelStrength: primaryLevel.strength,
     distanceFromEntry: distance,
     distancePercent,
-    reasoning: `Stop placed ${buffer.toFixed(2)} below ${primaryLevel.label} (${primaryLevel.strength}) at ${primaryLevel.price.toFixed(2)}`,
+    reasoning: `Stop placed ${buffer.toFixed(2)} below ${primaryLevel.label} (${primaryLevel.strength}) at ${primaryLevel.price.toFixed(2)}${ivReasoning}`,
     confidence,
     alternativeStops,
     warnings,
@@ -482,6 +489,7 @@ export function calculateLevelAwareStop(
 export function calculateLevelAwareTargets(
   entryPrice: number,
   direction: "long" | "short",
+  calculateRisk: (entryPrice: number, stopLoss: number, accountSize: number) => number,
   keyLevels: KeyLevels | KeyLevel[],
   atr: number,
   stopDistance: number

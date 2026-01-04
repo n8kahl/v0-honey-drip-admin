@@ -497,128 +497,60 @@ export class TransportPolicy {
           }
         }
 
-        // FIX: Use direct contract lookup instead of searching in underlying snapshot
-        // The snapshot API accepts either underlying ticker (SPY) or specific options ticker (O:SPY...)
-        // Using the full ticker guarantees we get this exact contract's data
-        try {
-          const response = await massive.getOptionsSnapshot(fullTicker);
-          // Response may be a single contract or wrapped in results array
-          const contract = response?.results?.[0] || response;
+        // FIX: Use underlying snapshot + search FIRST (direct contract lookup returns empty)
+        // The Massive API /v3/snapshot/options/{underlying} returns ~10-250 contracts reliably
+        // The /v3/snapshot/options/{O:fullTicker} returns 76 bytes empty - doesn't work
+        const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
 
-          if (contract && (contract.last_quote || contract.last_trade || contract.day)) {
-            // Extract price data from the contract's nested structure
-            // Massive API returns: { last_trade: { price, p }, last_quote: { bid, bp, ask, ap } }
-            data = {
-              symbol: fullTicker,
-              last:
-                contract.last_trade?.price ?? contract.last_trade?.p ?? contract.day?.close ?? 0,
-              bid: contract.last_quote?.bid ?? contract.last_quote?.bp ?? 0,
-              ask: contract.last_quote?.ask ?? contract.last_quote?.ap ?? 0,
-              volume: contract.day?.volume ?? 0,
-              change: contract.day?.change ?? 0,
-              changePercent: contract.day?.change_percent ?? 0,
-              open: contract.day?.open ?? 0,
-              high: contract.day?.high ?? 0,
-              low: contract.day?.low ?? 0,
-              timestamp:
-                contract.last_trade?.sip_timestamp ??
-                contract.last_quote?.sip_timestamp ??
-                Date.now(),
-            };
-            console.debug(`[TransportPolicy] Direct contract lookup succeeded for ${fullTicker}`);
-          } else {
-            console.warn(
-              `[TransportPolicy] Direct lookup returned no price data for ${fullTicker}, response:`,
-              JSON.stringify(response).slice(0, 200)
+        try {
+          if (underlying) {
+            // PRIMARY: Fetch underlying snapshot and search for our contract
+            const snapshotResponse = await massive.getOptionsSnapshot(underlying);
+            const results = snapshotResponse?.results || [];
+            const foundContract = results.find(
+              (c: any) =>
+                c.details?.ticker === fullTicker ||
+                c.ticker === fullTicker ||
+                c.details?.ticker === fullTicker.replace(/^O:/, "") ||
+                c.ticker === fullTicker.replace(/^O:/, "")
             );
 
-            // FALLBACK: Try underlying snapshot search (in case direct lookup fails)
-            const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
-            if (underlying) {
+            if (
+              foundContract &&
+              (foundContract.last_quote || foundContract.last_trade || foundContract.day)
+            ) {
+              data = {
+                symbol: fullTicker,
+                last:
+                  foundContract.last_trade?.price ??
+                  foundContract.last_trade?.p ??
+                  foundContract.day?.close ??
+                  0,
+                bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
+                ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
+                volume: foundContract.day?.volume ?? 0,
+                change: foundContract.day?.change ?? 0,
+                changePercent: foundContract.day?.change_percent ?? 0,
+                open: foundContract.day?.open ?? 0,
+                high: foundContract.day?.high ?? 0,
+                low: foundContract.day?.low ?? 0,
+                timestamp:
+                  foundContract.last_trade?.sip_timestamp ??
+                  foundContract.last_quote?.sip_timestamp ??
+                  Date.now(),
+              };
+              // Successfully found contract in underlying snapshot
+            } else {
               console.warn(
-                `[TransportPolicy] Falling back to underlying snapshot for ${underlying}`
+                `[TransportPolicy] Contract ${fullTicker} not found in ${underlying} snapshot (${results.length} contracts returned)`
               );
-              const snapshotResponse = await massive.getOptionsSnapshot(underlying);
-              const foundContract = snapshotResponse?.results?.find(
-                (c: any) => c.details?.ticker === fullTicker || c.ticker === fullTicker
-              );
-              if (foundContract) {
-                data = {
-                  symbol: fullTicker,
-                  last:
-                    foundContract.last_trade?.price ??
-                    foundContract.last_trade?.p ??
-                    foundContract.day?.close ??
-                    0,
-                  bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
-                  ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
-                  volume: foundContract.day?.volume ?? 0,
-                  change: foundContract.day?.change ?? 0,
-                  changePercent: foundContract.day?.change_percent ?? 0,
-                  open: foundContract.day?.open ?? 0,
-                  high: foundContract.day?.high ?? 0,
-                  low: foundContract.day?.low ?? 0,
-                  timestamp:
-                    foundContract.last_trade?.sip_timestamp ??
-                    foundContract.last_quote?.sip_timestamp ??
-                    Date.now(),
-                };
-                console.debug(
-                  `[TransportPolicy] Fallback snapshot search succeeded for ${fullTicker}`
-                );
-              } else {
-                console.warn(
-                  `[TransportPolicy] Contract ${fullTicker} not found in ${underlying} snapshot either`
-                );
-              }
             }
           }
-        } catch (directLookupError) {
+        } catch (snapshotError) {
           console.error(
-            `[TransportPolicy] Direct contract lookup failed for ${fullTicker}:`,
-            directLookupError
+            `[TransportPolicy] Underlying snapshot failed for ${fullTicker}:`,
+            snapshotError
           );
-
-          // FALLBACK: Try underlying snapshot search
-          const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
-          if (underlying) {
-            try {
-              console.warn(
-                `[TransportPolicy] Attempting fallback to underlying snapshot for ${underlying}`
-              );
-              const snapshotResponse = await massive.getOptionsSnapshot(underlying);
-              const foundContract = snapshotResponse?.results?.find(
-                (c: any) => c.details?.ticker === fullTicker || c.ticker === fullTicker
-              );
-              if (foundContract) {
-                data = {
-                  symbol: fullTicker,
-                  last:
-                    foundContract.last_trade?.price ??
-                    foundContract.last_trade?.p ??
-                    foundContract.day?.close ??
-                    0,
-                  bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
-                  ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
-                  volume: foundContract.day?.volume ?? 0,
-                  change: foundContract.day?.change ?? 0,
-                  changePercent: foundContract.day?.change_percent ?? 0,
-                  open: foundContract.day?.open ?? 0,
-                  high: foundContract.day?.high ?? 0,
-                  low: foundContract.day?.low ?? 0,
-                  timestamp:
-                    foundContract.last_trade?.sip_timestamp ??
-                    foundContract.last_quote?.sip_timestamp ??
-                    Date.now(),
-                };
-              }
-            } catch (fallbackError) {
-              console.error(
-                `[TransportPolicy] Fallback snapshot also failed for ${fullTicker}:`,
-                fallbackError
-              );
-            }
-          }
         }
       } else if (this.config.isIndex) {
         data = await massive.getIndex(this.config.symbol);

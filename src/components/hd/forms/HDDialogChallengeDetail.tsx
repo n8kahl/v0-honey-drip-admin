@@ -18,6 +18,8 @@ import { formatChallengeDiscordExport } from "../../../lib/discordFormatter";
 import { useAppToast } from "../../../hooks/useAppToast";
 import { useDiscord } from "../../../hooks/useDiscord";
 import { useSettingsStore } from "../../../stores/settingsStore";
+import { useChallengeStats } from "../../../hooks/useChallengeStats";
+import { ChallengeActiveTradeRow } from "../challenge/ChallengeActiveTradeRow";
 
 interface HDDialogChallengeDetailProps {
   open: boolean;
@@ -46,16 +48,26 @@ export function HDDialogChallengeDetail({
 
   if (!challenge) return null;
 
-  // Filter to only ENTERED or EXITED trades for this challenge
-  // Use ensureArray to safely handle null/undefined/non-array challenges
+  // Use the real-time stats hook for live P&L tracking
+  const liveStats = useChallengeStats(challenge.id, trades);
+
+  // Get trades for display (ENTERED + EXITED only)
   const challengeTrades = trades.filter(
     (t) =>
       (t.state === "ENTERED" || t.state === "EXITED") &&
       ensureArray(t.challenges).includes(challenge.id)
   );
 
-  // Calculate stats
-  const stats = calculateChallengeStats(challengeTrades);
+  // Build stats object with live values for active trades
+  const stats = {
+    totalTrades: liveStats.totalTrades,
+    winRate: liveStats.winRate,
+    avgPnL: liveStats.liveAvgPnL,
+    totalPnL: liveStats.liveTotalPnL,
+    bestTrade: liveStats.liveBestTrade,
+    worstTrade: liveStats.liveWorstTrade,
+    dollarPnL: liveStats.liveDollarPnL,
+  };
 
   const handleExportToDiscord = async () => {
     if (selectedChannels.length === 0) {
@@ -76,7 +88,7 @@ export function HDDialogChallengeDetail({
     const activeTrades = challengeTrades.filter((t) => t.state === "ENTERED").length;
 
     try {
-      const results = await discord.sendChallengeProgressAlert(selectedChannelObjects, challenge, {
+      const result = await discord.sendChallengeProgressAlert(selectedChannelObjects, challenge, {
         totalPnL: stats.totalPnL,
         winRate: stats.winRate,
         completedTrades,
@@ -84,13 +96,10 @@ export function HDDialogChallengeDetail({
       });
 
       // Check results
-      const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter((r) => !r.success).length;
-
-      if (failCount === 0) {
-        toast.success(`Challenge summary sent to ${successCount} channel(s)!`);
-      } else if (successCount > 0) {
-        toast.warning(`Sent to ${successCount} channel(s), ${failCount} failed`);
+      if (result.failed === 0) {
+        toast.success(`Challenge summary sent to ${result.success} channel(s)!`);
+      } else if (result.success > 0) {
+        toast.warning(`Sent to ${result.success} channel(s), ${result.failed} failed`);
       } else {
         toast.error("Failed to send to all channels");
       }
@@ -265,9 +274,9 @@ export function HDDialogChallengeDetail({
 
           {/* Trade Lists - Grouped by status */}
           <div className="space-y-6">
-            {/* Active Trades */}
+            {/* Active Trades - Uses ChallengeActiveTradeRow for real-time P&L */}
             {(() => {
-              const activeTrades = challengeTrades.filter((t) => t.state === "ENTERED");
+              const activeTrades = liveStats.active;
               if (activeTrades.length === 0) return null;
 
               return (
@@ -280,58 +289,14 @@ export function HDDialogChallengeDetail({
                   </div>
 
                   <div className="space-y-2">
-                    {activeTrades.map((trade) => {
-                      const pnl = trade.movePercent || 0;
-                      const isPositive = pnl >= 0;
-
-                      return (
-                        <button
-                          key={trade.id}
-                          onClick={() => onTradeClick?.(trade)}
-                          className="w-full text-left p-4 bg-[var(--surface-2)] rounded-[var(--radius)] border-2 border-[var(--brand-primary)]/30 hover:border-[var(--brand-primary)] transition-all cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[var(--text-high)] font-medium">
-                                  {trade.ticker} ${trade.contract.strike}
-                                  {trade.contract.type}
-                                </span>
-                                <span className="text-xs text-[var(--text-muted)]">
-                                  {trade.contract.expiry}
-                                </span>
-                                <span className="px-2 py-0.5 rounded text-micro uppercase tracking-wide bg-[var(--surface-1)] text-[var(--text-muted)]">
-                                  {trade.tradeType}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
-                                {trade.entryPrice && (
-                                  <span>Entry: ${formatPrice(trade.entryPrice)}</span>
-                                )}
-                                {trade.currentPrice && (
-                                  <span>Current: ${formatPrice(trade.currentPrice)}</span>
-                                )}
-                              </div>
-                              <div className="text-micro text-[var(--brand-primary)] mt-1">
-                                Click to manage in Live view →
-                              </div>
-                            </div>
-
-                            <div
-                              className={cn(
-                                "px-4 py-2 rounded-[var(--radius)] font-bold text-lg tabular-nums ml-4",
-                                isPositive
-                                  ? "bg-[var(--accent-positive)]/10 text-[var(--accent-positive)]"
-                                  : "bg-[var(--accent-negative)]/10 text-[var(--accent-negative)]"
-                              )}
-                            >
-                              {isPositive ? "+" : ""}
-                              {pnl.toFixed(1)}%
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {activeTrades.map((trade) => (
+                      <ChallengeActiveTradeRow
+                        key={trade.id}
+                        trade={trade}
+                        onTradeClick={onTradeClick}
+                        onLivePnLUpdate={liveStats.registerLivePnL}
+                      />
+                    ))}
                   </div>
                 </div>
               );
@@ -339,7 +304,7 @@ export function HDDialogChallengeDetail({
 
             {/* Exited Trades */}
             {(() => {
-              const exitedTrades = challengeTrades.filter((t) => t.state === "EXITED");
+              const exitedTrades = liveStats.completed;
               if (exitedTrades.length === 0) return null;
 
               return (
@@ -477,43 +442,6 @@ export function HDDialogChallengeDetail({
       </div>
     </AppSheet>
   );
-}
-
-function calculateChallengeStats(trades: Trade[]) {
-  if (trades.length === 0) {
-    return {
-      totalTrades: 0,
-      winRate: 0,
-      avgPnL: 0,
-      totalPnL: 0,
-      bestTrade: null,
-      worstTrade: null,
-    };
-  }
-
-  const pnls = trades.map((t) => t.movePercent || 0);
-  const wins = pnls.filter((p) => p > 0).length;
-  const totalPnL = pnls.reduce((sum, p) => sum + p, 0);
-  const avgPnL = totalPnL / trades.length;
-
-  const best = trades.reduce((best, trade) => {
-    const pnl = trade.movePercent || 0;
-    return pnl > (best?.movePercent || -Infinity) ? trade : best;
-  }, trades[0]);
-
-  const worst = trades.reduce((worst, trade) => {
-    const pnl = trade.movePercent || 0;
-    return pnl < (worst?.movePercent || Infinity) ? trade : worst;
-  }, trades[0]);
-
-  return {
-    totalTrades: trades.length,
-    winRate: (wins / trades.length) * 100,
-    avgPnL,
-    totalPnL,
-    bestTrade: best ? { ticker: best.ticker, pnl: best.movePercent || 0 } : null,
-    worstTrade: worst ? { ticker: worst.ticker, pnl: worst.movePercent || 0 } : null,
-  };
 }
 
 // Balance Progress Section Component

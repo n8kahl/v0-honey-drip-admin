@@ -5,18 +5,13 @@
  * Provides REST and WebSocket access through a single, coherent interface.
  */
 
-import { MassiveTokenManager } from './token-manager';
-import { MassiveCache } from './cache';
-import { MassiveREST } from './rest';
-import { MassiveWebSocket } from './websocket';
-import type {
-  MassiveQuote,
-  MassiveOption,
-  MassiveOptionsChain,
-  MassiveIndex,
-} from './types';
-import type { MassiveAggregateBar, MassiveMarketStatus, MassiveRSI } from './rest';
-import type { WebSocketMessage } from './websocket';
+import { MassiveTokenManager } from "./token-manager";
+import { MassiveCache } from "./cache";
+import { MassiveREST } from "./rest";
+import { MassiveWebSocket } from "./websocket";
+import type { MassiveQuote, MassiveOption, MassiveOptionsChain, MassiveIndex } from "./types";
+import type { MassiveAggregateBar, MassiveMarketStatus, MassiveRSI } from "./rest";
+import type { WebSocketMessage } from "./websocket";
 
 export interface MassiveConfig {
   baseUrl?: string;
@@ -84,11 +79,11 @@ export class MassiveDataProvider {
    */
   async connect(): Promise<void> {
     if (this.initialized) {
-      console.warn('[MassiveProvider] Already initialized');
+      console.warn("[MassiveProvider] Already initialized");
       return;
     }
 
-    console.log('[MassiveProvider] Initializing...');
+    console.log("[MassiveProvider] Initializing...");
 
     // Ensure token is available
     await this.tokenManager.ensureToken();
@@ -97,7 +92,7 @@ export class MassiveDataProvider {
     await this.ws.connect();
 
     this.initialized = true;
-    console.log('[MassiveProvider] Initialized successfully');
+    console.log("[MassiveProvider] Initialized successfully");
   }
 
   /**
@@ -106,7 +101,7 @@ export class MassiveDataProvider {
   disconnect(): void {
     this.ws.disconnect();
     this.initialized = false;
-    console.log('[MassiveProvider] Disconnected');
+    console.log("[MassiveProvider] Disconnected");
   }
 
   /**
@@ -139,9 +134,9 @@ export class MassiveDataProvider {
     optionsTicker: string,
     params?: {
       timestamp?: string;
-      timespan?: 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
+      timespan?: "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year";
       window?: number;
-      series_type?: 'close' | 'open' | 'high' | 'low';
+      series_type?: "close" | "open" | "high" | "low";
       limit?: number;
     }
   ): Promise<{ values: MassiveRSI[] }> {
@@ -175,9 +170,22 @@ export class MassiveDataProvider {
 
   /**
    * Get options snapshot
+   * @param options.limit - Max contracts to return (default 250, max 250)
+   * @param options.expirationDate - Filter by expiration date (YYYY-MM-DD)
    */
-  async getOptionsSnapshot(underlyingTicker: string): Promise<any> {
-    return this.rest.getOptionsSnapshot(underlyingTicker);
+  async getOptionsSnapshot(
+    underlyingTicker: string,
+    options?: { limit?: number; expirationDate?: string }
+  ): Promise<any> {
+    return this.rest.getOptionsSnapshot(underlyingTicker, options);
+  }
+
+  /**
+   * Get specific option contract snapshot (for individual contract prices)
+   * Works 24/7 even when market is closed
+   */
+  async getContractSnapshot(optionContract: string): Promise<any> {
+    return this.rest.getContractSnapshot(optionContract);
   }
 
   /**
@@ -232,7 +240,7 @@ export class MassiveDataProvider {
    */
   async getAggregates(
     symbol: string,
-    timeframe: '1' | '5' | '15' | '60' | '1D',
+    timeframe: "1" | "5" | "15" | "60" | "1D",
     lookback?: number
   ): Promise<MassiveAggregateBar[]> {
     return this.rest.getAggregates(symbol, timeframe, lookback);
@@ -243,7 +251,7 @@ export class MassiveDataProvider {
    */
   async getOptionTrades(
     optionsTicker: string,
-    params?: { limit?: number; order?: 'asc' | 'desc'; sort?: string; cursor?: string }
+    params?: { limit?: number; order?: "asc" | "desc"; sort?: string; cursor?: string }
   ): Promise<any[]> {
     return this.rest.getOptionTrades(optionsTicker, params);
   }
@@ -253,10 +261,7 @@ export class MassiveDataProvider {
   /**
    * Subscribe to quote updates
    */
-  subscribeQuotes(
-    symbols: string[],
-    callback: (message: WebSocketMessage) => void
-  ): UnsubscribeFn {
+  subscribeQuotes(symbols: string[], callback: (message: WebSocketMessage) => void): UnsubscribeFn {
     return this.ws.subscribeQuotes(symbols, callback);
   }
 
@@ -266,7 +271,7 @@ export class MassiveDataProvider {
   subscribeAggregates(
     symbols: string[],
     callback: (message: WebSocketMessage) => void,
-    timespan: 'second' | 'minute' = 'minute'
+    timespan: "second" | "minute" = "minute"
   ): UnsubscribeFn {
     return this.ws.subscribeAggregates(symbols, callback, timespan);
   }
@@ -277,7 +282,7 @@ export class MassiveDataProvider {
   subscribeOptionAggregates(
     optionTickers: string[],
     callback: (message: WebSocketMessage) => void,
-    timespan: 'second' | 'minute' = 'minute'
+    timespan: "second" | "minute" = "minute"
   ): UnsubscribeFn {
     return this.ws.subscribeOptionAggregates(optionTickers, callback, timespan);
   }
@@ -292,14 +297,16 @@ export class MassiveDataProvider {
   /**
    * Check if WebSocket is connected
    */
-  isConnected(endpoint: 'options' | 'indices' = 'options'): boolean {
+  isConnected(endpoint: "options" | "indices" = "options"): boolean {
     return this.ws.isConnected(endpoint);
   }
 
   /**
    * Get WebSocket connection state
    */
-  getConnectionState(endpoint: 'options' | 'indices' = 'options'): 'connecting' | 'open' | 'closed' {
+  getConnectionState(
+    endpoint: "options" | "indices" = "options"
+  ): "connecting" | "open" | "closed" {
     return this.ws.getConnectionState(endpoint);
   }
 
@@ -345,8 +352,8 @@ export class MassiveDataProvider {
 export const massive = new MassiveDataProvider();
 
 // Auto-connect on module load (browser only)
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   massive.connect().catch((err) => {
-    console.error('[MassiveProvider] Auto-connect failed:', err);
+    console.error("[MassiveProvider] Auto-connect failed:", err);
   });
 }

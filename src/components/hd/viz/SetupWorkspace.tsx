@@ -141,24 +141,46 @@ function MTFLadder({ mtfTrend, indicators, candles, symbolData }: MTFLadderProps
     const now = Date.now();
 
     // During market hours: 1 hour staleness threshold
-    // After hours/weekends: 24 hours threshold (yesterday's data is fine for analysis)
-    const staleThreshold = isMarketOpen ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    // After hours/weekends: 72 hours threshold (covers full weekend from Friday close)
+    const staleThreshold = isMarketOpen ? 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
+
+    // DEBUG: Log what data we have
+    console.log("[MTFLadder] Checking data availability:", {
+      symbolDataExists: !!symbolData,
+      candlesKeys: symbolData?.candles ? Object.keys(symbolData.candles) : [],
+      candle1mCount: symbolData?.candles?.["1m"]?.length || 0,
+      candle5mCount: symbolData?.candles?.["5m"]?.length || 0,
+      candle15mCount: symbolData?.candles?.["15m"]?.length || 0,
+      candle60mCount: symbolData?.candles?.["60m"]?.length || 0,
+      isMarketOpen,
+      staleThresholdHours: staleThreshold / (60 * 60 * 1000),
+    });
 
     for (const item of tfs) {
       const tfCandles = symbolData?.candles?.[item.tf];
       if (tfCandles && tfCandles.length > 0) {
         const lastCandle = tfCandles[tfCandles.length - 1];
         const candleAge = now - lastCandle.time;
+        const candleAgeHours = candleAge / (60 * 60 * 1000);
+        console.log(
+          `[MTFLadder] ${item.tf}: ${tfCandles.length} candles, last candle age: ${candleAgeHours.toFixed(2)}h`
+        );
         if (candleAge < staleThreshold) {
           item.hasData = true;
         } else {
           item.reason = "stale";
+          console.log(
+            `[MTFLadder] ${item.tf}: STALE - age ${candleAgeHours.toFixed(2)}h > threshold ${staleThreshold / (60 * 60 * 1000)}h`
+          );
         }
       } else if (mtfTrend[item.tf] && mtfTrend[item.tf] !== "neutral") {
         // Have trend but no candles
         item.hasData = true;
       } else {
         item.reason = "no data";
+        console.log(
+          `[MTFLadder] ${item.tf}: NO DATA - candles: ${tfCandles?.length || 0}, trend: ${mtfTrend[item.tf]}`
+        );
       }
     }
 

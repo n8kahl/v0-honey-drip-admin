@@ -77,11 +77,9 @@ export interface FullChallengeStats {
 export function getFullChallengeStats(challengeId: string, allTrades: Trade[]): FullChallengeStats {
   const { active, exited } = getTradesForChallenge(challengeId, allTrades);
 
-  // Include LOADED trades in active for display purposes
+  // Only include ENTERED trades in active (not LOADED - those haven't been entered yet)
   const activeTrades = allTrades.filter(
-    (t) =>
-      ensureArray(t.challenges).includes(challengeId) &&
-      (t.state === "ENTERED" || t.state === "LOADED")
+    (t) => ensureArray(t.challenges).includes(challengeId) && t.state === "ENTERED"
   );
 
   if (activeTrades.length === 0 && exited.length === 0) {

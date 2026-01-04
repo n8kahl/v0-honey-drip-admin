@@ -115,14 +115,9 @@ export default function App() {
   const watchlistSymbols = useMemo(() => getWatchlistSymbols(), [watchlist]);
   const { quotes } = useQuotes(watchlistSymbols);
 
-  // Subscribe watchlist symbols to marketDataStore for confluence metrics
-  useEffect(() => {
-    if (watchlistSymbols.length > 0) {
-      watchlistSymbols.forEach((symbol) => {
-        subscribeToMarketData(symbol);
-      });
-    }
-  }, [watchlistSymbols, subscribeToMarketData]);
+  // FIXED: Create a stable key based on actual symbol content (not array reference)
+  // This prevents unnecessary re-runs when the watchlist array reference changes but content is the same
+  const watchlistKey = useMemo(() => [...watchlistSymbols].sort().join(","), [watchlistSymbols]);
 
   // Composite signals - monitors for trade setup signals
   const {
@@ -230,6 +225,10 @@ export default function App() {
 
         // Sync active trade polling with loaded trades
         ActiveTradePollingService.syncWithStore();
+
+        // Log polling service status for debugging
+        const pollingStatus = ActiveTradePollingService.getStatus();
+        console.warn("[v0] ActiveTradePollingService status after sync:", pollingStatus);
       } catch (error) {
         console.error("[v0] Failed to load user data:", error);
       }
@@ -251,17 +250,34 @@ export default function App() {
     return () => clearInterval(interval);
   }, [fetchMarketSession]);
 
-  // Initialize market data WebSocket when watchlist is loaded
+  // FIXED: Consolidated market data initialization and subscription
+  // Uses stable watchlistKey to prevent unnecessary re-runs
   useEffect(() => {
+    console.warn(
+      "[v0-App] Market data useEffect triggered, watchlistSymbols:",
+      watchlistSymbols.length,
+      watchlistSymbols.slice(0, 3).join(", ")
+    );
     if (watchlistSymbols.length > 0) {
+      console.warn(
+        "[v0-App] Calling initializeMarketData with",
+        watchlistSymbols.length,
+        "symbols"
+      );
+      // Initialize with all symbols (preserves existing candle data)
       initializeMarketData(watchlistSymbols);
+
+      // Subscribe each symbol for streaming updates
+      watchlistSymbols.forEach((symbol) => {
+        subscribeToMarketData(symbol);
+      });
     }
 
     // Cleanup on unmount
     return () => {
       marketDataCleanup();
     };
-  }, [watchlistSymbols.length]); // Only reinitialize if watchlist size changes
+  }, [watchlistKey]); // ONLY depend on watchlistKey (stable string) - NOT watchlistSymbols array reference
 
   // Public routes (no auth required)
   if (location.pathname === "/public") {

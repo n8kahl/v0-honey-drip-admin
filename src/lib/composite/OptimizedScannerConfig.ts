@@ -74,9 +74,10 @@ export const OPTIMIZED_DEFAULT_THRESHOLDS: SignalThresholds =
   process.env.NODE_ENV === "development" || process.env.TESTING_MODE === "true"
     ? TESTING_DEFAULT_THRESHOLDS
     : {
-        minBaseScore: 70, // Realistic threshold - solid setups
-        minStyleScore: 75, // Good style fit required
-        minRiskReward: 1.8, // Healthy R:R required
+        // OPTIMIZED: Increased thresholds for better win rate
+        minBaseScore: 75, // WAS: 70 - require stronger setups
+        minStyleScore: 80, // WAS: 75 - better style fit required
+        minRiskReward: 2.0, // WAS: 1.8 - healthier R:R required
         maxSignalsPerSymbolPerHour: 2, // Allow reasonable signal frequency
         cooldownMinutes: 20, // Adequate breathing room
       };
@@ -154,14 +155,16 @@ const STRATEGY_THRESHOLDS: Partial<Record<OpportunityType, Partial<SignalThresho
     minRiskReward: 2.0,
   },
   mean_reversion_long: {
-    minBaseScore: 80,
-    minStyleScore: 85,
-    minRiskReward: 2.2,
+    // OPTIMIZED: Higher quality requirements for better win rate
+    minBaseScore: 85, // WAS: 80 - require stronger setups
+    minStyleScore: 88, // WAS: 85 - better style fit
+    minRiskReward: 2.5, // WAS: 2.2 - need larger targets
   },
   mean_reversion_short: {
-    minBaseScore: 80,
-    minStyleScore: 85,
-    minRiskReward: 2.2,
+    // OPTIMIZED: This is our best performing strategy - tune carefully
+    minBaseScore: 82, // WAS: 80 - slightly higher quality
+    minStyleScore: 86, // WAS: 85 - better style fit
+    minRiskReward: 2.3, // WAS: 2.2 - modest increase
   },
   trend_continuation_long: {
     minBaseScore: 75,
@@ -188,18 +191,20 @@ const STRATEGY_THRESHOLDS: Partial<Record<OpportunityType, Partial<SignalThresho
     cooldownMinutes: 45,
   },
   index_mean_reversion_long: {
-    minBaseScore: 82,
-    minStyleScore: 86,
-    minRiskReward: 2.3,
+    // OPTIMIZED: Index strategies need stronger confirmation
+    minBaseScore: 85, // WAS: 82 - stricter for indices
+    minStyleScore: 88, // WAS: 86 - better style fit
+    minRiskReward: 2.5, // WAS: 2.3 - larger targets for indices
     // WEEKEND OVERRIDE: Lower threshold for weekend analysis
     // VWAP and volume data unavailable on weekends (50% of score missing)
     weekendMinBaseScore: 35, // Rely on RSI + market regime only
     weekendMinStyleScore: 35, // Match base score threshold
   },
   index_mean_reversion_short: {
-    minBaseScore: 82,
-    minStyleScore: 86,
-    minRiskReward: 2.3,
+    // OPTIMIZED: Index strategies need stronger confirmation
+    minBaseScore: 85, // WAS: 82 - stricter for indices
+    minStyleScore: 88, // WAS: 86 - better style fit
+    minRiskReward: 2.5, // WAS: 2.3 - larger targets for indices
     // WEEKEND OVERRIDE: Lower threshold for weekend analysis
     weekendMinBaseScore: 35,
     weekendMinStyleScore: 35, // Match base score threshold

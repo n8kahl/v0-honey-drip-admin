@@ -13,7 +13,7 @@ import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { Button } from "../../ui/button";
 import { HDFactorGauge, HDFactorChip } from "./HDFactorGauge";
-import { HDMTFAlignment, HDMTFInline } from "./HDMTFAlignment";
+import { MTFHeatmap } from "../viz/MTFHeatmap";
 import { useSymbolConfluence, type SymbolConfluence } from "../../../hooks/useSymbolConfluence";
 
 // ============================================================================
@@ -124,12 +124,15 @@ export function HDConfluenceBuilderRow({
           </div>
         )}
 
-        {/* MTF Inline */}
-        <div className="hidden sm:block">
-          <HDMTFInline
-            mtf={confluence.mtf}
-            aligned={confluence.mtfAligned}
-            total={confluence.mtfTotal}
+        {/* MTF Heatmap */}
+        <div className="hidden sm:block w-[200px]">
+          <MTFHeatmap
+            timeframes={confluence.mtf.map((tf) => ({
+              tf: tf.timeframe,
+              trend: tf.direction === "up" ? "bull" : tf.direction === "down" ? "bear" : "neutral",
+              label: tf.label,
+            }))}
+            className="gap-0.5"
           />
         </div>
 
@@ -189,10 +192,20 @@ export function HDConfluenceBuilderRow({
 
           {/* MTF Alignment Full */}
           <div className="mb-4">
-            <HDMTFAlignment
-              mtf={confluence.mtf}
-              aligned={confluence.mtfAligned}
-              total={confluence.mtfTotal}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">
+                Fractal Trend Alignment
+              </span>
+            </div>
+            <MTFHeatmap
+              timeframes={confluence.mtf.map((tf) => ({
+                tf: tf.timeframe,
+                trend:
+                  tf.direction === "up" ? "bull" : tf.direction === "down" ? "bear" : "neutral",
+                label: tf.label,
+              }))}
+              className="gap-1 h-8"
+              orientation="horizontal"
             />
           </div>
 

@@ -5,15 +5,15 @@ import {
   KeyLevels,
   LevelCandidate,
   TradeType,
-} from './types';
+} from "./types";
 import {
   RISK_PROFILES,
   inferTradeTypeByDTE,
   DEFAULT_DTE_THRESHOLDS,
   RiskProfile,
-} from './profiles';
+} from "./profiles";
 
-import { evaluateContractLiquidity, OptionsSnapshot } from '../massive/options-advanced';
+import { evaluateContractLiquidity, OptionsSnapshot } from "../massive/options-advanced";
 
 /**
  * Calculate TP/SL using percent mode
@@ -43,10 +43,10 @@ function calculatePercentMode(input: RiskCalculationInput): RiskCalculationResul
     targetPrice,
     stopLoss,
     riskRewardRatio,
-    confidence: 'medium',
+    confidence: "medium",
     reasoning: `Percent-based: +${tpPercent}% target, -${slPercent}% stop`,
     calculatedAt: Date.now(),
-    usedLevels: ['percent'],
+    usedLevels: ["percent"],
     tradeType,
     dte,
   };
@@ -57,7 +57,7 @@ function calculatePercentMode(input: RiskCalculationInput): RiskCalculationResul
  */
 function projectLevels(
   entryPrice: number,
-  direction: 'long' | 'short',
+  direction: "long" | "short",
   keyLevels: KeyLevels,
   profile: RiskProfile,
   atr: number
@@ -70,16 +70,16 @@ function projectLevels(
 
   // Build level map
   const levelMap: Record<string, number | undefined> = {
-    PremarketHL: direction === 'long' ? keyLevels.preMarketHigh : keyLevels.preMarketLow,
-    ORB: direction === 'long' ? keyLevels.orbHigh : keyLevels.orbLow,
+    PremarketHL: direction === "long" ? keyLevels.preMarketHigh : keyLevels.preMarketLow,
+    ORB: direction === "long" ? keyLevels.orbHigh : keyLevels.orbLow,
     VWAP: keyLevels.vwap,
-    VWAPBands: direction === 'long' ? keyLevels.vwapUpperBand : keyLevels.vwapLowerBand,
-    PrevDayHL: direction === 'long' ? keyLevels.priorDayHigh : keyLevels.priorDayLow,
-    WeeklyHL: direction === 'long' ? keyLevels.weeklyHigh : keyLevels.weeklyLow,
-    MonthlyHL: direction === 'long' ? keyLevels.monthlyHigh : keyLevels.monthlyLow,
-    QuarterlyHL: direction === 'long' ? keyLevels.quarterlyHigh : keyLevels.quarterlyLow,
-    YearlyHL: direction === 'long' ? keyLevels.yearlyHigh : keyLevels.yearlyLow,
-    Boll20: direction === 'long' ? keyLevels.bollingerUpper : keyLevels.bollingerLower,
+    VWAPBands: direction === "long" ? keyLevels.vwapUpperBand : keyLevels.vwapLowerBand,
+    PrevDayHL: direction === "long" ? keyLevels.priorDayHigh : keyLevels.priorDayLow,
+    WeeklyHL: direction === "long" ? keyLevels.weeklyHigh : keyLevels.weeklyLow,
+    MonthlyHL: direction === "long" ? keyLevels.monthlyHigh : keyLevels.monthlyLow,
+    QuarterlyHL: direction === "long" ? keyLevels.quarterlyHigh : keyLevels.quarterlyLow,
+    YearlyHL: direction === "long" ? keyLevels.yearlyHigh : keyLevels.yearlyLow,
+    Boll20: direction === "long" ? keyLevels.bollingerUpper : keyLevels.bollingerLower,
   };
 
   // Filter to profile's used levels
@@ -92,8 +92,8 @@ function projectLevels(
 
     // TP candidates: above entry for long, below for short
     if (
-      (direction === 'long' && price > entryPrice) ||
-      (direction === 'short' && price < entryPrice)
+      (direction === "long" && price > entryPrice) ||
+      (direction === "short" && price < entryPrice)
     ) {
       // Within ATR budget
       const maxTP = atr * profile.tpATRFrac[1];
@@ -104,8 +104,8 @@ function projectLevels(
 
     // SL candidates: below entry for long, above for short
     if (
-      (direction === 'long' && price < entryPrice) ||
-      (direction === 'short' && price > entryPrice)
+      (direction === "long" && price < entryPrice) ||
+      (direction === "short" && price > entryPrice)
     ) {
       // Within ATR budget
       const maxSL = atr * profile.slATRFrac;
@@ -116,7 +116,7 @@ function projectLevels(
   }
 
   // Add ATR-based candidates
-  if (direction === 'long') {
+  if (direction === "long") {
     tpCandidates.push({
       price: entryPrice + atr * profile.tpATRFrac[0],
       reason: `ATR (${profile.tpATRFrac[0]}x)`,
@@ -174,8 +174,10 @@ function mapUnderlyingMoveToOptionPremium(
   tradeType: TradeType
 ): number {
   // For SCALP/DAY, include gamma
-  if (tradeType === 'SCALP' || tradeType === 'DAY') {
-    return currentOptionMid + delta * underlyingMove + 0.5 * gamma * underlyingMove * underlyingMove;
+  if (tradeType === "SCALP" || tradeType === "DAY") {
+    return (
+      currentOptionMid + delta * underlyingMove + 0.5 * gamma * underlyingMove * underlyingMove
+    );
   }
   // For SWING/LEAP, use delta only (gamma negligible)
   return currentOptionMid + delta * underlyingMove;
@@ -198,7 +200,7 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
   } = input;
 
   // Infer trade type from DTE
-  let tradeType: TradeType = input.tradeType || 'DAY';
+  let tradeType: TradeType = input.tradeType || "DAY";
   let dte = 0;
   if (expirationISO) {
     tradeType = inferTradeTypeByDTE(
@@ -211,15 +213,15 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
   }
 
   const profile = RISK_PROFILES[tradeType];
-  const direction: 'long' | 'short' = 'long'; // Assume long for options
+  const direction: "long" | "short" = "long"; // Assume long for options
   const usedLevels: string[] = [];
 
-  let liquidityQuality: 'excellent' | 'good' | 'fair' | 'poor' = 'fair';
+  let liquidityQuality: "excellent" | "good" | "fair" | "poor" = "fair";
   let liquidityWarnings: string[] = [];
-  
+
   if (currentOptionMid > 0) {
     const snapshot: OptionsSnapshot = {
-      ticker: '', // Not needed for evaluation
+      ticker: "", // Not needed for evaluation
       bid: currentOptionMid * 0.98,
       bidSize: 0,
       ask: currentOptionMid * 1.02,
@@ -230,7 +232,7 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
       implied_volatility: 0,
       underlying_price: currentUnderlyingPrice,
     };
-    
+
     const liquidity = evaluateContractLiquidity(snapshot, {
       maxSpreadPercent: 15,
       minVolume: 30,
@@ -240,12 +242,12 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
       minBidSize: 5,
       minAskSize: 5,
     });
-    
+
     liquidityQuality = liquidity.quality;
     liquidityWarnings = liquidity.warnings;
-    
+
     if (liquidityWarnings.length > 0) {
-      console.warn('[RiskEngine] Liquidity warnings:', liquidityWarnings);
+      console.warn("[RiskEngine] Liquidity warnings:", liquidityWarnings);
     }
   }
 
@@ -260,7 +262,7 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
 
   // Choose best TP1 (highest weight, closest confluence)
   let targetPrice = currentUnderlyingPrice;
-  let targetReasoning = 'Default';
+  let targetReasoning = "Default";
   let targetPremium = currentOptionMid * 1.5;
   let targetPrice2: number | undefined;
   let targetPremium2: number | undefined;
@@ -309,7 +311,7 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
 
   // Choose best SL (highest weight, closest support)
   let stopLoss = currentUnderlyingPrice;
-  let stopReasoning = 'Default';
+  let stopReasoning = "Default";
   let stopLossPremium = currentOptionMid * 0.5;
 
   if (slCandidates.length > 0) {
@@ -346,12 +348,12 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
   const riskRewardRatio = riskAmount > 0 ? rewardAmount / riskAmount : 0;
 
   // Determine confidence
-  let confidence: 'high' | 'medium' | 'low' = 'medium';
-  const confluenceLevels = usedLevels.filter((l) => !l.includes('ATR'));
+  let confidence: "high" | "medium" | "low" = "medium";
+  const confluenceLevels = usedLevels.filter((l) => !l.includes("ATR"));
   if (confluenceLevels.length >= 2) {
-    confidence = 'high';
+    confidence = "high";
   } else if (confluenceLevels.length === 0) {
-    confidence = 'low';
+    confidence = "low";
   }
 
   // Return option premium prices for TP/SL (not underlying prices)
@@ -379,7 +381,7 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
  * Main risk calculation function
  */
 export function calculateRisk(input: RiskCalculationInput): RiskCalculationResult {
-  if (input.defaults.mode === 'percent') {
+  if (input.defaults.mode === "percent") {
     return calculatePercentMode(input);
   } else {
     return calculateCalculatedMode(input);
@@ -408,23 +410,4 @@ export function calculateTrailingStop(
   atrMultiplier: number = 1.0
 ): number {
   return highWaterMark - atr * atrMultiplier;
-}
-
-export interface RiskCalculationResult {
-  targetPrice: number;
-  stopLoss: number;
-  targetPrice2?: number;
-  targetPremium?: number;
-  targetPremium2?: number;
-  stopLossPremium?: number;
-  riskRewardRatio: number;
-  confidence: 'high' | 'medium' | 'low';
-  reasoning: string;
-  calculatedAt: number;
-  usedLevels: string[];
-  tradeType?: TradeType;
-  profile?: string;
-  dte?: number;
-  liquidityQuality?: 'excellent' | 'good' | 'fair' | 'poor';
-  liquidityWarnings?: string[];
 }

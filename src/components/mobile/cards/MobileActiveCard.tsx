@@ -31,13 +31,15 @@ export function MobileActiveCard({
   // Extract values from the unified live model
   const currentPrice = liveModel?.effectiveMid ?? 0;
   const pnlPercent = liveModel?.pnlPercent ?? 0;
-  const source = liveModel?.optionSource ?? "rest";
-  const asOf = liveModel?.optionAsOf ?? Date.now();
+  // Use priceSource/priceAsOf (reflects actual displayed data) instead of optionSource/optionAsOf
+  const source = liveModel?.priceSource ?? "rest";
+  const asOf = liveModel?.priceAsOf ?? Date.now();
+  const priceLabel = liveModel?.priceLabel ?? "Loading...";
   const entryPrice = liveModel?.entryPrice ?? contract?.mid ?? 0;
   const isProfit = pnlPercent >= 0;
 
-  // Data freshness check (stale if >10s old)
-  const isStale = liveModel?.optionIsStale ?? Date.now() - asOf > 10000;
+  // Data freshness check - use priceIsStale which properly handles market closed state
+  const isStale = liveModel?.priceIsStale ?? false;
 
   // Get live confluence from market data store
   const symbolData = useSymbolData(trade.ticker);

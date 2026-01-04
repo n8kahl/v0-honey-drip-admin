@@ -29,7 +29,7 @@ interface TradeTimelineProps {
   className?: string;
 }
 
-interface TimelineItem {
+interface TimelineItemData {
   id: string;
   type: "admin" | "member";
   updateType?: TradeThreadUpdate["type"];
@@ -44,7 +44,7 @@ interface TimelineItem {
 export function TradeTimeline({ thread, memberTrade, className }: TradeTimelineProps) {
   // Build timeline items from thread updates and member trade
   const timelineItems = useMemo(() => {
-    const items: TimelineItem[] = [];
+    const items: TimelineItemData[] = [];
 
     // Add admin updates
     (thread.updates || []).forEach((update) => {
@@ -136,7 +136,7 @@ function TimelineItem({
   isFirst,
   isLast,
 }: {
-  item: TimelineItem;
+  item: TimelineItemData;
   isFirst: boolean;
   isLast: boolean;
 }) {

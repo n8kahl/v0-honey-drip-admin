@@ -115,10 +115,18 @@ export function MobileContractSheet({
         atm = c;
       } else if (selectedType === "C") {
         // Calls: ITM = strike < underlying, OTM = strike > underlying
-        c.strike < underlyingPrice ? itm.push(c) : otm.push(c);
+        if (c.strike < underlyingPrice) {
+          itm.push(c);
+        } else {
+          otm.push(c);
+        }
       } else {
         // Puts: ITM = strike > underlying, OTM = strike < underlying
-        c.strike > underlyingPrice ? itm.push(c) : otm.push(c);
+        if (c.strike > underlyingPrice) {
+          itm.push(c);
+        } else {
+          otm.push(c);
+        }
       }
     }
 

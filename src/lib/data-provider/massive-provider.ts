@@ -28,7 +28,7 @@ import {
   type OptionGreeksWithIV,
   type OptionQuote,
   type OptionLiquidity,
-} from './types';
+} from "./types";
 
 import {
   validateOptionContract,
@@ -36,14 +36,11 @@ import {
   validateIndexSnapshot,
   createQualityFlags,
   DEFAULT_QUALITY_OPTIONS,
-} from './validation';
+} from "./validation";
 
-import {
-  normalizeIV,
-  clampIV,
-} from './iv-utils';
+import { normalizeIV, clampIV } from "./iv-utils";
 
-import { getMetricsService } from '../../services/monitoring';
+import { getMetricsService } from "../../services/monitoring";
 
 // ============================================================================
 // CONFIGURATION
@@ -114,7 +111,7 @@ class MassiveApiClient {
   private enableLogging: boolean;
 
   constructor(config: MassiveProviderConfig) {
-    this.baseUrl = config.baseUrl || 'https://api.massive.com';
+    this.baseUrl = config.baseUrl || "https://api.massive.com";
     this.apiKey = config.apiKey;
     this.timeoutMs = config.timeoutMs || 10000;
     this.maxRetries = config.maxRetries || 3;
@@ -123,20 +120,20 @@ class MassiveApiClient {
 
   private log(message: string, data?: any) {
     if (!this.enableLogging) return;
-    console.log(`[MassiveProvider] ${message}`, data ? data : '');
+    console.log(`[MassiveProvider] ${message}`, data ? data : "");
   }
 
   private buildHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.apiKey}`,
-      'X-API-Key': this.apiKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
+      "X-API-Key": this.apiKey,
+      "Content-Type": "application/json",
+      Accept: "application/json",
     };
   }
 
   async fetch<T>(path: string, init?: RequestInit): Promise<T> {
-    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const url = path.startsWith("http") ? path : `${this.baseUrl}${path}`;
     this.log(`Fetching: ${url}`);
 
     let lastError: Error | undefined;
@@ -157,15 +154,15 @@ class MassiveApiClient {
         clearTimeout(timeoutHandle);
 
         if (response.status === 429) {
-          const retryAfter = Number(response.headers.get('Retry-After') || '1');
+          const retryAfter = Number(response.headers.get("Retry-After") || "1");
           this.log(`Rate limited, retrying after ${retryAfter}s`);
           // Record rate limit as API request failure
           try {
-            getMetricsService().recordApiRequest('massive', responseTimeMs, false);
+            getMetricsService().recordApiRequest("massive", responseTimeMs, false);
           } catch (e) {
             // Silently ignore metrics service errors
           }
-          await new Promise(r => setTimeout(r, retryAfter * 1000));
+          await new Promise((r) => setTimeout(r, retryAfter * 1000));
           continue;
         }
 
@@ -173,8 +170,8 @@ class MassiveApiClient {
           const text = await response.text();
           const error = new DataProviderError(
             `Massive API error: ${response.statusText}`,
-            'MASSIVE_API_ERROR',
-            'massive',
+            "MASSIVE_API_ERROR",
+            "massive",
             response.status,
             new Error(text)
           );
@@ -182,25 +179,25 @@ class MassiveApiClient {
 
           // Record failed API request
           try {
-            getMetricsService().recordApiRequest('massive', responseTimeMs, false);
+            getMetricsService().recordApiRequest("massive", responseTimeMs, false);
           } catch (e) {
             // Silently ignore metrics service errors
           }
 
           if (response.status >= 500) {
             // Retry on 5xx
-            await new Promise(r => setTimeout(r, Math.min(100 * Math.pow(2, attempt), 2000)));
+            await new Promise((r) => setTimeout(r, Math.min(100 * Math.pow(2, attempt), 2000)));
             continue;
           }
           throw error;
         }
 
-        const data = await response.json() as T;
+        const data = (await response.json()) as T;
         this.log(`Success from ${path}`);
 
         // Record successful API request
         try {
-          getMetricsService().recordApiRequest('massive', responseTimeMs, true);
+          getMetricsService().recordApiRequest("massive", responseTimeMs, true);
         } catch (e) {
           // Silently ignore metrics service errors
         }
@@ -211,15 +208,15 @@ class MassiveApiClient {
         if (attempt < this.maxRetries - 1) {
           const delayMs = Math.min(100 * Math.pow(2, attempt), 2000);
           this.log(`Attempt ${attempt + 1} failed, retrying in ${delayMs}ms`);
-          await new Promise(r => setTimeout(r, delayMs));
+          await new Promise((r) => setTimeout(r, delayMs));
         }
       }
     }
 
     throw new DataProviderError(
-      'All retry attempts exhausted',
-      'MAX_RETRIES_EXCEEDED',
-      'massive',
+      "All retry attempts exhausted",
+      "MAX_RETRIES_EXCEEDED",
+      "massive",
       undefined,
       lastError
     );
@@ -236,7 +233,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
   private contractCache: SimpleCache<OptionContractData>;
   private flowCache: SimpleCache<OptionFlowData>;
   private expirationCache: SimpleCache<string[]>;
-  private subscriptions = new Map<string, Set<Function>>();
+  private listeners: Map<string, Set<(...args: any[]) => void>> = new Map();
 
   constructor(config: MassiveProviderConfig) {
     this.client = new MassiveApiClient(config);
@@ -254,7 +251,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     underlying: string,
     options?: { minDate?: string; maxDate?: string }
   ): Promise<string[]> {
-    const cacheKey = `exp:${underlying}:${options?.minDate || 'all'}:${options?.maxDate || 'all'}`;
+    const cacheKey = `exp:${underlying}:${options?.minDate || "all"}:${options?.maxDate || "all"}`;
 
     // Check cache
     const cached = this.expirationCache.get(cacheKey);
@@ -263,8 +260,8 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     // Fetch from Massive: /v3/snapshot/options/{underlying}
     // We use this to get available expirations
     const params = new URLSearchParams();
-    if (options?.minDate) params.set('expiration_date.gte', options.minDate);
-    if (options?.maxDate) params.set('expiration_date.lte', options.maxDate);
+    if (options?.minDate) params.set("expiration_date.gte", options.minDate);
+    if (options?.maxDate) params.set("expiration_date.lte", options.maxDate);
 
     const response = await this.client.fetch<any>(
       `/v3/snapshot/options/${encodeURIComponent(underlying)}?${params.toString()}`
@@ -287,10 +284,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
 
   // === OPTIONS CHAIN ===
 
-  async getOptionChain(
-    underlying: string,
-    options?: ChainQueryOptions
-  ): Promise<OptionChainData> {
+  async getOptionChain(underlying: string, options?: ChainQueryOptions): Promise<OptionChainData> {
     const cacheKey = `chain:${underlying}:${JSON.stringify(options || {})}`;
 
     // Check cache
@@ -299,24 +293,24 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
 
     // Build query parameters
     const params = new URLSearchParams();
-    params.set('limit', String(options?.limit || 250));
+    params.set("limit", String(options?.limit || 250));
 
     if (options?.strikeRange) {
-      params.set('strike_price.gte', String(options.strikeRange[0]));
-      params.set('strike_price.lte', String(options.strikeRange[1]));
+      params.set("strike_price.gte", String(options.strikeRange[0]));
+      params.set("strike_price.lte", String(options.strikeRange[1]));
     }
 
     if (options?.expirationRange) {
-      params.set('expiration_date.gte', options.expirationRange[0]);
-      params.set('expiration_date.lte', options.expirationRange[1]);
+      params.set("expiration_date.gte", options.expirationRange[0]);
+      params.set("expiration_date.lte", options.expirationRange[1]);
     }
 
     if (options?.minVolume) {
-      params.set('volume.gte', String(options.minVolume));
+      params.set("volume.gte", String(options.minVolume));
     }
 
     if (options?.minOpenInterest) {
-      params.set('open_interest.gte', String(options.minOpenInterest));
+      params.set("open_interest.gte", String(options.minOpenInterest));
     }
 
     // Fetch from Massive
@@ -333,9 +327,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     // Apply liquidity filtering if specified
     let filtered = contracts;
     if (options?.maxSpreadPercent) {
-      filtered = contracts.filter(
-        c => c.liquidity.spreadPercent <= options.maxSpreadPercent!
-      );
+      filtered = contracts.filter((c) => c.liquidity.spreadPercent <= options.maxSpreadPercent!);
     }
 
     // Build chain data
@@ -344,12 +336,13 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
       underlyingPrice,
       contracts: filtered,
       quality: {
-        source: 'massive',
+        source: "massive",
         isStale: false,
         hasWarnings: false,
         warnings: [],
-        confidence: 100,
+        confidence: 1,
         updatedAt: Date.now(),
+        quality: "good",
       },
     };
 
@@ -357,7 +350,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     const validation = validateOptionChain(chain);
     chain.quality = {
       ...chain.quality,
-      ...createQualityFlags(validation, 'massive'),
+      ...createQualityFlags(validation, "massive"),
     };
 
     // Cache
@@ -372,7 +365,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     underlying: string,
     strike: number,
     expiration: string,
-    type: 'call' | 'put'
+    type: "call" | "put"
   ): Promise<OptionContractData> {
     const cacheKey = `contract:${underlying}:${strike}:${expiration}:${type}`;
 
@@ -386,15 +379,13 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     });
 
     // Find the contract
-    const contract = chain.contracts.find(
-      c => c.strike === strike && c.type === type
-    );
+    const contract = chain.contracts.find((c) => c.strike === strike && c.type === type);
 
     if (!contract) {
       throw new DataProviderError(
         `Contract not found: ${underlying} ${strike} ${type} ${expiration}`,
-        'CONTRACT_NOT_FOUND',
-        'massive'
+        "CONTRACT_NOT_FOUND",
+        "massive"
       );
     }
 
@@ -408,7 +399,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     underlying: string,
     timeRange?: { startTime?: number; endTime?: number }
   ): Promise<OptionFlowData> {
-    const cacheKey = `flow:${underlying}:${timeRange?.startTime || 'all'}:${timeRange?.endTime || 'all'}`;
+    const cacheKey = `flow:${underlying}:${timeRange?.startTime || "all"}:${timeRange?.endTime || "all"}`;
 
     // Check cache
     const cached = this.flowCache.get(cacheKey);
@@ -424,14 +415,12 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
       this.flowCache.set(cacheKey, flowData, 60000);
       return flowData;
     } catch (error) {
-      this.logger?.('[MassiveOptionsProvider] Flow data fetch failed, returning neutral metrics', error);
-
-      // Return neutral flow data as fallback
+      console.warn("MassiveOptionsProvider: Flow data fetch failed, using fallback");
       const fallbackFlow: OptionFlowData = {
         sweepCount: 0,
         blockCount: 0,
         darkPoolPercent: 0,
-        flowBias: 'neutral',
+        flowBias: "neutral",
         buyPressure: 50,
         unusualActivity: false,
         flowScore: 50,
@@ -453,7 +442,7 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
         sweepCount: 0,
         blockCount: 0,
         darkPoolPercent: 0,
-        flowBias: 'neutral',
+        flowBias: "neutral",
         buyPressure: 50,
         unusualActivity: false,
         flowScore: 50,
@@ -473,14 +462,14 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     const spreadThreshold = 0.02; // Bid-ask spread < 2% = "tight"
 
     for (const contract of chain.contracts) {
-      const vol = contract.quote?.volume || 0;
-      const oi = contract.quote?.openInterest || 0;
+      const vol = contract.liquidity?.volume || 0;
+      const oi = contract.liquidity?.openInterest || 0;
       const bid = contract.quote?.bid || 0;
       const ask = contract.quote?.ask || 0;
       const mid = (bid + ask) / 2 || 1;
       const spread = ask > 0 && bid > 0 ? (ask - bid) / mid : 1;
 
-      if (contract.type === 'call') {
+      if (contract.type === "call") {
         callVolume += vol;
         callOI += oi;
       } else {
@@ -501,24 +490,25 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
 
     // ===== Flow Bias (Call vs Put Pressure) =====
     const totalVolume = callVolume + putVolume;
-    let flowBias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+    let flowBias: "bullish" | "bearish" | "neutral" = "neutral";
     let buyPressure = 50;
 
     if (totalVolume > 0) {
       const callRatio = callVolume / totalVolume;
 
       if (callRatio > 0.55) {
-        flowBias = 'bullish';
+        flowBias = "bullish";
         buyPressure = Math.min(100, 50 + (callRatio - 0.5) * 100);
       } else if (callRatio < 0.45) {
-        flowBias = 'bearish';
+        flowBias = "bearish";
         buyPressure = Math.max(0, 50 + (callRatio - 0.5) * 100);
       }
     }
 
     // ===== Unusual Activity Detection =====
     // Indicator 1: Volume spike (large trades as % of total)
-    const largeTradePercent = totalVolume > 0 ? (largeVolumeTrades / chain.contracts.length) * 100 : 0;
+    const largeTradePercent =
+      totalVolume > 0 ? (largeVolumeTrades / chain.contracts.length) * 100 : 0;
     const volumeSpike = largeTradePercent > 10; // >10% of contracts have large volume
 
     // Indicator 2: Open Interest vs Volume ratio (unusual if highly imbalanced)
@@ -530,25 +520,26 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
 
     // ===== Block Trade Detection =====
     // Count contracts with volume > 1000 as potential block trades
-    const blockCount = chain.contracts.filter((c) => (c.quote?.volume || 0) > 1000).length;
+    const blockCount = chain.contracts.filter((c) => (c.liquidity?.volume || 0) > 1000).length;
 
     // ===== Sweep Detection (High volume + tight spreads) =====
     // Estimate sweep count as high-volume + tight-spread contracts
-    const sweepCount = chain.contracts.filter(
-      (c) => {
-        const vol = c.quote?.volume || 0;
-        const bid = c.quote?.bid || 0;
-        const ask = c.quote?.ask || 0;
-        const mid = (bid + ask) / 2 || 1;
-        const spread = ask > 0 && bid > 0 ? (ask - bid) / mid : 1;
-        return vol > 100 && spread < spreadThreshold && spread > 0;
-      }
-    ).length;
+    const sweepCount = chain.contracts.filter((c) => {
+      const vol = c.liquidity?.volume || 0;
+      const bid = c.quote?.bid || 0;
+      const ask = c.quote?.ask || 0;
+      const mid = (bid + ask) / 2 || 1;
+      const spread = ask > 0 && bid > 0 ? (ask - bid) / mid : 1;
+      return vol > 100 && spread < spreadThreshold && spread > 0;
+    }).length;
 
     // ===== Dark Pool Percentage =====
     // Estimate from tight spreads and high volume (indicates institutional activity)
     // More tight spreads = higher likelihood of dark pool participation
-    const darkPoolPercent = Math.min(100, (tightSpreadCount / Math.max(1, chain.contracts.length)) * 80);
+    const darkPoolPercent = Math.min(
+      100,
+      (tightSpreadCount / Math.max(1, chain.contracts.length)) * 80
+    );
 
     // ===== Flow Score (0-100) =====
     // Combines: liquidity (tight spreads), activity (volume), and confidence (OI)
@@ -595,47 +586,41 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
     underlying: string,
     strike: number,
     expiration: string,
-    type: 'call' | 'put',
+    type: "call" | "put",
     callback: (update: OptionContractData) => void
   ): () => void {
     const key = `${underlying}:${strike}:${expiration}:${type}`;
-    if (!this.subscriptions.has(key)) {
-      this.subscriptions.set(key, new Set());
+    if (!this.listeners.has(key)) {
+      this.listeners.set(key, new Set());
     }
-    this.subscriptions.get(key)!.add(callback);
+    this.listeners.get(key)!.add(callback);
 
     return () => {
-      this.subscriptions.get(key)?.delete(callback);
+      this.listeners.get(key)?.delete(callback);
     };
   }
 
-  subscribeToChain(
-    underlying: string,
-    callback: (update: OptionChainData) => void
-  ): () => void {
+  subscribeToChain(underlying: string, callback: (update: OptionChainData) => void): () => void {
     const key = `chain:${underlying}`;
-    if (!this.subscriptions.has(key)) {
-      this.subscriptions.set(key, new Set());
+    if (!this.listeners.has(key)) {
+      this.listeners.set(key, new Set());
     }
-    this.subscriptions.get(key)!.add(callback);
+    this.listeners.get(key)!.add(callback);
 
     return () => {
-      this.subscriptions.get(key)?.delete(callback);
+      this.listeners.get(key)?.delete(callback);
     };
   }
 
-  subscribeToFlow(
-    underlying: string,
-    callback: (flow: OptionFlowData) => void
-  ): () => void {
+  subscribeToFlow(underlying: string, callback: (flow: OptionFlowData) => void): () => void {
     const key = `flow:${underlying}`;
-    if (!this.subscriptions.has(key)) {
-      this.subscriptions.set(key, new Set());
+    if (!this.listeners.has(key)) {
+      this.listeners.set(key, new Set());
     }
-    this.subscriptions.get(key)!.add(callback);
+    this.listeners.get(key)!.add(callback);
 
     return () => {
-      this.subscriptions.get(key)?.delete(callback);
+      this.listeners.get(key)?.delete(callback);
     };
   }
 
@@ -649,10 +634,10 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
         const strike = Number(c.strike_price || 0);
         if (strike <= 0) continue;
 
-        const expiration = c.expiration_date || '';
+        const expiration = c.expiration_date || "";
         if (!expiration) continue;
 
-        const type = (c.contract_type || 'call').toLowerCase() === 'call' ? 'call' : 'put';
+        const type = (c.contract_type || "call").toLowerCase() === "call" ? "call" : "put";
 
         // Quote
         const bid = Number(c.last_quote?.bid || c.last_quote?.bp || 0);
@@ -663,16 +648,16 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
         const greeks = c.greeks || {};
         // Massive returns IV as decimal (0.35 = 35%), already in correct format
         const rawIV = Number(c.implied_volatility || greeks.iv || 0);
-        const iv = normalizeIV(rawIV, 'massive');
+        const iv = normalizeIV(rawIV, "massive");
         const normalizedIV = clampIV(iv);
 
         if (iv !== normalizedIV) {
-          this.logger?.(`IV clamped from ${iv.toFixed(4)} to ${normalizedIV.toFixed(4)}`);
+          console.debug(`IV clamped from ${iv.toFixed(4)} to ${normalizedIV.toFixed(4)}`);
         }
 
         const contract: OptionContractData = {
-          ticker: c.ticker || '',
-          rootSymbol: c.root_symbol || '',
+          ticker: c.ticker || "",
+          rootSymbol: c.root_symbol || "",
           strike,
           expiration,
           type,
@@ -694,8 +679,8 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
             vega: Number(greeks.vega || 0),
             rho: Number(greeks.rho),
             iv: normalizedIV,
-            ivBid: clampIV(normalizeIV(Number(greeks.bid_iv), 'massive')),
-            ivAsk: clampIV(normalizeIV(Number(greeks.ask_iv), 'massive')),
+            ivBid: clampIV(normalizeIV(Number(greeks.bid_iv), "massive")),
+            ivAsk: clampIV(normalizeIV(Number(greeks.ask_iv), "massive")),
           },
 
           liquidity: {
@@ -711,12 +696,13 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
           },
 
           quality: {
-            source: 'massive',
+            source: "massive",
             isStale: false,
             hasWarnings: false,
             warnings: [],
             confidence: 100,
             updatedAt: Date.now(),
+            quality: "good",
           },
         };
 
@@ -724,12 +710,12 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
         const validation = validateOptionContract(contract);
         contract.quality = {
           ...contract.quality,
-          ...createQualityFlags(validation, 'massive'),
+          ...createQualityFlags(validation, "massive"),
         };
 
         normalized.push(contract);
       } catch (error) {
-        console.error('[MassiveProvider] Error normalizing contract:', error);
+        console.error("[MassiveProvider] Error normalizing contract:", error);
       }
     }
 
@@ -737,10 +723,10 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
   }
 
   private assessLiquidity(volume: number, oi: number, spreadPercent: number) {
-    if (spreadPercent > 5) return 'poor';
-    if (volume < 10 || oi < 10) return 'fair';
-    if (volume < 100 || oi < 100) return 'good';
-    return 'excellent';
+    if (spreadPercent > 5) return "poor";
+    if (volume < 10 || oi < 10) return "fair";
+    if (volume < 100 || oi < 100) return "good";
+    return "excellent";
   }
 
   private calculateDTE(expiration: string): number {
@@ -753,13 +739,9 @@ export class MassiveOptionsProvider implements OptionsDataProvider {
   }
 
   private async getUnderlyingPrice(underlying: string): Promise<number> {
-    try {
-      // This would call a separate equity quote endpoint
-      // For now, return a placeholder
-      return 450; // SPY typical price
-    } catch {
-      return 0;
-    }
+    // This would call a separate equity quote endpoint
+    // For now, return a placeholder
+    return 450; // SPY typical price
   }
 }
 
@@ -781,14 +763,14 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
   }
 
   async getIndexSnapshot(tickers: string[]): Promise<Map<string, IndexSnapshot>> {
-    const cacheKey = `snapshot:${tickers.sort().join(',')}`;
+    const cacheKey = `snapshot:${tickers.sort().join(",")}`;
 
     // Check cache
     const cached = this.snapshotCache.get(cacheKey);
     if (cached) return cached;
 
     // Fetch from Massive: /v3/snapshot/indices
-    const clean = tickers.map(t => t.replace(/^I:/, '')).join(',');
+    const clean = tickers.map((t) => t.replace(/^I:/, "")).join(",");
     const response = await this.client.fetch<any>(
       `/v3/snapshot/indices?tickers=${encodeURIComponent(clean)}`
     );
@@ -810,12 +792,13 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
         },
         timeframes: new Map(),
         quality: {
-          source: 'massive',
+          source: "massive",
           isStale: false,
           hasWarnings: false,
           warnings: [],
           confidence: 100,
           updatedAt: Date.now(),
+          quality: "good",
         },
         updatedAt: Date.now(),
       };
@@ -824,7 +807,7 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
       const validation = validateIndexSnapshot(snapshot);
       snapshot.quality = {
         ...snapshot.quality,
-        ...createQualityFlags(validation, 'massive'),
+        ...createQualityFlags(validation, "massive"),
       };
 
       snapshots.set(idx.ticker, snapshot);
@@ -836,10 +819,10 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
 
   async getIndicators(
     ticker: string,
-    timeframe: '1m' | '5m' | '15m' | '1h' | '1d',
+    timeframe: "1m" | "5m" | "15m" | "1h" | "1d",
     lookback?: number
   ): Promise<IndicatorSet> {
-    const cacheKey = `ind:${ticker}:${timeframe}:${lookback || 'default'}`;
+    const cacheKey = `ind:${ticker}:${timeframe}:${lookback || "default"}`;
 
     // Check cache
     const cached = this.indicatorsCache.get(cacheKey);
@@ -875,7 +858,7 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
     to: string,
     limit?: number
   ): Promise<Candle[]> {
-    const cacheKey = `candles:${ticker}:${timeframe}:${from}:${to}:${limit || 'all'}`;
+    const cacheKey = `candles:${ticker}:${timeframe}:${from}:${to}:${limit || "all"}`;
 
     // Check cache
     const cached = this.candlesCache.get(cacheKey);
@@ -883,18 +866,18 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
 
     // Fetch from Massive: /v2/aggs/ticker/{ticker}/range/{mult}/{timespan}/{from}/{to}
     const timeframeMap: Record<string, [number, string]> = {
-      '1m': [1, 'minute'],
-      '5m': [5, 'minute'],
-      '15m': [15, 'minute'],
-      '1h': [1, 'hour'],
-      '1d': [1, 'day'],
+      "1m": [1, "minute"],
+      "5m": [5, "minute"],
+      "15m": [15, "minute"],
+      "1h": [1, "hour"],
+      "1d": [1, "day"],
     };
 
-    const [mult, span] = timeframeMap[timeframe] || [1, 'day'];
+    const [mult, span] = timeframeMap[timeframe] || [1, "day"];
 
     const params = new URLSearchParams({
-      adjusted: 'true',
-      sort: 'asc',
+      adjusted: "true",
+      sort: "asc",
       limit: String(limit || 5000),
     });
 
@@ -902,16 +885,19 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
       `/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/${mult}/${span}/${from}/${to}?${params.toString()}`
     );
 
-    const candles = (response.results || []).map((bar: any) => ({
-      time: bar.t,
-      open: bar.o,
-      high: bar.h,
-      low: bar.l,
-      close: bar.c,
-      volume: bar.v,
-      vwap: bar.vw,
-      trades: bar.n,
-    } as Candle));
+    const candles = (response.results || []).map(
+      (bar: any) =>
+        ({
+          time: bar.t,
+          open: bar.o,
+          high: bar.h,
+          low: bar.l,
+          close: bar.c,
+          volume: bar.v,
+          vwap: bar.vw,
+          trades: bar.n,
+        }) as Candle
+    );
 
     this.candlesCache.set(cacheKey, candles, 60000);
     return candles;
@@ -919,11 +905,11 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
 
   async getTimeframe(
     ticker: string,
-    timeframe: '1m' | '5m' | '15m' | '1h' | '1d',
+    timeframe: "1m" | "5m" | "15m" | "1h" | "1d",
     options?: { from?: string; to?: string; lookback?: number }
   ): Promise<Timeframe> {
-    const from = options?.from || new Date(Date.now() - 86400000).toISOString().split('T')[0];
-    const to = options?.to || new Date().toISOString().split('T')[0];
+    const from = options?.from || new Date(Date.now() - 86400000).toISOString().split("T")[0];
+    const to = options?.to || new Date().toISOString().split("T")[0];
 
     const [candles, indicators] = await Promise.all([
       this.getCandles(ticker, timeframe, from, to, options?.lookback),
@@ -938,10 +924,7 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
     };
   }
 
-  subscribeToIndex(
-    ticker: string,
-    callback: (snapshot: IndexSnapshot) => void
-  ): () => void {
+  subscribeToIndex(ticker: string, callback: (snapshot: IndexSnapshot) => void): () => void {
     // In production, set up WebSocket subscription
     // For now, return dummy unsubscribe
     return () => {};
@@ -949,7 +932,7 @@ export class MassiveIndicesProvider implements IndicesDataProvider {
 
   subscribeToTimeframe(
     ticker: string,
-    timeframe: '1m' | '5m' | '15m' | '1h' | '1d',
+    timeframe: "1m" | "5m" | "15m" | "1h" | "1d",
     callback: (timeframe: Timeframe) => void
   ): () => void {
     // In production, set up WebSocket subscription
@@ -975,11 +958,7 @@ export class MassiveBrokerProvider implements BrokerDataProvider {
 
     const quote = response.results?.[0];
     if (!quote) {
-      throw new DataProviderError(
-        `No quote found for ${symbol}`,
-        'QUOTE_NOT_FOUND',
-        'massive'
-      );
+      throw new DataProviderError(`No quote found for ${symbol}`, "QUOTE_NOT_FOUND", "massive");
     }
 
     return {
@@ -1004,36 +983,36 @@ export class MassiveBrokerProvider implements BrokerDataProvider {
     limit?: number
   ): Promise<Bar[]> {
     const intervalMap: Record<string, [number, string]> = {
-      'minute': [1, 'minute'],
-      '1min': [1, 'minute'],
-      '5min': [5, 'minute'],
-      '15min': [15, 'minute'],
-      'hour': [1, 'hour'],
-      'day': [1, 'day'],
+      minute: [1, "minute"],
+      "1min": [1, "minute"],
+      "5min": [5, "minute"],
+      "15min": [15, "minute"],
+      hour: [1, "hour"],
+      day: [1, "day"],
     };
 
-    const [mult, span] = intervalMap[interval] || [1, 'day'];
+    const [mult, span] = intervalMap[interval] || [1, "day"];
 
     const response = await this.client.fetch<any>(
       `/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${mult}/${span}/${from}/${to}?limit=${limit || 5000}`
     );
 
-    return (response.results || []).map((bar: any) => ({
-      time: bar.t,
-      open: bar.o,
-      high: bar.h,
-      low: bar.l,
-      close: bar.c,
-      volume: bar.v,
-      vwap: bar.vw,
-      trades: bar.n,
-    } as Bar));
+    return (response.results || []).map(
+      (bar: any) =>
+        ({
+          time: bar.t,
+          open: bar.o,
+          high: bar.h,
+          low: bar.l,
+          close: bar.c,
+          volume: bar.v,
+          vwap: bar.vw,
+          trades: bar.n,
+        }) as Bar
+    );
   }
 
-  subscribeToEquity(
-    symbol: string,
-    callback: (quote: EquityQuote) => void
-  ): () => void {
+  subscribeToEquity(symbol: string, callback: (quote: EquityQuote) => void): () => void {
     // In production, set up WebSocket subscription
     return () => {};
   }

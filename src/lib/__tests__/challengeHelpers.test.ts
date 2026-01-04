@@ -229,7 +229,7 @@ describe("challengeHelpers", () => {
       });
     });
 
-    it("includes LOADED trades in active count", () => {
+    it("excludes LOADED trades from active count (only ENTERED trades are active)", () => {
       const trades = [
         createTrade({ id: "t1", challenges: ["ch1"], state: "LOADED" }),
         createTrade({ id: "t2", challenges: ["ch1"], state: "ENTERED" }),
@@ -238,10 +238,11 @@ describe("challengeHelpers", () => {
 
       const stats = getFullChallengeStats("ch1", trades);
 
-      expect(stats.activeTrades).toBe(2); // LOADED + ENTERED
+      // LOADED trades haven't been entered yet - they shouldn't count as active
+      expect(stats.activeTrades).toBe(1); // Only ENTERED
       expect(stats.completedTrades).toBe(1); // EXITED only
-      expect(stats.active.map((t) => t.id)).toContain("t1");
-      expect(stats.active.map((t) => t.id)).toContain("t2");
+      expect(stats.active.map((t) => t.id)).not.toContain("t1"); // LOADED excluded
+      expect(stats.active.map((t) => t.id)).toContain("t2"); // ENTERED included
     });
 
     it("calculates dollar P&L with $100 options multiplier", () => {

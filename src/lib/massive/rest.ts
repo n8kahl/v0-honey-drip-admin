@@ -481,10 +481,32 @@ export class MassiveREST {
   }
 
   /**
-   * Get options snapshot
+   * Get options snapshot for underlying
+   * @param underlyingTicker - The underlying ticker (e.g., "SOFI")
+   * @param options - Optional parameters
+   * @param options.limit - Max contracts to return (default 250, max 250)
+   * @param options.expirationDate - Filter by expiration date (YYYY-MM-DD)
    */
-  async getOptionsSnapshot(underlyingTicker: string): Promise<any> {
-    return this.get(`/v3/snapshot/options/${underlyingTicker}`);
+  async getOptionsSnapshot(
+    underlyingTicker: string,
+    options?: { limit?: number; expirationDate?: string }
+  ): Promise<any> {
+    const params = new URLSearchParams();
+    params.set("limit", String(options?.limit ?? 250)); // Default to max
+    if (options?.expirationDate) {
+      params.set("expiration_date", options.expirationDate);
+    }
+    return this.get(`/v3/snapshot/options/${underlyingTicker}?${params.toString()}`);
+  }
+
+  /**
+   * Get specific option contract snapshot (for individual contract prices)
+   * The API accepts full option tickers directly (e.g., "O:SOFI260102P00027000")
+   * @param optionContract - The full option contract ticker with O: prefix
+   */
+  async getContractSnapshot(optionContract: string): Promise<any> {
+    // API accepts the full ticker directly
+    return this.get(`/v3/snapshot/options/${optionContract}`);
   }
 
   /**
@@ -583,7 +605,16 @@ export class MassiveREST {
     timeframe: "1" | "5" | "15" | "60" | "1D",
     lookback: number = 200
   ): Promise<MassiveAggregateBar[]> {
-    const cacheKey = `aggs:${symbol}:${timeframe}:${lookback}`;
+    // FIXED: Normalize indices to I: prefix format for Massive.com API
+    const INDEX_TICKERS = ["SPX", "NDX", "VIX", "RUT", "RVX", "DJI"];
+    const isIndex = symbol.startsWith("I:") || INDEX_TICKERS.includes(symbol.toUpperCase());
+    const aggSymbol = isIndex
+      ? symbol.startsWith("I:")
+        ? symbol
+        : `I:${symbol.toUpperCase()}`
+      : symbol;
+
+    const cacheKey = `aggs:${aggSymbol}:${timeframe}:${lookback}`;
 
     return this.cache.getOrFetch(
       cacheKey,
@@ -594,8 +625,8 @@ export class MassiveREST {
         // Handle daily timeframe
         if (timeframe === "1D") {
           const from = new Date(to.getTime() - lookback * 24 * 60 * 60 * 1000);
-          const endpointV2 = `/v2/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
-          const endpointV3 = `/v3/aggs/ticker/${symbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+          const endpointV2 = `/v2/aggs/ticker/${aggSymbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+          const endpointV3 = `/v3/aggs/ticker/${aggSymbol}/range/1/day/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
 
           let data: any;
           try {
@@ -632,13 +663,13 @@ export class MassiveREST {
         // This handles weekends and holidays gracefully
         const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-        const endpointV2 = `/v2/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
-        const endpointV3 = `/v3/aggs/ticker/${symbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+        const endpointV2 = `/v2/aggs/ticker/${aggSymbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
+        const endpointV3 = `/v3/aggs/ticker/${aggSymbol}/range/${normalizedTimeframe}/minute/${formatDay(from)}/${formatDay(to)}?adjusted=true&sort=asc&limit=${lookback}`;
 
         let data: any;
         try {
           data = await this.get(endpointV2);
-          console.log(`[MassiveREST] v2 aggs response for ${symbol}:`, {
+          console.log(`[MassiveREST] v2 aggs response for ${aggSymbol}:`, {
             hasResults: !!data?.results,
             resultsLength: data?.results?.length || 0,
             dataLength: Array.isArray(data) ? data.length : "not array",
@@ -649,14 +680,14 @@ export class MassiveREST {
             console.warn("[MassiveREST] v2 aggregates forbidden, trying v3");
             try {
               data = await this.get(endpointV3);
-              console.log(`[MassiveREST] v3 aggs response for ${symbol}:`, {
+              console.log(`[MassiveREST] v3 aggs response for ${aggSymbol}:`, {
                 hasResults: !!data?.results,
                 resultsLength: data?.results?.length || 0,
                 dataLength: Array.isArray(data) ? data.length : "not array",
               });
             } catch (e2: any) {
               // If both Massive endpoints fail, return empty (no Tradier fallback)
-              console.warn("[MassiveREST] v3 aggregates also failed for", symbol);
+              console.warn("[MassiveREST] v3 aggregates also failed for", aggSymbol);
               return [];
             }
           } else {
@@ -667,7 +698,7 @@ export class MassiveREST {
         const results: any[] = data.results || data;
         if (!Array.isArray(results) || results.length === 0) {
           // Empty results from Massive - this is normal for indices outside market hours
-          console.warn("[MassiveREST] Empty results from Massive for", symbol);
+          console.warn("[MassiveREST] Empty results from Massive for", aggSymbol);
           return [];
         }
 

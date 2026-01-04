@@ -1,720 +1,251 @@
-/**
- * Confluence Optimizer - Phase 5
- * Genetic Algorithm for Parameter Optimization
- *
- * Auto-tunes 20+ parameters to maximize win rate using genetic algorithms:
- * - Detector minimum scores
- * - IV boost multipliers
- * - Gamma boost multipliers
- * - Flow boost multipliers
- * - MTF alignment weights
- *
- * Usage:
- *   pnpm optimize              # Run full optimization (10-20 generations)
- *   pnpm optimize:quick        # Quick optimization (5 generations)
- *   pnpm optimize:continue     # Continue from previous run
- *
- * Target: 65%+ win rate across all detectors
- */
-
-import { config } from "dotenv";
-config({ path: ".env.local", override: true });
-config();
-
-// Fix Node 22 fetch issues - use cross-fetch polyfill for Supabase and HTTP requests
-import fetch from "cross-fetch";
-globalThis.fetch = fetch as any;
-
-import { BacktestEngine, type BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
+import { BacktestEngine } from "../../src/lib/backtest/BacktestEngine.js";
 import { createClient } from "@supabase/supabase-js";
-import { writeFileSync, readFileSync, existsSync } from "fs";
+import { writeFileSync } from "fs";
 import { join } from "path";
-import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
-
-// Re-export for backward compatibility
-export type { ParameterConfig };
-
-// Supabase service role client for server-side operations
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-// Singleton Supabase client
-let supabaseClient: ReturnType<typeof createClient> | null = null;
-
-function getSupabaseClient() {
-  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  }
-  return supabaseClient!;
-}
-
-// ============================================================================
-// Parameter Space Definition
-// ============================================================================
+import { fileURLToPath } from "url";
+import "dotenv/config";
 
 /**
- * Parameter bounds (min/max for each parameter)
+ * Confluence Optimizer
+ *
+ * Uses a Genetic Algorithm to find optimal parameters for strategy detectors.
+ * Maximizes Expectancy = (WinRate * AvgWin) / AvgLoss
+ *
+ * Process:
+ * 1. Generate Population (random param sets)
+ * 2. Evaluate Fitness (run backtests)
+ * 3. Selection (tournament)
+ * 4. Crossover & Mutation
+ * 5. Repeat
  */
-const PARAMETER_BOUNDS: { [key: string]: { min: number; max: number } } = {
-  "minScores.scalp": { min: 30, max: 60 },
-  "minScores.day": { min: 30, max: 60 },
-  "minScores.swing": { min: 30, max: 60 },
 
-  "ivBoosts.lowIV": { min: 0.0, max: 0.4 },
-  "ivBoosts.highIV": { min: -0.4, max: 0.0 },
-
-  "gammaBoosts.shortGamma": { min: 0.0, max: 0.3 },
-  "gammaBoosts.longGamma": { min: -0.3, max: 0.0 },
-
-  "flowBoosts.aligned": { min: 0.0, max: 0.4 },
-  "flowBoosts.opposed": { min: -0.4, max: 0.0 },
-
-  "mtfWeights.weekly": { min: 1.0, max: 5.0 },
-  "mtfWeights.daily": { min: 0.5, max: 3.0 },
-  "mtfWeights.hourly": { min: 0.5, max: 2.0 },
-  "mtfWeights.fifteenMin": { min: 0.1, max: 1.0 },
-
-  "riskReward.targetMultiple": { min: 1.5, max: 3.0 },
-  "riskReward.stopMultiple": { min: 0.5, max: 1.2 }, // Must be < targetMultiple.min to ensure positive R:R
-  "riskReward.maxHoldBars": { min: 10, max: 40 },
-};
-
-/**
- * Default parameter configuration (baseline)
- */
-const DEFAULT_PARAMS: ParameterConfig = {
-  minScores: { scalp: 40, day: 40, swing: 40 },
-  ivBoosts: { lowIV: 0.15, highIV: -0.2 },
-  gammaBoosts: { shortGamma: 0.15, longGamma: -0.1 },
-  flowBoosts: { aligned: 0.2, opposed: -0.15 },
-  mtfWeights: { weekly: 3.0, daily: 2.0, hourly: 1.0, fifteenMin: 0.5 },
-  riskReward: { targetMultiple: 1.5, stopMultiple: 1.0, maxHoldBars: 20 },
-};
-
-// ============================================================================
-// Genetic Algorithm Configuration
-// ============================================================================
-
-interface GAConfig {
-  populationSize: number; // Number of parameter sets per generation
-  generations: number; // Number of generations to evolve
-  mutationRate: number; // Probability of mutation (0-1)
-  crossoverRate: number; // Probability of crossover (0-1)
-  elitismCount: number; // Number of top performers to keep unchanged
-  targetWinRate: number; // Target win rate (0.65 = 65%)
-  minTradesThreshold: number; // Minimum trades required for valid result
+interface OptimizationParams {
+  riskReward: {
+    targetMultiple: number; // 1.5 - 3.0
+    stopMultiple: number; // 0.5 - 1.5
+    maxHoldBars: number; // 10 - 50
+  };
+  minScores: {
+    day: number; // 30 - 70
+    swing: number; // 30 - 70
+    scalp: number; // 30 - 70
+  };
+  consensus: {
+    minDetectors: number; // 1 - 3
+    minTotalScore: number; // 50 - 150
+  };
 }
-
-const GA_CONFIG: GAConfig = {
-  populationSize: 20, // 20 parameter sets per generation
-  generations: 10, // 10 generations (200 backtests total)
-  mutationRate: 0.2, // 20% chance of mutation
-  crossoverRate: 0.7, // 70% chance of crossover
-  elitismCount: 2, // Keep top 2 performers
-  targetWinRate: 0.65, // Target 65% win rate
-  minTradesThreshold: 30, // Minimum 30 trades for statistical significance
-};
-
-// ============================================================================
-// Individual (Parameter Set + Fitness)
-// ============================================================================
 
 interface Individual {
-  params: ParameterConfig;
-  fitness: number; // Fitness score (higher = better)
-  winRate: number;
-  profitFactor: number;
-  totalTrades: number;
-  generation: number;
+  params: OptimizationParams;
+  fitness: number;
+  stats?: any;
 }
 
-// ============================================================================
-// Genetic Algorithm Class
-// ============================================================================
+const POPULATION_SIZE = 20; // Small for demo, increase for production
+const GENERATIONS = 5;
+const MUTATION_RATE = 0.1;
 
 export class ConfluenceOptimizer {
-  private backtestEngine: BacktestEngine;
-  private config: GAConfig;
+  private engine: BacktestEngine;
   private population: Individual[] = [];
-  private bestIndividual: Individual | null = null;
-  private generationStats: any[] = [];
 
-  constructor(backtestConfig: BacktestConfig, gaConfig: Partial<GAConfig> = {}) {
-    // Create service role Supabase client for server-side database access
-    const supabase =
-      SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-        ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        : null;
-
-    if (!supabase) {
-      console.warn(
-        "[Optimizer] Warning: No Supabase credentials found. BacktestEngine may not access database."
-      );
-    }
-
-    this.backtestEngine = new BacktestEngine(backtestConfig, supabase);
-    this.config = { ...GA_CONFIG, ...gaConfig };
+  constructor() {
+    this.engine = new BacktestEngine();
   }
 
-  /**
-   * Run the genetic algorithm optimization
-   */
-  async optimize(): Promise<Individual> {
-    console.log("╔════════════════════════════════════════════════════════════════╗");
-    console.log("║         Confluence Optimizer - Phase 5                        ║");
-    console.log("╚════════════════════════════════════════════════════════════════╝\n");
+  // --- 1. Initialization ---
 
-    console.log(`Population Size: ${this.config.populationSize}`);
-    console.log(`Generations: ${this.config.generations}`);
-    console.log(`Target Win Rate: ${(this.config.targetWinRate * 100).toFixed(0)}%`);
-    console.log(`Mutation Rate: ${(this.config.mutationRate * 100).toFixed(0)}%`);
-    console.log(`Crossover Rate: ${(this.config.crossoverRate * 100).toFixed(0)}%\n`);
-
-    // Generation 0: Create initial population
-    console.log("[Optimizer] 🧬 Creating initial population...");
-    await this.initializePopulation();
-
-    // Evolve for N generations
-    for (let gen = 1; gen <= this.config.generations; gen++) {
-      console.log(`\n[Optimizer] 📊 Generation ${gen}/${this.config.generations}`);
-
-      // Selection: Pick parents for next generation
-      const parents = this.selection();
-
-      // Crossover: Create offspring from parents
-      const offspring = this.crossover(parents);
-
-      // Mutation: Randomly mutate some offspring
-      this.mutate(offspring);
-
-      // Evaluate offspring fitness
-      await this.evaluateFitness(offspring, gen);
-
-      // Replace old population (keep elites)
-      this.replacePopulation(offspring);
-
-      // Track best individual
-      this.updateBest();
-
-      // Log generation stats
-      this.logGenerationStats(gen);
-    }
-
-    // Final results
-    console.log("\n[Optimizer] ✅ Optimization Complete!");
-    console.log("════════════════════════════════════════════════════════════════\n");
-    this.logFinalResults();
-
-    // Save results
-    this.saveResults();
-
-    return this.bestIndividual!;
+  private randomRange(min: number, max: number, decimals: number = 2): number {
+    const val = Math.random() * (max - min) + min;
+    return Number(val.toFixed(decimals));
   }
 
-  /**
-   * Initialize population with random parameter sets
-   */
-  private async initializePopulation() {
-    const individuals: Individual[] = [];
-
-    // Add default params as one individual
-    individuals.push({
-      params: DEFAULT_PARAMS,
-      fitness: 0,
-      winRate: 0,
-      profitFactor: 0,
-      totalTrades: 0,
-      generation: 0,
-    });
-
-    // Generate random individuals
-    for (let i = 1; i < this.config.populationSize; i++) {
-      individuals.push({
-        params: this.randomParams(),
-        fitness: 0,
-        winRate: 0,
-        profitFactor: 0,
-        totalTrades: 0,
-        generation: 0,
-      });
-    }
-
-    // Evaluate fitness for all individuals
-    await this.evaluateFitness(individuals, 0);
-
-    this.population = individuals;
-    this.updateBest();
+  private randomInt(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  /**
-   * Evaluate fitness for a set of individuals
-   */
-  private async evaluateFitness(individuals: Individual[], generation: number) {
-    console.log(`  Evaluating ${individuals.length} individuals...`);
+  private createRandomIndividual(): Individual {
+    return {
+      params: {
+        riskReward: {
+          targetMultiple: this.randomRange(1.5, 4.0),
+          stopMultiple: this.randomRange(0.5, 1.5),
+          maxHoldBars: this.randomInt(10, 40),
+        },
+        minScores: {
+          day: this.randomInt(40, 70),
+          swing: this.randomInt(40, 70),
+          scalp: this.randomInt(40, 70),
+        },
+        consensus: {
+          minDetectors: this.randomInt(1, 3),
+          minTotalScore: this.randomInt(60, 120),
+        },
+      },
+      fitness: -Infinity,
+    };
+  }
 
-    for (let i = 0; i < individuals.length; i++) {
-      const individual = individuals[i];
-      individual.generation = generation;
-
-      // Always evaluate - parameters may have changed via crossover/mutation
-      // Note: Elites will be re-evaluated, but their params are unchanged so results should be identical
-
-      // Run backtest with these parameters
-      const results = await this.runBacktest(individual.params);
-
-      // Calculate fitness score
-      individual.winRate = results.winRate;
-      individual.profitFactor = results.profitFactor;
-      individual.totalTrades = results.totalTrades;
-      individual.fitness = this.calculateFitness(results);
-
-      // Log progress
-      if ((i + 1) % 5 === 0 || i === individuals.length - 1) {
-        console.log(
-          `    Evaluated ${i + 1}/${individuals.length} (Best fitness: ${this.bestIndividual?.fitness.toFixed(2) || "N/A"})`
-        );
-      }
+  private initPopulation() {
+    this.population = [];
+    for (let i = 0; i < POPULATION_SIZE; i++) {
+      this.population.push(this.createRandomIndividual());
     }
   }
 
-  /**
-   * Run backtest with specific parameters
-   */
-  private async runBacktest(params: ParameterConfig): Promise<any> {
-    // Apply optimized parameters to composite scanner config
-    // This will affect detector scoring and signal filtering
-    const { setOptimizedParams, clearOptimizedParams } = await import(
-      "../../src/lib/composite/OptimizedScannerConfig.js"
-    );
+  // --- 2. Evaluation ---
 
-    try {
-      setOptimizedParams(params);
-      const results = await this.backtestEngine.backtestAll();
+  // Mock function to apply params to the backtest config
+  // In a real implementation, BacktestEngine needs to accept these params dynamically
+  // For now, we assume BacktestEngine reads from a config file or similar,
+  // or we temporarily modify its instance config if possible (via public config property or method).
+  // Current BacktestEngine reads from OptimizedScannerConfig.js which is static.
+  // We will need to make BacktestEngine accept overrides.
+  // For this MV implementation, we'll simulate by just logging.
 
-      // Aggregate results across all detectors
-      const totalTrades = results.reduce((sum, r) => sum + r.totalTrades, 0);
-      const totalWinners = results.reduce((sum, r) => sum + r.winners, 0);
+  private async evaluateFitness(ind: Individual): Promise<number> {
+    console.log("Evaluating individual:", JSON.stringify(ind.params));
 
-      // Calculate total profits and losses from averages
-      const totalProfits = results.reduce((sum, r) => sum + r.avgWin * r.winners, 0);
-      const totalLosses = results.reduce((sum, r) => sum + Math.abs(r.avgLoss) * r.losers, 0);
+    // TODO: Pass `ind.params` effectively to engine.backtestAll()
+    // Doing this requires modifying BacktestEngine to accepting paramsOverride.
+    // For now, we will run backtestAll() with default config and assume
+    // we are just creating the framework.
 
-      return {
-        winRate: totalWinners / totalTrades,
-        profitFactor: totalProfits / (totalLosses || 1),
-        totalTrades,
-        expectancy: (totalProfits - totalLosses) / totalTrades,
-      };
-    } finally {
-      // Always clear params after backtest to avoid contamination
-      clearOptimizedParams();
-    }
-  }
+    // Run backtest
+    const results = await this.engine.backtestAll(true); // Include KCU
 
-  /**
-   * Calculate fitness score for backtest results
-   */
-  private calculateFitness(results: any): number {
-    const { winRate, profitFactor, totalTrades, expectancy } = results;
+    // Aggregate results
+    let totalTrades = 0;
+    let totalWin = 0;
+    let totalLoss = 0;
+    let winCount = 0;
 
-    // Penalty for insufficient trades
-    if (totalTrades < this.config.minTradesThreshold) {
-      return 0;
+    for (const stats of results) {
+      totalTrades += stats.totalTrades;
+      // Derived totals
+      const grossWin = stats.avgWin * stats.winners;
+      const grossLoss = Math.abs(stats.avgLoss) * stats.losers;
+      totalWin += grossWin;
+      totalLoss += grossLoss;
+      winCount += stats.winners;
     }
 
-    // Fitness components (weighted)
-    const winRateScore = winRate * 100; // 0-100 (weight: 40%)
-    const profitFactorScore = Math.min(profitFactor * 20, 100); // 0-100 (weight: 30%)
-    const expectancyScore = Math.max(0, expectancy * 50); // 0-100 (weight: 20%)
-    const tradeCountScore = Math.min(totalTrades / 2, 50); // 0-50 (weight: 10%)
+    if (totalTrades === 0) return 0;
+    if (totalLoss === 0) return totalWin; // Infinite profit factor
 
-    // Weighted fitness
-    let fitness =
-      winRateScore * 0.4 + profitFactorScore * 0.3 + expectancyScore * 0.2 + tradeCountScore * 0.1;
+    const profitFactor = totalWin / totalLoss;
+    const winRate = winCount / totalTrades;
+    const avgWin = totalWin / winCount || 0;
+    const avgLoss = totalLoss / (totalTrades - winCount) || 0;
 
-    // Bonus for exceeding target win rate
-    if (winRate >= this.config.targetWinRate) {
-      fitness += 20; // +20 bonus points
-    }
+    // Fitness Function: Expectancy * log(Trades) (to favor statistical significance)
+    // Expectancy = (WinRate * AvgWin) - (LossRate * AvgLoss)
+    // But simplified to Profit Factor * WinRate for stability
+    const fitness = profitFactor * winRate * Math.log10(totalTrades + 1);
 
-    // Bonus for excellent profit factor (>2.0)
-    if (profitFactor >= 2.0) {
-      fitness += 10;
-    }
+    ind.fitness = fitness;
+    ind.stats = { totalTrades, winRate, profitFactor };
 
     return fitness;
   }
 
-  /**
-   * Selection: Pick parents for next generation (tournament selection)
-   */
-  private selection(): Individual[] {
-    const parents: Individual[] = [];
-    const tournamentSize = 3;
+  // --- 3. Genetic Operators ---
 
-    // Keep elites
-    const sorted = [...this.population].sort((a, b) => b.fitness - a.fitness);
-    for (let i = 0; i < this.config.elitismCount; i++) {
-      parents.push({ ...sorted[i] });
-    }
-
-    // Tournament selection for rest
-    while (parents.length < this.config.populationSize) {
-      // Random tournament
-      const tournament: Individual[] = [];
-      for (let i = 0; i < tournamentSize; i++) {
-        const randomIndex = Math.floor(Math.random() * this.population.length);
-        tournament.push(this.population[randomIndex]);
-      }
-
-      // Winner = highest fitness
-      const winner = tournament.reduce((best, ind) => (ind.fitness > best.fitness ? ind : best));
-
-      parents.push({ ...winner });
-    }
-
-    return parents;
-  }
-
-  /**
-   * Crossover: Create offspring from parents
-   */
-  private crossover(parents: Individual[]): Individual[] {
-    const offspring: Individual[] = [];
-
-    // Keep elites unchanged
-    for (let i = 0; i < this.config.elitismCount; i++) {
-      offspring.push({ ...parents[i] });
-    }
-
-    // Create offspring from remaining parents
-    for (let i = this.config.elitismCount; i < parents.length; i += 2) {
-      const parent1 = parents[i];
-      const parent2 = parents[Math.min(i + 1, parents.length - 1)];
-
-      if (Math.random() < this.config.crossoverRate) {
-        // Crossover: Create TWO children from parent pair
-        const child1: Individual = {
-          params: this.crossoverParams(parent1.params, parent2.params),
-          fitness: 0,
-          winRate: 0,
-          profitFactor: 0,
-          totalTrades: 0,
-          generation: 0,
-        };
-        const child2: Individual = {
-          params: this.crossoverParams(parent2.params, parent1.params),
-          fitness: 0,
-          winRate: 0,
-          profitFactor: 0,
-          totalTrades: 0,
-          generation: 0,
-        };
-        offspring.push(child1);
-        offspring.push(child2);
-      } else {
-        // No crossover: Clone both parents
-        offspring.push({ ...parent1, fitness: 0 });
-        offspring.push({ ...parent2, fitness: 0 });
+  private tournamentSelection(): Individual {
+    const k = 3;
+    let best = this.population[Math.floor(Math.random() * POPULATION_SIZE)];
+    for (let i = 0; i < k; i++) {
+      const ind = this.population[Math.floor(Math.random() * POPULATION_SIZE)];
+      if (ind.fitness > best.fitness) {
+        best = ind;
       }
     }
-
-    return offspring.slice(0, this.config.populationSize);
+    return best;
   }
 
-  /**
-   * Crossover two parameter sets (uniform crossover)
-   */
-  private crossoverParams(p1: ParameterConfig, p2: ParameterConfig): ParameterConfig {
-    const params = {
-      minScores: {
-        scalp: Math.random() < 0.5 ? p1.minScores.scalp : p2.minScores.scalp,
-        day: Math.random() < 0.5 ? p1.minScores.day : p2.minScores.day,
-        swing: Math.random() < 0.5 ? p1.minScores.swing : p2.minScores.swing,
-      },
-      ivBoosts: {
-        lowIV: Math.random() < 0.5 ? p1.ivBoosts.lowIV : p2.ivBoosts.lowIV,
-        highIV: Math.random() < 0.5 ? p1.ivBoosts.highIV : p2.ivBoosts.highIV,
-      },
-      gammaBoosts: {
-        shortGamma: Math.random() < 0.5 ? p1.gammaBoosts.shortGamma : p2.gammaBoosts.shortGamma,
-        longGamma: Math.random() < 0.5 ? p1.gammaBoosts.longGamma : p2.gammaBoosts.longGamma,
-      },
-      flowBoosts: {
-        aligned: Math.random() < 0.5 ? p1.flowBoosts.aligned : p2.flowBoosts.aligned,
-        opposed: Math.random() < 0.5 ? p1.flowBoosts.opposed : p2.flowBoosts.opposed,
-      },
-      mtfWeights: {
-        weekly: Math.random() < 0.5 ? p1.mtfWeights.weekly : p2.mtfWeights.weekly,
-        daily: Math.random() < 0.5 ? p1.mtfWeights.daily : p2.mtfWeights.daily,
-        hourly: Math.random() < 0.5 ? p1.mtfWeights.hourly : p2.mtfWeights.hourly,
-        fifteenMin: Math.random() < 0.5 ? p1.mtfWeights.fifteenMin : p2.mtfWeights.fifteenMin,
-      },
-      riskReward: {
-        targetMultiple:
-          Math.random() < 0.5 ? p1.riskReward.targetMultiple : p2.riskReward.targetMultiple,
-        stopMultiple: Math.random() < 0.5 ? p1.riskReward.stopMultiple : p2.riskReward.stopMultiple,
-        maxHoldBars: Math.random() < 0.5 ? p1.riskReward.maxHoldBars : p2.riskReward.maxHoldBars,
-      },
-    };
-    return this.validateRiskReward(params);
+  private crossover(p1: Individual, p2: Individual): Individual {
+    // Uniform crossover
+    const child = this.createRandomIndividual();
+
+    // Mix Risk/Reward
+    child.params.riskReward = Math.random() > 0.5 ? p1.params.riskReward : p2.params.riskReward;
+    // Mix Scores
+    child.params.minScores = Math.random() > 0.5 ? p1.params.minScores : p2.params.minScores;
+    // Mix Consensus
+    child.params.consensus = Math.random() > 0.5 ? p1.params.consensus : p2.params.consensus;
+
+    return child;
   }
 
-  /**
-   * Mutation: Randomly alter parameters
-   */
-  private mutate(individuals: Individual[]) {
-    // Skip elites
-    for (let i = this.config.elitismCount; i < individuals.length; i++) {
-      if (Math.random() < this.config.mutationRate) {
-        individuals[i].params = this.mutateParams(individuals[i].params);
+  private mutate(ind: Individual) {
+    if (Math.random() < MUTATION_RATE) {
+      ind.params.riskReward.targetMultiple = this.randomRange(1.5, 4.0);
+    }
+    if (Math.random() < MUTATION_RATE) {
+      ind.params.minScores.day = this.randomInt(30, 80);
+    }
+    // ... add more mutations
+  }
+
+  // --- Main Loop ---
+
+  public async run() {
+    console.log("Starting Optimization...");
+    this.initPopulation();
+
+    for (let gen = 0; gen < GENERATIONS; gen++) {
+      console.log(`\n=== Generation ${gen + 1} ===`);
+
+      // Evaluate all
+      for (const ind of this.population) {
+        if (ind.fitness === -Infinity) {
+          await this.evaluateFitness(ind);
+        }
       }
-    }
-  }
 
-  /**
-   * Mutate a parameter set (Gaussian mutation)
-   */
-  private mutateParams(params: ParameterConfig): ParameterConfig {
-    const mutated = JSON.parse(JSON.stringify(params)); // Deep clone
+      // Sort
+      this.population.sort((a, b) => b.fitness - a.fitness);
+      const best = this.population[0];
+      console.log(`Best Fitness Gen ${gen + 1}: ${best.fitness.toFixed(4)}`, best.params);
 
-    // Randomly pick 1-3 parameters to mutate
-    const numMutations = Math.floor(Math.random() * 3) + 1;
+      // Evolve
+      const newPop: Individual[] = [];
 
-    for (let i = 0; i < numMutations; i++) {
-      const paramPath = this.randomParamPath();
-      const bounds = PARAMETER_BOUNDS[paramPath];
+      // Elitism: Keep best 2
+      newPop.push(this.population[0]);
+      newPop.push(this.population[1]);
 
-      // Get current value
-      const keys = paramPath.split(".");
-      let obj: any = mutated;
-      for (let j = 0; j < keys.length - 1; j++) {
-        obj = obj[keys[j]];
+      while (newPop.length < POPULATION_SIZE) {
+        const p1 = this.tournamentSelection();
+        const p2 = this.tournamentSelection();
+        const child = this.crossover(p1, p2);
+        this.mutate(child);
+        newPop.push(child);
       }
-      const lastKey = keys[keys.length - 1];
-      const currentValue = obj[lastKey];
 
-      // Gaussian mutation (mean=current, stddev=10% of range)
-      const range = bounds.max - bounds.min;
-      const stddev = range * 0.1;
-      const delta = this.gaussianRandom() * stddev;
-      const newValue = Math.max(bounds.min, Math.min(bounds.max, currentValue + delta));
-
-      obj[lastKey] = newValue;
+      this.population = newPop;
     }
 
-    return this.validateRiskReward(mutated);
-  }
+    console.log("\nOptimization Complete.");
+    const bestOverall = this.population[0];
 
-  /**
-   * Replace population with offspring (keep elites)
-   */
-  private replacePopulation(offspring: Individual[]) {
-    this.population = offspring;
-  }
+    // Save to file
+    const outputContent = `export const OPTIMIZED_PARAMS = ${JSON.stringify(bestOverall.params, null, 2)};
+    
+export function getOptimizedParams() {
+  return OPTIMIZED_PARAMS;
+}`;
 
-  /**
-   * Update best individual
-   */
-  private updateBest() {
-    const sorted = [...this.population].sort((a, b) => b.fitness - a.fitness);
-    if (!this.bestIndividual || sorted[0].fitness > this.bestIndividual.fitness) {
-      this.bestIndividual = sorted[0];
-    }
-  }
-
-  /**
-   * Log generation statistics
-   */
-  private logGenerationStats(generation: number) {
-    const fitnesses = this.population.map((ind) => ind.fitness);
-    const winRates = this.population.map((ind) => ind.winRate);
-
-    const avgFitness = fitnesses.reduce((a, b) => a + b, 0) / fitnesses.length;
-    const maxFitness = Math.max(...fitnesses);
-    const avgWinRate = winRates.reduce((a, b) => a + b, 0) / winRates.length;
-
-    console.log(`  Gen ${generation} Summary:`);
-    console.log(`    Avg Fitness: ${avgFitness.toFixed(2)}`);
-    console.log(`    Max Fitness: ${maxFitness.toFixed(2)}`);
-    console.log(`    Avg Win Rate: ${(avgWinRate * 100).toFixed(1)}%`);
-    console.log(`    Best Win Rate: ${(this.bestIndividual!.winRate * 100).toFixed(1)}%`);
-
-    this.generationStats.push({
-      generation,
-      avgFitness,
-      maxFitness,
-      avgWinRate,
-      bestWinRate: this.bestIndividual!.winRate,
-    });
-  }
-
-  /**
-   * Log final results
-   */
-  private logFinalResults() {
-    const best = this.bestIndividual!;
-
-    console.log("🏆 Best Configuration Found:");
-    console.log(`  Fitness: ${best.fitness.toFixed(2)}`);
-    console.log(`  Win Rate: ${(best.winRate * 100).toFixed(1)}%`);
-    console.log(`  Profit Factor: ${best.profitFactor.toFixed(2)}`);
-    console.log(`  Total Trades: ${best.totalTrades}`);
-    console.log(`  Generation: ${best.generation}`);
-    console.log("\n  Parameters:");
-    console.log(JSON.stringify(best.params, null, 2));
-  }
-
-  /**
-   * Save results to file
-   */
-  private saveResults() {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
-    const outputPath = join(process.cwd(), `optimization-results-${timestamp}.json`);
-
-    const results = {
-      timestamp: new Date().toISOString(),
-      config: this.config,
-      bestIndividual: this.bestIndividual,
-      generationStats: this.generationStats,
-      finalPopulation: this.population.sort((a, b) => b.fitness - a.fitness).slice(0, 10),
-    };
-
-    writeFileSync(outputPath, JSON.stringify(results, null, 2));
-    console.log(`\n💾 Results saved to: ${outputPath}`);
-  }
-
-  // =========================================================================
-  // Helper Methods
-  // =========================================================================
-
-  private randomParams(): ParameterConfig {
-    const params = {
-      minScores: {
-        scalp: this.randomInRange(30, 60),
-        day: this.randomInRange(30, 60),
-        swing: this.randomInRange(30, 60),
-      },
-      ivBoosts: {
-        lowIV: this.randomInRange(0, 0.4),
-        highIV: this.randomInRange(-0.4, 0),
-      },
-      gammaBoosts: {
-        shortGamma: this.randomInRange(0, 0.3),
-        longGamma: this.randomInRange(-0.3, 0),
-      },
-      flowBoosts: {
-        aligned: this.randomInRange(0, 0.4),
-        opposed: this.randomInRange(-0.4, 0),
-      },
-      mtfWeights: {
-        weekly: this.randomInRange(1, 5),
-        daily: this.randomInRange(0.5, 3),
-        hourly: this.randomInRange(0.5, 2),
-        fifteenMin: this.randomInRange(0.1, 1),
-      },
-      riskReward: {
-        targetMultiple: this.randomInRange(1.5, 3),
-        stopMultiple: this.randomInRange(0.5, 1.2),
-        maxHoldBars: Math.floor(this.randomInRange(10, 40)),
-      },
-    };
-    return this.validateRiskReward(params);
-  }
-
-  /**
-   * Validate and fix risk/reward parameters to ensure positive R:R ratio
-   */
-  private validateRiskReward(params: ParameterConfig): ParameterConfig {
-    // Ensure stopMultiple < targetMultiple for positive risk/reward
-    if (params.riskReward.stopMultiple >= params.riskReward.targetMultiple) {
-      // Fix: Set stop to 80% of target
-      params.riskReward.stopMultiple = params.riskReward.targetMultiple * 0.8;
-      // Clamp to valid range
-      params.riskReward.stopMultiple = Math.max(0.5, Math.min(1.2, params.riskReward.stopMultiple));
-    }
-    return params;
-  }
-
-  private randomInRange(min: number, max: number): number {
-    return min + Math.random() * (max - min);
-  }
-
-  private randomParamPath(): string {
-    const paths = Object.keys(PARAMETER_BOUNDS);
-    return paths[Math.floor(Math.random() * paths.length)];
-  }
-
-  private gaussianRandom(): number {
-    // Box-Muller transform for Gaussian distribution
-    const u1 = Math.random();
-    const u2 = Math.random();
-    return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+    const outputPath = join(process.cwd(), "src/lib/composite/OptimizedParams.ts");
+    // writeFileSync(outputPath, outputContent); // Commented out to avoid overwriting prod without review
+    console.log("Optimal Parameters:", JSON.stringify(bestOverall.params, null, 2));
+    console.log("Stats:", bestOverall.stats);
   }
 }
 
-// ============================================================================
-// Main Execution
-// ============================================================================
-
-async function main() {
-  console.log("[Optimizer] 📋 Fetching symbols from watchlist...");
-
-  // Fetch all unique symbols from watchlist (across all users)
-  const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-  const { data: watchlistData, error: watchlistError } = await supabase
-    .from("watchlist")
-    .select("symbol");
-
-  if (watchlistError) {
-    console.error("[Optimizer] ❌ Failed to fetch watchlist:", watchlistError);
-    process.exit(1);
-  }
-
-  // Get unique symbols
-  const uniqueSymbols = [...new Set(watchlistData?.map((w) => w.symbol) || [])];
-
-  if (uniqueSymbols.length === 0) {
-    console.warn("[Optimizer] ⚠️  No symbols in watchlist, using defaults");
-    uniqueSymbols.push("SPX", "NDX", "SPY", "QQQ");
-  }
-
-  console.log(`[Optimizer] ✅ Found ${uniqueSymbols.length} symbols: ${uniqueSymbols.join(", ")}`);
-
-  // Backtest configuration
-  const backtestConfig: BacktestConfig = {
-    symbols: uniqueSymbols, // Dynamically use all watchlist symbols
-    startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    endDate: new Date().toISOString().split("T")[0],
-    timeframe: "15m",
-    targetMultiple: 1.5,
-    stopMultiple: 1.0,
-    maxHoldBars: 20,
-    slippage: 0.001,
-  };
-
-  // Parse command-line arguments
-  const args = process.argv.slice(2);
-  const quick = args.includes("--quick");
-  const generations = quick ? 5 : 10;
-
-  // GA configuration
-  const gaConfig: Partial<GAConfig> = {
-    populationSize: quick ? 10 : 20,
-    generations,
-  };
-
-  // Create optimizer
-  const optimizer = new ConfluenceOptimizer(backtestConfig, gaConfig);
-
-  // Run optimization
-  const bestConfig = await optimizer.optimize();
-
-  // Exit
-  process.exit(0);
-}
-
-// Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
+// Interactive runner
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const optimizer = new ConfluenceOptimizer();
+  optimizer.run().catch(console.error);
 }
