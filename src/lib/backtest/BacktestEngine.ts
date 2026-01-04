@@ -19,7 +19,7 @@
 if (typeof window !== "undefined") {
   throw new Error(
     "BacktestEngine is server-only and cannot be used in browser. " +
-      "Do not import this module in frontend code."
+    "Do not import this module in frontend code."
   );
 }
 
@@ -45,6 +45,7 @@ export interface BacktestConfig {
   stopMultiple: number; // Stop loss multiple (e.g., 1.0 = 1R)
   maxHoldBars: number; // Max bars to hold position
   slippage: number; // Slippage in % (e.g., 0.001 = 0.1%) - fallback if no quote data
+  enableTrailingStop?: boolean; // Enable trailing stop logic
 
   // Realistic slippage options (uses options_quotes table)
   useRealisticSlippage?: boolean; // Use bid/ask data for slippage (default: true)
@@ -93,6 +94,7 @@ export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   maxSpreadPercent: 2.0, // Max 2% spread to take trade
   minLiquiditySize: 10, // Min 10 lots on bid/ask
   filterIlliquid: false, // Disabled until options quote data is available
+  enableTrailingStop: false,
 };
 
 /**
@@ -598,9 +600,9 @@ export class BacktestEngine {
       vwap:
         vwapValue !== null
           ? {
-              value: vwapValue,
-              distancePct: vwapDistancePct!,
-            }
+            value: vwapValue,
+            distancePct: vwapDistancePct!,
+          }
           : undefined,
       ema: {
         "8": ema8[ema8.length - 1],
@@ -654,9 +656,9 @@ export class BacktestEngine {
           vwap:
             vwapValue !== null
               ? {
-                  value: vwapValue,
-                  distancePct: vwapDistancePct!,
-                }
+                value: vwapValue,
+                distancePct: vwapDistancePct!,
+              }
               : undefined,
         },
       },

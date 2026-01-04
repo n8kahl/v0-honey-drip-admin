@@ -8,6 +8,7 @@
 
 **Recent Updates**:
 
+- ✅ **Phase 4 Event-Driven Engine**: New `EventDrivenBacktestEngine` with true 1m/5m/1h MTF synchronization
 - ✅ **Phase 3 Quant Enhancements**: Historical options backtesting, SMART flow detection, Genetic GA Optimizer
 - ✅ **Historical Options Provider**: Exact historical pricing (OHLCV) and contract lookup via Massive.com
 - ✅ **Options Trade Listener**: Real-time "Smart Money" sweep/block detection (> $100k) via WebSocket
@@ -77,11 +78,25 @@ pnpm run session-check  # Run before ending session (tests + build + git status)
 # Production Workers
 pnpm start:composite  # Run composite scanner worker
 pnpm start:prewarm    # Run weekend pre-warm worker (manual trigger)
+pnpm run optimizer    # Run genetic strategies optimizer
 ```
 
 ---
 
 ## 📝 Recent Session Changes
+
+### Session: January 4, 2026 - Phase 4: Advanced Engine
+
+**Branch**: `main`
+
+#### Phase 4: Event-Driven Backtesting
+1.  **Implemented Event-Driven Engine**:
+    -   Created `EventDrivenBacktestEngine.ts` to simulate market activity tick-by-tick (1m).
+    -   Enables **True Multi-Timeframe** logic (e.g., enter on 1m if 1h is bullish) without look-ahead bias.
+2.  **Multi-Timeframe Loading**:
+    -   Created `MultiTimeframeLoader.ts` to efficiently fetch and cache 1m, 5m, 15m, and 60m bars in parallel.
+3.  **Shared Indicators**:
+    -   Extracted `indicators.ts` to standardizing math logic across the app.
 
 ### Session: January 4, 2026 - Phase 3 & Level enhancements
 

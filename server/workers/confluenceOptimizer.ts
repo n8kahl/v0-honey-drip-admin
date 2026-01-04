@@ -1,37 +1,32 @@
-import { BacktestEngine, BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
-import { writeFileSync } from "fs";
-import { join } from "path";
+
+import { EventDrivenBacktestEngine } from "../../src/lib/backtest/EventDrivenBacktestEngine.js";
+import { BacktestStats } from "../../src/lib/backtest/BacktestEngine.js";
+import {
+  BACKTESTABLE_DETECTORS_WITH_KCU,
+  FLOW_PRIMARY_DETECTORS,
+} from "../../src/lib/composite/detectors/index.js";
+import { writeFileSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import "dotenv/config";
 
 /**
- * Confluence Optimizer
+ * Confluence Optimizer (Phase 4 Upgraded)
  *
- * Uses a Genetic Algorithm to find optimal parameters for strategy detectors.
+ * Uses a Genetic Algorithm to find optimal parameters for strategy detectors
+ * using the advanced EventDrivenBacktestEngine (MTF + Flow aware).
+ *
  * Maximizes Expectancy = (WinRate * AvgWin) / AvgLoss
- *
- * Process:
- * 1. Generate Population (random param sets)
- * 2. Evaluate Fitness (run backtests)
- * 3. Selection (tournament)
- * 4. Crossover & Mutation
- * 5. Repeat
  */
 
 interface OptimizationParams {
   riskReward: {
-    targetMultiple: number; // 1.5 - 3.0
-    stopMultiple: number; // 0.5 - 1.5
-    maxHoldBars: number; // 10 - 50
-  };
-  minScores: {
-    day: number; // 30 - 70
-    swing: number; // 30 - 70
-    scalp: number; // 30 - 70
+    targetMultiple: number; // 1.5 - 4.0
+    stopMultiple: number; // 0.8 - 1.5
+    maxHoldBars: number; // 12 - 96 (3 hours - 3 days approx depending on timeframe)
   };
   consensus: {
-    minDetectors: number; // 1 - 3
-    minTotalScore: number; // 50 - 150
+    minScore: number; // 50 - 80
   };
 }
 
@@ -54,14 +49,17 @@ interface OptimizationResult {
 }
 
 export class ConfluenceOptimizer {
-  private engine: BacktestEngine;
+  private engine: EventDrivenBacktestEngine;
   private population: Individual[] = [];
   private populationSize: number;
   private generations: number;
-  private mutationRate = 0.1;
+  private mutationRate = 0.15; // Slightly higher for more exploration
 
-  constructor(backtestConfig?: Partial<BacktestConfig>, gaConfig?: GAConfig) {
-    this.engine = new BacktestEngine(backtestConfig);
+  constructor(gaConfig?: GAConfig) {
+    // We instantiate the engine PER run or re-configure it?
+    // The engine holds state (data cache), so we should keep one engine instance
+    // and just update its config per individual.
+    this.engine = new EventDrivenBacktestEngine();
     this.populationSize = gaConfig?.populationSize || 20;
     this.generations = gaConfig?.generations || 5;
   }
@@ -82,17 +80,11 @@ export class ConfluenceOptimizer {
       params: {
         riskReward: {
           targetMultiple: this.randomRange(1.5, 4.0),
-          stopMultiple: this.randomRange(0.5, 1.5),
-          maxHoldBars: this.randomInt(10, 40),
-        },
-        minScores: {
-          day: this.randomInt(40, 70),
-          swing: this.randomInt(40, 70),
-          scalp: this.randomInt(40, 70),
+          stopMultiple: this.randomRange(0.8, 1.5),
+          maxHoldBars: this.randomInt(12, 60),
         },
         consensus: {
-          minDetectors: this.randomInt(1, 3),
-          minTotalScore: this.randomInt(60, 120),
+          minScore: this.randomInt(50, 80),
         },
       },
       fitness: -Infinity,
@@ -109,10 +101,29 @@ export class ConfluenceOptimizer {
   // --- 2. Evaluation ---
 
   private async evaluateFitness(ind: Individual): Promise<number> {
-    console.log("Evaluating individual:", JSON.stringify(ind.params));
+    // console.log("Evaluating:", JSON.stringify(ind.params));
 
-    // Run backtest
-    const results = await this.engine.backtestAll(true); // Include KCU
+    // Update Engine Config
+    // We need to extend the engine to accept dynamic config updates or passed in runDetector
+    // For now, assuming we recreate or the engine is stateless enough regarding config for the run
+    this.engine = new EventDrivenBacktestEngine({
+      targetMultiple: ind.params.riskReward.targetMultiple,
+      stopMultiple: ind.params.riskReward.stopMultiple,
+      maxHoldBars: ind.params.riskReward.maxHoldBars,
+    });
+
+    const results: BacktestStats[] = [];
+    const detectors = [...BACKTESTABLE_DETECTORS_WITH_KCU, ...FLOW_PRIMARY_DETECTORS];
+
+    // Run backtest for all detectors
+    for (const detector of detectors) {
+      if (!detector) continue;
+      // In a real GA, running ALL detectors for every individual is slow.
+      // We might want to optimize one detector at a time or a subset.
+      // But for "General Market Params", we test across the suite.
+      const stats = await this.engine.runDetector(detector);
+      results.push(stats);
+    }
 
     // Aggregate results
     let totalTrades = 0;
@@ -122,20 +133,25 @@ export class ConfluenceOptimizer {
 
     for (const stats of results) {
       totalTrades += stats.totalTrades;
-      const grossWin = stats.avgWin * stats.winners;
-      const grossLoss = Math.abs(stats.avgLoss) * stats.losers;
-      totalWin += grossWin;
-      totalLoss += grossLoss;
+      // Approximate gross PnL from R-multiples for fitness
+      // (Assuming 1R risk)
+      const grossWinR = stats.winners * ind.params.riskReward.targetMultiple; // Simplification
+      const grossLossR = stats.losers * 1.0; // Simplification (loss is 1R)
+
+      totalWin += stats.totalPnl > 0 ? stats.totalPnl : 0; // Use real PnL if available
+      totalLoss += stats.totalPnl < 0 ? Math.abs(stats.totalPnl) : 0;
+
       winCount += stats.winners;
     }
 
     if (totalTrades === 0) return 0;
-    if (totalLoss === 0) return totalWin;
 
-    const profitFactor = totalWin / totalLoss;
+    // Safety against division by zero
+    const profitFactor = totalLoss === 0 ? (totalWin > 0 ? 10 : 0) : totalWin / totalLoss;
     const winRate = winCount / totalTrades;
 
     // Fitness Function: Expectancy * log(Trades)
+    // We want robust systems: decent PF + significant sample size
     const fitness = profitFactor * winRate * Math.log10(totalTrades + 1);
 
     ind.fitness = fitness;
@@ -161,7 +177,6 @@ export class ConfluenceOptimizer {
   private crossover(p1: Individual, p2: Individual): Individual {
     const child = this.createRandomIndividual();
     child.params.riskReward = Math.random() > 0.5 ? p1.params.riskReward : p2.params.riskReward;
-    child.params.minScores = Math.random() > 0.5 ? p1.params.minScores : p2.params.minScores;
     child.params.consensus = Math.random() > 0.5 ? p1.params.consensus : p2.params.consensus;
     return child;
   }
@@ -171,18 +186,19 @@ export class ConfluenceOptimizer {
       ind.params.riskReward.targetMultiple = this.randomRange(1.5, 4.0);
     }
     if (Math.random() < this.mutationRate) {
-      ind.params.minScores.day = this.randomInt(30, 80);
+      ind.params.consensus.minScore = this.randomInt(50, 80);
     }
   }
 
   // --- Main Public Method ---
 
   public async optimize(): Promise<OptimizationResult> {
-    console.log("Starting Optimization...");
+    console.log("Starting Confluence Optimization (Event-Driven)...");
     this.initPopulation();
 
     for (let gen = 0; gen < this.generations; gen++) {
       console.log(`\n=== Generation ${gen + 1} ===`);
+      const start = Date.now();
 
       for (const ind of this.population) {
         if (ind.fitness === -Infinity) {
@@ -192,10 +208,15 @@ export class ConfluenceOptimizer {
 
       this.population.sort((a, b) => b.fitness - a.fitness);
       const best = this.population[0];
-      console.log(`Best Fitness Gen ${gen + 1}: ${best.fitness.toFixed(4)}`, best.params);
+      const duration = ((Date.now() - start) / 1000).toFixed(1);
+
+      console.log(
+        `Gen ${gen + 1} Best: Fitness=${best.fitness.toFixed(3)} PF=${best.stats.profitFactor.toFixed(2)} WR=${(best.stats.winRate * 100).toFixed(1)}% Trades=${best.stats.totalTrades} (${duration}s)`
+      );
 
       // Evolve
       const newPop: Individual[] = [];
+      // Elitism: Keep top 2
       newPop.push(this.population[0]);
       newPop.push(this.population[1]);
 
@@ -213,19 +234,48 @@ export class ConfluenceOptimizer {
     console.log("\nOptimization Complete.");
     const bestOverall = this.population[0];
 
-    // Save to file
+    // Map optimization results to the standard ParameterConfig format
+    const parameters = {
+      minScores: {
+        scalp: bestOverall.params.consensus.minScore,
+        day: bestOverall.params.consensus.minScore,
+        swing: bestOverall.params.consensus.minScore,
+      },
+      ivBoosts: { lowIV: 0.15, highIV: -0.20 },
+      gammaBoosts: { shortGamma: 0.15, longGamma: -0.10 },
+      flowBoosts: { aligned: 0.20, opposed: -0.15 },
+      mtfWeights: { weekly: 3.0, daily: 2.0, hourly: 1.0, fifteenMin: 0.5 },
+      riskReward: {
+        targetMultiple: bestOverall.params.riskReward.targetMultiple,
+        stopMultiple: bestOverall.params.riskReward.stopMultiple,
+        maxHoldBars: bestOverall.params.riskReward.maxHoldBars,
+      },
+    };
+
+    // Save to file in the exact format compositeScanner expects
     const outputContent = JSON.stringify(
       {
-        ...bestOverall.params,
+        parameters,
+        performance: {
+          winRate: bestOverall.stats.winRate,
+          profitFactor: bestOverall.stats.profitFactor,
+          totalTrades: bestOverall.stats.totalTrades,
+        },
         timestamp: new Date().toISOString(),
-        stats: bestOverall.stats,
+        phase: 4,
       },
       null,
       2
     );
 
-    const outputPath = join(process.cwd(), "config", "optimized-params.json");
+    const configDir = join(process.cwd(), "config");
     try {
+      // Ensure dir exists
+      try {
+        mkdirSync(configDir);
+      } catch (e) { }
+
+      const outputPath = join(configDir, "optimized-params.json");
       writeFileSync(outputPath, outputContent);
       console.log(`Saved optimized params to ${outputPath}`);
     } catch (e) {
@@ -245,7 +295,6 @@ export class ConfluenceOptimizer {
   public async run() {
     const result = await this.optimize();
     console.log("Optimal Parameters:", JSON.stringify(result.params, null, 2));
-    console.log("Stats:", result);
   }
 }
 

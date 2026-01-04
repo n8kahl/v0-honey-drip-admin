@@ -60,7 +60,8 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"server/**/*.ts\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "prepare": "husky",
-    "session-check": "bash scripts/session-end-check.sh"
+    "session-check": "bash scripts/session-end-check.sh",
+    "optimizer": "npx tsx server/workers/ConfluenceOptimizer.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.705.0",

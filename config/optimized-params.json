@@ -1,21 +1,9 @@
 {
-  "version": "1.1.0",
-  "timestamp": "2025-11-30T01:57:53.000Z",
-  "optimizationMethod": "genetic-algorithm",
-  "backtestPeriod": "5 generations, 10 configurations each",
-  "performance": {
-    "winRate": 0.485,
-    "profitFactor": 0.87,
-    "totalTrades": 2770,
-    "fitness": 29.65,
-    "bestGeneration": 2,
-    "note": "First optimization run - baseline for future improvements"
-  },
   "parameters": {
     "minScores": {
-      "scalp": 40,
-      "day": 40,
-      "swing": 40
+      "scalp": 80,
+      "day": 80,
+      "swing": 80
     },
     "ivBoosts": {
       "lowIV": 0.15,
@@ -23,43 +11,29 @@
     },
     "gammaBoosts": {
       "shortGamma": 0.15,
-      "longGamma": -0.099
+      "longGamma": -0.1
     },
     "flowBoosts": {
       "aligned": 0.2,
       "opposed": -0.15
     },
     "mtfWeights": {
-      "weekly": 3.0,
-      "daily": 2.0,
-      "hourly": 1.0,
-      "fifteenMin": 0.604
+      "weekly": 3,
+      "daily": 2,
+      "hourly": 1,
+      "fifteenMin": 0.5
     },
     "riskReward": {
-      "targetMultiple": 1.5,
-      "stopMultiple": 1.0,
-      "maxHoldBars": 20
+      "targetMultiple": 2.42,
+      "stopMultiple": 1.16,
+      "maxHoldBars": 16
     }
   },
-  "history": [
-    {
-      "version": "1.0.0",
-      "timestamp": "2025-11-24T00:00:00.000Z",
-      "note": "Initial baseline defaults"
-    },
-    {
-      "version": "1.1.0",
-      "timestamp": "2025-11-30T01:57:53.000Z",
-      "winRate": 0.485,
-      "profitFactor": 0.87,
-      "totalTrades": 2770,
-      "note": "First GA optimization with historical bars data"
-    }
-  ],
-  "nextSteps": [
-    "Enable Greeks ingestion to unlock gamma_squeeze, iv_crush detectors",
-    "Collect signal outcomes for real win rate tracking",
-    "Re-run optimizer after 1 week of outcome data",
-    "Consider higher minScores (50-60) to filter lower quality signals"
-  ]
+  "performance": {
+    "winRate": 0.047619047619047616,
+    "profitFactor": 0,
+    "totalTrades": 21
+  },
+  "timestamp": "2026-01-04T07:57:37.251Z",
+  "phase": 4
 }

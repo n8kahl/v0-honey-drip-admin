@@ -748,7 +748,7 @@ export class CompositeScanner {
             if (flowContext.tradeCount > 0) {
               console.log(
                 `[CompositeScanner] Flow for ${symbol}: ${flowSentiment} (${flowContext.sentimentStrength.toFixed(0)}%) ` +
-                  `→ ${flowAlignment} for ${direction} | Sweeps: ${flowContext.sweepCount}, Blocks: ${flowContext.blockCount}`
+                `→ ${flowAlignment} for ${direction} | Sweeps: ${flowContext.sweepCount}, Blocks: ${flowContext.blockCount}`
               );
             }
           }
@@ -853,23 +853,27 @@ export class CompositeScanner {
     const atr = mtfPrimary?.atr || mtf5m?.atr || 2.0;
 
     // Calculate stop based on direction and style
-    const stopDistance = atr * profile.risk.stopLossATRMultiplier;
+    // Phase 6: Use optimized parameters if available
+    const stopMult = this.optimizedParams?.riskReward.stopMultiple ?? profile.risk.stopLossATRMultiplier;
+    const targetMult = this.optimizedParams?.riskReward.targetMultiple ?? profile.risk.targetATRMultiplier[1];
+
+    const stopDistance = atr * stopMult;
     const stop = detector.direction === "LONG" ? entry - stopDistance : entry + stopDistance;
 
     // Calculate targets
     const targets = {
       T1:
         detector.direction === "LONG"
-          ? entry + atr * profile.risk.targetATRMultiplier[0]
-          : entry - atr * profile.risk.targetATRMultiplier[0],
+          ? entry + atr * (this.optimizedParams?.riskReward.targetMultiple ? stopMult * 1.5 : profile.risk.targetATRMultiplier[0])
+          : entry - atr * (this.optimizedParams?.riskReward.targetMultiple ? stopMult * 1.5 : profile.risk.targetATRMultiplier[0]),
       T2:
         detector.direction === "LONG"
-          ? entry + atr * profile.risk.targetATRMultiplier[1]
-          : entry - atr * profile.risk.targetATRMultiplier[1],
+          ? entry + atr * targetMult
+          : entry - atr * targetMult,
       T3:
         detector.direction === "LONG"
-          ? entry + atr * profile.risk.targetATRMultiplier[2]
-          : entry - atr * profile.risk.targetATRMultiplier[2],
+          ? entry + atr * (this.optimizedParams?.riskReward.targetMultiple ? targetMult * 1.5 : profile.risk.targetATRMultiplier[2])
+          : entry - atr * (this.optimizedParams?.riskReward.targetMultiple ? targetMult * 1.5 : profile.risk.targetATRMultiplier[2]),
     };
 
     const riskAmount = Math.abs(entry - stop);
@@ -951,7 +955,7 @@ export class CompositeScanner {
     const isWeekend = features.session?.isRegularHours !== true;
 
     // Use weekend overrides if available and applicable
-    const effectiveMinBaseScore =
+    let effectiveMinBaseScore =
       isWeekend && thresholds.weekendMinBaseScore !== undefined
         ? thresholds.weekendMinBaseScore
         : thresholds.minBaseScore;
@@ -963,6 +967,15 @@ export class CompositeScanner {
 
     // Phase 6: Apply optimized min scores (if optimizedParams provided)
     if (this.optimizedParams) {
+      // Override base score if optimized (using day trade score as proxy for base if needed,
+      // but choosing the maximum of the optimized style scores for the base floor)
+      const maxScore = Math.max(
+        this.optimizedParams.minScores.scalp,
+        this.optimizedParams.minScores.day,
+        this.optimizedParams.minScores.swing
+      );
+      effectiveMinBaseScore = maxScore;
+
       // Override style score thresholds with optimized values
       const style = signal.recommendedStyle;
       if (style === "scalp") {
@@ -1016,6 +1029,12 @@ export class CompositeScanner {
     features: SymbolFeatures,
     adaptiveThresholds?: AdaptiveThresholdResult
   ): { pass: boolean; reason?: string } {
+    // Phase 6: Always run base validation (which handles optimized parameters)
+    const baseValidation = this.validateSignal(signal, thresholds, features);
+    if (!baseValidation.pass) {
+      return baseValidation;
+    }
+
     // If adaptive thresholds are available and strategy is disabled, reject immediately
     if (adaptiveThresholds && !adaptiveThresholds.strategyEnabled) {
       return {
@@ -1049,12 +1068,9 @@ export class CompositeScanner {
           reason: `Risk/reward ${signal.riskReward.toFixed(1)} < ${minRR} (adaptive)`,
         };
       }
-
-      return { pass: true };
     }
 
-    // Fall back to standard validation if no adaptive thresholds
-    return this.validateSignal(signal, thresholds, features);
+    return { pass: true };
   }
 
   /**
