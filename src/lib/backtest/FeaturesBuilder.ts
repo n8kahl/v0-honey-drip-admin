@@ -1,6 +1,6 @@
 
-import { Bar, Timeframe } from "./MultiTimeframeLoader";
-import { SymbolFeatures } from "../strategy/engine";
+import { Bar, Timeframe } from "./MultiTimeframeLoader.js";
+import { SymbolFeatures } from "../strategy/engine.js";
 import {
     calculateEMA,
     calculateRSI,
@@ -8,7 +8,7 @@ import {
     calculateVWAP,
     calculateSMA,
     calculateStdDev
-} from "./indicators";
+} from "./indicators.js";
 
 /**
  * Features Builder

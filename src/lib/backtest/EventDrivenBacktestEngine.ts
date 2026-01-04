@@ -1,9 +1,9 @@
 
-import { BacktestStats, BacktestTrade, BacktestConfig, DEFAULT_BACKTEST_CONFIG } from "./BacktestEngine";
-import { MultiTimeframeLoader, Bar, Timeframe } from "./MultiTimeframeLoader";
-import { HistoricalOptionsProvider } from "../massive/HistoricalOptionsProvider";
-import { FeaturesBuilder } from "./FeaturesBuilder";
-import { SymbolFeatures } from "../strategy/engine";
+import { BacktestStats, BacktestTrade, BacktestConfig, DEFAULT_BACKTEST_CONFIG } from "./BacktestEngine.js";
+import { MultiTimeframeLoader, Bar, Timeframe } from "./MultiTimeframeLoader.js";
+import { HistoricalOptionsProvider } from "../massive/HistoricalOptionsProvider.js";
+import { FeaturesBuilder } from "./FeaturesBuilder.js";
+import { SymbolFeatures } from "../strategy/engine.js";
 
 // Helper for strict typed map key access
 const tfMap = {
