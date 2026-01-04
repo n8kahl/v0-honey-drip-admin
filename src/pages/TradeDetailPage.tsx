@@ -8,6 +8,8 @@ import { BreadcrumbNav } from "../components/navigation/BreadcrumbNav";
 import { HDLiveChart } from "../components/hd/charts/HDLiveChart";
 import { HDEditablePrice } from "../components/hd/common/HDEditablePrice";
 import { NowPanelManage } from "../components/trading/NowPanelManage";
+import { HDKeyLevelChart } from "../components/hd/dashboard/HDKeyLevelChart";
+import { useKeyLevels } from "../hooks/useKeyLevels";
 import { useActiveTradePnL } from "../hooks/useMassiveData";
 import { Suspense } from "react";
 import { cn } from "../lib/utils";
@@ -123,8 +125,22 @@ export default function TradeDetailPage() {
           </div>
 
           {/* Live Management Cockpit */}
-          <div className="max-w-6xl mx-auto flex flex-col h-[calc(100vh-120px)]">
-            <NowPanelManage trade={trade} activeTicker={null} />
+          <div className="max-w-6xl mx-auto flex flex-col gap-4 p-4 h-[calc(100vh-120px)] overflow-y-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] overflow-hidden">
+                <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-2)] flex justify-between items-center">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                    Structure & Key Levels
+                  </span>
+                </div>
+                <div className="h-[500px]">
+                  <HDKeyLevelChart ticker={trade.ticker} height={500} />
+                </div>
+              </div>
+              <div className="lg:col-span-1">
+                <NowPanelManage trade={trade} activeTicker={null} />
+              </div>
+            </div>
           </div>
         </Suspense>
       </AppLayout>

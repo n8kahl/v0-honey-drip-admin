@@ -41,6 +41,13 @@ export interface KeyLevels {
   bollingerLower?: number;
   bollingerMiddle?: number;
   dailyPivot?: number;
+  smcLevels?: any[]; // StructureLevel[] from structureLevels.ts
+  optionsFlow?: {
+    gammaWall: number | null;
+    callWall: number | null;
+    putWall: number | null;
+    maxPain: number | null;
+  };
 }
 
 export interface RiskCalculationInput {

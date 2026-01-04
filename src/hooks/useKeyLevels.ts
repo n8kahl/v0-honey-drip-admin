@@ -3,6 +3,8 @@ import { Bar } from "../lib/indicators";
 import { KeyLevels } from "../lib/riskEngine/types";
 import { computeKeyLevelsFromBars } from "../lib/riskEngine/computeKeyLevels";
 import { getOptionBars, getIndexBars, MassiveError } from "../lib/massive/proxy";
+import { detectAllStructureLevels } from "../lib/chartEnhancements/structureLevels";
+import { calculateOptionsFlowLevels } from "../lib/riskEngine/optionsFlowLevels";
 
 const INDEX_TICKERS = new Set(["SPX", "NDX", "VIX", "RUT"]);
 
@@ -83,9 +85,22 @@ export function useKeyLevels(
 
       // Compute key levels from bars
       const computed = computeKeyLevelsFromBars(parsed, orbWindow);
-      setKeyLevels(computed);
 
-      console.log(`[useKeyLevels] Computed levels for ${ticker}:`, computed);
+      // 1. Detect SMC Structure
+      const smcLevels = detectAllStructureLevels(parsed);
+
+      // 2. Fetch Options Flow (GEX, Walls)
+      const optionsFlow = await calculateOptionsFlowLevels(ticker);
+
+      const enriched: KeyLevels = {
+        ...computed,
+        smcLevels,
+        optionsFlow,
+      };
+
+      setKeyLevels(enriched);
+
+      console.log(`[useKeyLevels] Enriched levels for ${ticker}:`, enriched);
     } catch (err: any) {
       const msg = err instanceof MassiveError ? err.message : String(err);
       console.error(`[useKeyLevels] Failed to fetch bars for ${ticker}:`, err);

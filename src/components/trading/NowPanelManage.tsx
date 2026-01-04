@@ -93,11 +93,17 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
   const symbolData = useMarketDataStore((s) => s.symbols[trade.ticker]);
   const indicators = symbolData?.indicators;
   const mtfTrend = symbolData?.mtfTrend;
+  const strategySignals = symbolData?.strategySignals || [];
   const { keyLevels } = useKeyLevels(trade.ticker);
 
   // Get subscribe action from store
   const subscribe = useMarketDataStore((s) => s.subscribe);
   const subscribedSymbols = useMarketDataStore((s) => s.subscribedSymbols);
+
+  // Macro Context for Global Market View
+  const spx = useMarketDataStore((s) => s.symbols["SPX"]);
+  const ndx = useMarketDataStore((s) => s.symbols["NDX"]);
+  const vix = useMarketDataStore((s) => s.symbols["VIX"]);
 
   // Auto-subscribe symbol when trade enters ENTERED state
   // This ensures market data (candles, indicators, MTF) are loaded
@@ -155,6 +161,9 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
         candles={symbolData?.candles?.["1m"] ?? []}
         dailyCandles={symbolData?.candles?.["1D"] ?? []}
         symbolData={symbolData}
+        spx={spx}
+        ndx={ndx}
+        vix={vix}
       />
 
       {/* Trade Tape - Bottom ~30% */}
@@ -288,9 +297,9 @@ function PositionHUD({ trade, liveModel, realizedPnL, isClosed }: PositionHUDPro
               <span
                 className={cn(
                   "text-3xl font-bold tabular-nums transition-all duration-200",
-                  pnlStyle.className,
                   pnlFlash === "up" && "animate-pulse text-[var(--accent-positive)]",
-                  pnlFlash === "down" && "animate-pulse text-[var(--accent-negative)]"
+                  pnlFlash === "down" && "animate-pulse text-[var(--accent-negative)]",
+                  pnlStyle.className
                 )}
               >
                 {isClosed
@@ -555,6 +564,9 @@ interface LevelsATRPanelProps {
   candles: Candle[];
   dailyCandles: Candle[];
   symbolData?: SymbolData;
+  spx?: SymbolData;
+  ndx?: SymbolData;
+  vix?: SymbolData;
 }
 
 function normalizeCandleTime(time: number): number {
@@ -597,6 +609,9 @@ function LevelsATRPanel({
   candles,
   dailyCandles,
   symbolData,
+  spx, // Destructured spx
+  ndx, // Destructured ndx
+  vix, // Destructured vix
 }: LevelsATRPanelProps) {
   const [mtfExpanded, setMtfExpanded] = useState(true);
 
@@ -613,6 +628,25 @@ function LevelsATRPanel({
     if (keyLevels?.orbHigh)
       result.push({ label: "ORH", price: keyLevels.orbHigh, type: "resistance" });
     if (keyLevels?.orbLow) result.push({ label: "ORL", price: keyLevels.orbLow, type: "support" });
+
+    // Enriched Levels
+    if (keyLevels?.optionsFlow?.gammaWall) {
+      result.push({
+        label: "GEX Wall",
+        price: keyLevels.optionsFlow.gammaWall,
+        type: "neutral",
+      });
+    }
+
+    if (keyLevels?.smcLevels) {
+      keyLevels.smcLevels.slice(0, 5).forEach((sl: any) => {
+        result.push({
+          label: sl.label.split(" ")[0],
+          price: sl.price,
+          type: sl.type.includes("high") || sl.type.includes("bear") ? "resistance" : "support",
+        });
+      });
+    }
 
     return result.sort((a, b) => a.price - b.price);
   }, [keyLevels]);
@@ -651,6 +685,72 @@ function LevelsATRPanel({
 
   return (
     <div className="flex-1 overflow-y-auto">
+      {/* Macro Indicators Bar (Global Market Sentiment) */}
+      <div className="flex items-center justify-between p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-2)]">
+        <div className="flex flex-col">
+          <span className="text-[10px] text-[var(--text-muted)] uppercase font-medium">SPX</span>
+          <span
+            className={cn(
+              "text-xs font-bold tabular-nums",
+              (spx?.changePercent || 0) >= 0
+                ? "text-[var(--accent-positive)]"
+                : "text-[var(--accent-negative)]"
+            )}
+          >
+            {(spx?.changePercent || 0) >= 0 ? "+" : ""}
+            {(spx?.changePercent || 0).toFixed(2)}%
+          </span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] text-[var(--text-muted)] uppercase font-medium">NDX</span>
+          <span
+            className={cn(
+              "text-xs font-bold tabular-nums",
+              (ndx?.changePercent || 0) >= 0
+                ? "text-[var(--accent-positive)]"
+                : "text-[var(--accent-negative)]"
+            )}
+          >
+            {(ndx?.changePercent || 0) >= 0 ? "+" : ""}
+            {(ndx?.changePercent || 0).toFixed(2)}%
+          </span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] text-[var(--text-muted)] uppercase font-medium">VIX</span>
+          <span
+            className={cn(
+              "text-xs font-bold tabular-nums",
+              (vix?.price || 0) >= 20
+                ? "text-[var(--accent-negative)]"
+                : (vix?.price || 0) >= 15
+                  ? "text-amber-400"
+                  : "text-[var(--accent-positive)]"
+            )}
+          >
+            {(vix?.price || 0).toFixed(1)}
+          </span>
+        </div>
+        <div className="flex flex-col items-end">
+          <span className="text-[10px] text-[var(--text-muted)] uppercase font-medium">Bias</span>
+          <span
+            className={cn(
+              "text-xs font-bold",
+              (spx?.changePercent || 0) > 0.3
+                ? "text-[var(--accent-positive)]"
+                : (spx?.changePercent || 0) < -0.3
+                  ? "text-[var(--accent-negative)]"
+                  : "text-[var(--text-med)]"
+            )}
+          >
+            {(spx?.changePercent || 0) > 0.3
+              ? "BULL"
+              : (spx?.changePercent || 0) < -0.3
+                ? "BEAR"
+                : "CHOP"}
+          </span>
+        </div>
+      </div>
+
       {/* Key Levels Panel */}
       <div className="p-3 border-b border-[var(--border-hairline)]">
         <div className="flex items-center gap-1.5 mb-2">
@@ -718,6 +818,51 @@ function LevelsATRPanel({
           </div>
         </div>
       </div>
+
+      {/* Confluence & Coaching Section */}
+      <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
+        <HDConfluenceDetailPanel
+          ticker={trade.ticker}
+          direction={trade.contract.type === "C" ? "call" : "put"}
+          compact={true}
+          isPositive={liveModel.pnlPercent >= 0}
+          contract={trade.contract}
+        />
+      </div>
+
+      {/* Symbol Signals (Strategy Alerts) */}
+      {strategySignals.length > 0 && (
+        <div className="p-3 border-b border-[var(--border-hairline)]">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Bell className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+              Strategy Signals
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {strategySignals.slice(0, 3).map((sig, idx) => (
+              <div
+                key={idx}
+                className="flex gap-2 text-xs bg-[var(--surface-2)] p-2 rounded border border-[var(--border-hairline)]"
+              >
+                <span
+                  className={cn(
+                    "font-bold shrink-0",
+                    sig.direction === "bullish"
+                      ? "text-[var(--accent-positive)]"
+                      : sig.direction === "bearish"
+                        ? "text-[var(--accent-negative)]"
+                        : "text-[var(--text-muted)]"
+                  )}
+                >
+                  {sig.direction === "bullish" ? "↑" : sig.direction === "bearish" ? "↓" : "•"}
+                </span>
+                <span className="text-[var(--text-high)]">{sig.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* MTF Status Ladder - Collapsible */}
       <div className="border-b border-[var(--border-hairline)]">

@@ -17,6 +17,7 @@ import { useOffHoursData, type KeyLevel } from "../../../hooks/useOffHoursData";
 import { useSymbolData } from "../../../stores/marketDataStore";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
+import { useKeyLevels } from "../../../hooks/useKeyLevels";
 
 interface MobileTradeDetailSheetProps {
   open: boolean;
@@ -25,8 +26,8 @@ interface MobileTradeDetailSheetProps {
 }
 
 export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTradeDetailSheetProps) {
-  // Get key levels from useOffHoursData
-  const { keyLevelsBySymbol } = useOffHoursData();
+  // Get key levels from useKeyLevels (enriched with SMC/Options Flow)
+  const { keyLevels } = useKeyLevels(trade?.ticker || "");
 
   // Get live confluence from market data store
   const symbolData = useSymbolData(trade?.ticker || "");
@@ -68,9 +69,27 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
       )
     : null;
 
-  // Get key levels for this symbol
-  const symbolLevels = keyLevelsBySymbol.get(trade.ticker);
-  const levels = symbolLevels?.levels || [];
+  // Transform enriched KeyLevels into displayable list
+  const levels: any[] = [];
+  if (keyLevels) {
+    if (keyLevels.vwap) levels.push({ source: "VWAP", price: keyLevels.vwap, type: "neutral" });
+    if (keyLevels.priorDayHigh)
+      levels.push({ source: "PDH", price: keyLevels.priorDayHigh, type: "resistance" });
+    if (keyLevels.priorDayLow)
+      levels.push({ source: "PDL", price: keyLevels.priorDayLow, type: "support" });
+    if (keyLevels.optionsFlow?.gammaWall)
+      levels.push({ source: "GEX Wall", price: keyLevels.optionsFlow.gammaWall, type: "neutral" });
+
+    if (keyLevels.smcLevels) {
+      keyLevels.smcLevels.forEach((sl: any) => {
+        levels.push({
+          source: sl.label.split(" ")[0],
+          price: sl.price,
+          type: sl.type.includes("high") || sl.type.includes("bear") ? "resistance" : "support",
+        });
+      });
+    }
+  }
 
   // Get trade's confluence (stored on trade object) or use live
   const confluence = trade.confluence || liveConfluence;
@@ -383,38 +402,28 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
                 </div>
               ) : (
                 <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] divide-y divide-[var(--border-hairline)]">
-                  {/* Prior Day High */}
-                  {nearestResistance && (
-                    <KeyLevelRow
-                      level={nearestResistance}
-                      currentPrice={symbolLevels?.currentPrice || 0}
-                      icon={<TrendingUp className="w-4 h-4 text-red-400" />}
-                    />
-                  )}
-                  {/* VWAP */}
-                  {vwapLevel && (
-                    <KeyLevelRow
-                      level={vwapLevel}
-                      currentPrice={symbolLevels?.currentPrice || 0}
-                      icon={<Activity className="w-4 h-4 text-yellow-400" />}
-                    />
-                  )}
-                  {/* Pivot */}
-                  {pivotLevel && pivotLevel !== vwapLevel && (
-                    <KeyLevelRow
-                      level={pivotLevel}
-                      currentPrice={symbolLevels?.currentPrice || 0}
-                      icon={<Activity className="w-4 h-4 text-yellow-400" />}
-                    />
-                  )}
-                  {/* Prior Day Low */}
-                  {nearestSupport && (
-                    <KeyLevelRow
-                      level={nearestSupport}
-                      currentPrice={symbolLevels?.currentPrice || 0}
-                      icon={<TrendingDown className="w-4 h-4 text-green-400" />}
-                    />
-                  )}
+                  {levels
+                    .sort((a, b) => {
+                      // Show resistance near top, support near bottom
+                      return b.price - a.price;
+                    })
+                    .slice(0, 8)
+                    .map((level, idx) => (
+                      <KeyLevelRow
+                        key={`${level.source}-${idx}`}
+                        level={level}
+                        currentPrice={currentPrice}
+                        icon={
+                          level.type === "resistance" ? (
+                            <TrendingUp className="w-4 h-4 text-red-400" />
+                          ) : level.type === "support" ? (
+                            <TrendingDown className="w-4 h-4 text-green-400" />
+                          ) : (
+                            <Activity className="w-4 h-4 text-yellow-400" />
+                          )
+                        }
+                      />
+                    ))}
                 </div>
               )}
             </div>
@@ -501,7 +510,7 @@ function KeyLevelRow({
   currentPrice,
   icon,
 }: {
-  level: KeyLevel;
+  level: any;
   currentPrice: number;
   icon: React.ReactNode;
 }) {
