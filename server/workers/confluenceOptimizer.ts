@@ -1,5 +1,4 @@
-import { BacktestEngine } from "../../src/lib/backtest/BacktestEngine.js";
-import { createClient } from "@supabase/supabase-js";
+import { BacktestEngine, BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
 import { writeFileSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
@@ -42,16 +41,29 @@ interface Individual {
   stats?: any;
 }
 
-const POPULATION_SIZE = 20; // Small for demo, increase for production
-const GENERATIONS = 5;
-const MUTATION_RATE = 0.1;
+interface GAConfig {
+  populationSize?: number;
+  generations?: number;
+}
+
+interface OptimizationResult {
+  winRate: number;
+  profitFactor: number;
+  totalTrades: number;
+  params: OptimizationParams;
+}
 
 export class ConfluenceOptimizer {
   private engine: BacktestEngine;
   private population: Individual[] = [];
+  private populationSize: number;
+  private generations: number;
+  private mutationRate = 0.1;
 
-  constructor() {
-    this.engine = new BacktestEngine();
+  constructor(backtestConfig?: Partial<BacktestConfig>, gaConfig?: GAConfig) {
+    this.engine = new BacktestEngine(backtestConfig);
+    this.populationSize = gaConfig?.populationSize || 20;
+    this.generations = gaConfig?.generations || 5;
   }
 
   // --- 1. Initialization ---
@@ -89,28 +101,15 @@ export class ConfluenceOptimizer {
 
   private initPopulation() {
     this.population = [];
-    for (let i = 0; i < POPULATION_SIZE; i++) {
+    for (let i = 0; i < this.populationSize; i++) {
       this.population.push(this.createRandomIndividual());
     }
   }
 
   // --- 2. Evaluation ---
 
-  // Mock function to apply params to the backtest config
-  // In a real implementation, BacktestEngine needs to accept these params dynamically
-  // For now, we assume BacktestEngine reads from a config file or similar,
-  // or we temporarily modify its instance config if possible (via public config property or method).
-  // Current BacktestEngine reads from OptimizedScannerConfig.js which is static.
-  // We will need to make BacktestEngine accept overrides.
-  // For this MV implementation, we'll simulate by just logging.
-
   private async evaluateFitness(ind: Individual): Promise<number> {
     console.log("Evaluating individual:", JSON.stringify(ind.params));
-
-    // TODO: Pass `ind.params` effectively to engine.backtestAll()
-    // Doing this requires modifying BacktestEngine to accepting paramsOverride.
-    // For now, we will run backtestAll() with default config and assume
-    // we are just creating the framework.
 
     // Run backtest
     const results = await this.engine.backtestAll(true); // Include KCU
@@ -123,7 +122,6 @@ export class ConfluenceOptimizer {
 
     for (const stats of results) {
       totalTrades += stats.totalTrades;
-      // Derived totals
       const grossWin = stats.avgWin * stats.winners;
       const grossLoss = Math.abs(stats.avgLoss) * stats.losers;
       totalWin += grossWin;
@@ -132,16 +130,12 @@ export class ConfluenceOptimizer {
     }
 
     if (totalTrades === 0) return 0;
-    if (totalLoss === 0) return totalWin; // Infinite profit factor
+    if (totalLoss === 0) return totalWin;
 
     const profitFactor = totalWin / totalLoss;
     const winRate = winCount / totalTrades;
-    const avgWin = totalWin / winCount || 0;
-    const avgLoss = totalLoss / (totalTrades - winCount) || 0;
 
-    // Fitness Function: Expectancy * log(Trades) (to favor statistical significance)
-    // Expectancy = (WinRate * AvgWin) - (LossRate * AvgLoss)
-    // But simplified to Profit Factor * WinRate for stability
+    // Fitness Function: Expectancy * log(Trades)
     const fitness = profitFactor * winRate * Math.log10(totalTrades + 1);
 
     ind.fitness = fitness;
@@ -154,9 +148,9 @@ export class ConfluenceOptimizer {
 
   private tournamentSelection(): Individual {
     const k = 3;
-    let best = this.population[Math.floor(Math.random() * POPULATION_SIZE)];
+    let best = this.population[Math.floor(Math.random() * this.populationSize)];
     for (let i = 0; i < k; i++) {
-      const ind = this.population[Math.floor(Math.random() * POPULATION_SIZE)];
+      const ind = this.population[Math.floor(Math.random() * this.populationSize)];
       if (ind.fitness > best.fitness) {
         best = ind;
       }
@@ -165,58 +159,47 @@ export class ConfluenceOptimizer {
   }
 
   private crossover(p1: Individual, p2: Individual): Individual {
-    // Uniform crossover
     const child = this.createRandomIndividual();
-
-    // Mix Risk/Reward
     child.params.riskReward = Math.random() > 0.5 ? p1.params.riskReward : p2.params.riskReward;
-    // Mix Scores
     child.params.minScores = Math.random() > 0.5 ? p1.params.minScores : p2.params.minScores;
-    // Mix Consensus
     child.params.consensus = Math.random() > 0.5 ? p1.params.consensus : p2.params.consensus;
-
     return child;
   }
 
   private mutate(ind: Individual) {
-    if (Math.random() < MUTATION_RATE) {
+    if (Math.random() < this.mutationRate) {
       ind.params.riskReward.targetMultiple = this.randomRange(1.5, 4.0);
     }
-    if (Math.random() < MUTATION_RATE) {
+    if (Math.random() < this.mutationRate) {
       ind.params.minScores.day = this.randomInt(30, 80);
     }
-    // ... add more mutations
   }
 
-  // --- Main Loop ---
+  // --- Main Public Method ---
 
-  public async run() {
+  public async optimize(): Promise<OptimizationResult> {
     console.log("Starting Optimization...");
     this.initPopulation();
 
-    for (let gen = 0; gen < GENERATIONS; gen++) {
+    for (let gen = 0; gen < this.generations; gen++) {
       console.log(`\n=== Generation ${gen + 1} ===`);
 
-      // Evaluate all
       for (const ind of this.population) {
         if (ind.fitness === -Infinity) {
           await this.evaluateFitness(ind);
         }
       }
 
-      // Sort
       this.population.sort((a, b) => b.fitness - a.fitness);
       const best = this.population[0];
       console.log(`Best Fitness Gen ${gen + 1}: ${best.fitness.toFixed(4)}`, best.params);
 
       // Evolve
       const newPop: Individual[] = [];
-
-      // Elitism: Keep best 2
       newPop.push(this.population[0]);
       newPop.push(this.population[1]);
 
-      while (newPop.length < POPULATION_SIZE) {
+      while (newPop.length < this.populationSize) {
         const p1 = this.tournamentSelection();
         const p2 = this.tournamentSelection();
         const child = this.crossover(p1, p2);
@@ -231,16 +214,38 @@ export class ConfluenceOptimizer {
     const bestOverall = this.population[0];
 
     // Save to file
-    const outputContent = `export const OPTIMIZED_PARAMS = ${JSON.stringify(bestOverall.params, null, 2)};
-    
-export function getOptimizedParams() {
-  return OPTIMIZED_PARAMS;
-}`;
+    const outputContent = JSON.stringify(
+      {
+        ...bestOverall.params,
+        timestamp: new Date().toISOString(),
+        stats: bestOverall.stats,
+      },
+      null,
+      2
+    );
 
-    const outputPath = join(process.cwd(), "src/lib/composite/OptimizedParams.ts");
-    // writeFileSync(outputPath, outputContent); // Commented out to avoid overwriting prod without review
-    console.log("Optimal Parameters:", JSON.stringify(bestOverall.params, null, 2));
-    console.log("Stats:", bestOverall.stats);
+    const outputPath = join(process.cwd(), "config", "optimized-params.json");
+    try {
+      writeFileSync(outputPath, outputContent);
+      console.log(`Saved optimized params to ${outputPath}`);
+    } catch (e) {
+      console.warn("Could not save optimized params file:", e);
+    }
+
+    return {
+      winRate: bestOverall.stats?.winRate || 0,
+      profitFactor: bestOverall.stats?.profitFactor || 0,
+      totalTrades: bestOverall.stats?.totalTrades || 0,
+      params: bestOverall.params,
+    };
+  }
+
+  // --- Standalone Runner ---
+
+  public async run() {
+    const result = await this.optimize();
+    console.log("Optimal Parameters:", JSON.stringify(result.params, null, 2));
+    console.log("Stats:", result);
   }
 }
 
