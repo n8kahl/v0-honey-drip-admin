@@ -40,10 +40,12 @@ export interface DataAvailability {
   mtf_15m: boolean;
   mtf_60m: boolean;
 
-  // Options/flow data
+  // Options/flow data - Enhanced for Phase 4
   flow: boolean;
   flowScore: boolean;
   flowBias: boolean;
+  flowTrend: boolean; // NEW: INCREASING/STABLE/DECREASING
+  flowAggressiveness: boolean; // NEW: Institutional aggression level
 
   // Pattern data
   orb: boolean;
@@ -99,10 +101,12 @@ export const DEFAULT_DATA_WEIGHTS: Record<keyof DataAvailability, DataWeightConf
   mtf_15m: { weight: 3, critical: false, category: "mtf" },
   mtf_60m: { weight: 2, critical: false, category: "mtf" },
 
-  // Flow - Nice to have
-  flow: { weight: 5, critical: false, category: "flow" },
-  flowScore: { weight: 4, critical: false, category: "flow" },
-  flowBias: { weight: 3, critical: false, category: "flow" },
+  // Flow - Increased weights for Phase 4 (was 12 total, now 20)
+  flow: { weight: 6, critical: false, category: "flow" },
+  flowScore: { weight: 6, critical: false, category: "flow" },
+  flowBias: { weight: 4, critical: false, category: "flow" },
+  flowTrend: { weight: 2, critical: false, category: "flow" }, // NEW
+  flowAggressiveness: { weight: 2, critical: false, category: "flow" }, // NEW
 
   // Pattern - Context
   orb: { weight: 3, critical: false, category: "pattern" },
@@ -178,10 +182,12 @@ export function extractDataAvailability(features: SymbolFeatures): DataAvailabil
     mtf_15m: mtf["15m"] !== undefined && (mtf["15m"] as any)?.price?.current !== undefined,
     mtf_60m: mtf["60m"] !== undefined && (mtf["60m"] as any)?.price?.current !== undefined,
 
-    // Flow
+    // Flow - Enhanced for Phase 4
     flow: features.flow !== undefined,
     flowScore: features.flow?.flowScore !== undefined,
     flowBias: features.flow?.flowBias !== undefined,
+    flowTrend: features.flow?.flowTrend !== undefined,
+    flowAggressiveness: features.flow?.aggressiveness !== undefined,
 
     // Pattern
     orb: features.pattern?.orbHigh !== undefined && features.pattern?.orbLow !== undefined,
@@ -436,6 +442,8 @@ export function calculateWeekendConfidence(features: SymbolFeatures): Confidence
     flow: { weight: 2, critical: false, category: "flow" },
     flowScore: { weight: 1, critical: false, category: "flow" },
     flowBias: { weight: 1, critical: false, category: "flow" },
+    flowTrend: { weight: 1, critical: false, category: "flow" },
+    flowAggressiveness: { weight: 1, critical: false, category: "flow" },
     // Emphasize historical data
     priorDayLevels: { weight: 10, critical: false, category: "pattern" },
     swingLevels: { weight: 8, critical: false, category: "pattern" },

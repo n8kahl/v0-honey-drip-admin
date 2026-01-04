@@ -2,7 +2,7 @@ import type {
   StrategyDefinition,
   StrategyConditionTree,
   StrategyConditionRule,
-} from '../../types/strategy.js';
+} from "../../types/strategy.js";
 
 // Feature snapshot used for rule evaluation
 export interface SymbolFeatures {
@@ -33,17 +33,34 @@ export interface SymbolFeatures {
     theta?: number;
     vega?: number;
     rho?: number;
-    gammaRisk?: 'high' | 'medium' | 'low'; // Auto-calculated based on gamma value
-    thetaDecayRate?: 'extreme' | 'high' | 'moderate' | 'low'; // Per-hour decay
+    gammaRisk?: "high" | "medium" | "low"; // Auto-calculated based on gamma value
+    thetaDecayRate?: "extreme" | "high" | "moderate" | "low"; // Per-hour decay
     deltaNormalized?: number; // Absolute delta (0-1 range)
   };
   flow?: {
+    // Core metrics (existing)
     sweepCount?: number;
     blockCount?: number;
     unusualActivity?: boolean;
     flowScore?: number; // 0-100 flow strength
-    flowBias?: 'bullish' | 'bearish' | 'neutral';
+    flowBias?: "bullish" | "bearish" | "neutral";
     buyPressure?: number; // 0-100 percentage
+
+    // High Value - Institutional markers
+    aggressiveness?: "PASSIVE" | "NORMAL" | "AGGRESSIVE" | "VERY_AGGRESSIVE";
+    putCallRatio?: number; // 0-5 range (1 = balanced, <1 = call heavy, >1 = put heavy)
+    largeTradePercentage?: number; // 0-100 institutional marker
+    avgTradeSize?: number; // Average dollar amount per trade
+    splitCount?: number; // Number of split orders (smaller institutional orders)
+
+    // Trend Detection - Flow momentum
+    flowTrend?: "INCREASING" | "STABLE" | "DECREASING"; // Compared to 4h ago
+    sweepAcceleration?: number; // Rate of change in sweep frequency
+
+    // Volume Context
+    callVolume?: number;
+    putVolume?: number;
+    totalPremium?: number; // Total premium transacted
   };
   ema?: Record<string, number>;
   rsi?: Record<string, number>;
@@ -52,21 +69,46 @@ export interface SymbolFeatures {
     isRegularHours?: boolean;
   };
   // Multi-timeframe bucket: e.g., mtf['5m'].ema['21'], mtf['15m'].vwap.distancePct
-  mtf?: Record<string, {
-    price?: { current?: number; open?: number; high?: number; low?: number; prevClose?: number; prev?: number; };
-    vwap?: { value?: number; distancePct?: number; prev?: number };
-    ema?: Record<string, number>;
-    rsi?: Record<string, number>;
-  }>;
+  mtf?: Record<
+    string,
+    {
+      price?: {
+        current?: number;
+        open?: number;
+        high?: number;
+        low?: number;
+        prevClose?: number;
+        prev?: number;
+      };
+      vwap?: { value?: number; distancePct?: number; prev?: number };
+      ema?: Record<string, number>;
+      rsi?: Record<string, number>;
+    }
+  >;
   pattern?: Record<string, boolean | number | string>;
   prev?: Record<string, any>; // generic previous snapshot fields if available
+  // PHASE 1: Bollinger Bands for volatility-normalized mean reversion
+  bollingerBands?: {
+    upper: number;
+    lower: number;
+    middle: number;
+    width: number; // Band width as % of middle (volatility measure)
+    percentB: number; // 0-1 where price sits within bands (0=lower, 1=upper)
+  };
+  // PHASE 2: ATR for volatility-adaptive entries (better than BB for mean reversion)
+  atr?: number; // 14-period Average True Range
+  // PHASE 2: RSI divergence for reversal confirmation
+  divergence?: {
+    type: "bullish" | "bearish" | "none";
+    confidence: number; // 0-100
+  };
   [key: string]: any;
 }
 
 // Resolve dot-notated field paths such as 'price.current', 'ema.21'
 export function getFeatureValue(features: SymbolFeatures, field: string): any {
   if (!features || !field) return undefined;
-  const parts = field.split('.');
+  const parts = field.split(".");
   let cur: any = features;
   for (const p of parts) {
     if (cur == null) return undefined;
@@ -77,21 +119,30 @@ export function getFeatureValue(features: SymbolFeatures, field: string): any {
 
 function toNumber(x: any): number | undefined {
   if (x == null) return undefined;
-  const n = typeof x === 'number' ? x : parseFloat(String(x));
+  const n = typeof x === "number" ? x : parseFloat(String(x));
   return Number.isFinite(n) ? n : undefined;
 }
 
 function compare(a: any, b: any, op: string): boolean {
   switch (op) {
-    case '>': return toNumber(a)! > toNumber(b)!;
-    case '>=': return toNumber(a)! >= toNumber(b)!;
-    case '<': return toNumber(a)! < toNumber(b)!;
-    case '<=': return toNumber(a)! <= toNumber(b)!;
-    case '==': return a === b;
-    case '!=': return a !== b;
-    case 'above': return toNumber(a)! > toNumber(b)!;
-    case 'below': return toNumber(a)! < toNumber(b)!;
-    default: return false;
+    case ">":
+      return toNumber(a)! > toNumber(b)!;
+    case ">=":
+      return toNumber(a)! >= toNumber(b)!;
+    case "<":
+      return toNumber(a)! < toNumber(b)!;
+    case "<=":
+      return toNumber(a)! <= toNumber(b)!;
+    case "==":
+      return a === b;
+    case "!=":
+      return a !== b;
+    case "above":
+      return toNumber(a)! > toNumber(b)!;
+    case "below":
+      return toNumber(a)! < toNumber(b)!;
+    default:
+      return false;
   }
 }
 
@@ -100,16 +151,16 @@ export function evaluateRule(rule: StrategyConditionRule, features: SymbolFeatur
   const left = getFeatureValue(features, rule.field);
   const op = rule.op;
 
-  if (op === 'insideRange' || op === 'outsideRange') {
+  if (op === "insideRange" || op === "outsideRange") {
     const val = toNumber(left);
     const tuple = rule.value as [number, number];
     if (!Array.isArray(tuple) || tuple.length !== 2 || val == null) return false;
     const [min, max] = tuple;
     const inside = val >= min && val <= max;
-    return op === 'insideRange' ? inside : !inside;
+    return op === "insideRange" ? inside : !inside;
   }
 
-  if (op === 'crossesAbove' || op === 'crossesBelow') {
+  if (op === "crossesAbove" || op === "crossesBelow") {
     // Basic implementation: require previous value at `pattern["prev:"+field]` or features.prev[field]
     // If not available, return false.
     const prevKey = `prev:${rule.field}`;
@@ -119,54 +170,57 @@ export function evaluateRule(rule: StrategyConditionRule, features: SymbolFeatur
     const cur = toNumber(left);
     const threshold = toNumber(rule.value);
     if (prev == null || cur == null || threshold == null) return false;
-    if (op === 'crossesAbove') return prev <= threshold && cur > threshold;
+    if (op === "crossesAbove") return prev <= threshold && cur > threshold;
     return prev >= threshold && cur < threshold;
   }
 
   // Handle dynamic field references: if rule.value is a string starting with a letter,
   // treat it as a field path and resolve it from features
   let right = rule.value;
-  if (typeof right === 'string' && /^[a-z]/i.test(right)) {
+  if (typeof right === "string" && /^[a-z]/i.test(right)) {
     right = getFeatureValue(features, right);
   }
 
   return compare(left, right, op);
 }
 
-export function evaluateConditionTree(tree: StrategyConditionTree, features: SymbolFeatures): boolean {
+export function evaluateConditionTree(
+  tree: StrategyConditionTree,
+  features: SymbolFeatures
+): boolean {
   if (!tree) return false;
   switch (tree.type) {
-    case 'RULE':
+    case "RULE":
       return evaluateRule(tree.rule, features);
-    case 'AND':
+    case "AND":
       return (tree.children || []).every((ch) => evaluateConditionTree(ch, features));
-    case 'OR':
+    case "OR":
       return (tree.children || []).some((ch) => evaluateConditionTree(ch, features));
-    case 'NOT':
+    case "NOT":
       return !evaluateConditionTree(tree.child, features);
     default:
       return false;
   }
 }
 
-function isWithinTimeWindow(iso: string, window: StrategyDefinition['timeWindow']): boolean {
+function isWithinTimeWindow(iso: string, window: StrategyDefinition["timeWindow"]): boolean {
   try {
     if (!iso || !window) return true; // no restriction
     const { start, end, timezone } = window;
     if (!start || !end || !timezone) return true;
     const date = new Date(iso);
-    const formatter = new Intl.DateTimeFormat('en-US', {
+    const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
+      hour: "2-digit",
+      minute: "2-digit",
     });
     const parts = formatter.formatToParts(date);
-    const hh = parts.find((p) => p.type === 'hour')?.value || '00';
-    const mm = parts.find((p) => p.type === 'minute')?.value || '00';
+    const hh = parts.find((p) => p.type === "hour")?.value || "00";
+    const mm = parts.find((p) => p.type === "minute")?.value || "00";
     const cur = parseInt(hh, 10) * 60 + parseInt(mm, 10);
-    const [sh, sm] = start.split(':').map((n) => parseInt(n, 10));
-    const [eh, em] = end.split(':').map((n) => parseInt(n, 10));
+    const [sh, sm] = start.split(":").map((n) => parseInt(n, 10));
+    const [eh, em] = end.split(":").map((n) => parseInt(n, 10));
     const sMin = sh * 60 + sm;
     const eMin = eh * 60 + em;
     if (eMin >= sMin) return cur >= sMin && cur <= eMin;
@@ -191,19 +245,19 @@ function scoreRule(rule: StrategyConditionRule, features: SymbolFeatures): numbe
   };
 
   // inside/outside range: allow partial credit based on distance to nearest bound
-  if (op === 'insideRange' || op === 'outsideRange') {
+  if (op === "insideRange" || op === "outsideRange") {
     const val = toNumber(left);
     const tuple = rule.value as [number, number];
     if (!Array.isArray(tuple) || tuple.length !== 2 || val == null) return 0;
     const [min, max] = tuple;
     const inside = val >= min && val <= max;
-    if (op === 'insideRange') {
+    if (op === "insideRange") {
       if (inside) return 1;
-      const dist = val < min ? (min - val) : (val - max);
+      const dist = val < min ? min - val : val - max;
       const width = Math.max(1e-9, max - min);
       const rel = dist / width; // how far outside the band
       // Give partial up to 0.9 for near misses within 25% of band width
-      return Math.max(0, Math.min(0.9, 1 - (rel / 0.25)));
+      return Math.max(0, Math.min(0.9, 1 - rel / 0.25));
     } else {
       // outsideRange
       if (!inside) return 1;
@@ -211,30 +265,30 @@ function scoreRule(rule: StrategyConditionRule, features: SymbolFeatures): numbe
       const toEdge = Math.min(Math.abs(val - min), Math.abs(val - max));
       const width = Math.max(1e-9, max - min);
       const rel = toEdge / width;
-      return Math.max(0, Math.min(0.9, 1 - (rel / 0.25)));
+      return Math.max(0, Math.min(0.9, 1 - rel / 0.25));
     }
   }
 
-  if (op === 'crossesAbove' || op === 'crossesBelow') {
+  if (op === "crossesAbove" || op === "crossesBelow") {
     // Binary for cross events
     return evaluateRule(rule, features) ? 1 : 0;
   }
 
   // Resolve dynamic field value for right-hand side
   let right: any = rule.value;
-  if (typeof right === 'string' && /^[a-z]/i.test(right)) {
+  if (typeof right === "string" && /^[a-z]/i.test(right)) {
     right = getFeatureValue(features, right);
   }
 
   // Numeric proximity for comparative ops
-  const numericOps = new Set(['>', '>=', '<', '<=', 'above', 'below', '==', '!=']);
+  const numericOps = new Set([">", ">=", "<", "<=", "above", "below", "==", "!="]);
   if (numericOps.has(op)) {
     const a = toNumber(left);
     const b = toNumber(right);
     const satisfied = evaluateRule(rule, features);
     if (satisfied) return 1;
     if (a == null || b == null) return 0;
-    if (op === '==' || op === '!=') return 0; // equality is binary
+    if (op === "==" || op === "!=") return 0; // equality is binary
 
     // Compute relative gap and convert to partial credit within a 2% window
     const gap = relGap(a, b);
@@ -255,25 +309,28 @@ function scoreRule(rule: StrategyConditionRule, features: SymbolFeatures): numbe
 // - OR: max of child scores (any satisfied child can yield high score)
 // - NOT: 1 - child score
 // The final confidence is Math.round(score * 100).
-export function computeStrategyConfidence(strategy: StrategyDefinition, features: SymbolFeatures): number {
+export function computeStrategyConfidence(
+  strategy: StrategyDefinition,
+  features: SymbolFeatures
+): number {
   function scoreTree(tree: StrategyConditionTree): number {
     if (!tree) return 0;
     switch (tree.type) {
-      case 'RULE': {
+      case "RULE": {
         return scoreRule(tree.rule, features);
       }
-      case 'AND': {
+      case "AND": {
         const children = tree.children || [];
         if (children.length === 0) return 0;
         const sum = children.reduce((acc, ch) => acc + scoreTree(ch), 0);
         return sum / children.length;
       }
-      case 'OR': {
+      case "OR": {
         const children = tree.children || [];
         if (children.length === 0) return 0;
         return Math.max(...children.map((ch) => scoreTree(ch)));
       }
-      case 'NOT': {
+      case "NOT": {
         return 1 - scoreTree(tree.child);
       }
       default:

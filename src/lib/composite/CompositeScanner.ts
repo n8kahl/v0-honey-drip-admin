@@ -277,14 +277,59 @@ export class CompositeScanner {
     try {
       const flowContext = await contextEngines.flowAnalysis.getFlowContext(symbol, "medium");
       if (flowContext && flowContext.tradeCount > 0) {
-        // Populate features.flow so detectors can use it
+        // Calculate flow trend by comparing to 4h ago window
+        let flowTrend: "INCREASING" | "STABLE" | "DECREASING" = "STABLE";
+        try {
+          const longFlowContext = await contextEngines.flowAnalysis.getFlowContext(symbol, "long");
+          if (longFlowContext && longFlowContext.tradeCount > 0) {
+            const recentRate = flowContext.sweepCount / (flowContext.tradeCount || 1);
+            const longRate = longFlowContext.sweepCount / (longFlowContext.tradeCount || 1);
+            if (recentRate > longRate * 1.25) {
+              flowTrend = "INCREASING";
+            } else if (recentRate < longRate * 0.75) {
+              flowTrend = "DECREASING";
+            }
+          }
+        } catch {
+          // Long-term flow data is optional
+        }
+
+        // Map FlowAggressiveness to SymbolFeatures.flow format
+        const aggressivenessMap: Record<
+          string,
+          "PASSIVE" | "NORMAL" | "AGGRESSIVE" | "VERY_AGGRESSIVE"
+        > = {
+          PASSIVE: "PASSIVE",
+          MODERATE: "NORMAL",
+          AGGRESSIVE: "AGGRESSIVE",
+          VERY_AGGRESSIVE: "VERY_AGGRESSIVE",
+        };
+
+        // Populate features.flow with full data for detectors
         (features as any).flow = {
+          // Core metrics (existing)
           sweepCount: flowContext.sweepCount,
           blockCount: flowContext.blockCount,
           unusualActivity: flowContext.largeTradePercentage > 30,
           flowScore: flowContext.institutionalScore,
           flowBias: flowContext.sentiment.toLowerCase() as "bullish" | "bearish" | "neutral",
           buyPressure: (flowContext.buyPremium / (flowContext.totalPremium || 1)) * 100,
+
+          // High Value - Institutional markers (NEW)
+          aggressiveness: aggressivenessMap[flowContext.aggressiveness] || "NORMAL",
+          putCallRatio: flowContext.putCallVolumeRatio,
+          largeTradePercentage: flowContext.largeTradePercentage,
+          avgTradeSize: flowContext.avgTradeSize,
+          splitCount: flowContext.splitCount,
+
+          // Trend Detection (NEW)
+          flowTrend,
+          sweepAcceleration: flowContext.sweepCount / Math.max(1, flowContext.tradeCount),
+
+          // Volume Context (NEW)
+          callVolume: flowContext.callVolume,
+          putVolume: flowContext.putVolume,
+          totalPremium: flowContext.totalPremium,
         };
         phase1Data.flowContext = flowContext;
       }

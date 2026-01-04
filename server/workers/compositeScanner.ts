@@ -385,7 +385,9 @@ async function fetchSymbolFeatures(
     } catch (err) {
       // Fallback: aggregate from 5m bars (12 x 5m = 60m)
       bars60m = aggregateBarsToTimeframe(bars5m, 12);
-      console.log(`[Composite Scanner] Aggregated ${bars60m.length} hourly bars from 5m for ${symbol}`);
+      console.log(
+        `[Composite Scanner] Aggregated ${bars60m.length} hourly bars from 5m for ${symbol}`
+      );
     }
 
     // Get latest bar from 5m (primary timeframe)
@@ -406,7 +408,12 @@ async function fetchSymbolFeatures(
     const vwapDistancePct60m = vwap60m > 0 ? ((latestBar.close - vwap60m) / vwap60m) * 100 : 0;
 
     // Helper to build timeframe context
-    const buildTfContext = (bars: Bar[], indicators: any, vwap: number, vwapDistancePct: number) => {
+    const buildTfContext = (
+      bars: Bar[],
+      indicators: any,
+      vwap: number,
+      vwapDistancePct: number
+    ) => {
       const latest = bars[bars.length - 1] || latestBar;
       const prev = bars.length > 1 ? bars[bars.length - 2] : latest;
       return {
@@ -490,59 +497,101 @@ function formatDiscordMessage(signal: CompositeSignal): any {
     .map(([factor, score]) => `• ${factor}: ${score.toFixed(0)}/100`)
     .join("\n");
 
+  // Format flow context (Phase 4 Enhancement)
+  const flow = signal.features?.flow;
+  let flowContextLine = "";
+  if (flow) {
+    const biasEmoji =
+      flow.flowBias === "bullish" ? "🟢" : flow.flowBias === "bearish" ? "🔴" : "⚪";
+    const biasLabel = flow.flowBias ? flow.flowBias.toUpperCase() : "NEUTRAL";
+    const sweepInfo = flow.sweepCount ? `${flow.sweepCount} sweeps` : "";
+    const scoreInfo = flow.flowScore ? `Score: ${flow.flowScore.toFixed(0)}/100` : "";
+    const trendInfo = flow.flowTrend ? `Trend: ${flow.flowTrend}` : "";
+    const pcRatio = flow.putCallRatio ? `P/C: ${flow.putCallRatio.toFixed(2)}` : "";
+
+    // Check flow alignment with trade direction
+    const isAligned =
+      (signal.direction === "LONG" && flow.flowBias === "bullish") ||
+      (signal.direction === "SHORT" && flow.flowBias === "bearish");
+    const alignmentStatus = isAligned
+      ? "✅ Flow Aligned"
+      : flow.flowBias === "neutral"
+        ? "⚪ Flow Neutral"
+        : "⚠️ Flow Opposing";
+
+    const parts = [`${biasEmoji} ${biasLabel}`, sweepInfo, scoreInfo, pcRatio, trendInfo].filter(
+      Boolean
+    );
+
+    flowContextLine = parts.join(" • ") + "\n" + alignmentStatus;
+  }
+
+  const fields = [
+    {
+      name: "Recommended Style",
+      value: signal.recommendedStyle.toUpperCase(),
+      inline: true,
+    },
+    {
+      name: "Entry",
+      value: `$${signal.entryPrice.toFixed(2)}`,
+      inline: true,
+    },
+    {
+      name: "Stop",
+      value: `$${signal.stopPrice.toFixed(2)}`,
+      inline: true,
+    },
+    {
+      name: "Target T1",
+      value: `$${signal.targets.T1.toFixed(2)}`,
+      inline: true,
+    },
+    {
+      name: "Target T2",
+      value: `$${signal.targets.T2.toFixed(2)}`,
+      inline: true,
+    },
+    {
+      name: "Target T3",
+      value: `$${signal.targets.T3.toFixed(2)}`,
+      inline: true,
+    },
+    {
+      name: "Risk/Reward",
+      value: `${signal.riskReward.toFixed(1)}:1`,
+      inline: true,
+    },
+    {
+      name: "Expires",
+      value: `<t:${Math.floor(signal.expiresAt.getTime() / 1000)}:R>`,
+      inline: true,
+    },
+  ];
+
+  // Add flow context field if available (Phase 4)
+  if (flowContextLine) {
+    fields.push({
+      name: "🌊 Flow Context",
+      value: flowContextLine,
+      inline: false,
+    });
+  }
+
+  // Add confluence factors
+  fields.push({
+    name: "Confluence Factors",
+    value: confluenceLines || "N/A",
+    inline: false,
+  });
+
   return {
     embeds: [
       {
         title: `${emoji} ${signal.symbol} - ${typeDisplay}`,
         description: `**${signal.direction}** Setup (Score: ${signal.baseScore.toFixed(0)}/100)`,
         color,
-        fields: [
-          {
-            name: "Recommended Style",
-            value: signal.recommendedStyle.toUpperCase(),
-            inline: true,
-          },
-          {
-            name: "Entry",
-            value: `$${signal.entryPrice.toFixed(2)}`,
-            inline: true,
-          },
-          {
-            name: "Stop",
-            value: `$${signal.stopPrice.toFixed(2)}`,
-            inline: true,
-          },
-          {
-            name: "Target T1",
-            value: `$${signal.targets.T1.toFixed(2)}`,
-            inline: true,
-          },
-          {
-            name: "Target T2",
-            value: `$${signal.targets.T2.toFixed(2)}`,
-            inline: true,
-          },
-          {
-            name: "Target T3",
-            value: `$${signal.targets.T3.toFixed(2)}`,
-            inline: true,
-          },
-          {
-            name: "Risk/Reward",
-            value: `${signal.riskReward.toFixed(1)}:1`,
-            inline: true,
-          },
-          {
-            name: "Expires",
-            value: `<t:${Math.floor(signal.expiresAt.getTime() / 1000)}:R>`,
-            inline: true,
-          },
-          {
-            name: "Confluence Factors",
-            value: confluenceLines || "N/A",
-            inline: false,
-          },
-        ],
+        fields,
         timestamp: new Date().toISOString(),
         footer: {
           text: `${signal.assetClass} • ${signal.detectorVersion}`,
@@ -914,7 +963,8 @@ function determineHealthStatus(): "healthy" | "degraded" | "unhealthy" {
 async function updateHeartbeat(signalsDetected: number): Promise<void> {
   try {
     const status = determineHealthStatus();
-    const errorRate = stats.totalScans > 0 ? (stats.totalErrors / stats.totalScans * 100).toFixed(1) : "0";
+    const errorRate =
+      stats.totalScans > 0 ? ((stats.totalErrors / stats.totalScans) * 100).toFixed(1) : "0";
 
     console.log(
       `[Composite Scanner] Heartbeat: status=${status}, signals=${signalsDetected}, errorRate=${errorRate}%`
