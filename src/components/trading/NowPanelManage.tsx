@@ -162,6 +162,7 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
         keyLevels={keyLevels}
         indicators={indicators}
         mtfTrend={mtfTrend}
+        strategySignals={strategySignals}
         candles={symbolData?.candles?.["1m"] ?? []}
         dailyCandles={symbolData?.candles?.["1D"] ?? []}
         symbolData={symbolData}
@@ -567,6 +568,7 @@ interface LevelsATRPanelProps {
   keyLevels: any;
   indicators: any;
   mtfTrend: any;
+  strategySignals: any[];
   candles: Candle[];
   dailyCandles: Candle[];
   symbolData?: SymbolData;
@@ -614,6 +616,7 @@ function LevelsATRPanel({
   keyLevels,
   indicators,
   mtfTrend,
+  strategySignals,
   candles,
   dailyCandles,
   symbolData,
