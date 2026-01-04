@@ -166,39 +166,39 @@ async function sendDiscordNotification(
           color: success ? 0x00ff00 : 0xff0000,
           fields: success
             ? [
-                {
-                  name: "Win Rate",
-                  value: `${(details.winRate * 100).toFixed(1)}%`,
-                  inline: true,
-                },
-                {
-                  name: "Profit Factor",
-                  value: details.profitFactor.toFixed(2),
-                  inline: true,
-                },
-                {
-                  name: "Total Trades",
-                  value: details.totalTrades.toString(),
-                  inline: true,
-                },
-                {
-                  name: "Symbols Tested",
-                  value: details.symbols?.join(", ") || "N/A",
-                  inline: false,
-                },
-                {
-                  name: "Next Optimization",
-                  value: "Next Sunday at 6pm ET",
-                  inline: false,
-                },
-              ]
+              {
+                name: "Win Rate",
+                value: `${(details.winRate * 100).toFixed(1)}%`,
+                inline: true,
+              },
+              {
+                name: "Profit Factor",
+                value: details.profitFactor.toFixed(2),
+                inline: true,
+              },
+              {
+                name: "Total Trades",
+                value: details.totalTrades.toString(),
+                inline: true,
+              },
+              {
+                name: "Symbols Tested",
+                value: details.symbols?.join(", ") || "N/A",
+                inline: false,
+              },
+              {
+                name: "Next Optimization",
+                value: "Next Sunday at 6pm ET",
+                inline: false,
+              },
+            ]
             : [
-                {
-                  name: "Error",
-                  value: details.error || "Unknown error",
-                  inline: false,
-                },
-              ],
+              {
+                name: "Error",
+                value: details.error || "Unknown error",
+                inline: false,
+              },
+            ],
           timestamp: new Date().toISOString(),
           footer: {
             text: "Scheduled Weekly Optimizer",
@@ -271,7 +271,7 @@ async function runOptimization(): Promise<void> {
     };
 
     // Run optimization
-    const optimizer = new ConfluenceOptimizer(backtestConfig, gaConfig);
+    const optimizer = new ConfluenceOptimizer(gaConfig);
     const result = await optimizer.optimize();
 
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
