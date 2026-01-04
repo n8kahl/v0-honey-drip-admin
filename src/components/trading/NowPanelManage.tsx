@@ -156,6 +156,8 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
 
       {/* Levels / ATR / Positioning - Middle ~40% */}
       <LevelsATRPanel
+        trade={trade}
+        liveModel={liveModel}
         currentPrice={liveModel.underlyingPrice}
         keyLevels={keyLevels}
         indicators={indicators}
@@ -559,6 +561,8 @@ function GreeksStrip({ liveModel }: GreeksStripProps) {
 // ============================================================================
 
 interface LevelsATRPanelProps {
+  trade: Trade;
+  liveModel: NonNullable<ReturnType<typeof useActiveTradeLiveModel>>;
   currentPrice: number | null;
   keyLevels: any;
   indicators: any;
@@ -604,6 +608,8 @@ function getSessionRange(
 }
 
 function LevelsATRPanel({
+  trade,
+  liveModel,
   currentPrice,
   keyLevels,
   indicators,
