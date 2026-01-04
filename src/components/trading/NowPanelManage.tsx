@@ -46,8 +46,10 @@ import {
   Zap,
   Shield,
   RefreshCw,
+  Bell,
 } from "lucide-react";
 import { FlowDashboard } from "../hd/flow";
+import { HDConfluenceDetailPanel } from "../hd/dashboard/HDConfluenceDetailPanel";
 
 // ============================================================================
 // Helper Functions
