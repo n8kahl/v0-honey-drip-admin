@@ -8,13 +8,14 @@
 
 **Recent Updates**:
 
-- ✅ **Phase 1 Confluence Enhancements**: Adaptive thresholds, IV gating, confidence scoring
-- ✅ **Adaptive Thresholds**: Time-of-day, VIX-level, and market regime aware signal filtering
-- ✅ **IV Percentile Gating**: Prevents buying when IV elevated, selling when IV cheap
-- ✅ **Data Confidence Scoring**: Adjusts signal scores based on data availability
-- ✅ **Signal Performance Tracking**: Database infrastructure for win rate analytics
-- ✅ **Chart Initialization Fix**: Callback ref pattern ensures charts initialize on first symbol selection
-- ✅ **Chart Zoom Levels**: Timeframe-specific zoom (1m: 30 bars, 5m: 20 bars, others: 100 bars)
+- ✅ **Phase 3 Quant Enhancements**: Historical options backtesting, SMART flow detection, Genetic GA Optimizer
+- ✅ **Historical Options Provider**: Exact historical pricing (OHLCV) and contract lookup via Massive.com
+- ✅ **Options Trade Listener**: Real-time "Smart Money" sweep/block detection (> $100k) via WebSocket
+- ✅ **Genetic Confluence Optimizer**: Automated GA parameter tuning for strategy expectancy
+- ✅ **IV-Adjusted Stops**: Dynamic stop-loss buffers based on volatility regimes (IV Percentile)
+- ✅ **Key Levels UI Upgrade**: Structure detection (SMC), liquidity pools, and smart collision labels
+- ✅ **Chart Structure & FVGs**: Visual detection of order blocks, FVGs, and swing milestones
+- ✅ **Bug Fixes**: Resolved critical ReferenceErrors in Live Cockpit (NowPanelManage)
 - ✅ **Phase 1 Data Optimizations**: 25x faster weekend analysis, 90% API cost reduction
 - ✅ **Smart Cache TTL**: Historical data cached 7 days vs 5 seconds
 - ✅ **Database Persistence**: New `historical_bars` table for 10-50x faster backtests
@@ -81,6 +82,38 @@ pnpm start:prewarm    # Run weekend pre-warm worker (manual trigger)
 ---
 
 ## 📝 Recent Session Changes
+
+### Session: January 4, 2026 - Phase 3 & Level enhancements
+
+**Branch**: `main`
+
+#### Phase 3: Quant & Data-Driven Enhancements
+
+1. **Implemented Historical Options Backtesting**
+   - Created `HistoricalOptionsProvider.ts` for server-side historical price fetching.
+   - Upgraded `BacktestEngine.ts` to simulate realistic fills using actual historical option prices.
+2. **Real-time Flow Detection**
+   - Created `OptionsTradeListener.ts` to ingest institutional flow (Sweeps/Blocks > $100k) directly into Supabase.
+3. **Genetic Algorithm Optimizer**
+   - Created `ConfluenceOptimizer.ts` to tune strategy parameters for maximum expectancy.
+4. **Volatility-Adjusted Risk**
+   - Updated `LevelAwareStops.ts` with IV Percentile-based stop widening/tightening.
+
+#### UI & Key Levels Upgrade
+
+1. **Structure Detection Engine**
+   - Implemented `structureLevels.ts` for SMC detection (Swing highs/lows, Order Blocks, FVGs).
+2. **Enhanced Key Levels Display**
+   - Updated `HDKeyLevelsPanel.tsx` and `HDKeyLevelChart.tsx` with collision prevention and visual hierarchy.
+   - Integrated session levels (PDH, PDL, ORB) with proper confluence highlighting.
+
+#### Critical Bug Fixes (NowPanelManage.tsx)
+
+1. **Fixed ReferenceErrors in Live Cockpit**
+   - Resolved `HDConfluenceDetailPanel is not defined` (Missing Import).
+   - Resolved `trade is not defined` in `LevelsATRPanel` (Missing Prop).
+   - Resolved `strategySignals is not defined` in `LevelsATRPanel` (Missing Prop).
+   - Added missing `Bell` icon import.
 
 ### Session: December 26, 2025 - P&L Fix Completion (Migration 027)
 
