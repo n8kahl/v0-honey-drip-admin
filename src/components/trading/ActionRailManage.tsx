@@ -258,28 +258,68 @@ function PositionTile({
           </span>
         </div>
 
-        {/* Realized P&L */}
-        <div className="mt-2 pt-2 border-t border-[var(--border-hairline)] flex items-center justify-between">
-          <span className="text-[10px] text-[var(--text-faint)] uppercase">Realized</span>
-          <span className={cn("text-xs font-medium tabular-nums", realizedStyle.className)}>
-            {fmtPct(realizedPnL.realizedPercent)} ({realizedPnL.realizedDollars >= 0 ? "+" : "-"}
-            {fmtPrice(Math.abs(realizedPnL.realizedDollars))})
-          </span>
-        </div>
+        {/* Realized P&L - only show if trimmed */}
+        {realizedPnL.trimmedPercent > 0 && (
+          <div className="mt-2 pt-2 border-t border-[var(--border-hairline)] flex items-center justify-between">
+            <span className="text-[10px] text-[var(--text-faint)] uppercase">
+              Realized ({Math.round(realizedPnL.trimmedPercent)}% trimmed)
+            </span>
+            <span className={cn("text-xs font-medium tabular-nums", realizedStyle.className)}>
+              {fmtPct(realizedPnL.realizedPercent)} ({realizedPnL.realizedDollars >= 0 ? "+" : "-"}
+              {fmtPrice(Math.abs(realizedPnL.realizedDollars))})
+            </span>
+          </div>
+        )}
 
-        {/* Remaining Position */}
+        {/* Underlying Price */}
+        {liveModel.underlyingPrice !== null && (
+          <div className="mt-2 pt-2 border-t border-[var(--border-hairline)] flex items-center justify-between">
+            <span className="text-[10px] text-[var(--text-faint)] uppercase">{trade.ticker}</span>
+            <span className="text-xs font-medium tabular-nums text-[var(--text-high)]">
+              {fmtPrice(liveModel.underlyingPrice)}
+              {liveModel.underlyingChange !== 0 && (
+                <span
+                  className={cn(
+                    "ml-1.5",
+                    liveModel.underlyingChange >= 0
+                      ? "text-[var(--accent-positive)]"
+                      : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  {liveModel.underlyingChange >= 0 ? "+" : ""}
+                  {liveModel.underlyingChangePercent.toFixed(2)}%
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* Progress to Target Price */}
         <div className="mt-2 pt-2 border-t border-[var(--border-hairline)]">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-[var(--text-faint)]">Remaining</span>
-            <span className="text-[var(--text-high)] font-medium">
-              {Math.round(realizedPnL.remainingPercent)}%
+            <span className="text-[var(--text-faint)]">Progress to TP</span>
+            <span className="text-[var(--text-high)] font-medium tabular-nums">
+              {Math.round(liveModel.progressToTarget)}%
             </span>
           </div>
           <div className="mt-1 h-1.5 bg-[var(--surface-3)] rounded-full overflow-hidden">
             <div
-              className="h-full bg-[var(--brand-primary)] rounded-full"
-              style={{ width: `${realizedPnL.remainingPercent}%` }}
+              className={cn(
+                "h-full rounded-full transition-all",
+                liveModel.progressToTarget >= 100
+                  ? "bg-[var(--accent-positive)]"
+                  : liveModel.progressToTarget >= 50
+                    ? "bg-[var(--brand-primary)]"
+                    : liveModel.progressToTarget >= 0
+                      ? "bg-[var(--text-muted)]"
+                      : "bg-[var(--accent-negative)]"
+              )}
+              style={{ width: `${Math.min(100, Math.max(0, liveModel.progressToTarget))}%` }}
             />
+          </div>
+          <div className="flex justify-between text-[9px] text-[var(--text-faint)] mt-0.5">
+            <span>SL {fmtPrice(liveModel.stopLoss)}</span>
+            <span>TP {fmtPrice(liveModel.targetPrice)}</span>
           </div>
         </div>
       </div>
