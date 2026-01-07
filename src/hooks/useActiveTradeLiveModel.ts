@@ -290,22 +290,20 @@ function buildExpiredTradeModel(trade: Trade, contract: any): LiveTradeModel {
 // ============================================================================
 
 export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | null {
-  // Early return if no trade at all
-  if (!trade) {
-    return null;
-  }
+  // IMPORTANT: All hooks must be called unconditionally (React Rules of Hooks)
+  // We handle null trade by using safe defaults and returning null at the end
 
   // Handle missing contract gracefully - create a minimal contract from trade data
   // This ensures P&L can still be calculated using database-stored prices
-  const contract = trade.contract || {
+  const contract = trade?.contract || {
     id: null,
-    ticker: trade.ticker,
+    ticker: trade?.ticker || "",
     strike: 0,
     expiry: null,
     type: "C" as const,
-    bid: trade.entry_bid || 0,
-    ask: trade.entry_ask || 0,
-    mid: trade.entry_mid || trade.entryPrice || 0,
+    bid: trade?.entry_bid || 0,
+    ask: trade?.entry_ask || 0,
+    mid: trade?.entry_mid || trade?.entryPrice || 0,
     delta: 0,
     gamma: 0,
     theta: 0,
@@ -325,10 +323,10 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     contract.id || contract.ticker || contract.symbol || null
   );
   const entryPrice =
-    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || contract.mid || 0;
-  const quantity = trade.quantity || 1;
+    trade?.entryPrice || getEntryPriceFromUpdates(trade?.updates || []) || contract.mid || 0;
+  const quantity = trade?.quantity || 1;
 
-  // Get live option price via existing hook
+  // Get live option price via existing hook (always called, even if trade is null)
   const {
     currentPrice: optionPrice,
     bid: optionBid,
@@ -338,9 +336,9 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     asOf: optionAsOf,
     source: optionSource,
     isStale: optionIsStale,
-  } = useActiveTradePnL(trade.id, contractId, entryPrice, quantity);
+  } = useActiveTradePnL(trade?.id || null, contractId, entryPrice, quantity);
 
-  // Get live Greeks
+  // Get live Greeks (always called)
   const liveGreeks = useLiveGreeks(
     contractId,
     {
@@ -353,30 +351,32 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     30000 // 30 second poll
   );
 
-  // Get underlying price via Tradier (useQuotes)
-  const { quotes: underlyingQuotes } = useQuotes([trade.ticker]);
-  const underlyingQuote = underlyingQuotes?.get(trade.ticker);
+  // Get underlying price via Tradier (always called - useQuotes handles empty arrays)
+  const ticker = trade?.ticker || "";
+  const { quotes: underlyingQuotes } = useQuotes(ticker ? [ticker] : []);
+  const underlyingQuote = ticker ? underlyingQuotes?.get(ticker) : undefined;
 
   // Diagnostic logging for missing underlying quotes
   useEffect(() => {
+    if (!ticker) return; // Skip logging if no trade
     if (!underlyingQuote && underlyingQuotes.size > 0) {
       console.warn(
-        `[useActiveTradeLiveModel] No underlying quote for ${trade.ticker}. Available quotes:`,
+        `[useActiveTradeLiveModel] No underlying quote for ${ticker}. Available quotes:`,
         Array.from(underlyingQuotes.keys())
       );
     } else if (!underlyingQuote) {
       console.warn(
-        `[useActiveTradeLiveModel] No underlying quote for ${trade.ticker} and quotes map is empty`
+        `[useActiveTradeLiveModel] No underlying quote for ${ticker} and quotes map is empty`
       );
     } else {
       const asOfDate = new Date(underlyingQuote.asOf);
       const asOfStr = isNaN(asOfDate.getTime()) ? "invalid" : asOfDate.toISOString();
-      console.log(`[useActiveTradeLiveModel] Underlying quote for ${trade.ticker}:`, {
+      console.log(`[useActiveTradeLiveModel] Underlying quote for ${ticker}:`, {
         last: underlyingQuote.last,
         asOf: asOfStr,
       });
     }
-  }, [trade.ticker, underlyingQuote, underlyingQuotes]);
+  }, [ticker, underlyingQuote, underlyingQuotes]);
 
   // Time tracking
   const [timeState, setTimeState] = useState({
@@ -386,13 +386,14 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   });
 
   // Update time every minute
+  const tradeEntryTime = trade?.entryTime;
   useEffect(() => {
     const updateTime = () => {
       const now = Date.now();
       const closeTime = getMarketCloseTime();
       const timeToClose = Math.max(0, (closeTime.getTime() - now) / 60000);
 
-      const entryTime = trade.entryTime ? new Date(trade.entryTime).getTime() : now;
+      const entryTime = tradeEntryTime ? new Date(tradeEntryTime).getTime() : now;
       const holdTime = (now - entryTime) / 60000;
 
       setTimeState({
@@ -405,18 +406,23 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     updateTime();
     const interval = setInterval(updateTime, 60000);
     return () => clearInterval(interval);
-  }, [trade.entryTime]);
+  }, [tradeEntryTime]);
 
   // Fetch market close price when needed (NEW - for P&L accuracy)
   const updateTrade = useTradeStore((state) => state.updateTrade);
+  const tradeId = trade?.id;
+  const tradeLastOptionPriceAt = trade?.last_option_price_at;
   useEffect(() => {
+    // Skip if no trade
+    if (!trade || !tradeId) return;
+
     const shouldFetchClosing =
       !timeState.marketOpen &&
       (!optionBid || optionBid === 0) &&
       (!optionAsk || optionAsk === 0) &&
       !isExpired &&
-      (!trade.last_option_price_at ||
-        Date.now() - new Date(trade.last_option_price_at).getTime() > 10 * 60 * 1000);
+      (!tradeLastOptionPriceAt ||
+        Date.now() - new Date(tradeLastOptionPriceAt).getTime() > 10 * 60 * 1000);
 
     if (!shouldFetchClosing || !contractId) return;
 
@@ -446,7 +452,7 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
             `[useActiveTradeLiveModel] Fetched closing price for ${contractId}: $${closingMid.toFixed(2)}`
           );
 
-          await updateTrade(trade.id, {
+          await updateTrade(tradeId, {
             last_option_price: closingMid,
             last_option_price_at: new Date(),
             price_data_source: "closing",
@@ -463,18 +469,24 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       clearTimeout(timer);
     };
   }, [
-    trade.id,
+    trade,
+    tradeId,
     timeState.marketOpen,
     optionBid,
     optionAsk,
     isExpired,
     contractId,
-    trade.last_option_price_at,
+    tradeLastOptionPriceAt,
     updateTrade,
   ]);
 
   // Build the live model
   return useMemo(() => {
+    // Return null if no trade (hooks must be called unconditionally, but useMemo can return null)
+    if (!trade) {
+      return null;
+    }
+
     // FIXED: Priority cascade for price - NEVER fall back to stale contract.bid/ask
     // For expired contracts: use last_option_price (contract no longer trades)
     // For active contracts:
