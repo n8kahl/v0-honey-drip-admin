@@ -141,6 +141,22 @@ export function NowPanelManage({ trade }: NowPanelManageProps) {
         isClosed={isClosed}
       />
 
+      {/* Expired Contract Warning Banner */}
+      {liveModel.isExpired && (
+        <div className="mx-4 my-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span className="text-sm font-medium text-amber-500">
+              Contract Expired - Manual Exit Required
+            </span>
+          </div>
+          <p className="text-xs text-amber-400/80 mt-1.5 ml-6">
+            This contract has expired. Click &quot;Full Exit&quot; in the action panel to close this
+            position and move it to history.
+          </p>
+        </div>
+      )}
+
       {/* Greeks Strip */}
       <GreeksStrip liveModel={liveModel} />
 

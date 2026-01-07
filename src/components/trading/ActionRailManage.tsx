@@ -566,60 +566,118 @@ function QuickActionsGrid({
   onTrailStop,
   onAdd,
 }: QuickActionsGridProps) {
+  // Check if contract has expired - disable all actions
+  const isExpired = liveModel.isExpired;
+
   // Check if SL can be moved to breakeven
   const entryPrice = liveModel.entryPrice || trade.entryPrice || trade.contract?.mid || 0;
   const currentPrice = liveModel.effectiveMid || trade.contract?.bid || 0;
-  const canMoveToBE = currentPrice > entryPrice;
+  const canMoveToBE = !isExpired && currentPrice > entryPrice;
+
+  // Common disabled styles
+  const disabledClass =
+    "bg-[var(--surface-2)]/50 border-[var(--border-hairline)]/50 cursor-not-allowed opacity-50";
+  const enabledClass =
+    "bg-[var(--surface-2)] border-[var(--border-hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--brand-primary)]/30";
 
   return (
     <div className="p-3 border-b border-[var(--border-hairline)]">
-      <div className="flex items-center gap-1.5 mb-2">
-        <Zap className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-        <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
-          Quick Actions
-        </span>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+          <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+            Quick Actions
+          </span>
+        </div>
+        {isExpired && (
+          <span className="text-[10px] text-amber-400/80 italic">Contract expired</span>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         {/* Trim 25% */}
         <button
-          onClick={() => onTrim(25)}
-          className="flex flex-col items-center justify-center p-2.5 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--brand-primary)]/30 transition-all btn-press"
+          onClick={() => !isExpired && onTrim(25)}
+          disabled={isExpired}
+          className={cn(
+            "flex flex-col items-center justify-center p-2.5 rounded border transition-all btn-press",
+            isExpired ? disabledClass : enabledClass
+          )}
+          title={isExpired ? "Cannot trim an expired contract" : "Trim 25% of position"}
         >
-          <Scissors className="w-4 h-4 text-[var(--brand-primary)] mb-1" />
+          <Scissors
+            className={cn(
+              "w-4 h-4 mb-1",
+              isExpired ? "text-[var(--text-muted)]/50" : "text-[var(--brand-primary)]"
+            )}
+          />
           <span className="text-xs font-medium text-[var(--text-high)]">Trim 25%</span>
         </button>
 
         {/* Trim 50% */}
         <button
-          onClick={() => onTrim(50)}
-          className="flex flex-col items-center justify-center p-2.5 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--brand-primary)]/30 transition-all btn-press"
+          onClick={() => !isExpired && onTrim(50)}
+          disabled={isExpired}
+          className={cn(
+            "flex flex-col items-center justify-center p-2.5 rounded border transition-all btn-press",
+            isExpired ? disabledClass : enabledClass
+          )}
+          title={isExpired ? "Cannot trim an expired contract" : "Trim 50% of position"}
         >
-          <Scissors className="w-4 h-4 text-[var(--brand-primary)] mb-1" />
+          <Scissors
+            className={cn(
+              "w-4 h-4 mb-1",
+              isExpired ? "text-[var(--text-muted)]/50" : "text-[var(--brand-primary)]"
+            )}
+          />
           <span className="text-xs font-medium text-[var(--text-high)]">Trim 50%</span>
         </button>
 
         {/* Move SL to BE */}
         <button
-          onClick={onMoveSLToBreakeven}
+          onClick={canMoveToBE ? onMoveSLToBreakeven : undefined}
           disabled={!canMoveToBE}
           className={cn(
             "flex flex-col items-center justify-center p-2.5 rounded border transition-all btn-press",
             canMoveToBE
               ? "bg-[var(--surface-2)] border-[var(--border-hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--accent-positive)]/30"
-              : "bg-[var(--surface-2)]/50 border-[var(--border-hairline)]/50 cursor-not-allowed opacity-50"
+              : disabledClass
           )}
+          title={
+            isExpired
+              ? "Contract expired"
+              : !canMoveToBE
+                ? "Price must be above entry"
+                : "Move stop loss to breakeven"
+          }
         >
-          <Shield className="w-4 h-4 text-[var(--accent-positive)] mb-1" />
+          <Shield
+            className={cn(
+              "w-4 h-4 mb-1",
+              canMoveToBE ? "text-[var(--accent-positive)]" : "text-[var(--text-muted)]/50"
+            )}
+          />
           <span className="text-xs font-medium text-[var(--text-high)]">SL → BE</span>
         </button>
 
         {/* Trail Stop */}
         <button
-          onClick={onTrailStop}
-          className="flex flex-col items-center justify-center p-2.5 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--text-muted)]/30 transition-all btn-press"
+          onClick={!isExpired ? onTrailStop : undefined}
+          disabled={isExpired}
+          className={cn(
+            "flex flex-col items-center justify-center p-2.5 rounded border transition-all btn-press",
+            isExpired
+              ? disabledClass
+              : "bg-[var(--surface-2)] border-[var(--border-hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--text-muted)]/30"
+          )}
+          title={isExpired ? "Cannot trail stop on expired contract" : "Trail stop loss"}
         >
-          <TrendingUp className="w-4 h-4 text-[var(--text-muted)] mb-1" />
+          <TrendingUp
+            className={cn(
+              "w-4 h-4 mb-1",
+              isExpired ? "text-[var(--text-muted)]/50" : "text-[var(--text-muted)]"
+            )}
+          />
           <span className="text-xs font-medium text-[var(--text-high)]">Trail Stop</span>
         </button>
       </div>

@@ -89,6 +89,9 @@ export interface LiveTradeModel {
   targetPrice: number;
   stopLoss: number;
   progressToTarget: number; // 0-100%
+
+  // Contract status (NEW - for expired contract handling)
+  isExpired: boolean; // True if contract has passed expiration date
 }
 
 // Staleness thresholds
@@ -314,10 +317,10 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   const expiryDate = contract.expiry ? new Date(contract.expiry) : null;
   const isExpired = expiryDate ? expiryDate < new Date() : false;
 
-  // If expired, return static model with contract snapshot prices
-  if (isExpired) {
-    return buildExpiredTradeModel(trade, contract);
-  }
+  // NOTE: Don't return early for expired contracts!
+  // We still want to fetch underlying price (it's still live even if contract expired)
+  // The useMemo below handles expired-specific logic
+
   const contractId = normalizeOptionTicker(
     contract.id || contract.ticker || contract.symbol || null
   );
@@ -473,6 +476,8 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
   // Build the live model
   return useMemo(() => {
     // FIXED: Priority cascade for price - NEVER fall back to stale contract.bid/ask
+    // For expired contracts: use last_option_price (contract no longer trades)
+    // For active contracts:
     // 1. Live streaming (optionBid/Ask from WebSocket/REST)
     // 2. Database last_option_price (most recent known)
     // 3. Last resort: entry_price (shows 0% P&L but at least correct)
@@ -483,8 +488,19 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     let priceSource: "websocket" | "rest" | "closing" | "snapshot" = optionSource;
     let priceAsOf = optionAsOf;
 
+    // For EXPIRED contracts: use last known price (contract no longer trades)
+    if (isExpired) {
+      effectiveMid =
+        trade.last_option_price || trade.exitPrice || contract.mid || contract.last || 0;
+      priceSource = "snapshot";
+      priceAsOf = trade.last_option_price_at
+        ? new Date(trade.last_option_price_at).getTime()
+        : Date.now();
+      bid = 0; // No active market for expired contract
+      ask = 0;
+    }
     // Step 1: Try live streaming data (highest priority)
-    if (optionBid > 0 && optionAsk > 0) {
+    else if (optionBid > 0 && optionAsk > 0) {
       bid = optionBid;
       ask = optionAsk;
       effectiveMid = roundPrice(bid + (ask - bid) / 2);
@@ -495,7 +511,9 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     else if (trade.last_option_price && trade.last_option_price > 0) {
       effectiveMid = trade.last_option_price;
       priceSource = (trade.price_data_source as any) || "snapshot";
-      priceAsOf = trade.last_option_price_at ? trade.last_option_price_at.getTime() : Date.now();
+      priceAsOf = trade.last_option_price_at
+        ? new Date(trade.last_option_price_at).getTime()
+        : Date.now();
       bid = trade.entry_bid || 0; // Use entry snapshot for spread display
       ask = trade.entry_ask || 0;
     }
@@ -503,7 +521,7 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     else {
       effectiveMid = entryPrice;
       priceSource = "snapshot";
-      priceAsOf = trade.entry_timestamp ? trade.entry_timestamp.getTime() : Date.now();
+      priceAsOf = trade.entry_timestamp ? new Date(trade.entry_timestamp).getTime() : Date.now();
       bid = trade.entry_bid || 0;
       ask = trade.entry_ask || 0;
     }
@@ -521,15 +539,22 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
         ? (effectiveMid - entryPrice) / (entryPrice - stopLoss)
         : null;
 
-    // Target progress
+    // Target progress - calculate where price is between SL (0%) and TP (100%)
     const targetPrice = trade.targetPrice || entryPrice * 1.2; // Default 20% if not set
-    const progressToTarget =
-      entryPrice > 0 && targetPrice > entryPrice
-        ? Math.min(
-            100,
-            Math.max(0, ((effectiveMid - entryPrice) / (targetPrice - entryPrice)) * 100)
-          )
-        : 0;
+    let progressToTarget = 0;
+
+    // Calculate progress using the full SL-to-TP range
+    // SL = 0%, Entry = somewhere in middle, TP = 100%
+    if (stopLoss > 0 && targetPrice > stopLoss) {
+      const range = targetPrice - stopLoss;
+      progressToTarget = Math.min(100, Math.max(0, ((effectiveMid - stopLoss) / range) * 100));
+    } else if (entryPrice > 0 && targetPrice > entryPrice) {
+      // Fallback to entry-based calculation if no stop loss
+      progressToTarget = Math.min(
+        100,
+        Math.max(0, ((effectiveMid - entryPrice) / (targetPrice - entryPrice)) * 100)
+      );
+    }
 
     // Underlying data with fallback:
     // 1. Live quote (best) - shows current price
@@ -627,18 +652,24 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       priceSource,
       priceAsOf,
       priceAge: Date.now() - priceAsOf,
-      priceIsStale: Date.now() - priceAsOf > 30000,
-      priceLabel: getPriceLabel(priceSource, priceAsOf, timeState.marketOpen),
+      priceIsStale: isExpired ? false : Date.now() - priceAsOf > 30000, // Expired = final, not stale
+      priceLabel: isExpired
+        ? "Expired"
+        : getPriceLabel(priceSource, priceAsOf, timeState.marketOpen),
 
       // For display
       entryPrice: roundPrice(entryPrice),
       targetPrice: roundPrice(targetPrice),
       stopLoss: roundPrice(stopLoss),
       progressToTarget: roundPrice(progressToTarget),
+
+      // Contract status
+      isExpired,
     };
   }, [
     trade,
     contract,
+    isExpired,
     optionPrice,
     optionBid,
     optionAsk,
