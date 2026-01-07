@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Drawer } from "vaul";
-import { Trade } from "../../../types";
+import { Trade, AlertType } from "../../../types";
 import { cn, formatPrice } from "../../../lib/utils";
 import {
   TrendingUp,
@@ -7,25 +8,43 @@ import {
   Target,
   Shield,
   ChevronDown,
+  ChevronRight,
   Activity,
   Layers,
   Zap,
   Wifi,
   WifiOff,
+  Scissors,
+  DollarSign,
+  Clock,
 } from "lucide-react";
-import { useOffHoursData, type KeyLevel } from "../../../hooks/useOffHoursData";
 import { useSymbolData } from "../../../stores/marketDataStore";
-import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 import { useKeyLevels } from "../../../hooks/useKeyLevels";
+import useActiveTradeLiveModel from "../../../hooks/useActiveTradeLiveModel";
+import { Button } from "../../ui/button";
 
 interface MobileTradeDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trade: Trade | null;
+  onAction?: (
+    alertType: AlertType,
+    alertOptions?: { updateKind?: string; trimPercent?: number }
+  ) => void;
 }
 
-export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTradeDetailSheetProps) {
+export function MobileTradeDetailSheet({
+  open,
+  onOpenChange,
+  trade,
+  onAction,
+}: MobileTradeDetailSheetProps) {
+  // Collapsible section states
+  const [showKeyLevels, setShowKeyLevels] = useState(false);
+  const [showGreeks, setShowGreeks] = useState(false);
+  const [showConfluence, setShowConfluence] = useState(false);
+
   // Get key levels from useKeyLevels (enriched with SMC/Options Flow)
   const { keyLevels } = useKeyLevels(trade?.ticker || "");
 
@@ -33,33 +52,21 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
   const symbolData = useSymbolData(trade?.ticker || "");
   const liveConfluence = symbolData?.confluence;
 
-  // Get LIVE price data via WebSocket/REST transport (matches desktop pattern)
-  const contract = trade?.contract;
-  const entryPrice =
-    trade?.entryPrice || getEntryPriceFromUpdates(trade?.updates || []) || contract?.mid || 0;
-  const contractTicker = contract?.id || contract?.ticker || contract?.symbol || null;
-  const {
-    pnlPercent: livePnlPercent,
-    currentPrice: liveCurrentPrice,
-    source,
-    asOf,
-  } = useActiveTradePnL(trade?.id || null, contractTicker, entryPrice);
+  // Get FULL live model (includes progress, R-multiple, underlying, Greeks, etc.)
+  const liveModel = useActiveTradeLiveModel(trade);
 
-  if (!trade) return null;
+  if (!trade || !liveModel) return null;
 
-  // Use live data if available, fallback to stale trade data
-  const currentPrice =
-    liveCurrentPrice > 0 ? liveCurrentPrice : trade.currentPrice || contract?.mid || 0;
-  const pnlPercent =
-    liveCurrentPrice > 0
-      ? livePnlPercent
-      : entryPrice > 0
-        ? ((currentPrice - entryPrice) / entryPrice) * 100
-        : 0;
+  const contract = trade.contract;
+  const entryPrice = liveModel.entryPrice;
+  const currentPrice = liveModel.effectiveMid;
+  const pnlPercent = liveModel.pnlPercent;
+  const pnlDollars = liveModel.pnlDollars;
   const isPositive = pnlPercent >= 0;
 
-  // Data freshness check (stale if >10s old)
-  const isStale = Date.now() - asOf > 10000;
+  // Data freshness
+  const isStale = liveModel.priceIsStale;
+  const source = liveModel.optionSource;
 
   // Calculate DTE
   const dte = contract?.expiry
@@ -177,34 +184,44 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
 
   const coachingMessage = getCoachingMessage();
 
-  // Get nearest resistance and support from key levels
+  // Get nearest resistance and support from key levels (BUG FIX: was using undefined symbolLevels)
   const nearestResistance = levels
-    .filter((l) => l.type === "resistance" && l.price > (symbolLevels?.currentPrice || 0))
+    .filter((l) => l.type === "resistance" && l.price > (currentPrice || 0))
     .sort((a, b) => a.price - b.price)[0];
 
   const nearestSupport = levels
-    .filter((l) => l.type === "support" && l.price < (symbolLevels?.currentPrice || 0))
+    .filter((l) => l.type === "support" && l.price < (currentPrice || 0))
     .sort((a, b) => b.price - a.price)[0];
 
-  const pivotLevel = levels.find((l) => l.type === "pivot");
-  const vwapLevel = levels.find((l) => l.type === "vwap");
+  // Quick action button states
+  const isExpired = liveModel.isExpired;
+  const hasPosition = trade.state === "ENTERED";
+  const canMoveToBE = !isExpired && currentPrice > entryPrice;
+
+  // Progress bar color logic
+  const getProgressColor = () => {
+    if (liveModel.progressToTarget >= 100) return "bg-[var(--accent-positive)]";
+    if (liveModel.progressToTarget >= 50) return "bg-[var(--brand-primary)]";
+    if (liveModel.progressToTarget >= 0) return "bg-[var(--text-muted)]";
+    return "bg-[var(--accent-negative)]";
+  };
 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-black/60 z-50" />
-        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-base)] rounded-t-2xl max-h-[85vh]">
+        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-base)] rounded-t-2xl max-h-[90vh]">
           <div className="mx-auto w-12 h-1.5 bg-[var(--border-hairline)] rounded-full my-3" />
 
-          <div className="px-4 pb-safe overflow-y-auto max-h-[calc(85vh-24px)]">
+          <div className="px-4 pb-safe overflow-y-auto max-h-[calc(90vh-24px)]">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="text-lg font-semibold text-[var(--text-high)]">
                   {trade.ticker} ${contract?.strike}
                   {contract?.type}
                 </h2>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[var(--text-muted)] text-sm">
                     {dte !== null ? `${dte}DTE` : ""} · {trade.tradeType}
                   </span>
@@ -218,16 +235,127 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
                       <WifiOff className="w-3 h-3" /> Stale
                     </span>
                   ) : null}
+                  {/* Underlying price */}
+                  {liveModel.underlyingPrice !== null && (
+                    <span className="text-xs text-[var(--text-med)]">
+                      {trade.ticker}{" "}
+                      <span className="tabular-nums font-mono">
+                        ${liveModel.underlyingPrice.toFixed(2)}
+                      </span>
+                      {liveModel.underlyingChangePercent !== 0 && (
+                        <span
+                          className={cn(
+                            "ml-1",
+                            liveModel.underlyingChangePercent >= 0
+                              ? "text-[var(--accent-positive)]"
+                              : "text-[var(--accent-negative)]"
+                          )}
+                        >
+                          {liveModel.underlyingChangePercent >= 0 ? "+" : ""}
+                          {liveModel.underlyingChangePercent.toFixed(2)}%
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div
-                className={cn(
-                  "text-xl font-bold tabular-nums font-mono",
-                  isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+            </div>
+
+            {/* Expired Warning */}
+            {isExpired && (
+              <div className="mb-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-amber-500">
+                    ⚠️ Contract Expired - Manual Exit Required
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Progress to TP Bar */}
+            <div className="mb-4 bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] p-3">
+              <div className="flex items-center justify-between text-xs text-[var(--text-faint)] mb-1.5">
+                <span>Progress to TP</span>
+                <span className="tabular-nums font-medium text-[var(--text-high)]">
+                  {Math.round(liveModel.progressToTarget)}%
+                </span>
+              </div>
+              <div className="h-2.5 bg-[var(--surface-3)] rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-300",
+                    getProgressColor()
+                  )}
+                  style={{ width: `${Math.min(100, Math.max(0, liveModel.progressToTarget))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-[var(--text-faint)] mt-1">
+                <span>SL ${liveModel.stopLoss.toFixed(2)}</span>
+                <span>TP ${liveModel.targetPrice.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Large P&L Display */}
+            <div className="bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] p-4 mb-4">
+              <div className="text-center mb-3">
+                <div
+                  className={cn(
+                    "text-3xl font-bold tabular-nums font-mono",
+                    isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  {isPositive ? "+" : ""}
+                  {pnlPercent.toFixed(1)}%
+                </div>
+                <div
+                  className={cn(
+                    "text-lg tabular-nums font-mono",
+                    isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  ({pnlDollars >= 0 ? "+" : ""}${pnlDollars.toFixed(0)})
+                </div>
+              </div>
+
+              {/* Entry/Current Row */}
+              <div className="flex items-center justify-center gap-3 text-sm mb-2">
+                <span className="text-[var(--text-muted)]">Entry</span>
+                <span className="text-[var(--text-high)] tabular-nums font-mono">
+                  ${entryPrice.toFixed(2)}
+                </span>
+                <span className="text-[var(--text-faint)]">→</span>
+                <span
+                  className={cn(
+                    "tabular-nums font-mono",
+                    isPositive ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  ${currentPrice.toFixed(2)}
+                </span>
+              </div>
+
+              {/* R-Multiple + Hold Time */}
+              <div className="flex items-center justify-center gap-4 text-xs text-[var(--text-muted)]">
+                {liveModel.rMultiple !== null && (
+                  <div className="flex items-center gap-1">
+                    <span>R:</span>
+                    <span
+                      className={cn(
+                        "font-medium tabular-nums",
+                        liveModel.rMultiple >= 0
+                          ? "text-[var(--accent-positive)]"
+                          : "text-[var(--accent-negative)]"
+                      )}
+                    >
+                      {liveModel.rMultiple >= 0 ? "+" : ""}
+                      {liveModel.rMultiple.toFixed(2)}R
+                    </span>
+                  </div>
                 )}
-              >
-                {isPositive ? "+" : ""}
-                {pnlPercent.toFixed(1)}%
+                <div className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  <span className="tabular-nums">{liveModel.holdTimeFormatted}</span>
+                </div>
               </div>
             </div>
 
@@ -235,227 +363,144 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
             {coachingMessage && (
               <div
                 className={cn(
-                  "px-3 py-2 rounded-[var(--radius)] border text-xs font-medium mb-4",
+                  "px-3 py-2 rounded-lg border text-xs font-medium mb-4",
                   coachingMessage.includes("Strong")
                     ? "bg-[var(--accent-positive)]/10 border-[var(--accent-positive)]/30 text-[var(--accent-positive)]"
                     : "bg-amber-500/10 border-amber-500/30 text-amber-400"
                 )}
               >
-                {coachingMessage.includes("Strong") ? "\u2713" : "\u26A0"} {coachingMessage}
+                {coachingMessage.includes("Strong") ? "✓" : "⚠"} {coachingMessage}
               </div>
             )}
 
-            {/* Price Section */}
-            <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-4 mb-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-1">
-                    Entry
-                  </span>
-                  <span className="text-[var(--text-high)] text-lg tabular-nums font-mono">
-                    ${formatPrice(entryPrice)}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[var(--text-muted)] text-xs uppercase tracking-wide block mb-1">
-                    Current
-                  </span>
-                  <span className="text-[var(--text-high)] text-lg tabular-nums font-mono">
-                    ${formatPrice(currentPrice)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Confluence Section (matching desktop HDConfluenceDetailPanel) */}
-            <div className="mb-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2 px-1 flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
-                Confluence
-              </h3>
-              <div className="grid grid-cols-3 gap-2">
-                {/* Trend chip */}
-                <div className={cn("rounded-[var(--radius)] border p-2.5", getTrendBg())}>
-                  <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-1">
-                    Trend
-                  </div>
-                  <div className={cn("text-xs font-medium", getTrendText())}>{getTrendLabel()}</div>
-                </div>
-
-                {/* Volatility chip */}
-                <div className={cn("rounded-[var(--radius)] border p-2.5", getVolatilityBg())}>
-                  <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-1">
-                    Volatility
-                  </div>
-                  <div className={cn("text-xs font-medium", getVolatilityText())}>
-                    {getVolatilityLabel()}
-                  </div>
-                </div>
-
-                {/* Liquidity chip */}
-                <div className={cn("rounded-[var(--radius)] border p-2.5", getLiquidityBg())}>
-                  <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-1">
-                    Liquidity
-                  </div>
-                  <div className={cn("text-xs font-medium", getLiquidityText())}>
-                    {getLiquidityLabel()}
-                  </div>
-                </div>
-              </div>
-
-              {/* Compact Metrics Row (matching desktop) */}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] px-1 mt-3">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[var(--text-faint)]">IV</span>
-                  <span className={cn("font-medium tabular-nums", getVolatilityText())}>
-                    {volPercentile.toFixed(0)}%
-                  </span>
-                </div>
-                {contract?.volume !== undefined && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[var(--text-faint)]">Vol</span>
-                    <span className="text-[var(--text-med)] tabular-nums font-mono">
-                      {contract.volume.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-                {contract?.openInterest !== undefined && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[var(--text-faint)]">OI</span>
-                    <span className="text-[var(--text-med)] tabular-nums font-mono">
-                      {contract.openInterest.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-                {isAligned ? (
-                  <div className="flex items-center gap-1 text-[var(--accent-positive)]">
-                    <span>{"\u2713"}</span>
-                    <span>Aligned</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 text-amber-400">
-                    <span>{"\u26A0"}</span>
-                    <span>Not aligned</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* TP/SL Levels */}
-            {(trade.targetPrice || trade.stopLoss) && (
+            {/* Quick Actions Section */}
+            {hasPosition && onAction && (
               <div className="mb-4">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2 px-1">
-                  Trade Levels
+                  Quick Actions
                 </h3>
-                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] divide-y divide-[var(--border-hairline)]">
-                  {trade.targetPrice && (
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Target className="w-4 h-4 text-[var(--accent-positive)]" />
-                        <span className="text-[var(--text-med)]">Target</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[var(--text-high)] tabular-nums font-mono">
-                          ${formatPrice(trade.targetPrice)}
-                        </span>
-                        {entryPrice > 0 && (
-                          <span className="text-[var(--accent-positive)] text-xs ml-2">
-                            +{(((trade.targetPrice - entryPrice) / entryPrice) * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {trade.stopLoss && (
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-[var(--accent-negative)]" />
-                        <span className="text-[var(--text-med)]">Stop Loss</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[var(--text-high)] tabular-nums font-mono">
-                          ${formatPrice(trade.stopLoss)}
-                        </span>
-                        {entryPrice > 0 && (
-                          <span className="text-[var(--accent-negative)] text-xs ml-2">
-                            {(((trade.stopLoss - entryPrice) / entryPrice) * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isExpired}
+                    onClick={() => onAction("update", { updateKind: "trim", trimPercent: 25 })}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    Trim 25%
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isExpired}
+                    onClick={() => onAction("update", { updateKind: "trim", trimPercent: 50 })}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    Trim 50%
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canMoveToBE}
+                    onClick={() => onAction("update", { updateKind: "sl" })}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    SL → BE
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isExpired}
+                    onClick={() => onAction("trail-stop")}
+                    className="flex items-center gap-1.5"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    Trail Stop
+                  </Button>
                 </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full mt-2 flex items-center justify-center gap-1.5"
+                  onClick={() => onAction("exit")}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  Full Exit
+                </Button>
               </div>
             )}
 
-            {/* Key Levels Section */}
-            <div className="mb-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2 px-1 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
-                Key Levels
-              </h3>
-              {levels.length === 0 ? (
-                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-4">
-                  <p className="text-[var(--text-muted)] text-sm text-center">
+            {/* Collapsible Sections */}
+            <div className="space-y-2 mb-4">
+              {/* Key Levels Collapsible */}
+              <CollapsibleSection
+                title="Key Levels"
+                icon={<Layers className="w-3.5 h-3.5 text-[var(--brand-primary)]" />}
+                open={showKeyLevels}
+                onToggle={() => setShowKeyLevels(!showKeyLevels)}
+                badge={levels.length > 0 ? `${levels.length}` : undefined}
+              >
+                {levels.length === 0 ? (
+                  <p className="text-[var(--text-muted)] text-sm text-center py-2">
                     Add {trade.ticker} to watchlist for key levels
                   </p>
-                </div>
-              ) : (
-                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] divide-y divide-[var(--border-hairline)]">
-                  {levels
-                    .sort((a, b) => {
-                      // Show resistance near top, support near bottom
-                      return b.price - a.price;
-                    })
-                    .slice(0, 8)
-                    .map((level, idx) => (
-                      <KeyLevelRow
-                        key={`${level.source}-${idx}`}
-                        level={level}
-                        currentPrice={currentPrice}
-                        icon={
-                          level.type === "resistance" ? (
-                            <TrendingUp className="w-4 h-4 text-red-400" />
-                          ) : level.type === "support" ? (
-                            <TrendingDown className="w-4 h-4 text-green-400" />
-                          ) : (
-                            <Activity className="w-4 h-4 text-yellow-400" />
-                          )
-                        }
-                      />
-                    ))}
-                </div>
-              )}
-            </div>
+                ) : (
+                  <div className="divide-y divide-[var(--border-hairline)]">
+                    {levels
+                      .sort((a, b) => b.price - a.price)
+                      .slice(0, 8)
+                      .map((level, idx) => (
+                        <KeyLevelRow
+                          key={`${level.source}-${idx}`}
+                          level={level}
+                          currentPrice={currentPrice}
+                          icon={
+                            level.type === "resistance" ? (
+                              <TrendingUp className="w-4 h-4 text-red-400" />
+                            ) : level.type === "support" ? (
+                              <TrendingDown className="w-4 h-4 text-green-400" />
+                            ) : (
+                              <Activity className="w-4 h-4 text-yellow-400" />
+                            )
+                          }
+                        />
+                      ))}
+                  </div>
+                )}
+              </CollapsibleSection>
 
-            {/* Greeks (if available) */}
-            {contract && (contract.delta !== undefined || contract.theta !== undefined) && (
-              <div className="mb-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2 px-1">
-                  Greeks
-                </h3>
-                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] p-4">
-                  <div className="grid grid-cols-4 gap-2 text-center">
+              {/* Greeks Collapsible */}
+              {contract && (contract.delta !== undefined || contract.theta !== undefined) && (
+                <CollapsibleSection
+                  title="Greeks"
+                  icon={<Zap className="w-3.5 h-3.5 text-[var(--brand-primary)]" />}
+                  open={showGreeks}
+                  onToggle={() => setShowGreeks(!showGreeks)}
+                >
+                  <div className="grid grid-cols-4 gap-2 text-center py-2">
                     {contract.delta !== undefined && (
                       <div>
-                        <span className="text-[var(--text-muted)] text-xs block">Delta</span>
-                        <span className="text-[var(--text-high)] tabular-nums font-mono">
+                        <span className="text-[var(--text-muted)] text-xs block">Δ</span>
+                        <span className="text-[var(--text-high)] tabular-nums font-mono text-sm">
                           {(contract.delta * 100).toFixed(0)}
                         </span>
                       </div>
                     )}
                     {contract.gamma !== undefined && (
                       <div>
-                        <span className="text-[var(--text-muted)] text-xs block">Gamma</span>
-                        <span className="text-[var(--text-high)] tabular-nums font-mono">
+                        <span className="text-[var(--text-muted)] text-xs block">Γ</span>
+                        <span className="text-[var(--text-high)] tabular-nums font-mono text-sm">
                           {contract.gamma.toFixed(3)}
                         </span>
                       </div>
                     )}
                     {contract.theta !== undefined && (
                       <div>
-                        <span className="text-[var(--text-muted)] text-xs block">Theta</span>
-                        <span className="text-[var(--accent-negative)] tabular-nums font-mono">
+                        <span className="text-[var(--text-muted)] text-xs block">Θ</span>
+                        <span className="text-[var(--accent-negative)] tabular-nums font-mono text-sm">
                           {contract.theta.toFixed(2)}
                         </span>
                       </div>
@@ -463,29 +508,56 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
                     {contract.iv !== undefined && (
                       <div>
                         <span className="text-[var(--text-muted)] text-xs block">IV</span>
-                        <span className="text-[var(--text-high)] tabular-nums font-mono">
+                        <span className="text-[var(--text-high)] tabular-nums font-mono text-sm">
                           {(contract.iv * 100).toFixed(0)}%
                         </span>
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
-            )}
+                </CollapsibleSection>
+              )}
 
-            {/* Setup Type */}
-            {trade.setupType && (
-              <div className="mb-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2 px-1">
-                  Setup
-                </h3>
-                <div className="bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)] px-4 py-3">
-                  <span className="text-[var(--brand-primary)]">
-                    {trade.setupType.replace(/_/g, " ")}
-                  </span>
+              {/* Confluence Collapsible */}
+              <CollapsibleSection
+                title="Confluence"
+                icon={<Zap className="w-3.5 h-3.5 text-[var(--brand-primary)]" />}
+                open={showConfluence}
+                onToggle={() => setShowConfluence(!showConfluence)}
+                badge={isAligned ? "✓" : "⚠"}
+              >
+                <div className="grid grid-cols-3 gap-2 py-2">
+                  {/* Trend chip */}
+                  <div className={cn("rounded-lg border p-2", getTrendBg())}>
+                    <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-0.5">
+                      Trend
+                    </div>
+                    <div className={cn("text-xs font-medium", getTrendText())}>
+                      {getTrendLabel()}
+                    </div>
+                  </div>
+
+                  {/* Volatility chip */}
+                  <div className={cn("rounded-lg border p-2", getVolatilityBg())}>
+                    <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-0.5">
+                      Vol
+                    </div>
+                    <div className={cn("text-xs font-medium", getVolatilityText())}>
+                      {getVolatilityLabel()}
+                    </div>
+                  </div>
+
+                  {/* Liquidity chip */}
+                  <div className={cn("rounded-lg border p-2", getLiquidityBg())}>
+                    <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wide mb-0.5">
+                      Liq
+                    </div>
+                    <div className={cn("text-xs font-medium", getLiquidityText())}>
+                      {getLiquidityLabel()}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              </CollapsibleSection>
+            </div>
 
             {/* Close button */}
             <button
@@ -504,6 +576,51 @@ export function MobileTradeDetailSheet({ open, onOpenChange, trade }: MobileTrad
   );
 }
 
+// Collapsible Section Component
+function CollapsibleSection({
+  title,
+  icon,
+  open,
+  onToggle,
+  badge,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  badge?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+      >
+        <div className="flex items-center gap-1.5">
+          {icon}
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            {title}
+          </span>
+          {badge && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-faint)]">
+              {badge}
+            </span>
+          )}
+        </div>
+        <ChevronRight
+          className={cn(
+            "w-4 h-4 text-[var(--text-faint)] transition-transform",
+            open && "rotate-90"
+          )}
+        />
+      </button>
+      {open && <div className="px-3 pb-3 border-t border-[var(--border-hairline)]">{children}</div>}
+    </div>
+  );
+}
+
 // Key Level Row Component
 function KeyLevelRow({
   level,
@@ -518,7 +635,7 @@ function KeyLevelRow({
   const isAbove = level.price > currentPrice;
 
   return (
-    <div className="flex items-center justify-between px-4 py-2.5">
+    <div className="flex items-center justify-between py-2">
       <div className="flex items-center gap-2">
         {icon}
         <span className="text-[var(--text-med)] text-sm">{level.source}</span>
