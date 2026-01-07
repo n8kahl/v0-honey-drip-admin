@@ -475,7 +475,9 @@ export function useTradeStateMachine({
       comment?: string,
       priceOverrides?: PriceOverrides
     ) => {
-      const trade = currentTrade;
+      // CRITICAL: For WATCHING state, use previewTrade to ensure we load the displayed contract
+      // This fixes the bug where clicking "Load and Alert" on a new contract loads the wrong one
+      const trade = previewTrade || currentTrade;
 
       // GUARD: Prevent duplicate transitions
       if (isTransitioning) {
@@ -637,6 +639,7 @@ export function useTradeStateMachine({
     },
     [
       currentTrade,
+      previewTrade, // CRITICAL: Must include previewTrade since we use it for WATCHING state
       userId,
       toast,
       discord,
@@ -658,7 +661,10 @@ export function useTradeStateMachine({
       comment?: string,
       priceOverrides?: PriceOverrides
     ) => {
-      const trade = currentTrade;
+      // CRITICAL: For WATCHING state, use previewTrade to ensure we enter the displayed contract
+      // currentTrade may return a stale persisted trade if timing/state issues occur
+      // This fixes the bug where clicking "Enter and Alert" on a new contract enters the wrong one
+      const trade = tradeState === "WATCHING" ? previewTrade : currentTrade;
 
       // GUARD: Prevent duplicate transitions
       if (isTransitioning) {
@@ -955,6 +961,7 @@ export function useTradeStateMachine({
     },
     [
       currentTrade,
+      previewTrade, // CRITICAL: Must include previewTrade since we use it for WATCHING state
       userId,
       toast,
       discord,
