@@ -52,6 +52,9 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { FlowDashboard } from "../hd/flow";
+import { HDSignalContext } from "../hd/signals/HDSignalContext";
+import { useAuth } from "../../contexts/AuthContext";
+import { useCompositeSignals } from "../../hooks/useCompositeSignals";
 
 // ============================================================================
 // Helper Functions
@@ -109,6 +112,23 @@ export function NowPanelManage({
   const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
   // Use trade state for "closed" status (not trim %, since position sizes aren't tracked)
   const isClosed = trade.state === "EXITED";
+
+  // Get auth for composite signals
+  const { user } = useAuth();
+
+  // Get composite signals for this symbol
+  const { activeSignals } = useCompositeSignals({
+    userId: user?.id || "",
+    filters: { symbol: trade.ticker, status: ["ACTIVE"] },
+    autoSubscribe: true,
+    autoExpire: false, // Don't auto-expire, just filter
+  });
+
+  // Get the top signal for this symbol
+  const topSignal =
+    activeSignals.length > 0
+      ? activeSignals.reduce((prev, curr) => (curr.baseScore > prev.baseScore ? curr : prev))
+      : null;
 
   // Get additional context data
   const symbolData = useMarketDataStore((s) => s.symbols[trade.ticker]);
@@ -179,15 +199,24 @@ export function NowPanelManage({
       {/* Greeks Strip */}
       <GreeksStrip liveModel={liveModel} />
 
-      {/* Options Flow Dashboard */}
-      <div className="px-4 py-2">
-        <FlowDashboard
-          symbol={trade.ticker}
-          tradeDirection={trade.contract?.type === "C" ? "LONG" : "SHORT"}
-          defaultExpanded={false}
-          compact={false}
-        />
-      </div>
+      {/* Unified Signal Context Panel - Phase 6 */}
+      {topSignal && (
+        <div className="px-4 py-2">
+          <HDSignalContext signal={topSignal} compact={false} />
+        </div>
+      )}
+
+      {/* Options Flow Dashboard - Fallback when no signal */}
+      {!topSignal && (
+        <div className="px-4 py-2">
+          <FlowDashboard
+            symbol={trade.ticker}
+            tradeDirection={trade.contract?.type === "C" ? "LONG" : "SHORT"}
+            defaultExpanded={false}
+            compact={false}
+          />
+        </div>
+      )}
 
       {/* Levels / ATR / Positioning - Middle ~40% */}
       <LevelsATRPanel

@@ -37,6 +37,32 @@ export interface CompositeSignal {
   // Confluence Breakdown (for transparency)
   confluence: Record<string, number>; // e.g., { volume: 95, flow: 88, vwap: 75 }
 
+  // Full Confluence (all factors, not truncated) - Phase 6
+  allConfluenceFactors?: Record<string, number>;
+
+  // Context Boosts Applied - Phase 6
+  contextBoosts?: {
+    iv: number; // e.g., +0.08 for low IV boost
+    gamma: number; // e.g., +0.05 for long gamma boost
+    flowAlignment: number; // e.g., +0.10 for aligned flow
+    regime: number; // e.g., -0.05 for choppy regime penalty
+  };
+
+  // Flow Summary for Display - Phase 6
+  flowSummary?: {
+    sentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
+    alignment: "ALIGNED" | "OPPOSED" | "NEUTRAL";
+    recommendation: string; // 'FOLLOW_FLOW', 'FADE_FLOW', 'CONFIRM_FLOW', 'WAIT', 'NEUTRAL'
+    sweepCount: number;
+    blockCount: number;
+    institutionalScore: number; // 0-100
+    buyPressure: number; // 0-100 percentage
+    totalPremium: number; // Total premium in dollars
+  };
+
+  // Data Confidence Score - Phase 6
+  dataConfidence?: number; // 0-100
+
   // Entry/Risk Management
   entryPrice: number;
   stopPrice: number;
@@ -172,6 +198,10 @@ export function formatOpportunityType(type: OpportunityType): string {
     // Flow-Primary (Phase 3)
     sweep_momentum_long: "Sweep Momentum Long",
     sweep_momentum_short: "Sweep Momentum Short",
+
+    // Flow-Only (Phase 6)
+    institutional_flow_bullish: "Institutional Flow Alert (Bullish)",
+    institutional_flow_bearish: "Institutional Flow Alert (Bearish)",
   };
 
   return typeMap[type] || type;

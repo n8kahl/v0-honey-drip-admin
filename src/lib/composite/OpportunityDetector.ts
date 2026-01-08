@@ -74,7 +74,10 @@ export type OpportunityType =
   | "kcu_cloud_bounce"
   // Flow-Primary (Phase 3)
   | "sweep_momentum_long"
-  | "sweep_momentum_short";
+  | "sweep_momentum_short"
+  // Flow-Only (Phase 6)
+  | "institutional_flow_bullish"
+  | "institutional_flow_bearish";
 
 /**
  * Asset class classification
@@ -269,6 +272,10 @@ export function getExpectedFrequency(type: OpportunityType): string {
     // Flow-Primary (Phase 3)
     sweep_momentum_long: "2-5 signals/day (when flow active)",
     sweep_momentum_short: "2-5 signals/day (when flow active)",
+
+    // Flow-Only (Phase 6)
+    institutional_flow_bullish: "1-3 signals/day (strong flow only)",
+    institutional_flow_bearish: "1-3 signals/day (strong flow only)",
   };
 
   return frequencies[type] || "Unknown";

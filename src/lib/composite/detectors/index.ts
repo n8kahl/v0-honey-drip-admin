@@ -18,6 +18,12 @@ export { trendContinuationShortDetector } from "./trend-continuation-short.js";
 export { sweepMomentumLongDetector } from "./sweep-momentum-long.js";
 export { sweepMomentumShortDetector } from "./sweep-momentum-short.js";
 
+// Flow-Only Detectors (Phase 6 - No Technical Confirmation)
+export {
+  institutionalFlowBullishDetector,
+  institutionalFlowBearishDetector,
+} from "./institutional-flow-alert.js";
+
 // SPX/NDX-Specific Detectors
 export { gammaSqueezeBullishDetector } from "./gamma-squeeze-bullish.js";
 export { gammaSqueezeBearishDetector } from "./gamma-squeeze-bearish.js";
@@ -45,6 +51,10 @@ import { trendContinuationLongDetector } from "./trend-continuation-long.js";
 import { trendContinuationShortDetector } from "./trend-continuation-short.js";
 import { sweepMomentumLongDetector } from "./sweep-momentum-long.js";
 import { sweepMomentumShortDetector } from "./sweep-momentum-short.js";
+import {
+  institutionalFlowBullishDetector,
+  institutionalFlowBearishDetector,
+} from "./institutional-flow-alert.js";
 import { gammaSqueezeBullishDetector } from "./gamma-squeeze-bullish.js";
 import { gammaSqueezeBearishDetector } from "./gamma-squeeze-bearish.js";
 import { powerHourReversalBullishDetector } from "./power-hour-reversal-bullish.js";
@@ -72,6 +82,10 @@ export const ALL_DETECTORS: OpportunityDetector[] = [
   // Flow-Primary (2) - Phase 3 Smart Money Following
   sweepMomentumLongDetector,
   sweepMomentumShortDetector,
+
+  // Flow-Only (2) - Phase 6 No Technical Confirmation
+  institutionalFlowBullishDetector,
+  institutionalFlowBearishDetector,
 
   // SPX/NDX-Specific (11)
   gammaSqueezeBullishDetector,
@@ -241,6 +255,25 @@ export const BACKTESTABLE_DETECTORS_WITH_KCU: OpportunityDetector[] = [
 export const FLOW_PRIMARY_DETECTORS: OpportunityDetector[] = [
   sweepMomentumLongDetector,
   sweepMomentumShortDetector,
+];
+
+/**
+ * FLOW-ONLY DETECTORS (Phase 6)
+ * Trigger on STRONG institutional flow ALONE without technical confirmation.
+ * Higher risk but catches pure smart money moves before technical setups form.
+ *
+ * Requirements:
+ * - Institutional score >= 80
+ * - Sweep count >= 5
+ * - Buy/sell pressure >= 70%
+ * - Large trade % >= 40%
+ * - Aggressive or Very Aggressive flow
+ *
+ * NOTE: Higher risk signals - use with caution
+ */
+export const FLOW_ONLY_DETECTORS: OpportunityDetector[] = [
+  institutionalFlowBullishDetector,
+  institutionalFlowBearishDetector,
 ];
 
 /**

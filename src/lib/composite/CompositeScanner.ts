@@ -497,14 +497,16 @@ export class CompositeScanner {
       bestOpportunity.detector.type
     );
 
-    // Build proposed signal
+    // Build proposed signal (Phase 6: pass flowContext and confidence for new fields)
     const proposedSignal = this.buildSignal(
       symbol,
       features,
       bestOpportunity,
       riskReward,
       assetClass,
-      thresholds
+      thresholds,
+      phase1Data.flowContext,
+      confidence
     );
 
     // Step 7: Validate signal (now uses adaptive thresholds if enabled)
@@ -748,7 +750,7 @@ export class CompositeScanner {
             if (flowContext.tradeCount > 0) {
               console.log(
                 `[CompositeScanner] Flow for ${symbol}: ${flowSentiment} (${flowContext.sentimentStrength.toFixed(0)}%) ` +
-                `→ ${flowAlignment} for ${direction} | Sweeps: ${flowContext.sweepCount}, Blocks: ${flowContext.blockCount}`
+                  `→ ${flowAlignment} for ${direction} | Sweeps: ${flowContext.sweepCount}, Blocks: ${flowContext.blockCount}`
               );
             }
           }
@@ -854,8 +856,10 @@ export class CompositeScanner {
 
     // Calculate stop based on direction and style
     // Phase 6: Use optimized parameters if available
-    const stopMult = this.optimizedParams?.riskReward.stopMultiple ?? profile.risk.stopLossATRMultiplier;
-    const targetMult = this.optimizedParams?.riskReward.targetMultiple ?? profile.risk.targetATRMultiplier[1];
+    const stopMult =
+      this.optimizedParams?.riskReward.stopMultiple ?? profile.risk.stopLossATRMultiplier;
+    const targetMult =
+      this.optimizedParams?.riskReward.targetMultiple ?? profile.risk.targetATRMultiplier[1];
 
     const stopDistance = atr * stopMult;
     const stop = detector.direction === "LONG" ? entry - stopDistance : entry + stopDistance;
@@ -864,16 +868,29 @@ export class CompositeScanner {
     const targets = {
       T1:
         detector.direction === "LONG"
-          ? entry + atr * (this.optimizedParams?.riskReward.targetMultiple ? stopMult * 1.5 : profile.risk.targetATRMultiplier[0])
-          : entry - atr * (this.optimizedParams?.riskReward.targetMultiple ? stopMult * 1.5 : profile.risk.targetATRMultiplier[0]),
-      T2:
-        detector.direction === "LONG"
-          ? entry + atr * targetMult
-          : entry - atr * targetMult,
+          ? entry +
+            atr *
+              (this.optimizedParams?.riskReward.targetMultiple
+                ? stopMult * 1.5
+                : profile.risk.targetATRMultiplier[0])
+          : entry -
+            atr *
+              (this.optimizedParams?.riskReward.targetMultiple
+                ? stopMult * 1.5
+                : profile.risk.targetATRMultiplier[0]),
+      T2: detector.direction === "LONG" ? entry + atr * targetMult : entry - atr * targetMult,
       T3:
         detector.direction === "LONG"
-          ? entry + atr * (this.optimizedParams?.riskReward.targetMultiple ? targetMult * 1.5 : profile.risk.targetATRMultiplier[2])
-          : entry - atr * (this.optimizedParams?.riskReward.targetMultiple ? targetMult * 1.5 : profile.risk.targetATRMultiplier[2]),
+          ? entry +
+            atr *
+              (this.optimizedParams?.riskReward.targetMultiple
+                ? targetMult * 1.5
+                : profile.risk.targetATRMultiplier[2])
+          : entry -
+            atr *
+              (this.optimizedParams?.riskReward.targetMultiple
+                ? targetMult * 1.5
+                : profile.risk.targetATRMultiplier[2]),
     };
 
     const riskAmount = Math.abs(entry - stop);
@@ -899,17 +916,115 @@ export class CompositeScanner {
    * @param riskReward - Risk/reward calculation
    * @param assetClass - Asset class
    * @param thresholds - Signal thresholds
+   * @param flowContext - Flow context for Phase 6 fields
+   * @param confidence - Confidence result for Phase 6 fields
    * @returns Complete signal
    */
   private buildSignal(
     symbol: string,
     features: SymbolFeatures,
-    opportunity: DetectedOpportunity,
+    opportunity: DetectedOpportunity & { contextData?: any },
     riskReward: RiskRewardCalculation,
     assetClass: AssetClass,
-    thresholds: SignalThresholds
+    thresholds: SignalThresholds,
+    flowContext?: FlowContext | null,
+    confidence?: ConfidenceResult
   ): CompositeSignal {
     const timestamp = Date.now();
+
+    // Phase 6: Build allConfluenceFactors (all factors, not truncated)
+    const allConfluenceFactors: Record<string, number> = {
+      ...opportunity.confluence,
+    };
+
+    // Add flow-related factors if flow data available
+    if (flowContext) {
+      allConfluenceFactors.flow_sentiment = flowContext.institutionalScore;
+      allConfluenceFactors.sweep_activity = Math.min(100, flowContext.sweepCount * 20);
+      allConfluenceFactors.block_activity = Math.min(100, flowContext.blockCount * 25);
+    }
+
+    // Add IV factor if available
+    const ivPercentile = (features as any).ivPercentile;
+    if (ivPercentile !== undefined) {
+      allConfluenceFactors.iv_percentile = ivPercentile;
+    }
+
+    // Phase 6: Calculate context boosts applied
+    const contextBoosts = {
+      iv: 0,
+      gamma: 0,
+      flowAlignment: 0,
+      regime: 0,
+    };
+
+    if (this.optimizedParams) {
+      const ivPct = (features as any).ivPercentile || 50;
+      if (ivPct < 20) {
+        contextBoosts.iv = this.optimizedParams.ivBoosts.lowIV;
+      } else if (ivPct > 80) {
+        contextBoosts.iv = this.optimizedParams.ivBoosts.highIV;
+      }
+
+      const gammaExp = (features as any).gammaExposure || 0;
+      if (gammaExp < -1) {
+        contextBoosts.gamma = this.optimizedParams.gammaBoosts.shortGamma;
+      } else if (gammaExp > 1) {
+        contextBoosts.gamma = this.optimizedParams.gammaBoosts.longGamma;
+      }
+
+      // Flow alignment boost
+      if (flowContext) {
+        const direction = opportunity.detector.direction;
+        const sentiment = flowContext.sentiment;
+        if (
+          (sentiment === "BULLISH" && direction === "LONG") ||
+          (sentiment === "BEARISH" && direction === "SHORT")
+        ) {
+          contextBoosts.flowAlignment = this.optimizedParams.flowBoosts.aligned;
+        } else if (
+          (sentiment === "BULLISH" && direction === "SHORT") ||
+          (sentiment === "BEARISH" && direction === "LONG")
+        ) {
+          contextBoosts.flowAlignment = this.optimizedParams.flowBoosts.opposed;
+        }
+      }
+    }
+
+    // Phase 6: Build flow summary for display
+    let flowSummary: CompositeSignal["flowSummary"] = undefined;
+    if (flowContext && flowContext.tradeCount > 0) {
+      // Determine flow alignment
+      const direction = opportunity.detector.direction;
+      const sentiment = flowContext.sentiment;
+      let alignment: "ALIGNED" | "OPPOSED" | "NEUTRAL" = "NEUTRAL";
+
+      if (
+        (sentiment === "BULLISH" && direction === "LONG") ||
+        (sentiment === "BEARISH" && direction === "SHORT")
+      ) {
+        alignment = "ALIGNED";
+      } else if (
+        (sentiment === "BULLISH" && direction === "SHORT") ||
+        (sentiment === "BEARISH" && direction === "LONG")
+      ) {
+        alignment = "OPPOSED";
+      }
+
+      flowSummary = {
+        sentiment: flowContext.sentiment,
+        alignment,
+        recommendation: flowContext.recommendation || "NEUTRAL",
+        sweepCount: flowContext.sweepCount,
+        blockCount: flowContext.blockCount,
+        institutionalScore: flowContext.institutionalScore,
+        buyPressure: (flowContext.buyPremium / (flowContext.totalPremium || 1)) * 100,
+        totalPremium: flowContext.totalPremium,
+      };
+    }
+
+    // Phase 6: Data confidence
+    const dataConfidence = confidence?.adjustedConfidence;
 
     return {
       createdAt: new Date(),
@@ -925,6 +1040,12 @@ export class CompositeScanner {
       recommendedStyle: opportunity.styleScores.recommendedStyle,
       recommendedStyleScore: opportunity.styleScores.recommendedStyleScore,
       confluence: opportunity.confluence,
+      // Phase 6 fields
+      allConfluenceFactors,
+      contextBoosts,
+      flowSummary,
+      dataConfidence,
+      // Rest of signal
       entryPrice: riskReward.entry,
       stopPrice: riskReward.stop,
       targets: riskReward.targets,

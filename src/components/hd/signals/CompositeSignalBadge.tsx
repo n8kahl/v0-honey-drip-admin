@@ -8,10 +8,18 @@
  * - Color-coded by recommended style (scalp/day/swing)
  */
 
-import { useState } from 'react';
-import { cn } from '../../../lib/utils';
-import { TrendingUp, Target, Sparkles } from 'lucide-react';
-import type { CompositeSignal } from '../../../lib/composite/CompositeSignal';
+import { useState } from "react";
+import { cn } from "../../../lib/utils";
+import {
+  TrendingUp,
+  TrendingDown,
+  Target,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+} from "lucide-react";
+import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 
 interface CompositeSignalBadgeProps {
   symbol: string;
@@ -24,12 +32,12 @@ export function CompositeSignalBadge({
   symbol,
   signals,
   compact = false,
-  className
+  className,
 }: CompositeSignalBadgeProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   // Filter for ACTIVE signals only
-  const activeSignals = signals.filter(s => s.status === 'ACTIVE');
+  const activeSignals = signals.filter((s) => s.status === "ACTIVE");
 
   if (activeSignals.length === 0) {
     return null;
@@ -45,9 +53,9 @@ export function CompositeSignalBadge({
 
   // Color-code by recommended style
   const styleColors = {
-    scalp: 'bg-purple-500/20 text-purple-600 border-purple-500/40',
-    day_trade: 'bg-blue-500/20 text-blue-600 border-blue-500/40',
-    swing: 'bg-green-500/20 text-green-600 border-green-500/40',
+    scalp: "bg-purple-500/20 text-purple-600 border-purple-500/40",
+    day_trade: "bg-blue-500/20 text-blue-600 border-blue-500/40",
+    swing: "bg-green-500/20 text-green-600 border-green-500/40",
   };
 
   const badgeColor = styleColors[topSignal.recommendedStyle];
@@ -63,42 +71,40 @@ export function CompositeSignalBadge({
 
   return (
     <div
-      className={cn('relative', className)}
+      className={cn("relative", className)}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
       {/* Badge */}
       <div
         className={cn(
-          'flex items-center gap-1 px-1.5 py-0.5 rounded-full border',
+          "flex items-center gap-1 px-1.5 py-0.5 rounded-full border",
           badgeColor,
-          isNew && 'animate-pulse',
-          compact ? 'text-[9px]' : 'text-[10px]',
-          'font-medium uppercase tracking-wide cursor-default'
+          isNew && "animate-pulse",
+          compact ? "text-[9px]" : "text-[10px]",
+          "font-medium uppercase tracking-wide cursor-default"
         )}
       >
-        <Icon className={cn(compact ? 'w-2.5 h-2.5' : 'w-3 h-3')} />
+        <Icon className={cn(compact ? "w-2.5 h-2.5" : "w-3 h-3")} />
         {!compact && (
-          <span className="uppercase">{topSignal.recommendedStyle.replace('_', ' ')}</span>
+          <span className="uppercase">{topSignal.recommendedStyle.replace("_", " ")}</span>
         )}
         <span className="tabular-nums">{Math.round(topSignal.baseScore)}</span>
-        {activeSignals.length > 1 && (
-          <span className="opacity-70">({activeSignals.length})</span>
-        )}
+        {activeSignals.length > 1 && <span className="opacity-70">({activeSignals.length})</span>}
       </div>
 
       {/* Tooltip */}
       {showTooltip && (
         <div
           className={cn(
-            'absolute z-50 w-72 p-3 rounded-lg shadow-lg border',
-            'bg-[var(--surface-1)] border-[var(--border-hairline)]',
-            'bottom-full mb-1 left-0'
+            "absolute z-50 w-72 p-3 rounded-lg shadow-lg border",
+            "bg-[var(--surface-1)] border-[var(--border-hairline)]",
+            "bottom-full mb-1 left-0"
           )}
-          style={{ pointerEvents: 'none' }}
+          style={{ pointerEvents: "none" }}
         >
           <div className="text-xs font-medium text-[var(--text-high)] mb-2">
-            {symbol} • {activeSignals.length} Active Signal{activeSignals.length > 1 ? 's' : ''}
+            {symbol} • {activeSignals.length} Active Signal{activeSignals.length > 1 ? "s" : ""}
           </div>
 
           <div className="space-y-2">
@@ -110,56 +116,128 @@ export function CompositeSignalBadge({
                 {/* Header: Type + Direction */}
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] font-medium text-[var(--text-high)]">
-                    {signal.opportunityType.replace('_', ' ')} • {signal.direction}
+                    {signal.opportunityType.replace("_", " ")} • {signal.direction}
                   </span>
-                  <span className={cn(
-                    'text-[10px] font-medium px-1.5 py-0.5 rounded',
-                    styleColors[signal.recommendedStyle]
-                  )}>
-                    {signal.recommendedStyle.replace('_', ' ').toUpperCase()}
+                  <span
+                    className={cn(
+                      "text-[10px] font-medium px-1.5 py-0.5 rounded",
+                      styleColors[signal.recommendedStyle]
+                    )}
+                  >
+                    {signal.recommendedStyle.replace("_", " ").toUpperCase()}
                   </span>
                 </div>
 
                 {/* Scores */}
                 <div className="grid grid-cols-2 gap-1 text-[9px] mb-1.5">
                   <div className="text-[var(--text-muted)]">
-                    Base: <span className="text-[var(--text-high)] font-medium">{Math.round(signal.baseScore)}</span>
+                    Base:{" "}
+                    <span className="text-[var(--text-high)] font-medium">
+                      {Math.round(signal.baseScore)}
+                    </span>
                   </div>
                   <div className="text-[var(--text-muted)]">
-                    Style: <span className="text-[var(--text-high)] font-medium">{Math.round(signal.recommendedStyleScore)}</span>
+                    Style:{" "}
+                    <span className="text-[var(--text-high)] font-medium">
+                      {Math.round(signal.recommendedStyleScore)}
+                    </span>
                   </div>
                   <div className="text-[var(--text-muted)]">
-                    R/R: <span className="text-[var(--text-high)] font-medium">{signal.riskReward.toFixed(1)}</span>
+                    R/R:{" "}
+                    <span className="text-[var(--text-high)] font-medium">
+                      {signal.riskReward.toFixed(1)}
+                    </span>
                   </div>
                   <div className="text-[var(--text-muted)]">
-                    Entry: <span className="text-[var(--text-high)] font-medium">${signal.entryPrice.toFixed(2)}</span>
+                    Entry:{" "}
+                    <span className="text-[var(--text-high)] font-medium">
+                      ${signal.entryPrice.toFixed(2)}
+                    </span>
                   </div>
                 </div>
 
-                {/* Top confluence factors */}
+                {/* Flow Alignment - Phase 6 */}
+                {signal.flowSummary && (
+                  <div
+                    className={cn(
+                      "flex items-center gap-1.5 px-1.5 py-1 rounded text-[9px] font-medium mb-1.5",
+                      signal.flowSummary.alignment === "ALIGNED" &&
+                        "bg-emerald-500/10 text-emerald-400",
+                      signal.flowSummary.alignment === "OPPOSED" && "bg-red-500/10 text-red-400",
+                      signal.flowSummary.alignment === "NEUTRAL" && "bg-amber-500/10 text-amber-400"
+                    )}
+                  >
+                    {signal.flowSummary.alignment === "ALIGNED" && (
+                      <CheckCircle2 className="w-3 h-3" />
+                    )}
+                    {signal.flowSummary.alignment === "OPPOSED" && <XCircle className="w-3 h-3" />}
+                    {signal.flowSummary.alignment === "NEUTRAL" && (
+                      <AlertCircle className="w-3 h-3" />
+                    )}
+                    <span>Flow {signal.flowSummary.alignment.toLowerCase()}</span>
+                    <span className="opacity-70">
+                      • {signal.flowSummary.recommendation.replace("_", " ")}
+                    </span>
+                  </div>
+                )}
+
+                {/* Context Boosts - Phase 6 */}
+                {signal.contextBoosts && (
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {signal.contextBoosts.iv !== 0 && (
+                      <BoostPill label="IV" value={signal.contextBoosts.iv} />
+                    )}
+                    {signal.contextBoosts.gamma !== 0 && (
+                      <BoostPill label="Gamma" value={signal.contextBoosts.gamma} />
+                    )}
+                    {signal.contextBoosts.flowAlignment !== 0 && (
+                      <BoostPill label="Flow" value={signal.contextBoosts.flowAlignment} />
+                    )}
+                    {signal.contextBoosts.regime !== 0 && (
+                      <BoostPill label="Regime" value={signal.contextBoosts.regime} />
+                    )}
+                  </div>
+                )}
+
+                {/* All confluence factors - Phase 6 enhanced */}
                 <div className="text-[9px] text-[var(--text-muted)]">
-                  {Object.entries(signal.confluence)
+                  {Object.entries(signal.allConfluenceFactors || signal.confluence)
                     .sort(([, a], [, b]) => (b as number) - (a as number))
-                    .slice(0, 3)
+                    .slice(0, 6)
                     .map(([key, value]) => (
                       <div key={key} className="flex justify-between">
-                        <span className="truncate">{key.replace(/_/g, ' ')}</span>
-                        <span className="ml-2">{Math.round(value as number)}</span>
+                        <span className="truncate">{formatFactorName(key)}</span>
+                        <span
+                          className={cn(
+                            "ml-2 font-medium",
+                            (value as number) >= 80 && "text-emerald-400",
+                            (value as number) >= 60 && (value as number) < 80 && "text-amber-400",
+                            (value as number) < 60 && "text-red-400"
+                          )}
+                        >
+                          {Math.round(value as number)}
+                        </span>
                       </div>
                     ))}
+                  {Object.keys(signal.allConfluenceFactors || signal.confluence).length > 6 && (
+                    <div className="text-center opacity-60 mt-0.5">
+                      +{Object.keys(signal.allConfluenceFactors || signal.confluence).length - 6}{" "}
+                      more...
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
 
             {activeSignals.length > 3 && (
               <div className="text-[10px] text-[var(--text-muted)] text-center pt-1 border-t border-[var(--border-hairline)]">
-                +{activeSignals.length - 3} more signal{activeSignals.length - 3 > 1 ? 's' : ''}...
+                +{activeSignals.length - 3} more signal{activeSignals.length - 3 > 1 ? "s" : ""}...
               </div>
             )}
           </div>
 
           <div className="text-[9px] text-[var(--text-muted)] mt-2 pt-2 border-t border-[var(--border-hairline)]">
-            {isNew ? '🔥 New' : 'Active'} • {formatTimeAgo(topSignal.createdAt.getTime())}
+            {isNew ? "🔥 New" : "Active"} • {formatTimeAgo(topSignal.createdAt.getTime())}
           </div>
         </div>
       )}
@@ -169,9 +247,32 @@ export function CompositeSignalBadge({
 
 function formatTimeAgo(timestamp: number): string {
   const secondsAgo = Math.floor((Date.now() - timestamp) / 1000);
-  if (secondsAgo < 60) return 'just now';
+  if (secondsAgo < 60) return "just now";
   const minutesAgo = Math.floor(secondsAgo / 60);
   if (minutesAgo < 60) return `${minutesAgo}m ago`;
   const hoursAgo = Math.floor(minutesAgo / 60);
   return `${hoursAgo}h ago`;
+}
+
+// Helper: Format factor name for display
+function formatFactorName(name: string): string {
+  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Helper: Context boost pill component
+function BoostPill({ label, value }: { label: string; value: number }) {
+  const isPositive = value > 0;
+  const displayValue = `${isPositive ? "+" : ""}${(value * 100).toFixed(0)}%`;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-medium",
+        isPositive ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+      )}
+    >
+      {isPositive ? <TrendingUp className="w-2 h-2" /> : <TrendingDown className="w-2 h-2" />}
+      {label}: {displayValue}
+    </span>
+  );
 }
