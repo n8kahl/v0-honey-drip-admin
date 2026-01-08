@@ -1,4 +1,17 @@
 /**
+ * @deprecated LEGACY SCANNER - Superseded by compositeScanner.ts (Phase 5+)
+ *
+ * This scanner uses the old strategy_definitions/strategy_signals tables.
+ * For new development, use compositeScanner.ts which provides:
+ * - 16 advanced composite detectors
+ * - Multi-timeframe signal analysis
+ * - Optimized parameters from genetic algorithm (Phase 6)
+ * - Phase 1 enhancements (adaptive thresholds, IV gating, confidence scoring)
+ *
+ * This file is kept for backward compatibility with existing strategy_definitions.
+ * It may be removed in a future release once all strategies are migrated to composite detectors.
+ *
+ * Original Description:
  * Server-Side Signal Scanner Worker
  *
  * Runs independently as a background process to continuously monitor watchlists
