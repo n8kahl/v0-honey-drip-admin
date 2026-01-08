@@ -1,6 +1,5 @@
-
 import { EventDrivenBacktestEngine } from "../../src/lib/backtest/EventDrivenBacktestEngine.js";
-import { BacktestStats } from "../../src/lib/backtest/BacktestEngine.js";
+import { BacktestStats } from "../../src/lib/backtest/types.js";
 import {
   BACKTESTABLE_DETECTORS_WITH_KCU,
   FLOW_PRIMARY_DETECTORS,
@@ -241,9 +240,9 @@ export class ConfluenceOptimizer {
         day: bestOverall.params.consensus.minScore,
         swing: bestOverall.params.consensus.minScore,
       },
-      ivBoosts: { lowIV: 0.15, highIV: -0.20 },
-      gammaBoosts: { shortGamma: 0.15, longGamma: -0.10 },
-      flowBoosts: { aligned: 0.20, opposed: -0.15 },
+      ivBoosts: { lowIV: 0.15, highIV: -0.2 },
+      gammaBoosts: { shortGamma: 0.15, longGamma: -0.1 },
+      flowBoosts: { aligned: 0.2, opposed: -0.15 },
       mtfWeights: { weekly: 3.0, daily: 2.0, hourly: 1.0, fifteenMin: 0.5 },
       riskReward: {
         targetMultiple: bestOverall.params.riskReward.targetMultiple,
@@ -273,7 +272,9 @@ export class ConfluenceOptimizer {
       // Ensure dir exists
       try {
         mkdirSync(configDir);
-      } catch (e) { }
+      } catch (_e) {
+        /* ignore if exists */
+      }
 
       const outputPath = join(configDir, "optimized-params.json");
       writeFileSync(outputPath, outputContent);

@@ -26,7 +26,7 @@ import fetch from "cross-fetch";
 globalThis.fetch = fetch as any;
 
 import { ConfluenceOptimizer } from "./confluenceOptimizer.js";
-import { BacktestConfig } from "../../src/lib/backtest/BacktestEngine.js";
+import { BacktestConfig } from "../../src/lib/backtest/types.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -166,39 +166,39 @@ async function sendDiscordNotification(
           color: success ? 0x00ff00 : 0xff0000,
           fields: success
             ? [
-              {
-                name: "Win Rate",
-                value: `${(details.winRate * 100).toFixed(1)}%`,
-                inline: true,
-              },
-              {
-                name: "Profit Factor",
-                value: details.profitFactor.toFixed(2),
-                inline: true,
-              },
-              {
-                name: "Total Trades",
-                value: details.totalTrades.toString(),
-                inline: true,
-              },
-              {
-                name: "Symbols Tested",
-                value: details.symbols?.join(", ") || "N/A",
-                inline: false,
-              },
-              {
-                name: "Next Optimization",
-                value: "Next Sunday at 6pm ET",
-                inline: false,
-              },
-            ]
+                {
+                  name: "Win Rate",
+                  value: `${(details.winRate * 100).toFixed(1)}%`,
+                  inline: true,
+                },
+                {
+                  name: "Profit Factor",
+                  value: details.profitFactor.toFixed(2),
+                  inline: true,
+                },
+                {
+                  name: "Total Trades",
+                  value: details.totalTrades.toString(),
+                  inline: true,
+                },
+                {
+                  name: "Symbols Tested",
+                  value: details.symbols?.join(", ") || "N/A",
+                  inline: false,
+                },
+                {
+                  name: "Next Optimization",
+                  value: "Next Sunday at 6pm ET",
+                  inline: false,
+                },
+              ]
             : [
-              {
-                name: "Error",
-                value: details.error || "Unknown error",
-                inline: false,
-              },
-            ],
+                {
+                  name: "Error",
+                  value: details.error || "Unknown error",
+                  inline: false,
+                },
+              ],
           timestamp: new Date().toISOString(),
           footer: {
             text: "Scheduled Weekly Optimizer",
