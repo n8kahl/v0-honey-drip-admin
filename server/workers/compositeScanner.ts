@@ -26,7 +26,7 @@ config();
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { CompositeScanner } from "../../src/lib/composite/CompositeScanner.js";
 import type { CompositeSignal } from "../../src/lib/composite/CompositeSignal.js";
-import { buildSymbolFeatures, type TimeframeKey } from "../../src/lib/strategy/featuresBuilder.js";
+import { FeaturesBuilder } from "../../src/lib/backtest/FeaturesBuilder.js";
 import {
   insertCompositeSignal,
   expireOldSignals,
@@ -34,6 +34,11 @@ import {
 import type { Bar } from "../../src/lib/strategy/patternDetection.js";
 import { fileURLToPath } from "url";
 import { OPTIMIZED_SCANNER_CONFIG } from "../../src/lib/composite/OptimizedScannerConfig.js";
+import { flowAnalysisEngine, type FlowContext } from "../../src/lib/engines/FlowAnalysisEngine.js";
+import {
+  gammaExposureEngine,
+  type GammaContext,
+} from "../../src/lib/engines/GammaExposureEngine.js";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
@@ -42,7 +47,6 @@ import { fetchBarsForRange } from "./lib/barProvider.js";
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
 const BARS_TO_FETCH = 200; // Fetch last 200 bars for pattern detection
-const PRIMARY_TIMEFRAME: TimeframeKey = "5m";
 const EXPIRE_SIGNALS_INTERVAL = 5 * 60 * 1000; // Expire old signals every 5 minutes
 
 // Supabase client with service role key for server-side operations
@@ -244,22 +248,30 @@ function calculateVWAP(bars: Bar[]): number {
 }
 
 /**
+ * Extended Bar type with timestamp for FeaturesBuilder compatibility
+ */
+interface ExtendedBar extends Bar {
+  timestamp?: number; // ms timestamp for FeaturesBuilder
+}
+
+/**
  * Aggregate bars into larger timeframe
  * @param bars - Input bars (e.g., 5m bars)
  * @param multiplier - Number of bars to aggregate (e.g., 3 for 5m→15m, 12 for 5m→60m)
  * @returns Aggregated bars
  */
-function aggregateBarsToTimeframe(bars: Bar[], multiplier: number): Bar[] {
+function aggregateBarsToTimeframe(bars: ExtendedBar[], multiplier: number): ExtendedBar[] {
   if (bars.length === 0 || multiplier <= 1) return bars;
 
-  const aggregated: Bar[] = [];
+  const aggregated: ExtendedBar[] = [];
 
   for (let i = 0; i < bars.length; i += multiplier) {
     const chunk = bars.slice(i, i + multiplier);
     if (chunk.length === 0) continue;
 
     aggregated.push({
-      time: chunk[0].time, // Use first bar's timestamp
+      time: chunk[0].time, // Use first bar's timestamp (seconds)
+      timestamp: chunk[0].timestamp || chunk[0].time * 1000, // Keep ms for FeaturesBuilder
       open: chunk[0].open, // First bar's open
       high: Math.max(...chunk.map((b) => b.high)), // Highest high
       low: Math.min(...chunk.map((b) => b.low)), // Lowest low
@@ -273,10 +285,11 @@ function aggregateBarsToTimeframe(bars: Bar[], multiplier: number): Bar[] {
 
 /**
  * Fetch market data and build features for a symbol
+ * Uses FeaturesBuilder from backtest library with institutional data context
  */
 async function fetchSymbolFeatures(
   symbol: string
-): Promise<ReturnType<typeof buildSymbolFeatures> | null> {
+): Promise<ReturnType<typeof FeaturesBuilder.build> | null> {
   try {
     const normalized = normalizeSymbol(symbol);
 
@@ -355,9 +368,10 @@ async function fetchSymbolFeatures(
       return null;
     }
 
-    // Convert to Bar format (5m bars)
-    const bars5m: Bar[] = rawBars.map((b) => ({
-      time: Math.floor(b.t / 1000), // Convert ms to seconds
+    // Convert to ExtendedBar format (5m bars) - include both 'time' and 'timestamp' for compatibility
+    const bars5m: ExtendedBar[] = rawBars.map((b) => ({
+      time: Math.floor(b.t / 1000), // Convert ms to seconds (patternDetection format)
+      timestamp: b.t, // Keep ms for FeaturesBuilder format
       open: b.o,
       high: b.h,
       low: b.l,
@@ -369,12 +383,13 @@ async function fetchSymbolFeatures(
     const bars15m = aggregateBarsToTimeframe(bars5m, 3);
 
     // Fetch or aggregate 60m (hourly) bars
-    let bars60m: Bar[] = [];
+    let bars60m: ExtendedBar[] = [];
     try {
       // Try to fetch hourly bars directly (more efficient for indices)
       const hourlyResult = await fetchBarsForRange(symbol, 1, "hour", 14); // 14 days for better trend context
       bars60m = hourlyResult.bars.map((b) => ({
         time: Math.floor(b.t / 1000),
+        timestamp: b.t, // Keep ms for FeaturesBuilder format
         open: b.o,
         high: b.h,
         low: b.l,
@@ -392,83 +407,92 @@ async function fetchSymbolFeatures(
 
     // Get latest bar from 5m (primary timeframe)
     const latestBar = bars5m[bars5m.length - 1];
-    const prevBar = bars5m.length > 1 ? bars5m[bars5m.length - 2] : latestBar;
 
-    // Calculate indicators for each timeframe
-    const indicators5m = calculateIndicators(bars5m);
-    const indicators15m = calculateIndicators(bars15m);
-    const indicators60m = calculateIndicators(bars60m);
+    // ==========================================================================
+    // INSTITUTIONAL DATA FETCH: Flow & Gamma Context for Smart Gates
+    // ==========================================================================
+    let flowContext: FlowContext | null = null;
+    let gammaContext: GammaContext | null = null;
+    let partialData = false;
 
-    const vwap5m = calculateVWAP(bars5m);
-    const vwap15m = calculateVWAP(bars15m);
-    const vwap60m = calculateVWAP(bars60m);
+    // Fetch Flow Context (options flow analysis)
+    try {
+      flowContext = await flowAnalysisEngine.getFlowContext(normalized, "medium");
+      if (flowContext) {
+        console.log(
+          `[Composite Scanner] ✅ Flow context loaded for ${symbol}: ${flowContext.sentiment} (score: ${flowContext.institutionalScore})`
+        );
+      }
+    } catch (flowErr) {
+      console.warn(
+        `[Composite Scanner] ⚠️ Flow data unavailable for ${symbol}:`,
+        flowErr instanceof Error ? flowErr.message : flowErr
+      );
+      partialData = true;
+    }
 
-    const vwapDistancePct5m = vwap5m > 0 ? ((latestBar.close - vwap5m) / vwap5m) * 100 : 0;
-    const vwapDistancePct15m = vwap15m > 0 ? ((latestBar.close - vwap15m) / vwap15m) * 100 : 0;
-    const vwapDistancePct60m = vwap60m > 0 ? ((latestBar.close - vwap60m) / vwap60m) * 100 : 0;
+    // Fetch Gamma Context (dealer positioning)
+    try {
+      gammaContext = await gammaExposureEngine.getGammaContext(normalized);
+      if (gammaContext) {
+        console.log(
+          `[Composite Scanner] ✅ Gamma context loaded for ${symbol}: ${gammaContext.dealerPositioning} (${gammaContext.expectedBehavior})`
+        );
+      }
+    } catch (gammaErr) {
+      console.warn(
+        `[Composite Scanner] ⚠️ Gamma data unavailable for ${symbol}:`,
+        gammaErr instanceof Error ? gammaErr.message : gammaErr
+      );
+      partialData = true;
+    }
 
-    // Helper to build timeframe context
-    const buildTfContext = (
-      bars: Bar[],
-      indicators: any,
-      vwap: number,
-      vwapDistancePct: number
-    ) => {
-      const latest = bars[bars.length - 1] || latestBar;
-      const prev = bars.length > 1 ? bars[bars.length - 2] : latest;
-      return {
-        price: {
-          current: latest.close,
-          open: latest.open,
-          high: latest.high,
-          low: latest.low,
-          prevClose: prev.close,
-          prev: prev.close,
-        },
-        vwap: {
-          value: vwap,
-          distancePct: vwapDistancePct,
-          prev: calculateVWAP(bars.slice(0, -1)),
-        },
-        ema: indicators.ema,
-        rsi: indicators.rsi,
-        atr: indicators.atr,
-      };
-    };
+    if (partialData) {
+      console.warn(`[Composite Scanner] ⚠️ Scanning ${symbol} with partial institutional data`);
+    }
 
-    // Build multi-timeframe context with 5m, 15m, and 60m
-    const mtf = {
-      "5m": buildTfContext(bars5m, indicators5m, vwap5m, vwapDistancePct5m),
-      "15m": buildTfContext(bars15m, indicators15m, vwap15m, vwapDistancePct15m),
-      "60m": buildTfContext(bars60m, indicators60m, vwap60m, vwapDistancePct60m),
-    } as any; // Type assertion needed for RawMTFContext compatibility
+    // ==========================================================================
+    // BUILD FEATURES: Use FeaturesBuilder from backtest library
+    // ==========================================================================
+    // Build multi-timeframe context with raw bar arrays (FeaturesBuilder calculates indicators)
+    const mtfContext = {
+      "5m": bars5m,
+      "15m": bars15m,
+      "60m": bars60m,
+    } as any;
 
-    // Keep reference to primary timeframe bars for buildSymbolFeatures
-    const bars = bars5m;
-    const indicators = indicators5m;
-    const vwap = vwap5m;
-    const vwapDistancePct = vwapDistancePct5m;
-
-    // Build features
-    const features = buildSymbolFeatures({
+    // Use FeaturesBuilder.build() with live institutional context
+    const features = FeaturesBuilder.build(
       symbol,
-      timeISO: new Date(latestBar.time * 1000).toISOString(),
-      primaryTf: PRIMARY_TIMEFRAME,
-      mtf,
-      bars,
-      timezone: "America/New_York",
-    });
+      latestBar as any, // Current tick/bar
+      bars5m as any, // 1m/primary history (using 5m as primary)
+      mtfContext, // Multi-timeframe bar arrays
+      undefined, // No historical flow data (using live context)
+      { flowContext, gammaContext } // Live institutional context
+    );
 
-    // Log pattern detection results for diagnostics
+    // Log pattern detection results for diagnostics (including institutional data)
     console.log(`[FEATURES] ${symbol}:`, {
       hasPattern: !!features.pattern,
       patternKeys: features.pattern
-        ? Object.keys(features.pattern).filter((k) => features.pattern![k] === true)
+        ? Object.keys(features.pattern).filter((k) => (features.pattern as any)[k] === true)
         : [],
-      rsi: features.mtf?.["5m"]?.rsi?.[14]?.toFixed(1),
+      rsi: typeof features.rsi === "object" ? features.rsi?.["14"]?.toFixed(1) : features.rsi,
       price: latestBar.close.toFixed(2),
       volume: latestBar.volume,
-      barCount: bars.length,
+      barCount: bars5m.length,
+      regime: features.regime || features.marketRegime,
+      // Institutional data summary
+      flow: flowContext
+        ? {
+            sentiment: flowContext.sentiment,
+            score: flowContext.institutionalScore,
+            sweeps: flowContext.sweepCount,
+          }
+        : null,
+      gamma: gammaContext
+        ? { positioning: gammaContext.dealerPositioning, behavior: gammaContext.expectedBehavior }
+        : null,
     });
 
     return features;
