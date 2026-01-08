@@ -4,14 +4,13 @@ import { HDPanelWatchlist } from "./hd/dashboard/HDPanelWatchlist";
 import { HDDialogChallengeDetail } from "./hd/forms/HDDialogChallengeDetail";
 import { HDMacroPanel } from "./hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "./hd/layout/HDWatchlistRail";
-import { HDActiveTradesPanel } from "./hd/dashboard/HDActiveTradesPanel";
+import { HDPortfolioRail } from "./hd/layout/HDPortfolioRail";
 import { MobileNowPlayingSheet } from "./MobileNowPlayingSheet";
 import { MobileWatermark } from "./MobileWatermark";
 
 import { useTradeStateMachine } from "../hooks/useTradeStateMachine";
 import { useKeyLevels } from "../hooks/useKeyLevels";
 import { NowPanel } from "./trading/NowPanel";
-import { ActionRail } from "./trading/ActionRail";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
 import { useTradeStore } from "../stores/tradeStore";
@@ -79,10 +78,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     activeTicker,
     contracts,
     currentTrade,
-    previewTrade,
     tradeState,
-    alertType,
-    alertOptions,
     showAlert,
     activeTrades,
     focus,
@@ -202,53 +198,30 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               compositeSignals={compositeSignals}
               watchlist={watchlist}
               isTransitioning={isTransitioning}
+              // Action callbacks for NowPanelManage (absorbed from ActionRail)
+              onTrim={actions.handleTrim}
+              onMoveSLToBreakeven={actions.handleUpdateSL}
+              onTrailStop={actions.handleTrailStop}
+              onAdd={actions.handleAdd}
+              onExit={(sendAlert) => actions.handleExit(sendAlert)}
+              onTakeProfit={(sendAlert) => actions.handleTakeProfit(sendAlert)}
+              onBroadcastUpdate={(_message) => {
+                // Broadcast update to Discord channels linked to the trade
+                // TODO: Implement Discord broadcast via actions.handleBroadcast with message
+                if (currentTrade) {
+                  actions.handleUpdate(); // Use existing update handler for now
+                }
+              }}
             />
           )}
         </div>
 
-        {/* RIGHT: ActionRail - State-aware actions and Discord */}
+        {/* RIGHT: HDPortfolioRail - Portfolio Risk Dashboard */}
         <div className="hidden lg:flex">
-          <ActionRail
-            tradeState={tradeState}
-            currentTrade={currentTrade}
-            showAlert={showAlert}
-            alertType={alertType}
-            alertOptions={alertOptions}
-            channels={channels}
-            challenges={challenges}
-            onSendAlert={actions.handleSendAlert}
-            onEnterAndAlert={actions.handleEnterAndAlert}
-            onCancelAlert={actions.handleCancelAlert}
-            onUnload={actions.handleUnloadTrade}
-            onEnter={actions.handleEnterTrade}
-            onTrim={actions.handleTrim}
-            onMoveSL={actions.handleUpdateSL}
-            onTrailStop={actions.handleTrailStop}
-            onAdd={actions.handleAdd}
-            onTakeProfit={actions.handleTakeProfit}
-            onExit={actions.handleExit}
-            isTransitioning={isTransitioning}
-            setupMode={{
-              // Always pass setupMode object - ActionRail decides when to show based on tradeState
-              // This prevents race conditions where setupMode becomes undefined before tradeState updates
-              focusedSymbol: activeTicker?.symbol ?? null,
-              activeContract: previewTrade?.contract ?? currentTrade?.contract ?? null,
-              recommendedContract: null,
-              contractSource: previewTrade?.contract
-                ? "manual"
-                : currentTrade?.contract
-                  ? "manual"
-                  : null,
-              currentPrice: activeTicker?.last ?? 0,
-              tradeType: previewTrade?.tradeType ?? currentTrade?.tradeType ?? "Day",
-              isTransitioning,
-              onLoadAndAlert: (channelIds, challengeIds) =>
-                actions.handleLoadAndAlert(channelIds, challengeIds, undefined, undefined),
-              onEnterAndAlert: (channelIds, challengeIds) =>
-                actions.handleEnterAndAlert(channelIds, challengeIds, undefined, undefined),
-              onDiscard: actions.handleDiscard,
-              onRevertToRecommended: undefined,
-            }}
+          <HDPortfolioRail
+            activeTrades={activeTrades.filter((t) => t.state === "ENTERED")}
+            loadedTrades={activeTrades.filter((t) => t.state === "LOADED")}
+            onTradeClick={(trade) => actions.handleActiveTradeClick(trade, watchlist)}
           />
         </div>
         <HDDialogChallengeDetail
@@ -281,19 +254,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           }}
         />
       </div>
-      {showAlert && currentTrade && (
-        <div className="lg:hidden fixed inset-0 z-[100] bg-[var(--bg-base)] flex flex-col">
-          {/* Command Center: Right Panel (Desktop only) */}
-          <div className="hidden lg:flex">
-            <HDActiveTradesPanel
-              onTradeClick={(trade) => {
-                // Use the proper handler for trade clicks
-                actions.handleActiveTradeClick(trade, watchlist);
-              }}
-            />
-          </div>
-        </div>
-      )}
       <div className="lg:hidden">
         <MobileWatermark />
       </div>

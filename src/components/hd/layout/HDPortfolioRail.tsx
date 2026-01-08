@@ -17,6 +17,7 @@
 
 import { useMemo, useEffect, useState } from "react";
 import { useTradeStore } from "../../../stores";
+import { useMarketDataStore } from "../../../stores/marketDataStore";
 import { Trade } from "../../../types";
 import { Shield, Clock, Zap, ChevronRight } from "lucide-react";
 import { HDInstitutionalRadar } from "../common/HDInstitutionalRadar";
@@ -24,6 +25,55 @@ import { cn, formatPercent } from "../../../lib/utils";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 import { getPortfolioGreeks, PortfolioGreeks } from "../../../services/greeksMonitorService";
+
+/**
+ * Thesis Dot Status - Based on flow alignment + P&L
+ * 🟢 Green (aligned): Flow Aligned + Profit
+ * 🟡 Yellow (neutral): Neutral Flow or Flat P&L
+ * 🔴 Red (divergent): Flow Divergence (Warning)
+ */
+type ThesisDotStatus = "aligned" | "neutral" | "divergent";
+
+/**
+ * Derive flow score (0-100) from flowMetrics
+ * >60 = bullish (more calls than puts)
+ * <40 = bearish (more puts than calls)
+ * 40-60 = neutral
+ */
+function deriveFlowScore(
+  flowMetrics: { callVolume: number; putVolume: number } | undefined
+): number {
+  if (!flowMetrics) return 50; // Neutral if no data
+  const total = flowMetrics.callVolume + flowMetrics.putVolume;
+  if (total === 0) return 50; // Neutral if no volume
+  // Convert call ratio (0-1) to flow score (0-100)
+  return (flowMetrics.callVolume / total) * 100;
+}
+
+function getThesisDotStatus(trade: Trade, pnlPercent: number, flowScore: number): ThesisDotStatus {
+  // Determine trade direction from contract type (Call = bullish, Put = bearish)
+  const isLong = trade.contract?.type === "C";
+
+  // Flow alignment thresholds: >60 = bullish, <40 = bearish, 40-60 = neutral
+  const flowBullish = flowScore > 60;
+  const flowBearish = flowScore < 40;
+
+  // Check if flow aligns with trade direction
+  const flowAligned = (isLong && flowBullish) || (!isLong && flowBearish);
+  const flowDivergent = (isLong && flowBearish) || (!isLong && flowBullish);
+
+  // P&L thresholds
+  const isProfitable = pnlPercent > 1;
+
+  // 🟢 Green: Flow aligned AND profitable
+  if (flowAligned && isProfitable) return "aligned";
+
+  // 🔴 Red: Flow divergent (warning sign regardless of P&L)
+  if (flowDivergent) return "divergent";
+
+  // 🟡 Yellow: Neutral flow, flat P&L, or any other case
+  return "neutral";
+}
 
 interface HDPortfolioRailProps {
   /** Active trades (ENTERED state) - if not provided, reads from store */
@@ -51,8 +101,11 @@ function hasRecentUpdate(trade: Trade): boolean {
 /**
  * HDCompactTradeRow - Minimal trade row for portfolio monitoring
  *
- * Visual: Ticker | P&L Badge | Status Dot
- * Status Dot: Green if pnl > 0, Red if pnl < 0, Pulse if recent update
+ * Visual: [Ticker] [P&L %] [Thesis Dot]
+ * Thesis Dot Logic:
+ *   🟢 Green (aligned): Flow Aligned + Profit
+ *   🟡 Yellow (neutral): Neutral Flow or Flat P&L
+ *   🔴 Red (divergent): Flow Divergence (Warning)
  */
 function HDCompactTradeRow({
   trade,
@@ -70,10 +123,17 @@ function HDCompactTradeRow({
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
   const { currentPrice, pnlPercent } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
 
+  // Get flow data for the trade's symbol and derive flow score
+  const flowMetrics = useMarketDataStore((state) => state.symbols[trade.ticker]?.flowMetrics);
+  const flowScore = deriveFlowScore(flowMetrics);
+
   // Computed values
   const displayPnlPercent = currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
   const isProfit = displayPnlPercent >= 0;
   const isRecent = hasRecentUpdate(trade);
+
+  // Calculate thesis dot status based on flow alignment + P&L
+  const thesisStatus = getThesisDotStatus(trade, displayPnlPercent, flowScore);
 
   return (
     <div
@@ -89,18 +149,6 @@ function HDCompactTradeRow({
         {trade.ticker}
       </span>
 
-      {/* Contract Type Badge - Call=Green, Put=Red */}
-      <span
-        className={cn(
-          "text-[9px] font-bold px-1.5 py-0.5 rounded",
-          trade.contract?.type === "C"
-            ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
-            : "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
-        )}
-      >
-        {trade.contract?.type === "C" ? "C" : "P"}
-      </span>
-
       {/* P&L Badge - Honey Drip Gold for profit */}
       <span
         className={cn(
@@ -112,14 +160,22 @@ function HDCompactTradeRow({
         {formatPercent(displayPnlPercent)}
       </span>
 
-      {/* Status Dot - P&L based with pulse for recent updates */}
+      {/* Thesis Dot - Flow alignment + P&L based with pulse for recent updates */}
       <div
         className={cn(
-          "w-2 h-2 rounded-full flex-shrink-0",
-          isProfit ? "bg-[var(--accent-positive)]" : "bg-[var(--accent-negative)]",
+          "w-2.5 h-2.5 rounded-full flex-shrink-0",
+          thesisStatus === "aligned" && "bg-green-500",
+          thesisStatus === "neutral" && "bg-yellow-500",
+          thesisStatus === "divergent" && "bg-red-500",
           isRecent && "animate-pulse"
         )}
-        title={isRecent ? "Recently updated" : isProfit ? "Position in profit" : "Position at loss"}
+        title={
+          thesisStatus === "aligned"
+            ? "Flow aligned + Profit"
+            : thesisStatus === "divergent"
+              ? "Flow divergence warning"
+              : "Neutral flow / Flat P&L"
+        }
       />
 
       {/* Chevron on hover */}
@@ -337,6 +393,26 @@ export function HDPortfolioRail({
           />
         )}
       </div>
+
+      {/* Footer: Thesis Dot Legend */}
+      {enteredTrades.length > 0 && (
+        <div className="px-3 py-2 border-t border-[var(--border-hairline)] bg-[var(--surface-2)]">
+          <div className="flex items-center justify-center gap-4 text-[10px] text-[var(--text-faint)]">
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              <span>Aligned</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-yellow-500" />
+              <span>Neutral</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span>Divergent</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

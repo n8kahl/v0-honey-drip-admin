@@ -39,6 +39,14 @@ export interface NowPanelProps {
   watchlist?: Ticker[];
   /** Whether a trade action is currently in progress */
   isTransitioning?: boolean;
+  // Action callbacks for NowPanelManage (absorbed from ActionRail)
+  onTrim?: (percent: number) => void;
+  onMoveSLToBreakeven?: () => void;
+  onTrailStop?: () => void;
+  onAdd?: () => void;
+  onExit?: (sendAlert: boolean) => void;
+  onTakeProfit?: (sendAlert: boolean) => void;
+  onBroadcastUpdate?: (message: string) => void;
 }
 
 export function NowPanel({
@@ -52,6 +60,13 @@ export function NowPanel({
   compositeSignals,
   watchlist = [],
   isTransitioning = false,
+  onTrim,
+  onMoveSLToBreakeven,
+  onTrailStop,
+  onAdd,
+  onExit,
+  onTakeProfit,
+  onBroadcastUpdate,
 }: NowPanelProps) {
   // Determine panel mode based on trade state
   const mode: PanelMode = useMemo(() => {
@@ -128,7 +143,20 @@ export function NowPanel({
 
     // ENTERED state → Management Cockpit [MANAGE MODE]
     if (effectiveState === "ENTERED") {
-      return <NowPanelManage trade={trade} activeTicker={activeTicker} watchlist={watchlist} />;
+      return (
+        <NowPanelManage
+          trade={trade}
+          activeTicker={activeTicker}
+          watchlist={watchlist}
+          onTrim={onTrim}
+          onMoveSLToBreakeven={onMoveSLToBreakeven}
+          onTrailStop={onTrailStop}
+          onAdd={onAdd}
+          onExit={onExit}
+          onTakeProfit={onTakeProfit}
+          onBroadcastUpdate={onBroadcastUpdate}
+        />
+      );
     }
 
     // EXITED → Trade recap panel [SETUP MODE]

@@ -9,7 +9,7 @@
  * - EXITED: TradeRecap (final P&L, summary)
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { Trade, TradeState, Ticker } from "../../types";
 import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
@@ -37,13 +37,25 @@ import {
   AlertTriangle,
   Share2,
   Copy,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
+import type { DiscordChannel, Challenge } from "../../types";
 
 interface NowPanelTradeProps {
   trade: Trade;
   tradeState: TradeState;
   activeTicker: Ticker | null;
   watchlist?: Ticker[];
+  // Alert settings for LOADED state
+  channels?: DiscordChannel[];
+  challenges?: Challenge[];
+  selectedChannels?: string[];
+  selectedChallenges?: string[];
+  onChannelsChange?: (channels: string[]) => void;
+  onChallengesChange?: (challenges: string[]) => void;
+  onEnterAndAlert?: (channelIds: string[], challengeIds: string[]) => void;
 }
 
 export function NowPanelTrade({
@@ -51,6 +63,13 @@ export function NowPanelTrade({
   tradeState,
   activeTicker,
   watchlist = [],
+  channels = [],
+  challenges = [],
+  selectedChannels = [],
+  selectedChallenges = [],
+  onChannelsChange,
+  onChallengesChange,
+  onEnterAndAlert,
 }: NowPanelTradeProps) {
   // Get current price
   const currentPrice = useMemo(() => {
@@ -85,7 +104,19 @@ export function NowPanelTrade({
         {tradeState === "WATCHING" && (
           <TradePreviewCard trade={trade} currentPrice={currentPrice} />
         )}
-        {tradeState === "LOADED" && <TradeDecisionCard trade={trade} currentPrice={currentPrice} />}
+        {tradeState === "LOADED" && (
+          <TradeDecisionCard
+            trade={trade}
+            currentPrice={currentPrice}
+            channels={channels}
+            challenges={challenges}
+            selectedChannels={selectedChannels}
+            selectedChallenges={selectedChallenges}
+            onChannelsChange={onChannelsChange}
+            onChallengesChange={onChallengesChange}
+            onEnterAndAlert={onEnterAndAlert}
+          />
+        )}
         {/* Note: ENTERED state routes to NowPanelManage - handled in NowPanel.tsx */}
         {tradeState === "EXITED" && <TradeRecap trade={trade} />}
       </div>
@@ -229,9 +260,28 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
 interface TradeDecisionCardProps {
   trade: Trade;
   currentPrice: number;
+  // Alert settings
+  channels?: DiscordChannel[];
+  challenges?: Challenge[];
+  selectedChannels?: string[];
+  selectedChallenges?: string[];
+  onChannelsChange?: (channels: string[]) => void;
+  onChallengesChange?: (challenges: string[]) => void;
+  onEnterAndAlert?: (channelIds: string[], challengeIds: string[]) => void;
 }
 
-function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
+function TradeDecisionCard({
+  trade,
+  currentPrice,
+  channels = [],
+  challenges = [],
+  selectedChannels = [],
+  selectedChallenges = [],
+  onChannelsChange,
+  onChallengesChange,
+  onEnterAndAlert,
+}: TradeDecisionCardProps) {
+  const [showAlertSettings, setShowAlertSettings] = useState(false);
   const contract = trade.contract;
   const dte = fmtDTE(contract?.daysToExpiry);
   const spread = contract ? fmtSpread(contract.bid, contract.ask) : null;
@@ -239,6 +289,24 @@ function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
   // Use confluence score if available, otherwise default
   const readinessScore = trade.confluence?.score || 75;
   const scoreStyle = getScoreStyle(readinessScore);
+
+  // Toggle channel selection
+  const toggleChannel = (channelId: string) => {
+    if (!onChannelsChange) return;
+    const newChannels = selectedChannels.includes(channelId)
+      ? selectedChannels.filter((id) => id !== channelId)
+      : [...selectedChannels, channelId];
+    onChannelsChange(newChannels);
+  };
+
+  // Toggle challenge selection
+  const toggleChallenge = (challengeId: string) => {
+    if (!onChallengesChange) return;
+    const newChallenges = selectedChallenges.includes(challengeId)
+      ? selectedChallenges.filter((id) => id !== challengeId)
+      : [...selectedChallenges, challengeId];
+    onChallengesChange(newChallenges);
+  };
 
   return (
     <div className="animate-fade-in-up">
@@ -349,9 +417,103 @@ function TradeDecisionCard({ trade, currentPrice }: TradeDecisionCardProps) {
       )}
 
       {/* Entry Checklist Summary */}
-      <div className="p-4">
+      <div className="p-4 border-b border-[var(--border-hairline)]">
         <ChecklistSummary trade={trade} />
       </div>
+
+      {/* Alert Settings Section - Collapsible */}
+      {(channels.length > 0 || challenges.length > 0 || onEnterAndAlert) && (
+        <div className="border-b border-[var(--border-hairline)]">
+          <button
+            onClick={() => setShowAlertSettings(!showAlertSettings)}
+            className="w-full p-4 flex items-center justify-between text-left hover:bg-[var(--surface-2)] transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-[var(--brand-primary)]" />
+              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                Alert Settings
+              </span>
+              {selectedChannels.length > 0 && (
+                <span className="text-[10px] text-[var(--text-faint)] px-1.5 py-0.5 bg-[var(--surface-2)] rounded">
+                  {selectedChannels.length} channel{selectedChannels.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            {showAlertSettings ? (
+              <ChevronUp className="w-4 h-4 text-[var(--text-faint)]" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-[var(--text-faint)]" />
+            )}
+          </button>
+
+          {showAlertSettings && (
+            <div className="px-4 pb-4 space-y-4 animate-expand">
+              {/* Discord Channels */}
+              {channels.length > 0 && (
+                <div>
+                  <div className="text-[10px] text-[var(--text-faint)] uppercase tracking-wide mb-2">
+                    Discord Channels
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {channels.map((channel) => (
+                      <button
+                        key={channel.id}
+                        onClick={() => toggleChannel(channel.id)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all btn-press",
+                          selectedChannels.includes(channel.id)
+                            ? "bg-[var(--brand-primary)] text-black"
+                            : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]"
+                        )}
+                      >
+                        #{channel.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Challenges */}
+              {challenges.length > 0 && (
+                <div>
+                  <div className="text-[10px] text-[var(--text-faint)] uppercase tracking-wide mb-2">
+                    Challenges
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {challenges.map((challenge) => (
+                      <button
+                        key={challenge.id}
+                        onClick={() => toggleChallenge(challenge.id)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all btn-press",
+                          selectedChallenges.includes(challenge.id)
+                            ? "bg-[var(--accent-info)] text-white"
+                            : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]"
+                        )}
+                      >
+                        {challenge.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Enter Trade Button */}
+      {onEnterAndAlert && (
+        <div className="p-4">
+          <button
+            onClick={() => onEnterAndAlert(selectedChannels, selectedChallenges)}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-sm bg-[var(--brand-primary)] text-black hover:opacity-90 transition-all btn-press"
+          >
+            <Zap className="w-4 h-4" />
+            Enter Trade{selectedChannels.length > 0 ? " & Alert" : ""}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

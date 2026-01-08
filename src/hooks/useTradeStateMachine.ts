@@ -141,12 +141,12 @@ interface TradeStateMachineActions {
   handleDiscard: () => void;
   handleUnloadTrade: () => void;
   handleTrim: (trimPercent?: number) => void;
-  handleTakeProfit: () => void;
+  handleTakeProfit: (sendAlert?: boolean) => void;
   handleUpdate: () => void;
   handleUpdateSL: () => void;
   handleTrailStop: () => void;
   handleAdd: () => void;
-  handleExit: () => void;
+  handleExit: (sendAlert?: boolean) => void;
   setActiveTicker: (ticker: Ticker | null) => void;
   setContracts: (contracts: Contract[]) => void;
   setAlertType: (type: AlertType) => void;
