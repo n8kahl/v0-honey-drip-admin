@@ -1018,6 +1018,129 @@
  * ============================================ */
 
 @layer utilities {
+  /* ============================================
+   * Honey Drip Institutional Theme Utilities
+   * ============================================ */
+
+  /* Data Labels - Consistent label styling */
+  .data-label {
+    @apply text-[10px] uppercase tracking-wide font-semibold text-[var(--text-muted)];
+  }
+
+  /* Pricing/P&L Numbers - Prevent jitter with tabular-nums */
+  .price-value {
+    @apply font-mono tabular-nums;
+  }
+
+  /* Bullish/Call styling */
+  .bullish-text {
+    color: var(--accent-positive);
+  }
+
+  .bullish-bg {
+    background-color: var(--accent-positive-bg);
+  }
+
+  .bullish-border {
+    border-color: var(--accent-positive);
+  }
+
+  /* Bearish/Put styling */
+  .bearish-text {
+    color: var(--accent-negative);
+  }
+
+  .bearish-bg {
+    background-color: var(--accent-negative-bg);
+  }
+
+  .bearish-border {
+    border-color: var(--accent-negative);
+  }
+
+  /* Institutional/Smart Money highlight (Gold) */
+  .institutional-text {
+    color: var(--brand-primary);
+  }
+
+  .institutional-bg {
+    background-color: rgba(226, 183, 20, 0.1);
+  }
+
+  .institutional-border {
+    border-color: var(--brand-primary);
+  }
+
+  /* Gold glow for Smart Money elements */
+  .institutional-glow {
+    box-shadow: 0 0 12px rgba(226, 183, 20, 0.3), 0 0 24px rgba(226, 183, 20, 0.15);
+  }
+
+  /* ============================================
+   * Institutional Empty State Animations
+   * ============================================ */
+
+  /* Gold radar pulse animation */
+  @keyframes radar-pulse {
+    0%, 100% {
+      opacity: 0.3;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
+
+  @keyframes radar-sweep {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes radar-ring {
+    0% {
+      opacity: 0.8;
+      transform: scale(0.8);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(2);
+    }
+  }
+
+  .animate-radar-pulse {
+    animation: radar-pulse 2s ease-in-out infinite;
+  }
+
+  .animate-radar-sweep {
+    animation: radar-sweep 3s linear infinite;
+  }
+
+  .animate-radar-ring {
+    animation: radar-ring 2s ease-out infinite;
+  }
+
+  /* Staggered radar rings */
+  .radar-ring-1 {
+    animation-delay: 0s;
+  }
+
+  .radar-ring-2 {
+    animation-delay: 0.5s;
+  }
+
+  .radar-ring-3 {
+    animation-delay: 1s;
+  }
+
+  /* ============================================
+   * Mobile Safe Area Utilities
+   * ============================================ */
+
   /* Padding utilities for safe areas */
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);

@@ -1,15 +1,30 @@
+/**
+ * MobileApp - "The Opportunity Stack"
+ *
+ * Refactored mobile trading interface with:
+ * 1. Sticky Ticker Tape header (active symbol + SmartScore + FlowPulse)
+ * 2. Swipeable tab navigation (SCAN | DEEP | MGMT)
+ * 3. Gold Action FAB for quick trading
+ *
+ * Design principles:
+ * - 44px+ touch targets
+ * - 14px+ text for legibility
+ * - Institutional-grade data visualization
+ */
+
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { MobileHeader } from "./MobileHeader";
-import { MobileTabNav, type MobileTab } from "./MobileTabNav";
-import { MobileActiveScreen } from "./screens/MobileActiveScreen";
-import { MobileWatchScreen } from "./screens/MobileWatchScreen";
-import { MobileReviewScreen } from "./screens/MobileReviewScreen";
-import { MobileSettingsScreen } from "./screens/MobileSettingsScreen";
+import { MobileTickerTape } from "./MobileTickerTape";
+import { MobileOpportunityTabs, type OpportunityTab } from "./MobileOpportunityTabs";
+import { MobileActionFab } from "./MobileActionFab";
+import { MobileScanScreen } from "./screens/MobileScanScreen";
+import { MobileDeepScreen } from "./screens/MobileDeepScreen";
+import { MobileMgmtScreen } from "./screens/MobileMgmtScreen";
 import { MobileAlertSheet } from "./sheets/MobileAlertSheet";
 import { MobileContractSheet } from "./sheets/MobileContractSheet";
+import { MobileSettingsScreen } from "./screens/MobileSettingsScreen";
 
-import { useTradeStore, useMarketStore, useSettingsStore } from "../../stores";
+import { useTradeStore, useMarketStore, useSettingsStore, useUIStore } from "../../stores";
 import { useDiscord } from "../../hooks/useDiscord";
 import { useAuth } from "../../contexts/AuthContext";
 import { Trade, AlertType, Contract, Ticker, TradeType } from "../../types";
@@ -23,6 +38,7 @@ import {
   type UIAlertType,
   type UIUpdateKind,
 } from "../../domain/alerts/intentMapping";
+import { Settings } from "lucide-react";
 
 interface MobileAppProps {
   onLogout?: () => void;
@@ -32,13 +48,18 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Get active tab from URL (with fallback to "active")
-  const activeTab = (searchParams.get("tab") as MobileTab) || "active";
+  // Get active tab from URL (with fallback to "scan")
+  const activeTab = (searchParams.get("tab") as OpportunityTab | "settings") || "scan";
+  const isSettingsOpen = activeTab === "settings";
 
   // Set active tab by updating URL
-  const setActiveTab = (tab: MobileTab) => {
+  const setActiveTab = (tab: OpportunityTab | "settings") => {
     setSearchParams({ tab });
   };
+
+  // Focus symbol from UI store
+  const focusSymbol = useUIStore((s) => s.mainCockpitSymbol);
+  const setFocusSymbol = useUIStore((s) => s.setMainCockpitSymbol);
 
   // Alert sheet state
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
@@ -49,7 +70,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     trimPercent?: number;
   }>({});
 
-  // Contract sheet state
+  // Contract sheet state (for Action FAB)
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
   const [contractSheetTicker, setContractSheetTicker] = useState<Ticker | null>(null);
   const [contractsForTicker, setContractsForTicker] = useState<Contract[]>([]);
@@ -73,10 +94,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   const loadedTrades = useMemo(
     () => activeTrades.filter((t) => t.state === "LOADED"),
     [activeTrades]
-  );
-  const exitedTrades = useMemo(
-    () => historyTrades.filter((t) => t.state === "EXITED"),
-    [historyTrades]
   );
 
   // Load user data
@@ -102,6 +119,28 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     setAlertSheetOpen(true);
   };
 
+  // Handle ticker tap from watchlist - set focus and go to DEEP tab
+  const handleTickerTap = (ticker: Ticker) => {
+    setFocusSymbol(ticker.symbol);
+    setActiveTab("deep");
+  };
+
+  // Handle Action FAB tap - open contract sheet for focused symbol
+  const handleActionFabTap = () => {
+    if (!focusSymbol) {
+      // No symbol selected, prompt to select one
+      setActiveTab("scan");
+      toast.info("Select a symbol first", { description: "Tap a card in the SCAN tab" });
+      return;
+    }
+
+    // Find ticker in watchlist
+    const ticker = watchlist.find((t) => t.symbol === focusSymbol);
+    if (ticker) {
+      handleLoadTicker(ticker);
+    }
+  };
+
   // Handle Load button - fetch contracts and open contract sheet
   const handleLoadTicker = async (ticker: Ticker) => {
     setContractSheetTicker(ticker);
@@ -110,7 +149,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     setContractSheetOpen(true);
 
     try {
-      // Use fetchNormalizedChain with token manager for authenticated requests
       const tokenManager = massive.getTokenManager();
       const contracts = await fetchNormalizedChain(ticker.symbol, {
         window: 10,
@@ -118,11 +156,10 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       });
       setContractsForTicker(contracts);
     } catch (error) {
-      console.error("[v0] Mobile failed to load contracts:", error);
+      console.error("[Mobile] Failed to load contracts:", error);
       const errorMsg = error instanceof Error ? error.message : "Failed to load options chain";
       setContractsError(errorMsg);
       toast.error("Failed to load options chain");
-      // Keep sheet open to show error state with retry button
     } finally {
       setContractsLoading(false);
     }
@@ -136,20 +173,18 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     return "LEAP";
   };
 
-  // Handle contract selection - create WATCHING trade (like desktop) and open alert sheet
+  // Handle contract selection - create WATCHING trade and open alert sheet
   const handleContractSelect = (contract: Contract) => {
     if (!contractSheetTicker || !user) return;
 
-    // Calculate TP/SL based on trade type
     const tradeType = getTradeType(contract.daysToExpiry || 0);
     const tpMultiplier = tradeType === "Scalp" ? 1.3 : tradeType === "Day" ? 1.5 : 2.0;
     const slMultiplier = tradeType === "Scalp" ? 0.7 : tradeType === "Day" ? 0.5 : 0.3;
 
-    // Create trade in WATCHING state (like desktop - not persisted yet)
     const previewTrade: Trade = {
       id: crypto.randomUUID(),
       ticker: contractSheetTicker.symbol,
-      state: "WATCHING", // Changed from LOADED to WATCHING (matching desktop)
+      state: "WATCHING",
       contract,
       tradeType,
       targetPrice: contract.mid * tpMultiplier,
@@ -160,19 +195,16 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       updates: [],
     };
 
-    // Set as preview trade (NOT activeTrades) - matches desktop pattern
     useTradeStore.getState().setPreviewTrade(previewTrade);
 
-    // Close contract sheet and open alert sheet
     setContractSheetOpen(false);
     setContractSheetTicker(null);
     setContractsForTicker([]);
 
-    // Open alert sheet for load alert
     openAlertSheet(previewTrade, "load");
   };
 
-  // Handle sending alert (desktop pattern: persist channels + challenges)
+  // Handle sending alert
   const handleSendAlert = async (
     channels: string[],
     challengeIds: string[],
@@ -190,7 +222,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       return;
     }
 
-    // Check Discord enabled before proceeding - matches desktop pattern
     if (!discordAlertsEnabled) {
       toast.info("Discord alerts disabled", {
         description: "Enable in Settings → Discord to send alerts.",
@@ -199,13 +230,11 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     }
 
     try {
-      // Convert UI alert type to domain intent
       const intent = alertTypeToIntent(
         alertType as UIAlertType,
         alertOptions.updateKind as UIUpdateKind
       );
 
-      // Create alert draft using domain layer
       const draft = createAlertDraft({
         intent,
         trade: alertTrade,
@@ -215,7 +244,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         trimPercent: priceOverrides?.trimPercent ?? alertOptions?.trimPercent,
       });
 
-      // Apply price overrides to draft
       if (priceOverrides) {
         if (priceOverrides.entryPrice !== undefined) {
           draft.editablePrices.entry = priceOverrides.entryPrice;
@@ -234,12 +262,10 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         }
       }
 
-      // Set comment if provided
       if (comment) {
         draft.comment = comment;
       }
 
-      // Commit the alert draft through domain layer
       const discordService: DiscordAlertService = {
         sendLoadAlert: discord.sendLoadAlert,
         sendEntryAlert: discord.sendEntryAlert,
@@ -255,26 +281,23 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         return;
       }
 
-      // Update store based on intent
       const tradeStore = useTradeStore.getState();
 
       if (intent === "LOAD") {
-        // Clear preview and add to activeTrades
         tradeStore.setPreviewTrade(null);
         if (result.trade) {
           tradeStore.setActiveTrades([...tradeStore.activeTrades, result.trade]);
         }
         toast.success("Trade loaded and alert sent");
+        setActiveTab("mgmt"); // Switch to MGMT tab
       } else if (
         intent === "ENTER" ||
         intent === "UPDATE_SL" ||
         intent === "TRIM" ||
         intent === "EXIT"
       ) {
-        // Reload trades to get updated state
         await tradeStore.loadTrades(user.id);
 
-        // Success messages
         if (intent === "ENTER") toast.success("Entry alert sent");
         else if (intent === "UPDATE_SL") toast.success("Stop loss update sent");
         else if (intent === "TRIM") toast.success("Trim alert sent");
@@ -286,7 +309,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     } catch (error) {
       console.error("[MobileApp] Failed to send alert:", error);
       toast.error("Failed to send alert");
-      // Close modal after 1.5s to allow user to see error
       setTimeout(() => {
         setAlertSheetOpen(false);
         setAlertTrade(null);
@@ -294,7 +316,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     }
   };
 
-  // Handle Enter and Alert - skip LOADED state, go directly to ENTERED
+  // Handle Enter and Alert - skip LOADED state
   const handleEnterAndAlert = async (
     channels: string[],
     challengeIds: string[],
@@ -311,7 +333,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
       return;
     }
 
-    // Check Discord enabled before proceeding - matches desktop pattern
     if (!discordAlertsEnabled) {
       toast.info("Discord alerts disabled", {
         description: "Enable in Settings → Discord to send alerts.",
@@ -320,10 +341,8 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     }
 
     try {
-      // Use ENTER intent (skips LOADED state)
       const intent = "ENTER";
 
-      // Create alert draft using domain layer
       const draft = createAlertDraft({
         intent,
         trade: alertTrade,
@@ -332,7 +351,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         initialChallenges: challengeIds,
       });
 
-      // Apply price overrides to draft
       if (priceOverrides) {
         if (priceOverrides.entryPrice !== undefined) {
           draft.editablePrices.entry = priceOverrides.entryPrice;
@@ -348,12 +366,10 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         }
       }
 
-      // Set comment if provided
       if (comment) {
         draft.comment = comment;
       }
 
-      // Commit draft (persists to database + sends Discord)
       const discordService: DiscordAlertService = {
         sendLoadAlert: discord.sendLoadAlert,
         sendEntryAlert: discord.sendEntryAlert,
@@ -371,81 +387,102 @@ export function MobileApp({ onLogout }: MobileAppProps) {
 
       toast.success("Trade entered successfully!");
 
-      // Close alert sheet
       setAlertSheetOpen(false);
       setAlertTrade(null);
 
-      // Clear preview trade
       const tradeStore = useTradeStore.getState();
       tradeStore.setPreviewTrade(null);
 
-      // Add to active trades
       if (result.trade) {
         tradeStore.setActiveTrades([...tradeStore.activeTrades, result.trade]);
       }
 
-      // Switch to Active tab
-      setActiveTab("active");
-
-      // Reload trades to get latest state
+      setActiveTab("mgmt");
       await tradeStore.loadTrades(user.id);
     } catch (error) {
       console.error("[MobileApp] Failed to enter trade:", error);
       toast.error("Failed to enter trade");
-      // Keep sheet open on error to allow retry
     }
   };
 
+  // Check if there's an opportunity (high score in watchlist)
+  const hasOpportunity = useMemo(() => {
+    if (!focusSymbol) return false;
+    // Opportunity exists when we have a focused symbol and no active positions
+    return enteredTrades.length === 0 && loadedTrades.length === 0;
+  }, [focusSymbol, enteredTrades.length, loadedTrades.length]);
+
+  // Settings screen
+  if (isSettingsOpen) {
+    return (
+      <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col">
+        {/* Header */}
+        <div className="sticky top-0 z-40 bg-[var(--surface-1)] border-b border-[var(--border-hairline)]">
+          <div className="safe-area-top" />
+          <div className="flex items-center justify-between h-14 px-4">
+            <button
+              onClick={() => setActiveTab("scan")}
+              className="text-sm font-medium text-[var(--brand-primary)] min-h-[44px] min-w-[44px] flex items-center"
+            >
+              ← Back
+            </button>
+            <span className="text-base font-semibold text-[var(--text-high)]">Settings</span>
+            <div className="w-11" /> {/* Spacer for alignment */}
+          </div>
+        </div>
+
+        <MobileSettingsScreen channels={discordChannels} onLogout={onLogout} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col">
-      {/* Header */}
-      <MobileHeader />
+      {/* Sticky Ticker Tape Header */}
+      <MobileTickerTape onSymbolClick={() => setActiveTab("scan")} />
 
-      {/* Spacer for fixed header (h-14 = 56px + safe-area-inset-top) */}
-      <div className="h-header-safe" />
+      {/* Settings button (top right) */}
+      <button
+        onClick={() => setActiveTab("settings")}
+        className="fixed top-3 right-4 z-50 p-2.5 rounded-xl bg-[var(--surface-2)]/80 backdrop-blur min-h-[44px] min-w-[44px] flex items-center justify-center"
+        style={{ top: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
+      >
+        <Settings className="w-5 h-5 text-[var(--text-muted)]" />
+      </button>
 
-      {/* Main content - pb-nav-safe accounts for nav height (64px) + safe area bottom */}
-      <main className="flex-1 overflow-hidden pb-nav-safe">
-        {activeTab === "active" && (
-          <MobileActiveScreen
-            trades={enteredTrades}
+      {/* Tabbed Content Area */}
+      <MobileOpportunityTabs
+        activeTab={activeTab as OpportunityTab}
+        onTabChange={setActiveTab}
+        scanBadge={watchlist.length}
+        mgmtBadge={enteredTrades.length + loadedTrades.length}
+        scanContent={
+          <MobileScanScreen
+            watchlist={watchlist}
+            onTickerTap={handleTickerTap}
+            onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
+          />
+        }
+        deepContent={<MobileDeepScreen />}
+        mgmtContent={
+          <MobileMgmtScreen
+            enteredTrades={enteredTrades}
+            loadedTrades={loadedTrades}
             onTrim={(trade) => openAlertSheet(trade, "update", { updateKind: "trim" })}
             onUpdateSL={(trade) => openAlertSheet(trade, "update", { updateKind: "sl" })}
             onExit={(trade) => openAlertSheet(trade, "exit")}
-          />
-        )}
-
-        {activeTab === "watch" && (
-          <MobileWatchScreen
-            watchlist={watchlist}
-            loadedTrades={loadedTrades}
             onEnter={(trade) => openAlertSheet(trade, "enter")}
-            onDismiss={(trade) => {
-              // Remove from loaded trades
-              useTradeStore.getState().deleteTrade(trade.id);
-            }}
-            onLoad={handleLoadTicker}
+            onDismiss={(trade) => useTradeStore.getState().deleteTrade(trade.id)}
           />
-        )}
+        }
+      />
 
-        {activeTab === "review" && (
-          <MobileReviewScreen
-            trades={exitedTrades}
-            onShare={(trade) => openAlertSheet(trade, "exit")}
-          />
-        )}
-
-        {activeTab === "settings" && (
-          <MobileSettingsScreen channels={discordChannels} onLogout={onLogout} />
-        )}
-      </main>
-
-      {/* Bottom navigation */}
-      <MobileTabNav
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        activeTradesCount={enteredTrades.length}
-        loadedTradesCount={loadedTrades.length}
+      {/* Gold Action FAB */}
+      <MobileActionFab
+        symbol={focusSymbol}
+        hasOpportunity={hasOpportunity}
+        onTap={handleActionFabTap}
+        disabled={!focusSymbol}
       />
 
       {/* Alert sheet */}

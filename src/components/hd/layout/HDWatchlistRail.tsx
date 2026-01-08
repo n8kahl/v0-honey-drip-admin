@@ -1,4 +1,5 @@
 import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../../../stores";
+import { useMarketDataStore } from "../../../stores/marketDataStore";
 import { HDRowWatchlist } from "../cards/HDRowWatchlist";
 import { HDRowLoadedTrade } from "../cards/HDRowLoadedTrade";
 import { HDActiveTradeRow } from "../cards/HDActiveTradeRow";
@@ -22,6 +23,12 @@ interface HDWatchlistRailProps {
   onRemoveLoadedTrade?: (trade: Trade) => void;
   activeTicker?: string;
   activeTrades?: Trade[]; // Add this prop
+  /**
+   * Mode controls which sections are visible:
+   * - "full" (default): All sections (trades, watchlist, challenges)
+   * - "discovery": Only Watchlist + Challenges (for 3-pane layout left rail)
+   */
+  mode?: "full" | "discovery";
 }
 
 /**
@@ -53,8 +60,23 @@ export function HDWatchlistRail({
   onRemoveLoadedTrade,
   activeTicker,
   activeTrades: propActiveTrades,
+  mode = "full",
 }: HDWatchlistRailProps) {
+  // Discovery mode hides trade sections (Active, Loaded) - used in 3-pane layout
+  const showTrades = mode === "full";
   const watchlist = useMarketStore((state) => state.watchlist);
+
+  // Get symbol data for Smart Score sorting
+  const symbolsData = useMarketDataStore((state) => state.symbols);
+
+  // Sort watchlist by Smart Score (confluence score) - highest first
+  const sortedWatchlist = useMemo(() => {
+    return [...watchlist].sort((a, b) => {
+      const scoreA = symbolsData[a.symbol]?.confluence?.overall || 0;
+      const scoreB = symbolsData[b.symbol]?.confluence?.overall || 0;
+      return scoreB - scoreA; // Descending order (highest first)
+    });
+  }, [watchlist, symbolsData]);
   // Use prop if provided, otherwise fall back to store (for backward compatibility)
   const storeActiveTrades = useTradeStore((state) => state.activeTrades);
   const historyTrades = useTradeStore((state) => state.historyTrades);
@@ -204,8 +226,8 @@ export function HDWatchlistRail({
           <HDMacroPanel />
         </div>
 
-        {/* Active Trades Section - FIRST (highest priority) */}
-        {enteredTrades.length > 0 && (
+        {/* Active Trades Section - FIRST (highest priority) - Only in full mode */}
+        {showTrades && enteredTrades.length > 0 && (
           <div>
             <SectionHeader title="Active" />
             <div className="divide-y divide-[var(--border-hairline)]">
@@ -228,8 +250,8 @@ export function HDWatchlistRail({
           </div>
         )}
 
-        {/* Loaded Trades Section - SECOND */}
-        {loadedTrades.length > 0 && (
+        {/* Loaded Trades Section - SECOND - Only in full mode */}
+        {showTrades && loadedTrades.length > 0 && (
           <div className={enteredTrades.length > 0 ? "mt-4" : ""}>
             <SectionHeader title="Loaded" />
             <div className="divide-y divide-[var(--border-hairline)]">
@@ -246,11 +268,15 @@ export function HDWatchlistRail({
           </div>
         )}
 
-        {/* Watchlist Section - THIRD */}
-        <div className={enteredTrades.length > 0 || loadedTrades.length > 0 ? "mt-4" : ""}>
+        {/* Watchlist Section - THIRD (or FIRST in discovery mode) */}
+        <div
+          className={
+            showTrades && (enteredTrades.length > 0 || loadedTrades.length > 0) ? "mt-4" : ""
+          }
+        >
           <SectionHeader title="Watchlist" onAdd={onAddTicker} />
           <div className="divide-y divide-[var(--border-hairline)]">
-            {watchlist.length === 0 ? (
+            {sortedWatchlist.length === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-sm text-[var(--text-muted)] mb-3">No tickers in watchlist</p>
                 <button
@@ -262,7 +288,7 @@ export function HDWatchlistRail({
                 </button>
               </div>
             ) : (
-              watchlist.map((ticker, index) => (
+              sortedWatchlist.map((ticker, index) => (
                 <HDRowWatchlist
                   key={ticker.id}
                   ticker={ticker}
