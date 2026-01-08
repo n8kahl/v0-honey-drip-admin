@@ -99,6 +99,25 @@ export type StrategyConditionTree =
   | StrategyConditionTreeLogicNode
   | StrategyConditionTreeNotNode;
 
+/**
+ * Optimization parameters stored in pending_params JSONB column.
+ * Contains optimized risk/reward and consensus thresholds from GA optimizer.
+ */
+export interface StrategyOptimizationParams {
+  riskReward?: {
+    stopMultiplier?: number;
+    targetMultiplier?: number;
+    trailingStopPct?: number;
+  };
+  consensus?: {
+    minScore?: number;
+    minConfluence?: number;
+    requiredFactors?: string[];
+  };
+  optimizedAt?: string;
+  expectancyGain?: number;
+}
+
 export interface StrategyDefinition {
   id: string;
   createdAt: string;
@@ -126,6 +145,16 @@ export interface StrategyDefinition {
   lastFiredAt?: string | null;
   isCoreLibrary: boolean;
   enabled: boolean;
+
+  // Optimization fields (Phase 4 - GA Optimizer)
+  /** If true, the GA optimizer will include this strategy in optimization runs */
+  autoOptimize?: boolean;
+  /** JSON blob of optimized parameters awaiting user approval */
+  pendingParams?: StrategyOptimizationParams | null;
+  /** Timestamp of the last successful optimization run for this strategy */
+  lastOptimizedAt?: string | null;
+  /** Cached baseline expectancy (before optimization) for comparison */
+  baselineExpectancy?: number | null;
 }
 
 export type StrategySignalStatus = "ACTIVE" | "ACKED" | "DISMISSED";
@@ -167,6 +196,11 @@ interface StrategyDefinitionRow {
   last_fired_at: string | null;
   is_core_library: boolean;
   enabled: boolean;
+  // Optimization fields (Phase 4)
+  auto_optimize: boolean | null;
+  pending_params: StrategyOptimizationParams | null;
+  last_optimized_at: string | null;
+  baseline_expectancy: number | null;
 }
 
 interface StrategySignalRow {
@@ -206,6 +240,11 @@ export function mapStrategyDefinitionRow(row: StrategyDefinitionRow): StrategyDe
     lastFiredAt: row.last_fired_at,
     isCoreLibrary: row.is_core_library,
     enabled: row.enabled,
+    // Optimization fields
+    autoOptimize: row.auto_optimize ?? false,
+    pendingParams: row.pending_params ?? null,
+    lastOptimizedAt: row.last_optimized_at ?? null,
+    baselineExpectancy: row.baseline_expectancy ?? null,
   };
 }
 

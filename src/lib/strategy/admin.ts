@@ -3,9 +3,9 @@
  * Super admin only: create, update, delete, toggle strategies.
  */
 
-import { createClient } from '../supabase/client';
-import type { StrategyDefinition } from '../../types/strategy';
-import { mapStrategyDefinitionRow } from '../../types/strategy';
+import { createClient } from "../supabase/client";
+import type { StrategyDefinition } from "../../types/strategy";
+import { mapStrategyDefinitionRow } from "../../types/strategy";
 
 /**
  * List all strategy definitions (admin view, no RLS filtering).
@@ -19,16 +19,16 @@ export async function listAllStrategies(opts?: {
   const { includeDisabled = true, categoryFilter } = opts || {};
 
   let query = supabase
-    .from('strategy_definitions')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .from("strategy_definitions")
+    .select("*")
+    .order("created_at", { ascending: false });
 
   if (!includeDisabled) {
-    query = query.eq('enabled', true);
+    query = query.eq("enabled", true);
   }
 
   if (categoryFilter) {
-    query = query.eq('category', categoryFilter);
+    query = query.eq("category", categoryFilter);
   }
 
   const { data, error } = await query;
@@ -43,13 +43,13 @@ export async function listAllStrategies(opts?: {
 export async function getStrategyById(strategyId: string): Promise<StrategyDefinition | null> {
   const supabase = createClient();
   const { data, error } = await supabase
-    .from('strategy_definitions')
-    .select('*')
-    .eq('id', strategyId)
+    .from("strategy_definitions")
+    .select("*")
+    .eq("id", strategyId)
     .single();
 
   if (error) {
-    if (error.code === 'PGRST116') return null; // Not found
+    if (error.code === "PGRST116") return null; // Not found
     throw error;
   }
 
@@ -60,10 +60,12 @@ export async function getStrategyById(strategyId: string): Promise<StrategyDefin
  * Create a new strategy definition.
  * Super admin only.
  */
-export async function createStrategy(strategy: Omit<StrategyDefinition, 'id' | 'createdAt' | 'updatedAt'>): Promise<StrategyDefinition> {
+export async function createStrategy(
+  strategy: Omit<StrategyDefinition, "id" | "createdAt" | "updatedAt">
+): Promise<StrategyDefinition> {
   const supabase = createClient();
   const { data, error } = await supabase
-    .from('strategy_definitions')
+    .from("strategy_definitions")
     .insert({
       name: strategy.name,
       slug: strategy.slug,
@@ -95,7 +97,7 @@ export async function createStrategy(strategy: Omit<StrategyDefinition, 'id' | '
  */
 export async function updateStrategy(
   strategyId: string,
-  updates: Partial<Omit<StrategyDefinition, 'id' | 'createdAt' | 'updatedAt'>>
+  updates: Partial<Omit<StrategyDefinition, "id" | "createdAt" | "updatedAt">>
 ): Promise<StrategyDefinition> {
   const supabase = createClient();
   const payload: any = {};
@@ -116,10 +118,10 @@ export async function updateStrategy(
   if (updates.isCoreLibrary !== undefined) payload.is_core_library = updates.isCoreLibrary;
   if (updates.enabled !== undefined) payload.enabled = updates.enabled;
 
-  const { data, error} = await supabase
-    .from('strategy_definitions')
+  const { data, error } = await supabase
+    .from("strategy_definitions")
     .update(payload)
-    .eq('id', strategyId)
+    .eq("id", strategyId)
     .select()
     .single();
 
@@ -131,12 +133,15 @@ export async function updateStrategy(
  * Toggle strategy enabled/disabled.
  * Super admin only.
  */
-export async function toggleStrategyEnabled(strategyId: string, enabled: boolean): Promise<StrategyDefinition> {
+export async function toggleStrategyEnabled(
+  strategyId: string,
+  enabled: boolean
+): Promise<StrategyDefinition> {
   const supabase = createClient();
   const { data, error } = await supabase
-    .from('strategy_definitions')
+    .from("strategy_definitions")
     .update({ enabled })
-    .eq('id', strategyId)
+    .eq("id", strategyId)
     .select()
     .single();
 
@@ -151,16 +156,13 @@ export async function toggleStrategyEnabled(strategyId: string, enabled: boolean
 export async function deleteStrategy(strategyId: string): Promise<void> {
   // First check if it's a core library strategy
   const strategy = await getStrategyById(strategyId);
-  if (!strategy) throw new Error('Strategy not found');
+  if (!strategy) throw new Error("Strategy not found");
   if (strategy.isCoreLibrary) {
-    throw new Error('Cannot delete core library strategies. Disable instead.');
+    throw new Error("Cannot delete core library strategies. Disable instead.");
   }
 
   const supabase = createClient();
-  const { error } = await supabase
-    .from('strategy_definitions')
-    .delete()
-    .eq('id', strategyId);
+  const { error } = await supabase.from("strategy_definitions").delete().eq("id", strategyId);
 
   if (error) throw error;
 }
@@ -169,9 +171,12 @@ export async function deleteStrategy(strategyId: string): Promise<void> {
  * Duplicate a strategy (clone it with new slug).
  * Super admin only.
  */
-export async function duplicateStrategy(strategyId: string, newSlug: string): Promise<StrategyDefinition> {
+export async function duplicateStrategy(
+  strategyId: string,
+  newSlug: string
+): Promise<StrategyDefinition> {
   const original = await getStrategyById(strategyId);
-  if (!original) throw new Error('Strategy not found');
+  if (!original) throw new Error("Strategy not found");
 
   return createStrategy({
     ...original,
@@ -189,13 +194,77 @@ export async function duplicateStrategy(strategyId: string, newSlug: string): Pr
 export async function bulkToggleByCategory(category: string, enabled: boolean): Promise<number> {
   const supabase = createClient();
   const { data, error } = await supabase
-    .from('strategy_definitions')
+    .from("strategy_definitions")
     .update({ enabled })
-    .eq('category', category)
-    .select('id');
+    .eq("category", category)
+    .select("id");
 
   if (error) throw error;
   return (data || []).length;
+}
+
+/**
+ * Apply pending optimization parameters to a strategy.
+ * This copies pending_params to the live configuration and clears pending_params.
+ */
+export async function applyPendingParams(strategyId: string): Promise<StrategyDefinition> {
+  const supabase = createClient();
+
+  // First get the current strategy with pending params
+  const strategy = await getStrategyById(strategyId);
+  if (!strategy) throw new Error("Strategy not found");
+  if (!strategy.pendingParams) throw new Error("No pending parameters to apply");
+
+  // Update the strategy: clear pending_params and update last_optimized_at
+  const { data, error } = await supabase
+    .from("strategy_definitions")
+    .update({
+      pending_params: null,
+      last_optimized_at: new Date().toISOString(),
+    })
+    .eq("id", strategyId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapStrategyDefinitionRow(data);
+}
+
+/**
+ * Dismiss pending optimization parameters without applying.
+ */
+export async function dismissPendingParams(strategyId: string): Promise<StrategyDefinition> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("strategy_definitions")
+    .update({ pending_params: null })
+    .eq("id", strategyId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapStrategyDefinitionRow(data);
+}
+
+/**
+ * Toggle auto_optimize flag for a strategy.
+ */
+export async function toggleAutoOptimize(
+  strategyId: string,
+  autoOptimize: boolean
+): Promise<StrategyDefinition> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("strategy_definitions")
+    .update({ auto_optimize: autoOptimize })
+    .eq("id", strategyId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapStrategyDefinitionRow(data);
 }
 
 /**
@@ -211,8 +280,8 @@ export async function getStrategyStats(): Promise<{
 }> {
   const supabase = createClient();
   const { data, error } = await supabase
-    .from('strategy_definitions')
-    .select('id, enabled, is_core_library, category');
+    .from("strategy_definitions")
+    .select("id, enabled, is_core_library, category");
 
   if (error) throw error;
 
