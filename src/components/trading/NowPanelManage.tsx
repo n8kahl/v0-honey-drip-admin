@@ -52,7 +52,6 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { FlowDashboard } from "../hd/flow";
-import { HDConfluenceDetailPanel } from "../hd/dashboard/HDConfluenceDetailPanel";
 
 // ============================================================================
 // Helper Functions
@@ -879,17 +878,6 @@ function LevelsATRPanel({
             />
           </div>
         </div>
-      </div>
-
-      {/* Confluence & Coaching Section */}
-      <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
-        <HDConfluenceDetailPanel
-          ticker={trade.ticker}
-          direction={trade.contract.type === "C" ? "call" : "put"}
-          compact={true}
-          isPositive={liveModel.pnlPercent >= 0}
-          contract={trade.contract}
-        />
       </div>
 
       {/* Symbol Signals (Strategy Alerts) */}

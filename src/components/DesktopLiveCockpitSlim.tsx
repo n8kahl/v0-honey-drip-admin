@@ -4,6 +4,7 @@ import { HDPanelWatchlist } from "./hd/dashboard/HDPanelWatchlist";
 import { HDMacroPanel } from "./hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "./hd/layout/HDWatchlistRail";
 import { HDPortfolioRail } from "./hd/layout/HDPortfolioRail";
+import { ActionRail } from "./trading/ActionRail";
 import { MobileNowPlayingSheet } from "./MobileNowPlayingSheet";
 import { MobileWatermark } from "./MobileWatermark";
 
@@ -53,7 +54,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onRemoveChallenge,
     onExitedTrade,
     onEnteredTrade,
-    channels: _channels,
+    channels,
     onMobileTabChange,
     onOpenActiveTrade,
     onOpenReviewTrade,
@@ -79,6 +80,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     currentTrade,
     tradeState,
     showAlert,
+    alertType,
+    alertOptions,
     activeTrades,
     focus,
     isTransitioning,
@@ -179,12 +182,52 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           )}
         </div>
 
-        {/* RIGHT: HDPortfolioRail - Portfolio Risk Dashboard */}
-        <HDPortfolioRail
-          activeTrades={activeTrades.filter((t) => t.state === "ENTERED")}
-          loadedTrades={activeTrades.filter((t) => t.state === "LOADED")}
-          onTradeClick={(trade) => actions.handleActiveTradeClick(trade, watchlist)}
-        />
+        {/* RIGHT: ActionRail (alert mode) OR HDPortfolioRail (normal mode) */}
+        {showAlert ? (
+          <ActionRail
+            tradeState={tradeState}
+            currentTrade={currentTrade}
+            showAlert={showAlert}
+            alertType={alertType}
+            alertOptions={alertOptions}
+            channels={channels}
+            challenges={challenges}
+            isTransitioning={isTransitioning}
+            onSendAlert={actions.handleSendAlert}
+            onEnterAndAlert={actions.handleEnterAndAlert}
+            onCancelAlert={actions.handleCancelAlert}
+            onUnload={actions.handleUnloadTrade}
+            onTrim={actions.handleTrim}
+            onMoveSL={actions.handleUpdateSL}
+            onTrailStop={actions.handleTrailStop}
+            onAdd={actions.handleAdd}
+            onExit={actions.handleExit}
+            onTakeProfit={actions.handleTakeProfit}
+            setupMode={
+              activeTicker
+                ? {
+                    focusedSymbol: activeTicker.symbol,
+                    activeContract: currentTrade?.contract || null,
+                    recommendedContract: null,
+                    contractSource: currentTrade?.contract ? "manual" : null,
+                    currentPrice: activeTicker.last || 0,
+                    tradeType:
+                      (currentTrade?.tradeType as "Scalp" | "Day" | "Swing" | "LEAP") || "Day",
+                    isTransitioning,
+                    onLoadAndAlert: actions.handleLoadAndAlert,
+                    onEnterAndAlert: actions.handleEnterAndAlert,
+                    onDiscard: actions.handleDiscard,
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <HDPortfolioRail
+            activeTrades={activeTrades.filter((t) => t.state === "ENTERED")}
+            loadedTrades={activeTrades.filter((t) => t.state === "LOADED")}
+            onTradeClick={(trade) => actions.handleActiveTradeClick(trade, watchlist)}
+          />
+        )}
       </div>
 
       {/* Mobile Layout */}
