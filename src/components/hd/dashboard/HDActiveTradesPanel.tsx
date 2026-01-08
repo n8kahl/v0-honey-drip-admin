@@ -1,152 +1,131 @@
 import { useMemo } from "react";
 import { useTradeStore } from "../../../stores";
 import { Trade } from "../../../types";
-import { TrendingUp, TrendingDown, MoveUp, X, Scissors, Wifi } from "lucide-react";
+import { TrendingUp, ChevronRight } from "lucide-react";
 import { cn, formatPrice, formatPercent } from "../../../lib/utils";
+import { normalizeSymbolForAPI } from "../../../lib/symbolUtils";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
-import { calculateRealizedPnL, getEntryPriceFromUpdates } from "../../../lib/tradePnl";
+import { useFlowContext } from "../../../hooks/useFlowContext";
+import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 
 interface HDActiveTradesPanelProps {
   onTradeClick?: (trade: Trade) => void;
-  onTrimClick?: (trade: Trade) => void;
-  onMoveSLClick?: (trade: Trade) => void;
-  onExitClick?: (trade: Trade) => void;
 }
 
 /**
- * Individual entered trade row with LIVE P&L via useActiveTradePnL hook.
- * Extracted as a separate component so each trade can have its own hook subscription.
+ * Determine thesis status based on flow vs trade direction
+ * Returns: "aligned" | "diverging" | "neutral"
+ */
+function getThesisStatus(
+  tradeDirection: "call" | "put",
+  flowSentiment: "BULLISH" | "BEARISH" | "NEUTRAL"
+): "aligned" | "diverging" | "neutral" {
+  const isLong = tradeDirection === "call";
+  const isBullishFlow = flowSentiment === "BULLISH";
+  const isBearishFlow = flowSentiment === "BEARISH";
+
+  if ((isLong && isBullishFlow) || (!isLong && isBearishFlow)) {
+    return "aligned";
+  }
+  if ((isLong && isBearishFlow) || (!isLong && isBullishFlow)) {
+    return "diverging";
+  }
+  return "neutral";
+}
+
+/**
+ * Compact entered trade row - Shows only essential info for right rail.
+ * Ticker, P&L %, and thesis status dot.
+ * Full details are in Mission Control (center panel).
  */
 function EnteredTradeItem({
   trade,
   isUpdated,
   onTradeClick,
-  onTrimClick,
-  onMoveSLClick,
-  onExitClick,
 }: {
   trade: Trade;
   isUpdated: boolean;
   onTradeClick?: (trade: Trade) => void;
-  onTrimClick?: (trade: Trade) => void;
-  onMoveSLClick?: (trade: Trade) => void;
-  onExitClick?: (trade: Trade) => void;
 }) {
-  // ✅ FIX: Use live P&L hook instead of stale store data
+  // Live P&L
   const contractTicker =
     trade.contract?.id || trade.contract?.ticker || trade.contract?.symbol || null;
   const entryPrice =
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
-  const realizedPnL = useMemo(() => calculateRealizedPnL(trade), [trade]);
-  const { currentPrice, pnlPercent, source } = useActiveTradePnL(
-    trade.id,
-    contractTicker,
-    entryPrice
-  );
+  const { currentPrice, pnlPercent } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
 
-  // Use live data, fallback to stored movePercent if no live data yet
+  // Live flow for thesis status
+  const underlyingTicker = normalizeSymbolForAPI(trade.ticker);
+  const { primarySentiment } = useFlowContext(underlyingTicker, {
+    refreshInterval: 60000, // Less frequent for rail items
+    windows: ["short"],
+  });
+
+  // Computed values
   const displayPnlPercent = currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
-  const displayCurrentPrice = currentPrice > 0 ? currentPrice : (trade.currentPrice ?? 0);
   const isProfit = displayPnlPercent >= 0;
-
-  // Calculate dollar P&L from live percent (entry * percent / 100)
-  const pnlDollars = entryPrice > 0 ? (entryPrice * displayPnlPercent) / 100 : 0;
+  const tradeDirection = trade.contract.type === "C" ? "call" : "put";
+  const thesisStatus = getThesisStatus(tradeDirection as "call" | "put", primarySentiment);
 
   return (
     <div
       className={cn(
-        "p-3 hover:bg-[var(--surface-2)] transition-colors cursor-pointer",
+        "group flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--surface-2)] transition-colors cursor-pointer",
         isUpdated && "bg-[var(--brand-primary)]/10"
       )}
       onClick={() => onTradeClick?.(trade)}
     >
-      {/* Header: Ticker + Contract */}
-      <div className="flex items-center justify-between mb-2">
+      {/* Thesis Status Dot */}
+      <div
+        className={cn(
+          "w-2.5 h-2.5 rounded-full flex-shrink-0",
+          thesisStatus === "aligned" && "bg-emerald-500",
+          thesisStatus === "diverging" && "bg-red-500 animate-pulse",
+          thesisStatus === "neutral" && "bg-zinc-500"
+        )}
+        title={
+          thesisStatus === "aligned"
+            ? "Flow aligned with position"
+            : thesisStatus === "diverging"
+              ? "Flow diverging from position!"
+              : "Neutral flow"
+        }
+      />
+
+      {/* Ticker + Contract */}
+      <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--text-high)]">{trade.ticker}</span>
-          <span className="text-xs text-[var(--text-muted)]">
+          <span className="text-sm font-semibold text-[var(--text-high)]">{trade.ticker}</span>
+          <span className="text-[10px] text-[var(--text-faint)]">
             {trade.contract.strike}
-            {trade.contract.type} {trade.contract.daysToExpiry}DTE
+            {trade.contract.type}
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          {/* Live indicator */}
-          <Wifi
-            className={cn("w-3 h-3", source === "websocket" ? "text-green-500" : "text-yellow-500")}
-          />
-          <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]">
-            Entered
-          </span>
+        <div className="text-[10px] text-[var(--text-muted)]">
+          {trade.contract.daysToExpiry}DTE • {trade.tradeType}
         </div>
       </div>
 
       {/* P&L */}
-      <div className="mb-3">
+      <div className="text-right flex-shrink-0">
         <div
           className={cn(
-            "text-xl font-semibold tabular-nums",
+            "text-sm font-bold tabular-nums",
             isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
           )}
         >
           {isProfit ? "+" : ""}
-          {formatPercent(displayPnlPercent)} (${formatPrice(Math.abs(pnlDollars))})
-        </div>
-        <div className="text-xs text-[var(--text-muted)] mt-0.5 tabular-nums">
-          Realized {realizedPnL.realizedPercent >= 0 ? "+" : ""}
-          {realizedPnL.realizedPercent.toFixed(1)}% ({realizedPnL.realizedDollars >= 0 ? "+" : "-"}
-          {formatPrice(Math.abs(realizedPnL.realizedDollars))})
-        </div>
-        <div className="text-xs text-[var(--text-muted)] mt-0.5">
-          Entry: ${formatPrice(entryPrice)} • Current: ${formatPrice(displayCurrentPrice)}
+          {formatPercent(displayPnlPercent)}
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onTrimClick?.(trade);
-          }}
-          className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-[var(--surface-3)] hover:bg-[var(--brand-primary)]/20 text-xs font-medium text-[var(--text-high)] transition-colors"
-          title="Trim position"
-        >
-          <Scissors className="w-3.5 h-3.5" />
-          Trim
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onMoveSLClick?.(trade);
-          }}
-          className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-[var(--surface-3)] hover:bg-[var(--brand-primary)]/20 text-xs font-medium text-[var(--text-high)] transition-colors"
-          title="Move stop loss"
-        >
-          <MoveUp className="w-3.5 h-3.5" />
-          Move SL
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onExitClick?.(trade);
-          }}
-          className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-[var(--accent-negative)]/20 hover:bg-[var(--accent-negative)]/30 text-xs font-medium text-[var(--accent-negative)] transition-colors"
-          title="Exit position"
-        >
-          <X className="w-3.5 h-3.5" />
-          Exit
-        </button>
-      </div>
+      {/* Chevron */}
+      <ChevronRight className="w-4 h-4 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
     </div>
   );
 }
 
-export function HDActiveTradesPanel({
-  onTradeClick,
-  onTrimClick,
-  onMoveSLClick,
-  onExitClick,
-}: HDActiveTradesPanelProps) {
+export function HDActiveTradesPanel({ onTradeClick }: HDActiveTradesPanelProps) {
   const activeTrades = useTradeStore((state) => state.activeTrades);
   const updatedTradeIds = useTradeStore((state) => state.updatedTradeIds);
 
@@ -189,48 +168,52 @@ export function HDActiveTradesPanel({
             trade={trade}
             isUpdated={updatedTradeIds.has(trade.id)}
             onTradeClick={onTradeClick}
-            onTrimClick={onTrimClick}
-            onMoveSLClick={onMoveSLClick}
-            onExitClick={onExitClick}
           />
         ))}
 
-        {/* Loaded Trades (Secondary) */}
-        {loadedTrades.map((trade) => {
-          const isUpdated = updatedTradeIds.has(trade.id);
-
-          return (
+        {/* Loaded Trades (Secondary) - Compact row style */}
+        {loadedTrades.map((trade) => (
+          <div
+            key={trade.id}
+            className={cn(
+              "group flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--surface-2)] transition-colors cursor-pointer",
+              updatedTradeIds.has(trade.id) && "bg-[var(--brand-primary)]/10"
+            )}
+            onClick={() => onTradeClick?.(trade)}
+          >
+            {/* Blue dot for LOADED state */}
             <div
-              key={trade.id}
-              className={cn(
-                "p-3 hover:bg-[var(--surface-2)] transition-colors cursor-pointer",
-                isUpdated && "bg-[var(--brand-primary)]/10"
-              )}
-              onClick={() => onTradeClick?.(trade)}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-[var(--text-high)]">
-                    {trade.ticker}
-                  </span>
-                  <span className="text-xs text-[var(--text-muted)]">
-                    {trade.contract.strike}
-                    {trade.contract.type} {trade.contract.daysToExpiry}DTE
-                  </span>
-                </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-blue-500/20 text-blue-400">
-                  Loaded
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-blue-500"
+              title="Loaded - awaiting entry"
+            />
+
+            {/* Ticker + Contract */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-[var(--text-high)]">
+                  {trade.ticker}
+                </span>
+                <span className="text-[10px] text-[var(--text-faint)]">
+                  {trade.contract.strike}
+                  {trade.contract.type}
                 </span>
               </div>
-
-              {/* Contract Details */}
-              <div className="text-xs text-[var(--text-muted)]">
-                Mid: ${formatPrice(trade.contract.mid)} • Target: {trade.tradeType}
+              <div className="text-[10px] text-[var(--text-muted)]">
+                {trade.contract.daysToExpiry}DTE • {trade.tradeType}
               </div>
             </div>
-          );
-        })}
+
+            {/* Mid Price */}
+            <div className="text-right flex-shrink-0">
+              <div className="text-sm tabular-nums text-[var(--text-muted)]">
+                ${formatPrice(trade.contract.mid)}
+              </div>
+            </div>
+
+            {/* Chevron */}
+            <ChevronRight className="w-4 h-4 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        ))}
       </div>
     </div>
   );

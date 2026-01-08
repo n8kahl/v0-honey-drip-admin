@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Trade, TradeType } from "../../../types";
 import { cn, formatPrice, formatPercent } from "../../../lib/utils";
 import { normalizeSymbolForAPI, isIndex } from "../../../lib/symbolUtils";
@@ -18,8 +18,10 @@ import {
   AlertCircle,
   Brain,
   BarChart3,
-  HeartPulse,
   FileCheck,
+  Radio,
+  Crosshair,
+  Radar,
 } from "lucide-react";
 import { useQuotes } from "../../../hooks/useMassiveData";
 import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
@@ -28,9 +30,11 @@ import { useKeyLevels } from "../../../hooks/useKeyLevels";
 import { useMacroContext } from "../../../hooks/useIndicesAdvanced";
 import { useThesisValidation } from "../../../hooks/useThesisValidation";
 import { useAITradeCoach } from "../../../hooks/useAITradeCoach";
+import { useFlowContext } from "../../../hooks/useFlowContext";
 import { HDEnteredTradeCard } from "../cards/HDEnteredTradeCard";
 import { HDGreeksMonitor } from "./HDGreeksMonitor";
 import { AICoachPanel } from "../ai/AICoachPanel";
+import { FlowPulse, SmartScoreBadge } from "../terminal";
 
 interface HDActiveTradePanelProps {
   trade: Trade;
@@ -190,6 +194,75 @@ function getTimePressure(trade: Trade): {
 }
 
 /**
+ * Evaluate thesis support based on flow vs trade direction
+ * Returns status, label, and color for display
+ */
+function evaluateThesisSupport(
+  tradeDirection: "call" | "put",
+  flowSentiment: "BULLISH" | "BEARISH" | "NEUTRAL",
+  flowStrength: number
+): {
+  status: "supported" | "diverging" | "neutral" | "warning";
+  label: string;
+  description: string;
+  color: string;
+  bgColor: string;
+} {
+  const isLong = tradeDirection === "call";
+  const isBullishFlow = flowSentiment === "BULLISH";
+  const isBearishFlow = flowSentiment === "BEARISH";
+
+  // Strong alignment
+  if ((isLong && isBullishFlow) || (!isLong && isBearishFlow)) {
+    if (flowStrength >= 70) {
+      return {
+        status: "supported",
+        label: "THESIS CONFIRMED",
+        description: "Strong institutional flow alignment",
+        color: "text-emerald-400",
+        bgColor: "bg-emerald-500/10 border-emerald-500/30",
+      };
+    }
+    return {
+      status: "supported",
+      label: "FLOW ALIGNED",
+      description: "Flow supports your direction",
+      color: "text-emerald-400",
+      bgColor: "bg-emerald-500/10 border-emerald-500/20",
+    };
+  }
+
+  // Strong divergence - WARNING
+  if ((isLong && isBearishFlow) || (!isLong && isBullishFlow)) {
+    if (flowStrength >= 70) {
+      return {
+        status: "warning",
+        label: "⚠️ THESIS DIVERGING",
+        description: "Strong flow against your position!",
+        color: "text-red-400",
+        bgColor: "bg-red-500/10 border-red-500/30",
+      };
+    }
+    return {
+      status: "diverging",
+      label: "FLOW DIVERGING",
+      description: "Flow moving against position",
+      color: "text-amber-400",
+      bgColor: "bg-amber-500/10 border-amber-500/20",
+    };
+  }
+
+  // Neutral flow
+  return {
+    status: "neutral",
+    label: "NEUTRAL FLOW",
+    description: "No strong directional bias",
+    color: "text-zinc-400",
+    bgColor: "bg-zinc-500/10 border-zinc-500/20",
+  };
+}
+
+/**
  * Get trade style specific configuration
  */
 function getStyleConfig(tradeType: TradeType): {
@@ -295,6 +368,79 @@ export function HDActiveTradePanel({
   // Get thesis validation
   const thesisValidation = useThesisValidation(trade);
 
+  // Get live flow context for thesis monitoring
+  const flowContext = useFlowContext(underlyingTicker, {
+    refreshInterval: 30000,
+    windows: ["short", "medium"],
+  });
+
+  // Evaluate thesis support based on flow vs trade direction
+  const tradeDirection = trade.contract.type === "C" ? "call" : "put";
+  const thesisSupport = useMemo(
+    () =>
+      evaluateThesisSupport(
+        tradeDirection as "call" | "put",
+        flowContext.primarySentiment,
+        flowContext.primaryStrength
+      ),
+    [tradeDirection, flowContext.primarySentiment, flowContext.primaryStrength]
+  );
+
+  // Track gamma regime at entry to detect changes
+  const gammaAtEntryRef = useRef<"long" | "short" | "neutral" | null>(null);
+  const [gammaRegimeChanged, setGammaRegimeChanged] = useState(false);
+  const [gammaChangeMessage, setGammaChangeMessage] = useState<string | null>(null);
+
+  // Simulated gamma data (in production, this would come from a gamma API)
+  // For now, derive from VIX as a proxy
+  const currentGammaRegime = useMemo(() => {
+    if (!vixValue) return "neutral";
+    // Simple heuristic: High VIX = short gamma environment
+    if (vixValue > 25) return "short";
+    if (vixValue < 15) return "long";
+    return "neutral";
+  }, [vixValue]);
+
+  // Detect gamma regime changes
+  useEffect(() => {
+    if (!gammaAtEntryRef.current && currentGammaRegime) {
+      // Record initial gamma regime
+      gammaAtEntryRef.current = currentGammaRegime as "long" | "short" | "neutral";
+    } else if (
+      gammaAtEntryRef.current &&
+      currentGammaRegime !== gammaAtEntryRef.current &&
+      currentGammaRegime !== "neutral"
+    ) {
+      // Gamma regime has changed!
+      setGammaRegimeChanged(true);
+      const oldRegime = gammaAtEntryRef.current === "long" ? "Long Gamma" : "Short Gamma";
+      const newRegime = currentGammaRegime === "long" ? "Long Gamma" : "Short Gamma";
+      setGammaChangeMessage(
+        `Regime shifted from ${oldRegime} to ${newRegime}. Expect volatility change.`
+      );
+    }
+  }, [currentGammaRegime]);
+
+  // Dismiss gamma alert handler
+  const dismissGammaAlert = () => {
+    setGammaRegimeChanged(false);
+    gammaAtEntryRef.current = currentGammaRegime as "long" | "short" | "neutral";
+  };
+
+  // Build flow features object for FlowPulse component
+  const flowFeatures = useMemo(
+    () => ({
+      flowScore: flowContext.institutionalScore,
+      flowBias: flowContext.primarySentiment.toLowerCase() as "bullish" | "bearish" | "neutral",
+      institutionalConviction: flowContext.institutionalScore,
+      sweepCount: flowContext.sweepCount,
+      blockCount: flowContext.blockCount,
+      putCallRatio: flowContext.putCallRatio,
+      totalPremium: flowContext.totalPremium,
+    }),
+    [flowContext]
+  );
+
   // Calculate P&L progress (SL to TP)
   const pnlProgress = useMemo(() => {
     if (!entryPrice || !trade.stopLoss || !trade.targetPrice || !currentPrice) {
@@ -319,120 +465,203 @@ export function HDActiveTradePanel({
   return (
     <div className="space-y-4">
       {/* ═══════════════════════════════════════════════════════════════════════
-          P&L DASHBOARD - Top Header Section
+          GAMMA REGIME CHANGE ALERT - Smart Alert Banner
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="bg-gradient-to-r from-[var(--surface-2)] to-[var(--surface-1)] rounded-lg border border-[var(--border-hairline)] p-4">
-        <div className="grid grid-cols-3 gap-4">
-          {/* P&L Display */}
-          <div className="space-y-2">
-            <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide">P&L</div>
-            <div
-              className={cn(
-                "text-2xl font-bold tabular-nums",
-                isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
-              )}
+      {gammaRegimeChanged && gammaChangeMessage && (
+        <div className="relative bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 rounded-lg border border-amber-500/40 p-3 animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-amber-500/20">
+                <Radar
+                  className="w-5 h-5 text-amber-400 animate-spin"
+                  style={{ animationDuration: "3s" }}
+                />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-amber-300 flex items-center gap-2">
+                  <span>⚡ GAMMA REGIME CHANGE</span>
+                </div>
+                <div className="text-xs text-amber-200/80">{gammaChangeMessage}</div>
+              </div>
+            </div>
+            <button
+              onClick={dismissGammaAlert}
+              className="text-amber-400 hover:text-amber-300 text-xs px-2 py-1 rounded bg-amber-500/20"
             >
-              {isProfit ? "+" : ""}
-              {formatPercent(pnlPercent || 0)}
-            </div>
-            {pnlDollars !== undefined && (
-              <div
-                className={cn(
-                  "text-sm tabular-nums",
-                  isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
-                )}
-              >
-                {isProfit ? "+" : ""}${pnlDollars.toFixed(2)}
-              </div>
-            )}
+              Dismiss
+            </button>
           </div>
+        </div>
+      )}
 
-          {/* Position Health */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              <HeartPulse className="w-3 h-3" />
-              Health
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className={cn(
-                  "text-2xl font-bold",
-                  health.status === "healthy" && "text-[var(--accent-positive)]",
-                  health.status === "warning" && "text-yellow-500",
-                  health.status === "danger" && "text-[var(--accent-negative)]"
-                )}
-              >
-                {health.score}%
-              </div>
-              <div
-                className={cn(
-                  "px-2 py-0.5 rounded text-[10px] uppercase",
-                  health.status === "healthy" &&
-                    "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]",
-                  health.status === "warning" && "bg-yellow-500/20 text-yellow-500",
-                  health.status === "danger" &&
-                    "bg-[var(--accent-negative)]/20 text-[var(--accent-negative)]"
-                )}
-              >
-                {health.status === "healthy"
-                  ? "VALID"
-                  : health.status === "warning"
-                    ? "WATCH"
-                    : "EXIT?"}
-              </div>
-            </div>
-            <div className="text-xs text-[var(--text-muted)]">{health.factors[0]}</div>
+      {/* ═══════════════════════════════════════════════════════════════════════
+          MISSION CONTROL HEADER - P&L, Flow, Time
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="bg-gradient-to-r from-[var(--surface-2)] via-[var(--surface-1)] to-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] overflow-hidden">
+        {/* Top bar - Mission Control label */}
+        <div className="flex items-center justify-between px-4 py-2 bg-[var(--surface-3)]/50 border-b border-[var(--border-hairline)]">
+          <div className="flex items-center gap-2">
+            <Crosshair className="w-4 h-4 text-[var(--brand-primary)]" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              Mission Control
+            </span>
           </div>
-
-          {/* Time Pressure */}
-          <div className="space-y-2">
-            <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              Time Left
-            </div>
-            <div className="flex items-center gap-2">
-              <Timer
-                className={cn(
-                  "w-5 h-5",
-                  timePressure.urgency === "critical" &&
-                    "text-[var(--accent-negative)] animate-pulse",
-                  timePressure.urgency === "high" && "text-orange-500",
-                  timePressure.urgency === "medium" && "text-yellow-500",
-                  timePressure.urgency === "low" && "text-[var(--text-muted)]"
-                )}
-              />
-              <span className="text-2xl font-bold text-[var(--text-high)]">
-                {timePressure.timeLeft}
-              </span>
-            </div>
-            <div className="text-xs text-[var(--text-muted)]">
-              θ: -${timePressure.thetaPerHour.toFixed(2)}/hr
-            </div>
+          <div className="flex items-center gap-2">
+            <Radio
+              className={cn(
+                "w-3 h-3",
+                flowContext.isLoading ? "text-amber-400 animate-pulse" : "text-emerald-400"
+              )}
+            />
+            <span className="text-[10px] text-[var(--text-faint)] uppercase">
+              {flowContext.isLoading ? "Syncing..." : "Live"}
+            </span>
           </div>
         </div>
 
-        {/* P&L Progress Bar */}
-        <div className="mt-4 space-y-1">
-          <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
-            <span>Stop: ${formatPrice(trade.stopLoss || 0)}</span>
-            <span>Entry: ${formatPrice(entryPrice)}</span>
-            <span>Target: ${formatPrice(trade.targetPrice || 0)}</span>
-          </div>
-          <div className="relative h-3 bg-gradient-to-r from-[var(--accent-negative)]/30 via-[var(--surface-3)] to-[var(--accent-positive)]/30 rounded-full overflow-hidden">
-            {/* Entry marker */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-white/50"
-              style={{
-                left: `${((entryPrice - (trade.stopLoss || 0)) / ((trade.targetPrice || entryPrice * 1.5) - (trade.stopLoss || entryPrice * 0.5))) * 100}%`,
-              }}
-            />
-            {/* Current position marker */}
-            <div
-              className={cn(
-                "absolute top-0 bottom-0 w-2 rounded-full transition-all duration-300",
-                isProfit ? "bg-[var(--accent-positive)]" : "bg-[var(--accent-negative)]"
+        <div className="p-4">
+          <div className="grid grid-cols-3 gap-4">
+            {/* P&L Display with FlowPulse Mini */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide">P&L</div>
+                <SmartScoreBadge score={flowContext.institutionalScore} size="sm" label="FLOW" />
+              </div>
+              <div
+                className={cn(
+                  "text-3xl font-bold tabular-nums",
+                  isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                )}
+              >
+                {isProfit ? "+" : ""}
+                {formatPercent(pnlPercent || 0)}
+              </div>
+              {pnlDollars !== undefined && (
+                <div
+                  className={cn(
+                    "text-sm tabular-nums",
+                    isProfit ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"
+                  )}
+                >
+                  {isProfit ? "+" : ""}${pnlDollars.toFixed(2)}
+                </div>
               )}
-              style={{ left: `calc(${pnlProgress * 100}% - 4px)` }}
-            />
+              {/* Mini FlowPulse */}
+              <div className="mt-2 p-2 bg-[var(--surface-3)]/50 rounded border border-[var(--border-hairline)]">
+                <FlowPulse flow={flowFeatures} compact showLabels={false} />
+              </div>
+            </div>
+
+            {/* Thesis Monitor - REPLACES Position Health */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] uppercase tracking-wide">
+                <Crosshair className="w-3 h-3" />
+                Thesis Monitor
+              </div>
+              <div className={cn("p-3 rounded-lg border", thesisSupport.bgColor)}>
+                <div className={cn("text-sm font-bold", thesisSupport.color)}>
+                  {thesisSupport.label}
+                </div>
+                <div className="text-xs text-[var(--text-muted)] mt-1">
+                  {thesisSupport.description}
+                </div>
+              </div>
+              {/* Flow Direction Indicator */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-[var(--text-faint)]">Flow:</span>
+                <span
+                  className={cn(
+                    "font-medium",
+                    flowContext.primarySentiment === "BULLISH" && "text-emerald-400",
+                    flowContext.primarySentiment === "BEARISH" && "text-red-400",
+                    flowContext.primarySentiment === "NEUTRAL" && "text-zinc-400"
+                  )}
+                >
+                  {flowContext.primarySentiment}
+                </span>
+                <span className="text-[var(--text-faint)]">|</span>
+                <span className="text-[var(--text-faint)]">Position:</span>
+                <span
+                  className={cn(
+                    "font-medium",
+                    tradeDirection === "call" ? "text-emerald-400" : "text-red-400"
+                  )}
+                >
+                  {tradeDirection === "call" ? "LONG" : "SHORT"}
+                </span>
+              </div>
+            </div>
+
+            {/* Time Pressure */}
+            <div className="space-y-2">
+              <div className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+                Time Left
+              </div>
+              <div className="flex items-center gap-2">
+                <Timer
+                  className={cn(
+                    "w-5 h-5",
+                    timePressure.urgency === "critical" &&
+                      "text-[var(--accent-negative)] animate-pulse",
+                    timePressure.urgency === "high" && "text-orange-500",
+                    timePressure.urgency === "medium" && "text-yellow-500",
+                    timePressure.urgency === "low" && "text-[var(--text-muted)]"
+                  )}
+                />
+                <span className="text-2xl font-bold text-[var(--text-high)]">
+                  {timePressure.timeLeft}
+                </span>
+              </div>
+              <div className="text-xs text-[var(--text-muted)]">
+                θ: -${timePressure.thetaPerHour.toFixed(2)}/hr
+              </div>
+              {/* Gamma Regime Indicator */}
+              <div className="mt-2 p-2 rounded bg-[var(--surface-3)]/50 border border-[var(--border-hairline)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--text-faint)] uppercase">Gamma</span>
+                  <span
+                    className={cn(
+                      "text-xs font-medium",
+                      currentGammaRegime === "long" && "text-blue-400",
+                      currentGammaRegime === "short" && "text-orange-400",
+                      currentGammaRegime === "neutral" && "text-zinc-400"
+                    )}
+                  >
+                    {currentGammaRegime === "long"
+                      ? "LONG γ"
+                      : currentGammaRegime === "short"
+                        ? "SHORT γ"
+                        : "NEUTRAL"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* P&L Progress Bar */}
+          <div className="mt-4 space-y-1">
+            <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+              <span>Stop: ${formatPrice(trade.stopLoss || 0)}</span>
+              <span>Entry: ${formatPrice(entryPrice)}</span>
+              <span>Target: ${formatPrice(trade.targetPrice || 0)}</span>
+            </div>
+            <div className="relative h-3 bg-gradient-to-r from-[var(--accent-negative)]/30 via-[var(--surface-3)] to-[var(--accent-positive)]/30 rounded-full overflow-hidden">
+              {/* Entry marker */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-white/50"
+                style={{
+                  left: `${((entryPrice - (trade.stopLoss || 0)) / ((trade.targetPrice || entryPrice * 1.5) - (trade.stopLoss || entryPrice * 0.5))) * 100}%`,
+                }}
+              />
+              {/* Current position marker */}
+              <div
+                className={cn(
+                  "absolute top-0 bottom-0 w-2 rounded-full transition-all duration-300",
+                  isProfit ? "bg-[var(--accent-positive)]" : "bg-[var(--accent-negative)]"
+                )}
+                style={{ left: `calc(${pnlProgress * 100}% - 4px)` }}
+              />
+            </div>
           </div>
         </div>
       </div>

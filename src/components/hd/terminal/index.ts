@@ -7,3 +7,4 @@
 export { SmartScoreBadge } from "./SmartScoreBadge";
 export { FlowPulse } from "./FlowPulse";
 export { GammaLevelsMap } from "./GammaLevelsMap";
+export { SmartGateList, areAllGatesPassing } from "./SmartGateList";

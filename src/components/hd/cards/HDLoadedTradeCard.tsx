@@ -1,6 +1,6 @@
+import { useState } from "react";
 import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
-import { HDEntryChecklist } from "../dashboard/HDEntryChecklist";
 import { HDContractQualityBadge } from "../dashboard/HDContractQualityBadge";
 import { HDEconomicEventWarning } from "../dashboard/HDEconomicEventWarning";
 import { HDTimeDecayWarning } from "../dashboard/HDTimeDecayWarning";
@@ -8,8 +8,11 @@ import { HDDynamicProfitTargets } from "../dashboard/HDDynamicProfitTargets";
 import { HDSessionGuidance } from "../dashboard/HDSessionGuidance";
 import { HDCard } from "../common/HDCard";
 import { HDButton } from "../common/HDButton";
-import { formatPrice } from "../../../lib/utils";
+import { SmartGateList, areAllGatesPassing } from "../terminal";
+import { formatPrice, cn } from "../../../lib/utils";
 import type { ContractQualityConfig } from "../../../lib/scoring/ContractQualityScore";
+import type { SymbolFeatures } from "../../../lib/strategy/engine";
+import type { StrategySmartGates } from "../../../types/strategy";
 
 interface HDLoadedTradeCardProps {
   trade: Trade;
@@ -18,6 +21,9 @@ interface HDLoadedTradeCardProps {
   underlyingPrice?: number;
   underlyingChange?: number;
   showActions?: boolean; // Whether to show Enter/Discard action buttons (default: true)
+  features?: SymbolFeatures; // Live market features for gate evaluation
+  gates?: StrategySmartGates; // Strategy gate requirements
+  technicalTrigger?: boolean; // Whether technical price condition is met
 }
 
 export function HDLoadedTradeCard({
@@ -27,7 +33,17 @@ export function HDLoadedTradeCard({
   underlyingPrice,
   underlyingChange,
   showActions = true,
+  features,
+  gates,
+  technicalTrigger,
 }: HDLoadedTradeCardProps) {
+  // Override state for bypassing gate check
+  const [isOverrideEnabled, setIsOverrideEnabled] = useState(false);
+
+  // Evaluate all gates
+  const allGatesPassing = areAllGatesPassing(gates, features, technicalTrigger);
+  const canEnter = allGatesPassing || isOverrideEnabled;
+
   // Build quality config based on trade type
   const qualityConfig: ContractQualityConfig = {
     tradeStyle:
@@ -117,13 +133,9 @@ export function HDLoadedTradeCard({
         </HDCard>
       </div>
 
-      {/* Row 3: Entry Checklist (full width) */}
+      {/* Row 3: Smart Gates (full width) */}
       <HDCard>
-        <HDEntryChecklist
-          ticker={trade.ticker}
-          direction={trade.contract.type === "C" ? "call" : "put"}
-          contract={trade.contract}
-        />
+        <SmartGateList gates={gates} features={features} technicalTrigger={technicalTrigger} />
       </HDCard>
 
       {/* Row 4: Session + Time (2-column grid) */}
@@ -147,13 +159,38 @@ export function HDLoadedTradeCard({
 
       {/* Action Buttons - Only show when showActions is true */}
       {showActions && (
-        <div className="flex gap-2.5">
-          <HDButton variant="primary" onClick={onEnter} className="flex-1">
-            Enter Trade
-          </HDButton>
-          <HDButton variant="secondary" onClick={onDiscard} className="flex-1">
-            Discard
-          </HDButton>
+        <div className="space-y-2">
+          <div className="flex gap-2.5">
+            <HDButton
+              variant={canEnter ? "primary" : "secondary"}
+              onClick={onEnter}
+              disabled={!canEnter}
+              className={cn("flex-1", !canEnter && "opacity-50 cursor-not-allowed")}
+            >
+              {canEnter ? "Enter Trade" : "Conditions Not Met"}
+            </HDButton>
+            <HDButton variant="secondary" onClick={onDiscard} className="flex-1">
+              Discard
+            </HDButton>
+          </div>
+
+          {/* Override Link - Only show when gates are blocking */}
+          {!allGatesPassing && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setIsOverrideEnabled(!isOverrideEnabled)}
+                className={cn(
+                  "text-xs transition-colors",
+                  isOverrideEnabled
+                    ? "text-amber-400 hover:text-amber-300"
+                    : "text-muted-foreground hover:text-[var(--text-muted)]"
+                )}
+              >
+                {isOverrideEnabled ? "✓ Override Enabled" : "Override Gates →"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -62,7 +62,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
   } = props;
 
   // Store access for direct state updates
-  const setCurrentTradeId = useTradeStore((s) => s.setCurrentTradeId);
   const deleteTrade = useTradeStore((s) => s.deleteTrade);
 
   // Compute keyLevels for active ticker in real-time
@@ -307,21 +306,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               onTradeClick={(trade) => {
                 // Use the proper handler for trade clicks
                 actions.handleActiveTradeClick(trade, watchlist);
-              }}
-              onTrimClick={(trade) => {
-                // Focus on trade first, then trigger trim
-                setCurrentTradeId(trade.id);
-                actions.handleTrim();
-              }}
-              onMoveSLClick={(trade) => {
-                // Focus on trade first, then trigger SL update
-                setCurrentTradeId(trade.id);
-                actions.handleUpdateSL();
-              }}
-              onExitClick={(trade) => {
-                // Focus on trade first, then trigger exit
-                setCurrentTradeId(trade.id);
-                actions.handleExit();
               }}
             />
           </div>
