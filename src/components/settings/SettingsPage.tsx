@@ -6,7 +6,7 @@ import { TakeProfitSettings } from "./TakeProfitSettings";
 import { LiveDataBehaviorSettings } from "./LiveDataBehaviorSettings";
 import { DiscordNotificationSettings } from "./DiscordNotificationSettings";
 import { DiscordFailedAlertsPanel } from "./DiscordFailedAlertsPanel";
-import { StrategyLibraryAdmin } from "../StrategyLibraryAdmin";
+import { SmartStrategyLibrary } from "../admin/SmartStrategyLibrary";
 import { BrandingSettingsAdmin } from "../BrandingSettingsAdmin";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useUserSettings } from "../../hooks/useUserSettings";
@@ -64,9 +64,9 @@ export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPagePro
             </section>
           )}
 
-          {/* Advanced */}
+          {/* Strategy Library */}
           <section>
-            <StrategyLibraryAdmin />
+            <SmartStrategyLibrary />
           </section>
 
           {/* System Monitoring */}

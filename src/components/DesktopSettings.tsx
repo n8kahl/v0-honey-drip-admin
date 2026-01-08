@@ -6,7 +6,7 @@ import { Settings, Activity, Info, User } from "lucide-react";
 import { MobileWatermark } from "./MobileWatermark";
 import { useAuth } from "../contexts/AuthContext";
 import { createBrowserClient } from "@supabase/ssr";
-import { StrategyLibraryAdmin } from "./StrategyLibraryAdmin";
+import { SmartStrategyLibrary } from "./admin/SmartStrategyLibrary";
 import { useTPSettings, saveTPSettings } from "../hooks/useTPSettings";
 
 interface DesktopSettingsProps {
@@ -805,9 +805,9 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
             </HDButton>
           </div>
 
-          {/* Strategy Library Admin (Super Admin) */}
+          {/* Strategy Library */}
           <section>
-            <StrategyLibraryAdmin />
+            <SmartStrategyLibrary />
           </section>
         </div>
       </div>
