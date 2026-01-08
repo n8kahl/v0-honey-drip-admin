@@ -171,7 +171,7 @@ export function ActionRail({
   const hasTradeContent = currentTrade != null;
 
   return (
-    <div className="w-[30rem] flex-shrink-0 border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)] overflow-hidden">
+    <div className="w-full border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)] overflow-hidden">
       {/* State Badge - Always at top, use effective state for consistency */}
       <ActionRailStateBadge state={effectiveTradeState} />
 

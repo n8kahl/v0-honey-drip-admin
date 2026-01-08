@@ -283,7 +283,7 @@ export function HDPortfolioRail({
   }, [enteredTrades]);
 
   return (
-    <div className="w-[300px] flex-shrink-0 border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
+    <div className="w-full border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
       {/* Header: Portfolio Risk */}
       <div className="p-3 border-b border-[var(--border-hairline)]">
         <div className="flex items-center justify-between mb-2">

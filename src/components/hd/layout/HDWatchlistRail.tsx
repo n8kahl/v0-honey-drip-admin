@@ -178,7 +178,7 @@ export function HDWatchlistRail({
   }, [sharingChallenge, allTrades]);
 
   return (
-    <div className="w-full lg:w-96 lg:flex-shrink-0 border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
+    <div className="w-full border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Macro Context Panel */}
