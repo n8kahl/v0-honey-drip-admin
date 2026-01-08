@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { Trade, Ticker, Challenge, DiscordChannel } from "../types";
 import { HDPanelWatchlist } from "./hd/dashboard/HDPanelWatchlist";
-import { HDDialogChallengeDetail } from "./hd/forms/HDDialogChallengeDetail";
 import { HDMacroPanel } from "./hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "./hd/layout/HDWatchlistRail";
 import { HDPortfolioRail } from "./hd/layout/HDPortfolioRail";
@@ -54,7 +53,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onRemoveChallenge,
     onExitedTrade,
     onEnteredTrade,
-    channels,
+    channels: _channels,
     onMobileTabChange,
     onOpenActiveTrade,
     onOpenReviewTrade,
@@ -116,10 +115,10 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
 
   return (
     <>
-      <div className="relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden">
-        {/* Watchlist: Left Rail */}
-        {/* Left Rail: Discovery (Watchlist + Challenges) */}
-        <div className="hidden lg:flex">
+      {/* Desktop: 3-Pane Grid Layout [280px | 1fr | 320px] */}
+      <div className="hidden lg:grid lg:grid-cols-[280px_1fr_320px] h-[calc(100vh-8rem)] overflow-hidden">
+        {/* LEFT: HDWatchlistRail - Discovery (Watchlist + Challenges) */}
+        <div className="overflow-hidden">
           <HDWatchlistRail
             onTickerClick={handleTickerClick}
             onAddTicker={onAddTicker}
@@ -128,43 +127,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           />
         </div>
 
-        {/* Legacy Mobile: Show full panel on mobile only */}
-        <div className="w-full lg:hidden border-b border-[var(--border-hairline)] overflow-y-auto">
-          <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
-            <HDMacroPanel />
-          </div>
-          <HDPanelWatchlist
-            watchlist={watchlist}
-            hotTrades={activeTrades}
-            challenges={challenges}
-            allTrades={activeTrades}
-            activeTicker={activeTicker?.symbol}
-            expandLoadedList={false}
-            onTickerClick={handleTickerClick}
-            onHotTradeClick={(trade) => {
-              // Use the proper handler for trade clicks
-              actions.handleActiveTradeClick(trade, watchlist);
-            }}
-            onChallengeClick={() => {}}
-            onAddTicker={onAddTicker}
-            onAddChallenge={onAddChallenge}
-            onRemoveChallenge={onRemoveChallenge}
-            onRemoveTicker={onRemoveTicker}
-            onRemoveLoadedTrade={async (trade: Trade) => {
-              // Use deleteTrade from store - it optimistically removes from state AND deletes from DB
-              try {
-                await deleteTrade(trade.id);
-              } catch (error) {
-                console.error("Failed to remove trade:", error);
-              }
-            }}
-            onOpenActiveTrade={onOpenActiveTrade}
-            onOpenReviewTrade={onOpenReviewTrade}
-            compositeSignals={compositeSignals}
-          />
-        </div>
         {/* CENTER: NowPanel - Single focus target display */}
-        <div className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
+        <div className="min-w-0 overflow-hidden relative flex flex-col border-x border-[var(--border-hairline)]">
           {/* Loading/Error states */}
           {activeTicker && optionsLoading && (
             <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">
@@ -207,9 +171,8 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               onTakeProfit={(sendAlert) => actions.handleTakeProfit(sendAlert)}
               onBroadcastUpdate={(_message) => {
                 // Broadcast update to Discord channels linked to the trade
-                // TODO: Implement Discord broadcast via actions.handleBroadcast with message
                 if (currentTrade) {
-                  actions.handleUpdate(); // Use existing update handler for now
+                  actions.handleUpdate();
                 }
               }}
             />
@@ -217,25 +180,53 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
         </div>
 
         {/* RIGHT: HDPortfolioRail - Portfolio Risk Dashboard */}
-        <div className="hidden lg:flex">
-          <HDPortfolioRail
-            activeTrades={activeTrades.filter((t) => t.state === "ENTERED")}
-            loadedTrades={activeTrades.filter((t) => t.state === "LOADED")}
-            onTradeClick={(trade) => actions.handleActiveTradeClick(trade, watchlist)}
-          />
-        </div>
-        <HDDialogChallengeDetail
-          open={false}
-          onOpenChange={() => {}}
-          challenge={null}
-          trades={activeTrades}
-          channels={channels}
-          onTradeClick={(trade) => {
-            if (trade.state === "ENTERED" && onOpenActiveTrade) onOpenActiveTrade(trade.id);
-            else if (trade.state === "EXITED" && onOpenReviewTrade) onOpenReviewTrade(trade.id);
-          }}
+        <HDPortfolioRail
+          activeTrades={activeTrades.filter((t) => t.state === "ENTERED")}
+          loadedTrades={activeTrades.filter((t) => t.state === "LOADED")}
+          onTradeClick={(trade) => actions.handleActiveTradeClick(trade, watchlist)}
         />
       </div>
+
+      {/* Mobile Layout */}
+      <div className="lg:hidden flex flex-col h-[calc(100vh-7rem)] overflow-hidden">
+        {/* Mobile: Show full panel */}
+        <div className="w-full lg:hidden border-b border-[var(--border-hairline)] overflow-y-auto">
+          <div className="p-3 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
+            <HDMacroPanel />
+          </div>
+          <HDPanelWatchlist
+            watchlist={watchlist}
+            hotTrades={activeTrades}
+            challenges={challenges}
+            allTrades={activeTrades}
+            activeTicker={activeTicker?.symbol}
+            expandLoadedList={false}
+            onTickerClick={handleTickerClick}
+            onHotTradeClick={(trade) => {
+              // Use the proper handler for trade clicks
+              actions.handleActiveTradeClick(trade, watchlist);
+            }}
+            onChallengeClick={() => {}}
+            onAddTicker={onAddTicker}
+            onAddChallenge={onAddChallenge}
+            onRemoveChallenge={onRemoveChallenge}
+            onRemoveTicker={onRemoveTicker}
+            onRemoveLoadedTrade={async (trade: Trade) => {
+              // Use deleteTrade from store - it optimistically removes from state AND deletes from DB
+              try {
+                await deleteTrade(trade.id);
+              } catch (error) {
+                console.error("Failed to remove trade:", error);
+              }
+            }}
+            onOpenActiveTrade={onOpenActiveTrade}
+            onOpenReviewTrade={onOpenReviewTrade}
+            compositeSignals={compositeSignals}
+          />
+        </div>
+      </div>
+
+      {/* Mobile Components */}
       <div className="lg:hidden">
         <MobileNowPlayingSheet
           trade={currentTrade}
