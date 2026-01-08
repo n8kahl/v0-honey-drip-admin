@@ -1,5 +1,5 @@
-import type { SymbolFeatures } from '../../strategy/engine.js';
-import { createDetector, type OpportunityDetector } from '../OpportunityDetector.js';
+import type { SymbolFeatures } from "../../strategy/engine.js";
+import { createDetector, type OpportunityDetector } from "../OpportunityDetector.js";
 
 /**
  * Opening Drive Bearish Detector (SPX/NDX)
@@ -10,10 +10,11 @@ import { createDetector, type OpportunityDetector } from '../OpportunityDetector
  * Expected Frequency: 1-2 signals/day
  */
 export const openingDriveBearishDetector: OpportunityDetector = createDetector({
-  type: 'opening_drive_bearish',
-  direction: 'SHORT',
-  assetClass: ['INDEX'],
+  type: "opening_drive_bearish",
+  direction: "SHORT",
+  assetClass: ["INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     // 1. First 30 minutes
@@ -37,44 +38,44 @@ export const openingDriveBearishDetector: OpportunityDetector = createDetector({
 
   scoreFactors: [
     {
-      name: 'momentum_strength',
-      weight: 0.30,
+      name: "momentum_strength",
+      weight: 0.3,
       evaluate: (features) => {
         const price = features.price.current;
         const dayOpen = features.price.open || price;
         const moveFromOpen = Math.abs(price - dayOpen) / dayOpen;
 
         // 0.3% = 50, 0.5% = 75, 1.0%+ = 100
-        return Math.min(100, (moveFromOpen - 0.003) * 10000 / 7 + 50);
-      }
+        return Math.min(100, ((moveFromOpen - 0.003) * 10000) / 7 + 50);
+      },
     },
     {
-      name: 'volume_intensity',
+      name: "volume_intensity",
       weight: 0.25,
       evaluate: (features) => {
         const rvol = features.volume?.relativeToAvg || 1.0;
 
         // 2.0x = 50, 3.0x = 75, 5.0x+ = 100
         return Math.min(100, (rvol - 2.0) * 25 + 50);
-      }
+      },
     },
     {
-      name: 'flow_alignment',
-      weight: 0.20,
+      name: "flow_alignment",
+      weight: 0.2,
       evaluate: (features) => {
         if (!features.flow) return 50;
 
-        const { flowScore = 50, flowBias = 'neutral', sweepCount = 0 } = features.flow;
+        const { flowScore = 50, flowBias = "neutral", sweepCount = 0 } = features.flow;
 
-        if (flowBias === 'bearish' && flowScore > 60) return 100;
+        if (flowBias === "bearish" && flowScore > 60) return 100;
         if (sweepCount > 3) return 90;
-        if (flowBias === 'bearish') return 75;
+        if (flowBias === "bearish") return 75;
 
         return 50;
-      }
+      },
     },
     {
-      name: 'overnight_gap',
+      name: "overnight_gap",
       weight: 0.15,
       evaluate: (features) => {
         const dayOpen = features.price.open;
@@ -86,14 +87,14 @@ export const openingDriveBearishDetector: OpportunityDetector = createDetector({
 
         // Large gap = momentum likely continues
         return Math.min(100, gapPct * 100 + 20);
-      }
+      },
     },
     {
-      name: 'mtf_alignment',
-      weight: 0.10,
+      name: "mtf_alignment",
+      weight: 0.1,
       evaluate: (features) => {
         return features.pattern?.mtf_divergence_aligned ? 100 : 50;
-      }
-    }
-  ]
+      },
+    },
+  ],
 });

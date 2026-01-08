@@ -6,12 +6,10 @@ import { MobileActiveScreen } from "./screens/MobileActiveScreen";
 import { MobileWatchScreen } from "./screens/MobileWatchScreen";
 import { MobileReviewScreen } from "./screens/MobileReviewScreen";
 import { MobileSettingsScreen } from "./screens/MobileSettingsScreen";
-import { MobileVoiceHUD } from "./common/MobileVoiceHUD";
 import { MobileAlertSheet } from "./sheets/MobileAlertSheet";
 import { MobileContractSheet } from "./sheets/MobileContractSheet";
 
 import { useTradeStore, useMarketStore, useSettingsStore } from "../../stores";
-import { useVoiceCommands } from "../../hooks/useVoiceCommands";
 import { useDiscord } from "../../hooks/useDiscord";
 import { useAuth } from "../../contexts/AuthContext";
 import { Trade, AlertType, Contract, Ticker, TradeType } from "../../types";
@@ -80,41 +78,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
     () => historyTrades.filter((t) => t.state === "EXITED"),
     [historyTrades]
   );
-
-  // Voice commands
-  const voice = useVoiceCommands({
-    watchlist,
-    activeTrades,
-    currentTrade: null,
-    onAddTicker: () => {},
-    onRemoveTicker: () => {},
-    onEnterTrade: () => {},
-    onTrimTrade: () => {
-      // Find the most recently updated active trade and open trim sheet
-      if (enteredTrades.length > 0) {
-        openAlertSheet(enteredTrades[0], "update", { updateKind: "trim" });
-      }
-    },
-    onUpdateSL: () => {
-      if (enteredTrades.length > 0) {
-        openAlertSheet(enteredTrades[0], "update", { updateKind: "sl" });
-      }
-    },
-    onExitTrade: () => {
-      if (enteredTrades.length > 0) {
-        openAlertSheet(enteredTrades[0], "exit");
-      }
-    },
-    onAddPosition: () => {},
-    onSendAlert: async (alert) => {
-      if (!discordAlertsEnabled) {
-        toast.info("Discord alerts disabled");
-        return;
-      }
-      // Handle voice alerts (logged to console for debugging)
-      console.error("[v0] Mobile voice alert:", alert);
-    },
-  });
 
   // Load user data
   useEffect(() => {
@@ -436,18 +399,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col">
       {/* Header */}
-      <MobileHeader
-        isListening={voice.isListening}
-        isProcessing={voice.hudState === "processing"}
-        waitingForWakeWord={voice.waitingForWakeWord}
-        onToggleVoice={() => {
-          if (voice.isListening) {
-            voice.stopListening();
-          } else {
-            voice.startListening();
-          }
-        }}
-      />
+      <MobileHeader />
 
       {/* Spacer for fixed header (h-14 = 56px + safe-area-inset-top) */}
       <div className="h-header-safe" />
@@ -484,11 +436,7 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         )}
 
         {activeTab === "settings" && (
-          <MobileSettingsScreen
-            channels={discordChannels}
-            voiceEnabled={!voice.isListening}
-            onLogout={onLogout}
-          />
+          <MobileSettingsScreen channels={discordChannels} onLogout={onLogout} />
         )}
       </main>
 
@@ -499,18 +447,6 @@ export function MobileApp({ onLogout }: MobileAppProps) {
         activeTradesCount={enteredTrades.length}
         loadedTradesCount={loadedTrades.length}
       />
-
-      {/* Voice HUD overlay */}
-      {voice.hudState && (
-        <MobileVoiceHUD
-          state={voice.hudState}
-          transcript={voice.transcript}
-          command={voice.command || undefined}
-          error={voice.error}
-          onConfirm={voice.confirmAction}
-          onCancel={voice.cancelAction}
-        />
-      )}
 
       {/* Alert sheet */}
       <MobileAlertSheet

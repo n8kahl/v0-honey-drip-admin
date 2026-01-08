@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { Trade } from "../types";
 
-type VoiceState = "idle" | "listening" | "processing";
 type ChartViewportMode = "AUTO" | "MANUAL";
 type WatchlistViewMode = "clean" | "power";
 type WatchlistSortMode = "score" | "change" | "alphabetical";
@@ -14,7 +13,7 @@ interface LogicalRange {
 }
 
 /**
- * UIStore manages UI-specific state (modals, dialogs, voice, chart viewport).
+ * UIStore manages UI-specific state (modals, dialogs, chart viewport).
  * Navigation is handled by React Router - this store does NOT manage routing.
  */
 interface UIStore {
@@ -23,8 +22,6 @@ interface UIStore {
   showDiscordDialog: boolean;
   showAddTickerDialog: boolean;
   showAddChallengeDialog: boolean;
-  voiceActive: boolean;
-  voiceState: VoiceState;
   focusedTrade: Trade | null;
   flashTradeTab: boolean;
 
@@ -56,13 +53,10 @@ interface UIStore {
   setShowDiscordDialog: (show: boolean) => void;
   setShowAddTickerDialog: (show: boolean) => void;
   setShowAddChallengeDialog: (show: boolean) => void;
-  setVoiceActive: (active: boolean) => void;
-  setVoiceState: (state: VoiceState) => void;
   setFocusedTrade: (trade: Trade | null) => void;
   setFlashTradeTab: (flash: boolean) => void;
 
   // Compound actions
-  toggleVoice: () => void;
   openDiscordSettings: () => void;
   closeDiscordSettings: () => void;
   openAddTicker: () => void;
@@ -94,8 +88,6 @@ export const useUIStore = create<UIStore>()(
       showDiscordDialog: false,
       showAddTickerDialog: false,
       showAddChallengeDialog: false,
-      voiceActive: false,
-      voiceState: "idle",
       focusedTrade: null,
       flashTradeTab: false,
       chartViewportMode: "AUTO",
@@ -134,20 +126,10 @@ export const useUIStore = create<UIStore>()(
       setShowDiscordDialog: (show) => set({ showDiscordDialog: show }),
       setShowAddTickerDialog: (show) => set({ showAddTickerDialog: show }),
       setShowAddChallengeDialog: (show) => set({ showAddChallengeDialog: show }),
-      setVoiceActive: (active) => set({ voiceActive: active }),
-      setVoiceState: (state) => set({ voiceState: state }),
       setFocusedTrade: (trade) => set({ focusedTrade: trade }),
       setFlashTradeTab: (flash) => set({ flashTradeTab: flash }),
 
       // Compound actions
-      toggleVoice: () => {
-        const { voiceActive } = get();
-        set({
-          voiceActive: !voiceActive,
-          voiceState: !voiceActive ? "listening" : "idle",
-        });
-      },
-
       openDiscordSettings: () => set({ showDiscordDialog: true }),
       closeDiscordSettings: () => set({ showDiscordDialog: false }),
 
@@ -192,8 +174,6 @@ export const useUIStore = create<UIStore>()(
           showDiscordDialog: false,
           showAddTickerDialog: false,
           showAddChallengeDialog: false,
-          voiceActive: false,
-          voiceState: "idle",
           focusedTrade: null,
           flashTradeTab: false,
           chartViewportMode: "AUTO",

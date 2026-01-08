@@ -15,6 +15,7 @@ export const trendContinuationLongDetector: OpportunityDetector = createDetector
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     // 1. In trending up regime

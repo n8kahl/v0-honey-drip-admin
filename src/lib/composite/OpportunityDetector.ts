@@ -110,6 +110,7 @@ export interface OpportunityDetector {
   direction: OpportunityDirection;
   assetClass: AssetClass[]; // Which asset classes this detector applies to
   requiresOptionsData: boolean; // Whether this detector needs options chain data
+  idealTimeframe?: "1m" | "5m" | "15m" | "60m" | "1D"; // The timeframe this strategy is designed for
 
   // Detection logic
   detect: (features: SymbolFeatures, optionsData?: OptionsChainData) => boolean;
@@ -168,6 +169,7 @@ export function createDetector(config: {
   direction: OpportunityDirection;
   assetClass: AssetClass[];
   requiresOptionsData: boolean;
+  idealTimeframe?: "1m" | "5m" | "15m" | "60m" | "1D";
   detect: (features: SymbolFeatures, optionsData?: OptionsChainData) => boolean;
   scoreFactors: ScoreFactor[];
 }): OpportunityDetector {

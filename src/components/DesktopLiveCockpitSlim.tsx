@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { Trade, Ticker, Challenge, DiscordChannel } from "../types";
 import { HDPanelWatchlist } from "./hd/dashboard/HDPanelWatchlist";
-import { HDVoiceHUD } from "./hd/voice/HDVoiceHUD";
 import { HDDialogChallengeDetail } from "./hd/forms/HDDialogChallengeDetail";
 import { HDMacroPanel } from "./hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "./hd/layout/HDWatchlistRail";
@@ -9,19 +8,13 @@ import { HDActiveTradesPanel } from "./hd/dashboard/HDActiveTradesPanel";
 import { MobileNowPlayingSheet } from "./MobileNowPlayingSheet";
 import { MobileWatermark } from "./MobileWatermark";
 
-import { useVoiceCommands } from "../hooks/useVoiceCommands";
 import { useTradeStateMachine } from "../hooks/useTradeStateMachine";
 import { useKeyLevels } from "../hooks/useKeyLevels";
 import { NowPanel } from "./trading/NowPanel";
 import { ActionRail } from "./trading/ActionRail";
 import { useStreamingOptionsChain } from "../hooks/useStreamingOptionsChain";
 import type { CompositeSignal } from "../lib/composite/CompositeSignal";
-import { useDiscord } from "../hooks/useDiscord";
-import { useSettingsStore } from "../stores/settingsStore";
-import { useMarketStore } from "../stores/marketStore";
 import { useTradeStore } from "../stores/tradeStore";
-import { useAuth } from "../contexts/AuthContext";
-import { toast } from "sonner";
 
 // Default confluence object to prevent undefined errors in child components
 const DEFAULT_CONFLUENCE = {
@@ -44,19 +37,10 @@ interface DesktopLiveCockpitSlimProps {
   onEnteredTrade?: (trade: Trade) => void;
   channels: DiscordChannel[];
   onMobileTabChange?: (tab: "live" | "active" | "history" | "settings") => void;
-  onVoiceNavigate?: (
-    destination: "live" | "active" | "history" | "settings" | "monitoring"
-  ) => void;
   onOpenActiveTrade?: (tradeId: string) => void;
   onOpenReviewTrade?: (tradeId: string) => void;
   activeTab?: "live" | "active" | "history" | "settings";
   compositeSignals?: CompositeSignal[];
-  onVoiceStateChange?: (state: {
-    isListening: boolean;
-    isProcessing: boolean;
-    waitingForWakeWord: boolean;
-    onToggle: () => void;
-  }) => void;
 }
 
 export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
@@ -73,13 +57,9 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onEnteredTrade,
     channels,
     onMobileTabChange,
-    onVoiceNavigate,
     onOpenActiveTrade,
     onOpenReviewTrade,
-    onVoiceStateChange,
   } = props;
-
-  const { user } = useAuth();
 
   // Store access for direct state updates
   const setCurrentTradeId = useTradeStore((s) => s.setCurrentTradeId);
@@ -131,133 +111,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     }
   }, [streamingContracts, activeTicker, actions]);
 
-  // Discord integration for voice alerts
-  const discord = useDiscord();
-  const getDefaultChannels = useSettingsStore((s) => s.getDefaultChannels);
-  const discordAlertsEnabled = useSettingsStore((s) => s.discordAlertsEnabled);
-
-  const voice = useVoiceCommands({
-    watchlist,
-    activeTrades,
-    currentTrade,
-    onAddTicker: async (symbol: string) => {
-      const userId = user?.id || "00000000-0000-0000-0000-000000000001";
-      const ticker: Ticker = {
-        id: crypto.randomUUID(),
-        symbol: symbol.toUpperCase(),
-        last: 0,
-        change: 0,
-        changePercent: 0,
-      };
-      await useMarketStore.getState().addTicker(userId, ticker);
-    },
-    onRemoveTicker,
-    onLoadContract: (contract, ticker, reasoning) => {
-      // Set active ticker for UI state
-      actions.setActiveTicker(ticker);
-      // Pass ticker explicitly to avoid race condition with state update
-      actions.handleContractSelect(contract, undefined, reasoning, ticker);
-    },
-    onEnterTrade: actions.handleEnterTrade,
-    onTrimTrade: actions.handleTrim,
-    onUpdateSL: actions.handleUpdateSL,
-    onExitTrade: actions.handleExit,
-    onAddPosition: actions.handleAdd,
-    onSendAlert: async (alert) => {
-      if (!discordAlertsEnabled) {
-        toast.info("Discord alerts disabled", {
-          description: "Enable in Settings → Discord to send alerts to channels.",
-        });
-        return;
-      }
-
-      const alertType = alert.alert.alertType;
-      const channelType =
-        alertType === "entry" ? "enter" : alertType === "exit" ? "exit" : "update";
-      const defaultChannels = getDefaultChannels(channelType);
-
-      if (defaultChannels.length === 0) {
-        toast.warning("No Discord channels configured", {
-          description: `Set up ${channelType} channels in Settings → Discord.`,
-        });
-        return;
-      }
-
-      console.warn("[v0] Sending voice smart alert to Discord:", {
-        alertType,
-        channels: defaultChannels.map((c) => c.name),
-        contract: alert.alert.contract,
-      });
-
-      try {
-        // Create a minimal trade object for Discord formatting
-        const tradeForAlert: Trade = {
-          id: "voice-alert-" + Date.now(),
-          ticker: alert.alert.ticker,
-          contract: alert.alert.contract!,
-          state: "LOADED",
-          tradeType: "Day", // Will be inferred by Discord client from DTE
-          targetPrice: alert.alert.contract?.mid,
-          stopLoss: undefined,
-          underlyingPriceAtLoad: alert.alert.price,
-          updates: [],
-          discordChannels: defaultChannels.map((c) => c.id),
-          challenges: [],
-        };
-
-        if (alertType === "entry") {
-          await discord.sendEntryAlert(
-            defaultChannels,
-            { ...tradeForAlert, entryPrice: alert.alert.price, state: "ENTERED" },
-            alert.reasoning
-          );
-          toast.success("Entry alert sent", {
-            description: `${alert.alert.ticker} ${alert.alert.contract?.strike}${alert.alert.contract?.type}`,
-          });
-        } else if (alertType === "exit") {
-          await discord.sendExitAlert(
-            defaultChannels,
-            { ...tradeForAlert, state: "EXITED", exitPrice: alert.alert.price },
-            alert.reasoning
-          );
-          toast.success("Exit alert sent", {
-            description: `${alert.alert.ticker} exited`,
-          });
-        } else {
-          // Load/update alerts
-          await discord.sendLoadAlert(defaultChannels, tradeForAlert, alert.reasoning);
-          toast.success("Alert sent", {
-            description: `${alert.alert.ticker} ${alert.alert.contract?.strike}${alert.alert.contract?.type}`,
-          });
-        }
-      } catch (error) {
-        console.error("[v0] Failed to send voice alert to Discord:", error);
-        toast.error("Failed to send alert", {
-          description: "Check console for details",
-        });
-      }
-    },
-    onNavigate: onVoiceNavigate,
-  });
-
-  // Report voice state to parent (for header mic button)
-  useEffect(() => {
-    if (onVoiceStateChange) {
-      onVoiceStateChange({
-        isListening: voice.isListening,
-        isProcessing: voice.hudState === "processing",
-        waitingForWakeWord: voice.waitingForWakeWord,
-        onToggle: () => {
-          if (voice.isListening) {
-            voice.stopListening();
-          } else {
-            voice.startListening();
-          }
-        },
-      });
-    }
-  }, [voice.isListening, voice.hudState, voice.waitingForWakeWord, onVoiceStateChange]);
-
   // NOTE: Removed empty subscription callbacks that were causing console noise
   // Quote data is fetched via useQuotes() hook in useMassiveData.ts which properly handles updates
 
@@ -269,19 +122,6 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
   return (
     <>
       <div className="relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden">
-        {voice.hudState && (
-          <div className="hidden lg:block">
-            <HDVoiceHUD
-              state={voice.hudState}
-              transcript={voice.transcript}
-              command={voice.command || undefined}
-              error={voice.error}
-              onConfirm={voice.confirmAction}
-              onCancel={voice.cancelAction}
-              onRetry={voice.retryAction}
-            />
-          </div>
-        )}
         {/* Watchlist: Left Rail */}
         <div className="hidden lg:flex">
           <HDWatchlistRail

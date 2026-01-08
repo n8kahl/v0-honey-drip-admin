@@ -15,6 +15,7 @@ export const indexMeanReversionLongDetector: OpportunityDetector = createDetecto
   direction: "LONG",
   assetClass: ["INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     const symbol = (features as any).symbol || "UNKNOWN";

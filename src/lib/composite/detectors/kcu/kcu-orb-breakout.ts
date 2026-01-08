@@ -290,6 +290,7 @@ export const kcuORBBreakoutBullishDetector: OpportunityDetector = createDetector
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     const price = features.price?.current;
@@ -339,6 +340,7 @@ export const kcuORBBreakoutBearishDetector: OpportunityDetector = createDetector
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     const price = features.price?.current;

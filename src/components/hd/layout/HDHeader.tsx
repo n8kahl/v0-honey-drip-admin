@@ -1,6 +1,6 @@
 import { SessionStatus } from "../../../types";
 import { HDPill } from "../common/HDPill";
-import { Settings, Mic, User, LogOut, WifiOff, Wifi } from "lucide-react";
+import { Settings, User, LogOut, WifiOff, Wifi } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { branding } from "../../../lib/config/branding";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -11,23 +11,13 @@ import { useStreamingIndex } from "../../../hooks/useIndicesAdvanced";
 import { useMarketSession } from "../../../hooks/useMarketSession";
 import { getSessionColor } from "../../../lib/marketSession";
 
-export type VoiceState = "idle" | "listening" | "processing";
-
 interface HDHeaderProps {
   sessionStatus: SessionStatus;
-  voiceState?: VoiceState;
   onSettingsClick?: () => void;
-  onMicClick?: () => void;
   className?: string;
 }
 
-export function HDHeader({
-  sessionStatus,
-  voiceState = "idle",
-  onSettingsClick,
-  onMicClick,
-  className,
-}: HDHeaderProps) {
+export function HDHeader({ sessionStatus, onSettingsClick, className }: HDHeaderProps) {
   const { signOut, user } = useAuth();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -180,40 +170,6 @@ export function HDHeader({
       </div>
 
       <div className="flex items-center gap-1 lg:gap-2 flex-shrink-0">
-        <button
-          onClick={onMicClick}
-          className={cn(
-            "relative h-8 w-8 lg:w-auto lg:px-3 flex items-center justify-center gap-2 rounded-[var(--radius)] transition-all",
-            voiceState === "idle" &&
-              "bg-[var(--brand-primary)] text-[var(--bg-base)] hover:bg-[var(--brand-primary-hover)]",
-            voiceState === "listening" &&
-              "bg-[var(--brand-primary)] text-[var(--bg-base)] shadow-lg",
-            voiceState === "processing" && "bg-[var(--brand-primary)]/80 text-[var(--bg-base)]"
-          )}
-          aria-label="Voice command"
-          title={
-            voiceState === "idle"
-              ? "Voice commands (press M)"
-              : voiceState === "listening"
-                ? "Listening..."
-                : "Processing..."
-          }
-        >
-          {voiceState === "listening" && (
-            <div className="absolute inset-0 rounded-[var(--radius)] animate-ping">
-              <div className="w-full h-full rounded-[var(--radius)] bg-[var(--brand-primary)] opacity-40" />
-            </div>
-          )}
-
-          <Mic
-            className={cn(
-              "w-3.5 h-3.5 relative z-10",
-              voiceState === "listening" && "animate-pulse"
-            )}
-          />
-          <span className="hidden lg:inline text-xs font-medium relative z-10">Voice</span>
-        </button>
-
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowProfileMenu(!showProfileMenu)}

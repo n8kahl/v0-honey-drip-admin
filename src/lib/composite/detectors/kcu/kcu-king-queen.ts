@@ -271,6 +271,7 @@ export const kcuKingQueenDetector: OpportunityDetector = createDetector({
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     const price = features.price?.current;
@@ -322,6 +323,7 @@ export const kcuKingQueenBearishDetector: OpportunityDetector = createDetector({
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     const price = features.price?.current;

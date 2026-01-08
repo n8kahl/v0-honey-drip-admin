@@ -307,6 +307,7 @@ export const kcuEMABounceDetector: OpportunityDetector = createDetector({
   direction: "LONG", // Default direction, actual determined by trend
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     // 1. Must have price and EMA data
@@ -364,6 +365,7 @@ export const kcuEMABounceBearishDetector: OpportunityDetector = createDetector({
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     // Same logic as bullish, but for downtrend

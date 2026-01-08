@@ -15,6 +15,7 @@ export const meanReversionLongDetector: OpportunityDetector = createDetector({
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     const symbol = (features as any).symbol || "UNKNOWN";

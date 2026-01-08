@@ -248,6 +248,7 @@ export const kcuVWAPStandardDetector: OpportunityDetector = createDetector({
   direction: "LONG",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     const price = features.price?.current;
@@ -303,6 +304,7 @@ export const kcuVWAPStandardBearishDetector: OpportunityDetector = createDetecto
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK", "INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     const price = features.price?.current;

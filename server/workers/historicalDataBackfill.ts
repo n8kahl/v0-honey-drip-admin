@@ -378,10 +378,12 @@ async function main() {
 
   // Filter by symbol if specified
   if (symbolArg) {
-    symbols = symbols.filter((s) => s === symbolArg.toUpperCase());
-    if (symbols.length === 0) {
-      console.error(`❌ Symbol ${symbolArg} not found in watchlist`);
-      process.exit(1);
+    const requested = symbolArg.toUpperCase();
+    if (!symbols.includes(requested)) {
+      console.log(`[Backfill] 💡 Adding ${requested} to backfill list (manual override)`);
+      symbols = [requested];
+    } else {
+      symbols = symbols.filter((s) => s === requested);
     }
   }
 

@@ -15,6 +15,7 @@ export const meanReversionShortDetector: OpportunityDetector = createDetector({
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     // 1. RSI overbought - OPTIMIZED: Tighter threshold (was 65, now 70)

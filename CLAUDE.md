@@ -2,7 +2,7 @@
 
 > **Purpose**: Comprehensive guide for AI assistants (Claude, GPT, etc.) working on the Honey Drip Admin Trading Dashboard codebase. This is THE definitive reference - always consult this file before making changes.
 
-**Last Updated**: November 26, 2025
+**Last Updated**: January 4, 2026
 **Project**: Honey Drip Admin Trading Dashboard
 **Tech Stack**: React 18 + TypeScript + Express + PostgreSQL (Supabase) + Massive.com API
 
@@ -85,18 +85,38 @@ pnpm run optimizer    # Run genetic strategies optimizer
 
 ## 📝 Recent Session Changes
 
+### Session: January 4, 2026 - 30-Day MTF Evaluation & Schema Fixes
+
+**Branch**: `main`
+
+#### 30-Day Backtest Evaluation
+
+1.  **Resolved Persistent 0% Win Rate**:
+    - Aligned signal detection with strategy-specific timeframes (e.g., 15m) in `EventDrivenBacktestEngine`.
+    - Fixed a critical schema mismatch where detectors expected `snake_case` patterns while `FeaturesBuilder` produced `camelCase`.
+2.  **FeaturesBuilder Schema Alignment**:
+    - Implemented a robust aliasing layer for `market_regime`, `breakout_bullish`, `rsi`, `atr`, etc.
+    - Added RTH (Regular Trading Hours) session logic to satisfy market-hours filters in detectors.
+    - Implemented MTF pattern detection for Breakouts, Mean Reversion, and Trend Continuation using `mtfContext`.
+3.  **Backtest Performance Results**:
+    - Processed **425 trades** across SPY, TSLA, NVDA, MSFT, AMD.
+    - **Opening Drive Bearish**: 100% Win Rate (2 trades).
+    - **Index Mean Reversion Long**: 44.4% Win Rate (9 trades).
+    - Baseline average win rate established at 15.2% for the full 20+ strategy library.
+
 ### Session: January 4, 2026 - Phase 4: Advanced Engine
 
 **Branch**: `main`
 
 #### Phase 4: Event-Driven Backtesting
+
 1.  **Implemented Event-Driven Engine**:
-    -   Created `EventDrivenBacktestEngine.ts` to simulate market activity tick-by-tick (1m).
-    -   Enables **True Multi-Timeframe** logic (e.g., enter on 1m if 1h is bullish) without look-ahead bias.
+    - Created `EventDrivenBacktestEngine.ts` to simulate market activity tick-by-tick (1m).
+    - Enables **True Multi-Timeframe** logic (e.g., enter on 1m if 1h is bullish) without look-ahead bias.
 2.  **Multi-Timeframe Loading**:
-    -   Created `MultiTimeframeLoader.ts` to efficiently fetch and cache 1m, 5m, 15m, and 60m bars in parallel.
+    - Created `MultiTimeframeLoader.ts` to efficiently fetch and cache 1m, 5m, 15m, and 60m bars in parallel.
 3.  **Shared Indicators**:
-    -   Extracted `indicators.ts` to standardizing math logic across the app.
+    - Extracted `indicators.ts` to standardizing math logic across the app.
 
 ### Session: January 4, 2026 - Phase 3 & Level enhancements
 

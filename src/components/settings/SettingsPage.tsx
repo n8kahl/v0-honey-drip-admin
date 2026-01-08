@@ -3,7 +3,6 @@ import { MobileWatermark } from "../MobileWatermark";
 import { HDButton } from "../hd/common/HDButton";
 import { ProfileSettings } from "./ProfileSettings";
 import { TakeProfitSettings } from "./TakeProfitSettings";
-import { VoiceCommandsSettings } from "./VoiceCommandsSettings";
 import { LiveDataBehaviorSettings } from "./LiveDataBehaviorSettings";
 import { DiscordNotificationSettings } from "./DiscordNotificationSettings";
 import { DiscordFailedAlertsPanel } from "./DiscordFailedAlertsPanel";
@@ -49,7 +48,6 @@ export function SettingsPage({ onOpenDiscordSettings, onClose }: SettingsPagePro
           {/* Core Trading Settings */}
           <TakeProfitSettings />
           <LiveDataBehaviorSettings />
-          <VoiceCommandsSettings />
 
           {/* Integrations */}
           <DiscordNotificationSettings onOpenDiscordSettings={onOpenDiscordSettings} />

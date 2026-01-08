@@ -19,7 +19,8 @@ export const sweepMomentumShortDetector: OpportunityDetector = createDetector({
   type: "sweep_momentum_short",
   direction: "SHORT",
   assetClass: ["INDEX", "EQUITY_ETF"],
-  requiresOptionsData: false, // Uses features.flow, not live options chain
+  requiresOptionsData: false,
+  idealTimeframe: "1m", // Uses features.flow, not live options chain
 
   detect: (features: SymbolFeatures) => {
     const symbol = (features as any).symbol || "UNKNOWN";

@@ -28,7 +28,6 @@ import { useKeyboardShortcuts, type KeyboardShortcut } from "./hooks/useKeyboard
 import type { Trade } from "./types";
 import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcutsDialog";
 import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
-import { initWhisper, isWhisperSupported } from "./lib/whisper/client";
 import { ActiveTradePollingService } from "./services/ActiveTradePollingService";
 import "./styles/globals.css";
 
@@ -68,12 +67,6 @@ export default function App() {
   const isTestAuto = import.meta.env?.VITE_TEST_AUTO_LOGIN === "true";
   const isMobile = useIsMobile();
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
-  const [headerVoiceState, setHeaderVoiceState] = useState<{
-    isListening: boolean;
-    isProcessing: boolean;
-    waitingForWakeWord: boolean;
-    onToggle: () => void;
-  } | null>(null);
 
   // React Router hooks - single source of truth for navigation
   const location = useLocation();
@@ -87,11 +80,8 @@ export default function App() {
     showDiscordDialog,
     showAddTickerDialog,
     showAddChallengeDialog,
-    voiceState: _voiceState,
-    voiceActive: _voiceActive,
     focusedTrade,
     flashTradeTab,
-    toggleVoice: _toggleVoice,
     setFocusedTrade,
     setFlashTradeTab,
   } = useUIStore();
@@ -199,15 +189,6 @@ export default function App() {
       updateQuotes(quotes as Map<string, MarketQuote>);
     }
   }, [quotes, updateQuotes]);
-
-  // Pre-load Whisper model in background (if supported)
-  useEffect(() => {
-    if (isWhisperSupported()) {
-      initWhisper().catch((err) => {
-        console.warn("[v0] Failed to pre-load Whisper model:", err);
-      });
-    }
-  }, []);
 
   // Load user data on auth
   useEffect(() => {
@@ -357,29 +338,6 @@ export default function App() {
     setTimeout(() => setFlashTradeTab(false), 2000);
   };
 
-  // Voice navigation handler
-  const handleVoiceNavigate = (
-    destination: "live" | "active" | "history" | "settings" | "monitoring"
-  ) => {
-    switch (destination) {
-      case "live":
-        navigate("/");
-        break;
-      case "active":
-        navigateToActive();
-        break;
-      case "history":
-        navigate("/history");
-        break;
-      case "settings":
-        navigate("/settings");
-        break;
-      case "monitoring":
-        navigate("/monitoring");
-        break;
-    }
-  };
-
   // Helper function to focus a trade in the live view
   const focusTradeInLive = (trade: Trade) => {
     navigate("/");
@@ -397,12 +355,7 @@ export default function App() {
   return (
     <div className="min-h-screen w-full bg-[var(--bg-base)] text-[var(--text-high)] flex flex-col pb-16 md:pb-0">
       {/* Trader Header with status bar and navigation */}
-      <TraderHeader
-        isListening={headerVoiceState?.isListening}
-        isProcessingVoice={headerVoiceState?.isProcessing}
-        waitingForWakeWord={headerVoiceState?.waitingForWakeWord}
-        onToggleVoice={headerVoiceState?.onToggle}
-      />
+      <TraderHeader />
 
       {/* Spacer for fixed header (80px for status bar + nav) */}
       <div className="h-20" />
@@ -422,7 +375,6 @@ export default function App() {
               useSettingsStore.getState().removeChallenge(challenge.id)
             }
             channels={discordChannels}
-            onVoiceNavigate={handleVoiceNavigate}
             onMobileTabChange={(tab) => {
               // Map tab names to routes
               if (tab === "live") navigate("/");
@@ -444,7 +396,6 @@ export default function App() {
             }}
             activeTab={activeTab}
             compositeSignals={activeSignals}
-            onVoiceStateChange={setHeaderVoiceState}
           />
         )}
 

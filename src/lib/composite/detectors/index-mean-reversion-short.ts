@@ -15,6 +15,7 @@ export const indexMeanReversionShortDetector: OpportunityDetector = createDetect
   direction: "SHORT",
   assetClass: ["INDEX"],
   requiresOptionsData: false,
+  idealTimeframe: "5m",
 
   detect: (features: SymbolFeatures) => {
     // 1. RSI overbought - OPTIMIZED: Tighter for indices (was 65, now 75)

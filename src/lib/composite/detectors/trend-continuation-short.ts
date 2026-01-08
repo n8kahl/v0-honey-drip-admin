@@ -15,6 +15,7 @@ export const trendContinuationShortDetector: OpportunityDetector = createDetecto
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     // 1. In trending down regime

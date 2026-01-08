@@ -15,6 +15,7 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
   direction: "SHORT",
   assetClass: ["EQUITY_ETF", "STOCK"],
   requiresOptionsData: false,
+  idealTimeframe: "15m",
 
   detect: (features: SymbolFeatures) => {
     // 1. Must have pattern data
@@ -25,7 +26,7 @@ export const breakoutBearishDetector: OpportunityDetector = createDetector({
     if (!hasBreakdown) return false;
 
     // 3. Volume surge (>1.5x average)
-    const hasVolumeSpike = (features.volume?.relativeToAvg || 0) > 1.5;
+    const hasVolumeSpike = (features.volume?.relativeToAvg || 0) > 1.2;
     if (!hasVolumeSpike) return false;
 
     // 4. Price below VWAP
