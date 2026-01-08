@@ -9,6 +9,17 @@ import {
   calculateSMA,
 } from "./indicators.js";
 import { RegimeManager } from "../strategy/RegimeManager.js";
+import { flowAnalysisEngine, FlowContext } from "../engines/FlowAnalysisEngine.js";
+import { gammaExposureEngine, GammaContext } from "../engines/GammaExposureEngine.js";
+
+/**
+ * Pre-fetched context for live trading scenarios
+ * Use this to inject flow/gamma context into the build() method
+ */
+export interface LiveContext {
+  flowContext?: FlowContext | null;
+  gammaContext?: GammaContext | null;
+}
 
 /**
  * Features Builder
@@ -18,17 +29,68 @@ import { RegimeManager } from "../strategy/RegimeManager.js";
  * 1. Technical Indicators (RSI, EMA, VWAP, etc.)
  * 2. Multi-Timeframe (MTF) Context
  * 3. Historical Flow Replay (simulated)
+ * 4. Live Flow/Gamma Context (optional, for real-time trading)
  */
 export class FeaturesBuilder {
   /**
+   * Build features with live context engines
+   * Use this for real-time trading scenarios where you want
+   * to fetch the latest flow and gamma context from the database.
+   *
+   * @param symbol - Symbol to analyze
+   * @param tick - Current 1m bar
+   * @param history1m - 1m history up to this point
+   * @param mtfContext - Relevant history for other timeframes
+   * @param flowData - Historical flow data (for backtesting)
+   * @returns Promise<SymbolFeatures> with live context integrated
+   */
+  static async buildWithContext(
+    symbol: string,
+    tick: Bar,
+    history1m: Bar[],
+    mtfContext: Record<Timeframe, Bar[]>,
+    flowData?: OptionsFlowRecord[]
+  ): Promise<SymbolFeatures> {
+    // Fetch live context from engines (with graceful error handling)
+    let flowContext: FlowContext | null = null;
+    let gammaContext: GammaContext | null = null;
+
+    try {
+      flowContext = await flowAnalysisEngine.getFlowContext(symbol, "medium");
+    } catch (err) {
+      console.warn(`[FeaturesBuilder] Failed to fetch flow context for ${symbol}:`, err);
+    }
+
+    try {
+      gammaContext = await gammaExposureEngine.getGammaContext(symbol);
+    } catch (err) {
+      console.warn(`[FeaturesBuilder] Failed to fetch gamma context for ${symbol}:`, err);
+    }
+
+    // Build features with injected context
+    return FeaturesBuilder.build(symbol, tick, history1m, mtfContext, flowData, {
+      flowContext,
+      gammaContext,
+    });
+  }
+
+  /**
    * Build features for a specific point in time
+   *
+   * @param symbol - Symbol to analyze
+   * @param tick - Current 1m bar
+   * @param history1m - 1m history up to this point
+   * @param mtfContext - Relevant history for other timeframes
+   * @param flowData - Historical flow data (for backtesting)
+   * @param liveContext - Optional pre-fetched live context (flow/gamma)
    */
   static build(
     symbol: string,
     tick: Bar, // Current 1m bar
     history1m: Bar[], // 1m history up to this point
     mtfContext: Record<Timeframe, Bar[]>, // Relevant history for other timeframes
-    flowData?: OptionsFlowRecord[] // Historical flow data structured as records
+    flowData?: OptionsFlowRecord[], // Historical flow data structured as records
+    liveContext?: LiveContext // Optional live flow/gamma context
   ): SymbolFeatures {
     const closes = history1m.map((b) => b.close);
     const highs = history1m.map((b) => b.high);
@@ -106,46 +168,15 @@ export class FeaturesBuilder {
       }
     }
 
-    // 3. Flow Replay (Structured analysis)
-    // Filter flowData for recent activity (last 60m for conviction)
-    const recentFlow = flowData
-      ? flowData.filter(
-          (f) => f.timestamp <= tick.timestamp && f.timestamp > tick.timestamp - 60 * 60 * 1000
-        )
-      : [];
+    // 3. Flow Analysis
+    // Prefer live context if available, otherwise use historical flow replay
+    const flowResult = FeaturesBuilder.buildFlowFeatures(tick, flowData, liveContext?.flowContext);
 
-    // Heuristic Flow Score (0-100)
-    let flowScore = 50; // Baseline
-    let conviction = 20; // Lower baseline conviction
-    let sweeps: OptionsFlowRecord[] = [];
-    let blocks: OptionsFlowRecord[] = [];
-    let totalPremium = 0;
+    // 4. Greeks/Gamma Context
+    // Build from live gamma context if available
+    const greeksResult = FeaturesBuilder.buildGreeksFeatures(liveContext?.gammaContext);
 
-    if (recentFlow.length > 0) {
-      const bullishFlow = recentFlow.filter((f) => f.side === "BULLISH");
-      const bearishFlow = recentFlow.filter((f) => f.side === "BEARISH");
-
-      const bullishPremium = bullishFlow.reduce((sum, f) => sum + f.premium, 0);
-      const bearishPremium = bearishFlow.reduce((sum, f) => sum + f.premium, 0);
-      totalPremium = bullishPremium + bearishPremium;
-
-      sweeps = recentFlow.filter((f) => f.classification === "SWEEP");
-      blocks = recentFlow.filter((f) => f.classification === "BLOCK");
-
-      if (totalPremium > 0) {
-        const biasRatio = bullishPremium / totalPremium;
-        if (biasRatio > 0.7) flowScore = 85;
-        else if (biasRatio > 0.6) flowScore = 70;
-        else if (biasRatio < 0.3) flowScore = 15;
-        else if (biasRatio < 0.4) flowScore = 30;
-      }
-      conviction = Math.min(100, sweeps.length * 5 + totalPremium / 100000);
-    }
-
-    const flowBias: "bullish" | "bearish" | "neutral" =
-      flowScore > 65 ? "bullish" : flowScore < 35 ? "bearish" : "neutral";
-
-    // 4. Market Regime
+    // 5. Market Regime
     // We build a partial features object first to pass to RegimeManager
     const baseFeatures: any = {
       price: { current: tick.close },
@@ -255,15 +286,8 @@ export class FeaturesBuilder {
         orbLow:
           todaysBars.length >= 15 ? Math.min(...todaysBars.slice(0, 15).map((b) => b.low)) : 0,
       },
-      flow: {
-        sweepCount: sweeps.length,
-        blockCount: blocks.length,
-        totalPremium: totalPremium,
-        flowScore: flowScore,
-        flowBias: flowBias,
-        institutionalConviction: conviction,
-        optionsFlowConviction: conviction, // Alias
-      },
+      flow: flowResult.flow,
+      greeks: greeksResult.greeks,
       regime: regime,
       marketRegime: regime, // camelCase alias
       market_regime: regime, // snake_case alias (top-level)
@@ -296,8 +320,196 @@ export class FeaturesBuilder {
       ema_200: ema200,
       vwap_distance_pct: vwapDist,
       relative_volume: rvol,
-      flow_score: flowScore,
-      flow_bias: flowBias,
+      flow_score: flowResult.flow.flowScore ?? 50,
+      flow_bias: flowResult.flow.flowBias ?? "neutral",
+      institutional_score: flowResult.flow.institutionalConviction ?? 20,
+      gamma_risk: greeksResult.greeks?.gammaRisk ?? "medium",
+      dealer_positioning: greeksResult.dealerPositioning ?? "NEUTRAL",
+      dealer_net_delta: greeksResult.dealerNetDelta ?? 0,
     };
+  }
+
+  /**
+   * Build flow features from historical data or live context
+   * @private
+   */
+  private static buildFlowFeatures(
+    tick: Bar,
+    flowData?: OptionsFlowRecord[],
+    liveFlowContext?: FlowContext | null
+  ): { flow: SymbolFeatures["flow"] } {
+    // Default fallback values
+    const defaultFlow: SymbolFeatures["flow"] = {
+      sweepCount: 0,
+      blockCount: 0,
+      totalPremium: 0,
+      flowScore: 50, // Neutral baseline
+      flowBias: "neutral",
+      institutionalConviction: 20, // Low baseline
+      aggressiveness: "NORMAL",
+      putCallRatio: 1.0,
+      largeTradePercentage: 0,
+      avgTradeSize: 0,
+      unusualActivity: false,
+    };
+
+    // PRIORITY 1: Live context from FlowAnalysisEngine
+    if (liveFlowContext) {
+      return {
+        flow: {
+          sweepCount: liveFlowContext.sweepCount ?? 0,
+          blockCount: liveFlowContext.blockCount ?? 0,
+          splitCount: liveFlowContext.splitCount ?? 0,
+          totalPremium: liveFlowContext.totalPremium ?? 0,
+          flowScore: liveFlowContext.sentimentStrength ?? 50,
+          flowBias: FeaturesBuilder.mapSentimentToBias(liveFlowContext.sentiment),
+          institutionalConviction: liveFlowContext.institutionalScore ?? 20,
+          aggressiveness: liveFlowContext.aggressiveness ?? "NORMAL",
+          putCallRatio: liveFlowContext.putCallVolumeRatio ?? 1.0,
+          largeTradePercentage: liveFlowContext.largeTradePercentage ?? 0,
+          avgTradeSize: liveFlowContext.avgTradeSize ?? 0,
+          callVolume: liveFlowContext.callVolume ?? 0,
+          putVolume: liveFlowContext.putVolume ?? 0,
+          buyPressure:
+            liveFlowContext.totalPremium > 0
+              ? (liveFlowContext.buyPremium / liveFlowContext.totalPremium) * 100
+              : 50,
+          unusualActivity:
+            liveFlowContext.aggressiveness === "AGGRESSIVE" ||
+            liveFlowContext.aggressiveness === "VERY_AGGRESSIVE",
+        },
+      };
+    }
+
+    // PRIORITY 2: Historical flow replay (for backtesting)
+    if (flowData && flowData.length > 0) {
+      // Filter flowData for recent activity (last 60m for conviction)
+      const recentFlow = flowData.filter(
+        (f) => f.timestamp <= tick.timestamp && f.timestamp > tick.timestamp - 60 * 60 * 1000
+      );
+
+      if (recentFlow.length === 0) {
+        return { flow: defaultFlow };
+      }
+
+      const bullishFlow = recentFlow.filter((f) => f.side === "BULLISH");
+      const bearishFlow = recentFlow.filter((f) => f.side === "BEARISH");
+
+      const bullishPremium = bullishFlow.reduce((sum, f) => sum + f.premium, 0);
+      const bearishPremium = bearishFlow.reduce((sum, f) => sum + f.premium, 0);
+      const totalPremium = bullishPremium + bearishPremium;
+
+      const sweeps = recentFlow.filter((f) => f.classification === "SWEEP");
+      const blocks = recentFlow.filter((f) => f.classification === "BLOCK");
+
+      // Calculate flow score based on bias ratio
+      let flowScore = 50; // Neutral baseline
+      if (totalPremium > 0) {
+        const biasRatio = bullishPremium / totalPremium;
+        if (biasRatio > 0.7) flowScore = 85;
+        else if (biasRatio > 0.6) flowScore = 70;
+        else if (biasRatio < 0.3) flowScore = 15;
+        else if (biasRatio < 0.4) flowScore = 30;
+      }
+
+      // Calculate institutional conviction
+      const conviction = Math.min(100, sweeps.length * 5 + totalPremium / 100000);
+
+      // Determine flow bias
+      const flowBias: "bullish" | "bearish" | "neutral" =
+        flowScore > 65 ? "bullish" : flowScore < 35 ? "bearish" : "neutral";
+
+      return {
+        flow: {
+          sweepCount: sweeps.length,
+          blockCount: blocks.length,
+          totalPremium: totalPremium,
+          flowScore: flowScore,
+          flowBias: flowBias,
+          institutionalConviction: conviction,
+          optionsFlowConviction: conviction, // Alias
+          aggressiveness: sweeps.length > 5 ? "AGGRESSIVE" : "NORMAL",
+          putCallRatio: 1.0, // Would need call/put data to calculate
+          largeTradePercentage:
+            recentFlow.length > 0 ? ((sweeps.length + blocks.length) / recentFlow.length) * 100 : 0,
+          avgTradeSize: recentFlow.length > 0 ? totalPremium / recentFlow.length : 0,
+          unusualActivity: sweeps.length > 3 || blocks.length > 2,
+        },
+      };
+    }
+
+    // FALLBACK: Return defaults
+    return { flow: defaultFlow };
+  }
+
+  /**
+   * Build greeks features from live gamma context
+   * @private
+   */
+  private static buildGreeksFeatures(gammaContext?: GammaContext | null): {
+    greeks: SymbolFeatures["greeks"];
+    dealerPositioning: string;
+    dealerNetDelta: number;
+  } {
+    // Default fallback values
+    const defaultGreeks: SymbolFeatures["greeks"] = {
+      gammaRisk: "medium",
+      thetaDecayRate: "moderate",
+    };
+
+    if (!gammaContext) {
+      return {
+        greeks: defaultGreeks,
+        dealerPositioning: "NEUTRAL",
+        dealerNetDelta: 0,
+      };
+    }
+
+    // Map gamma context to greeks features
+    const gammaRisk = FeaturesBuilder.mapGammaRisk(
+      gammaContext.dealerPositioning,
+      gammaContext.positioningStrength
+    );
+
+    return {
+      greeks: {
+        gamma: gammaContext.totalGamma ?? undefined,
+        gammaRisk: gammaRisk,
+        // Note: delta, theta, vega would need options chain data
+        // These are symbol-level gamma context, not option-specific greeks
+      },
+      dealerPositioning: gammaContext.dealerPositioning ?? "NEUTRAL",
+      dealerNetDelta: gammaContext.dealerNetGamma ?? 0,
+    };
+  }
+
+  /**
+   * Map FlowSentiment to flowBias
+   * @private
+   */
+  private static mapSentimentToBias(
+    sentiment?: "BULLISH" | "BEARISH" | "NEUTRAL"
+  ): "bullish" | "bearish" | "neutral" {
+    if (sentiment === "BULLISH") return "bullish";
+    if (sentiment === "BEARISH") return "bearish";
+    return "neutral";
+  }
+
+  /**
+   * Map gamma positioning to risk level
+   * @private
+   */
+  private static mapGammaRisk(positioning?: string, strength?: string): "high" | "medium" | "low" {
+    // SHORT_GAMMA = dealers need to buy dips/sell rips = amplified moves = HIGH risk
+    // LONG_GAMMA = dealers sell dips/buy rips = dampened moves = LOW risk
+    if (positioning === "SHORT_GAMMA") {
+      if (strength === "EXTREME" || strength === "STRONG") return "high";
+      return "medium";
+    }
+    if (positioning === "LONG_GAMMA") {
+      if (strength === "EXTREME" || strength === "STRONG") return "low";
+      return "medium";
+    }
+    return "medium";
   }
 }
