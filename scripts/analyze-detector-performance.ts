@@ -62,33 +62,25 @@ async function analyzeDetector(
   console.log(`\n📊 Testing ${name}...`);
 
   // Dynamic imports after env vars are loaded
-  const { BacktestEngine } = await import("../src/lib/backtest/BacktestEngine.js");
-  const { createClient } = await import("@supabase/supabase-js");
-
-  // Create Supabase client for database access (same as optimizer)
-  const supabase =
-    process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-      ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-      : null;
-
-  // Create engine with watchlist symbols (backtestDetector loops through config.symbols internally)
-  const engine = new BacktestEngine(
-    {
-      symbols: symbols,
-      startDate: START_DATE,
-      endDate: END_DATE,
-      timeframe: "15m",
-      targetMultiple: 2.0,
-      stopMultiple: 1.0,
-      maxHoldBars: 30,
-      slippage: 0.001,
-    },
-    supabase
+  const { EventDrivenBacktestEngine } = await import(
+    "../src/lib/backtest/EventDrivenBacktestEngine.js"
   );
+
+  // Create engine with watchlist symbols
+  const engine = new EventDrivenBacktestEngine({
+    symbols: symbols,
+    startDate: START_DATE,
+    endDate: END_DATE,
+    timeframe: "15m",
+    targetMultiple: 2.0,
+    stopMultiple: 1.0,
+    maxHoldBars: 30,
+    slippage: 0.001,
+  });
 
   try {
     // Run backtest for this detector (handles all symbols)
-    const result = await engine.backtestDetector(detector);
+    const result = await engine.runDetector(detector);
 
     const winRate = result.totalTrades > 0 ? (result.winners / result.totalTrades) * 100 : 0;
     const avgWin = result.avgWin || 0;
