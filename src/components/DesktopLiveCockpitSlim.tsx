@@ -122,30 +122,13 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     <>
       <div className="relative flex flex-col lg:flex-row h-[calc(100vh-7rem)] lg:h-[calc(100vh-8rem)] overflow-hidden">
         {/* Watchlist: Left Rail */}
+        {/* Left Rail: Discovery (Watchlist + Challenges) */}
         <div className="hidden lg:flex">
           <HDWatchlistRail
             onTickerClick={handleTickerClick}
             onAddTicker={onAddTicker}
             onRemoveTicker={onRemoveTicker}
-            onLoadedTradeClick={(trade) => {
-              // Use the proper handler - this sets up focus and alertType
-              actions.handleActiveTradeClick(trade, watchlist);
-            }}
-            onActiveTradeClick={(trade) => {
-              // Use the proper state machine handler for active trades
-              // This ensures chart renders by setting activeTicker
-              actions.handleActiveTradeClick(trade, watchlist);
-            }}
-            onRemoveLoadedTrade={async (trade) => {
-              // Use deleteTrade from store - it optimistically removes from state AND deletes from DB
-              try {
-                await deleteTrade(trade.id);
-              } catch (error) {
-                console.error("[HDWatchlistRail] Failed to remove trade:", error);
-              }
-            }}
             activeTicker={activeTicker?.symbol}
-            activeTrades={activeTrades}
           />
         </div>
 

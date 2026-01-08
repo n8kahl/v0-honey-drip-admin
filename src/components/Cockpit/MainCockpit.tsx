@@ -7,7 +7,6 @@ import { Ticker, Contract, Trade } from "../../types";
 import { HDLiveChart } from "../hd/charts/HDLiveChart";
 import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDMacroPanel } from "../hd/dashboard/HDMacroPanel";
-import { HDCommandRail } from "../hd/layout/HDCommandRail";
 import { HDWatchlistRail } from "../hd/layout/HDWatchlistRail";
 import { HDPortfolioRail } from "../hd/layout/HDPortfolioRail";
 import { ActiveTradesDock } from "../trading/ActiveTradesDock";
@@ -128,7 +127,6 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
         <div className="hidden lg:grid lg:grid-cols-[260px_1fr_300px] w-full">
           {/* Left Rail: Discovery (Watchlist + Challenges) */}
           <HDWatchlistRail
-            mode="discovery"
             onTickerClick={(ticker) => setMainCockpitSymbol(ticker.symbol)}
             onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
             onRemoveTicker={handleRemoveTicker}
@@ -159,7 +157,6 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
       <div className="hidden lg:grid lg:grid-cols-[260px_1fr_300px] h-screen">
         {/* Left Rail: Discovery (Watchlist + Challenges) */}
         <HDWatchlistRail
-          mode="discovery"
           onTickerClick={(ticker) => setMainCockpitSymbol(ticker.symbol)}
           onAddTicker={() => useUIStore.getState().setShowAddTickerDialog(true)}
           onRemoveTicker={handleRemoveTicker}

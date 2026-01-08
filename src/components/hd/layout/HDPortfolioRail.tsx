@@ -6,9 +6,10 @@
  *
  * Features:
  * - Portfolio Risk header (Delta, Theta, Net P&L)
- * - Active trades with compact rows (Ticker | P&L % | Thesis Dot)
- * - Pending Orders section for loaded strategies
+ * - Open Positions with compact rows: [Ticker] [P&L Badge] [Status Dot]
+ * - Working Orders section for loaded strategies
  * - Honey Drip Gold for positive Net P&L
+ * - Status Dot: Green if pnl > 0, Red if pnl < 0, Pulse if recent update
  *
  * Anti-Pattern: NO action buttons here - monitoring only.
  * Actions happen in the Center Panel.
@@ -20,43 +21,38 @@ import { Trade } from "../../../types";
 import { Shield, Clock, Zap, ChevronRight } from "lucide-react";
 import { HDInstitutionalRadar } from "../common/HDInstitutionalRadar";
 import { cn, formatPercent } from "../../../lib/utils";
-import { useFlowContext } from "../../../hooks/useFlowContext";
-import { normalizeSymbolForAPI } from "../../../lib/symbolUtils";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 import { getPortfolioGreeks, PortfolioGreeks } from "../../../services/greeksMonitorService";
 
 interface HDPortfolioRailProps {
+  /** Active trades (ENTERED state) - if not provided, reads from store */
+  activeTrades?: Trade[];
+  /** Loaded trades (LOADED state) - if not provided, reads from store */
+  loadedTrades?: Trade[];
+  /** Callback when a trade row is clicked */
   onTradeClick?: (trade: Trade) => void;
 }
 
 /**
- * Thesis status based on flow vs trade direction
+ * Check if trade has recent updates (within last 5 minutes)
  */
-type ThesisStatus = "aligned" | "diverging" | "neutral";
+function hasRecentUpdate(trade: Trade): boolean {
+  const updates = trade.updates || [];
+  if (updates.length === 0) return false;
 
-function getThesisStatus(
-  tradeDirection: "call" | "put",
-  flowSentiment: "BULLISH" | "BEARISH" | "NEUTRAL"
-): ThesisStatus {
-  const isLong = tradeDirection === "call";
-  const isBullishFlow = flowSentiment === "BULLISH";
-  const isBearishFlow = flowSentiment === "BEARISH";
+  const lastUpdate = updates[updates.length - 1];
+  const updateTime = lastUpdate.timestamp ? new Date(lastUpdate.timestamp).getTime() : 0;
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
 
-  if ((isLong && isBullishFlow) || (!isLong && isBearishFlow)) {
-    return "aligned";
-  }
-  if ((isLong && isBearishFlow) || (!isLong && isBullishFlow)) {
-    return "diverging";
-  }
-  return "neutral";
+  return updateTime > fiveMinutesAgo;
 }
 
 /**
  * HDCompactTradeRow - Minimal trade row for portfolio monitoring
  *
- * Visual: Thesis Dot | Ticker | P&L %
- * Clicking focuses the trade in Mission Control
+ * Visual: Ticker | P&L Badge | Status Dot
+ * Status Dot: Green if pnl > 0, Red if pnl < 0, Pulse if recent update
  */
 function HDCompactTradeRow({
   trade,
@@ -74,18 +70,10 @@ function HDCompactTradeRow({
     trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
   const { currentPrice, pnlPercent } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
 
-  // Live flow for thesis status
-  const underlyingTicker = normalizeSymbolForAPI(trade.ticker);
-  const { primarySentiment } = useFlowContext(underlyingTicker, {
-    refreshInterval: 60000, // Less frequent for rail items
-    windows: ["short"],
-  });
-
   // Computed values
   const displayPnlPercent = currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
   const isProfit = displayPnlPercent >= 0;
-  const tradeDirection = trade.contract?.type === "C" ? "call" : "put";
-  const thesisStatus = getThesisStatus(tradeDirection, primarySentiment);
+  const isRecent = hasRecentUpdate(trade);
 
   return (
     <div
@@ -96,23 +84,6 @@ function HDCompactTradeRow({
       )}
       onClick={onClick}
     >
-      {/* Thesis Status Dot - Aligned=Green, Diverging=Red */}
-      <div
-        className={cn(
-          "w-2 h-2 rounded-full flex-shrink-0",
-          thesisStatus === "aligned" && "bg-[var(--accent-positive)]",
-          thesisStatus === "diverging" && "bg-[var(--accent-negative)] animate-pulse",
-          thesisStatus === "neutral" && "bg-zinc-500"
-        )}
-        title={
-          thesisStatus === "aligned"
-            ? "Flow aligned with position"
-            : thesisStatus === "diverging"
-              ? "Flow diverging from position!"
-              : "Neutral flow"
-        }
-      />
-
       {/* Ticker */}
       <span className="text-sm font-semibold text-[var(--text-high)] flex-1 truncate">
         {trade.ticker}
@@ -130,7 +101,7 @@ function HDCompactTradeRow({
         {trade.contract?.type === "C" ? "C" : "P"}
       </span>
 
-      {/* P&L - Honey Drip Gold for profit */}
+      {/* P&L Badge - Honey Drip Gold for profit */}
       <span
         className={cn(
           "text-sm font-bold tabular-nums min-w-[50px] text-right",
@@ -140,6 +111,16 @@ function HDCompactTradeRow({
         {isProfit ? "+" : ""}
         {formatPercent(displayPnlPercent)}
       </span>
+
+      {/* Status Dot - P&L based with pulse for recent updates */}
+      <div
+        className={cn(
+          "w-2 h-2 rounded-full flex-shrink-0",
+          isProfit ? "bg-[var(--accent-positive)]" : "bg-[var(--accent-negative)]",
+          isRecent && "animate-pulse"
+        )}
+        title={isRecent ? "Recently updated" : isProfit ? "Position in profit" : "Position at loss"}
+      />
 
       {/* Chevron on hover */}
       <ChevronRight className="w-3 h-3 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -204,22 +185,31 @@ function useAggregateNetPnL(trades: Trade[]) {
   }, [trades]);
 }
 
-export function HDPortfolioRail({ onTradeClick }: HDPortfolioRailProps) {
-  const activeTrades = useTradeStore((state) => state.activeTrades);
+export function HDPortfolioRail({
+  activeTrades: propActiveTrades,
+  loadedTrades: propLoadedTrades,
+  onTradeClick,
+}: HDPortfolioRailProps) {
+  const storeActiveTrades = useTradeStore((state) => state.activeTrades);
   const currentTradeId = useTradeStore((state) => state.currentTradeId);
 
-  // Filter trades by state
-  const enteredTrades = useMemo(
-    () => activeTrades.filter((t) => t.state === "ENTERED"),
-    [activeTrades]
-  );
-  const loadedTrades = useMemo(
-    () => activeTrades.filter((t) => t.state === "LOADED"),
-    [activeTrades]
-  );
+  // Use props if provided, otherwise fall back to store
+  const enteredTrades = useMemo(() => {
+    if (propActiveTrades !== undefined) return propActiveTrades;
+    return storeActiveTrades.filter((t) => t.state === "ENTERED");
+  }, [propActiveTrades, storeActiveTrades]);
 
-  // Aggregate metrics
-  const { netPnL, tradeCount } = useAggregateNetPnL(activeTrades);
+  const loadedTrades = useMemo(() => {
+    if (propLoadedTrades !== undefined) return propLoadedTrades;
+    return storeActiveTrades.filter((t) => t.state === "LOADED");
+  }, [propLoadedTrades, storeActiveTrades]);
+
+  // Aggregate metrics - use entered trades for P&L calculations
+  const allTrades = useMemo(
+    () => [...enteredTrades, ...loadedTrades],
+    [enteredTrades, loadedTrades]
+  );
+  const { netPnL, tradeCount } = useAggregateNetPnL(allTrades);
   const isProfit = netPnL >= 0;
 
   // Portfolio Greeks
@@ -234,7 +224,7 @@ export function HDPortfolioRail({ onTradeClick }: HDPortfolioRailProps) {
     updateGreeks();
     const interval = setInterval(updateGreeks, 10000); // Update every 10s
     return () => clearInterval(interval);
-  }, [activeTrades]);
+  }, [enteredTrades]);
 
   return (
     <div className="w-[300px] flex-shrink-0 border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
@@ -296,12 +286,12 @@ export function HDPortfolioRail({ onTradeClick }: HDPortfolioRailProps) {
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Active Positions Section */}
+        {/* Open Positions Section */}
         {enteredTrades.length > 0 && (
           <div>
             <div className="px-3 py-2 bg-gradient-to-r from-yellow-500/10 to-transparent border-l-2 border-yellow-500">
               <h3 className="text-[10px] font-semibold uppercase tracking-wide text-yellow-500">
-                Active Positions
+                Open Positions
               </h3>
             </div>
             <div className="divide-y divide-[var(--border-hairline)]">
@@ -317,12 +307,12 @@ export function HDPortfolioRail({ onTradeClick }: HDPortfolioRailProps) {
           </div>
         )}
 
-        {/* Pending Orders Section (Loaded Strategies) */}
+        {/* Working Orders Section (Loaded Strategies) */}
         {loadedTrades.length > 0 && (
           <div className="mt-2">
             <div className="px-3 py-2 bg-gradient-to-r from-blue-500/10 to-transparent border-l-2 border-blue-500">
               <h3 className="text-[10px] font-semibold uppercase tracking-wide text-blue-400">
-                Pending Orders
+                Working Orders
               </h3>
             </div>
             <div className="divide-y divide-[var(--border-hairline)]">
@@ -337,10 +327,10 @@ export function HDPortfolioRail({ onTradeClick }: HDPortfolioRailProps) {
           </div>
         )}
 
-        {/* Empty State - Institutional Radar */}
+        {/* Empty State - No Open Positions */}
         {enteredTrades.length === 0 && loadedTrades.length === 0 && (
           <HDInstitutionalRadar
-            message="Waiting for institutional flow..."
+            message="No Open Positions"
             subMessage="Load a trade from the watchlist"
             size="md"
             className="h-full"

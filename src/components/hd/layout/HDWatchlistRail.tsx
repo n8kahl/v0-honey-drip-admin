@@ -1,34 +1,40 @@
+/**
+ * HDWatchlistRail - Discovery Rail for Watchlist & Scanners
+ *
+ * This rail is PURELY for discovery - showing potential opportunities.
+ * Active trades and loaded trades are now displayed in HDPortfolioRail.
+ *
+ * Features:
+ * - Macro Context Panel (market regime, VIX, etc.)
+ * - Watchlist sorted by Smart Score (highest first)
+ * - Active Challenges with progress tracking
+ *
+ * Anti-Pattern: NO trade management here - discovery only.
+ * Trade management happens in HDPortfolioRail.
+ */
+
 import { useMarketStore, useTradeStore, useSettingsStore, useUIStore } from "../../../stores";
 import { useMarketDataStore } from "../../../stores/marketDataStore";
 import { HDRowWatchlist } from "../cards/HDRowWatchlist";
-import { HDRowLoadedTrade } from "../cards/HDRowLoadedTrade";
-import { HDActiveTradeRow } from "../cards/HDActiveTradeRow";
 import { HDMacroPanel } from "../dashboard/HDMacroPanel";
 import { HDDialogEditChallenge } from "../forms/HDDialogEditChallenge";
 import { HDChallengeDetailSheet } from "../forms/HDChallengeDetailSheet";
 import { HDChallengeShare } from "../forms/HDChallengeShare";
-import { Ticker, Trade, Challenge } from "../../../types";
+import { Ticker, Challenge } from "../../../types";
 import { Plus, Trash2, Edit } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { ensureArray } from "../../../lib/utils/validation";
 import { getFullChallengeStats } from "../../../lib/challengeHelpers";
 import { useState, useMemo, useCallback } from "react";
 
 interface HDWatchlistRailProps {
+  /** Callback when a watchlist ticker is clicked */
   onTickerClick?: (ticker: Ticker) => void;
+  /** Callback to open Add Ticker dialog */
   onAddTicker?: () => void;
+  /** Callback to remove a ticker from watchlist */
   onRemoveTicker?: (ticker: Ticker) => void;
-  onLoadedTradeClick?: (trade: Trade) => void;
-  onActiveTradeClick?: (trade: Trade) => void;
-  onRemoveLoadedTrade?: (trade: Trade) => void;
+  /** Currently active/selected ticker symbol */
   activeTicker?: string;
-  activeTrades?: Trade[]; // Add this prop
-  /**
-   * Mode controls which sections are visible:
-   * - "full" (default): All sections (trades, watchlist, challenges)
-   * - "discovery": Only Watchlist + Challenges (for 3-pane layout left rail)
-   */
-  mode?: "full" | "discovery";
 }
 
 /**
@@ -55,15 +61,8 @@ export function HDWatchlistRail({
   onTickerClick,
   onAddTicker,
   onRemoveTicker,
-  onLoadedTradeClick,
-  onActiveTradeClick,
-  onRemoveLoadedTrade,
   activeTicker,
-  activeTrades: propActiveTrades,
-  mode = "full",
 }: HDWatchlistRailProps) {
-  // Discovery mode hides trade sections (Active, Loaded) - used in 3-pane layout
-  const showTrades = mode === "full";
   const watchlist = useMarketStore((state) => state.watchlist);
 
   // Get symbol data for Smart Score sorting
@@ -77,47 +76,18 @@ export function HDWatchlistRail({
       return scoreB - scoreA; // Descending order (highest first)
     });
   }, [watchlist, symbolsData]);
-  // Use prop if provided, otherwise fall back to store (for backward compatibility)
-  const storeActiveTrades = useTradeStore((state) => state.activeTrades);
-  const historyTrades = useTradeStore((state) => state.historyTrades);
-  const rawActiveTrades = propActiveTrades ?? storeActiveTrades;
 
-  // REACTIVE subscription for focused trade - triggers re-render when trade focus changes
-  // This replaces non-reactive getState() calls that were causing highlight lag
-  const currentTradeId = useTradeStore((state) => state.currentTradeId);
+  // Get trades for challenge stats (need both active and history for complete picture)
+  const activeTrades = useTradeStore((state) => state.activeTrades);
+  const historyTrades = useTradeStore((state) => state.historyTrades);
 
   // Combine active and history trades for challenge stats (exited trades move to history)
   const allTrades = useMemo(() => {
-    return [...rawActiveTrades, ...historyTrades];
-  }, [rawActiveTrades, historyTrades]);
+    return [...activeTrades, ...historyTrades];
+  }, [activeTrades, historyTrades]);
+
   const challenges = useSettingsStore((state) => state.challenges);
   const discordChannels = useSettingsStore((state) => state.discordChannels);
-
-  // Deduplicate trades by ID - if same ID appears multiple times with different states,
-  // keep the one with the most advanced state (WATCHING < LOADED < ENTERED < EXITED)
-  const activeTrades = useMemo(() => {
-    const stateOrder: Record<string, number> = {
-      WATCHING: 0,
-      LOADED: 1,
-      ENTERED: 2,
-      EXITED: 3,
-    };
-    const map = new Map<string, Trade>();
-    for (const trade of rawActiveTrades) {
-      const existing = map.get(trade.id);
-      if (!existing) {
-        map.set(trade.id, trade);
-      } else {
-        // Keep the one with more advanced state
-        const existingOrder = stateOrder[existing.state] ?? 0;
-        const currentOrder = stateOrder[trade.state] ?? 0;
-        if (currentOrder > existingOrder) {
-          map.set(trade.id, trade);
-        }
-      }
-    }
-    return Array.from(map.values());
-  }, [rawActiveTrades]);
   const removeChallenge = useSettingsStore((state) => state.removeChallenge);
   const updateChallengeSettings = useSettingsStore((state) => state.updateChallengeSettings);
   const setShowAddChallengeDialog = useUIStore((state) => state.setShowAddChallengeDialog);
@@ -141,16 +111,6 @@ export function HDWatchlistRail({
     },
     [setExpandedWatchlistRow]
   );
-
-  // Filter trades by state with explicit dedup to prevent race condition duplicates
-  // The dedup at lines 70-94 handles different states, but this guards against
-  // same-state duplicates that could slip through during rapid transitions
-  const loadedTrades = [
-    ...new Map(activeTrades.filter((t) => t.state === "LOADED").map((t) => [t.id, t])).values(),
-  ];
-  const enteredTrades = [
-    ...new Map(activeTrades.filter((t) => t.state === "ENTERED").map((t) => [t.id, t])).values(),
-  ];
 
   // Calculate challenge progress
   const activeChallenges = challenges.filter((c) => c.isActive);
@@ -226,54 +186,8 @@ export function HDWatchlistRail({
           <HDMacroPanel />
         </div>
 
-        {/* Active Trades Section - FIRST (highest priority) - Only in full mode */}
-        {showTrades && enteredTrades.length > 0 && (
-          <div>
-            <SectionHeader title="Active" />
-            <div className="divide-y divide-[var(--border-hairline)]">
-              {enteredTrades.map((trade) => (
-                <HDActiveTradeRow
-                  key={trade.id}
-                  trade={trade}
-                  active={currentTradeId === trade.id}
-                  onClick={() => {
-                    if (onActiveTradeClick) {
-                      onActiveTradeClick(trade);
-                    } else {
-                      // Use the atomic setFocusedTrade action (sets both previewTrade and currentTradeId)
-                      useTradeStore.getState().setFocusedTrade(trade);
-                    }
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Loaded Trades Section - SECOND - Only in full mode */}
-        {showTrades && loadedTrades.length > 0 && (
-          <div className={enteredTrades.length > 0 ? "mt-4" : ""}>
-            <SectionHeader title="Loaded" />
-            <div className="divide-y divide-[var(--border-hairline)]">
-              {loadedTrades.map((trade) => (
-                <HDRowLoadedTrade
-                  key={trade.id}
-                  trade={trade}
-                  active={currentTradeId === trade.id}
-                  onClick={() => onLoadedTradeClick?.(trade)}
-                  onRemove={() => onRemoveLoadedTrade?.(trade)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Watchlist Section - THIRD (or FIRST in discovery mode) */}
-        <div
-          className={
-            showTrades && (enteredTrades.length > 0 || loadedTrades.length > 0) ? "mt-4" : ""
-          }
-        >
+        {/* Watchlist Section - Primary content, takes remaining vertical space */}
+        <div className="flex-1 flex flex-col">
           <SectionHeader title="Watchlist" onAdd={onAddTicker} />
           <div className="divide-y divide-[var(--border-hairline)]">
             {sortedWatchlist.length === 0 ? (
