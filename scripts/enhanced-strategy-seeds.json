@@ -14,6 +14,12 @@
     "barTimeframe": "5m",
     "entrySide": "LONG",
     "optionsPlayType": "single_leg",
+    "smartGates": {
+      "minFlowScore": 60,
+      "requiredFlowBias": "bullish",
+      "gammaRegime": "short_gamma",
+      "minInstitutionalScore": 40
+    },
     "conditions": {
       "type": "AND",
       "children": [

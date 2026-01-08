@@ -2,6 +2,7 @@ import type {
   StrategyDefinition,
   StrategyConditionTree,
   StrategyConditionRule,
+  StrategySmartGates,
 } from "../../types/strategy.js";
 
 // Feature snapshot used for rule evaluation
@@ -344,16 +345,112 @@ export function computeStrategyConfidence(
   return Math.round(pct);
 }
 
+/**
+ * Evaluate Smart Gates - Institutional context filters
+ * These gates are checked BEFORE technical conditions to filter out trades
+ * that don't have proper institutional backing.
+ *
+ * @returns null if all gates pass, otherwise returns the reason for gate failure
+ */
+export function evaluateSmartGates(
+  gates: StrategySmartGates | undefined,
+  features: SymbolFeatures
+): string | null {
+  if (!gates) return null; // No gates defined = pass
+
+  // 1. Flow Score Gate
+  if (gates.minFlowScore != null) {
+    const flowScore = features.flow?.flowScore ?? 50;
+    if (flowScore < gates.minFlowScore) {
+      return `Flow Score Low (${flowScore} < ${gates.minFlowScore})`;
+    }
+  }
+
+  // 2. Institutional Score Gate
+  if (gates.minInstitutionalScore != null) {
+    // Check multiple possible field names for institutional score
+    const instScore =
+      (features.flow as any)?.institutionalConviction ??
+      (features as any)?.institutional_score ??
+      20;
+    if (instScore < gates.minInstitutionalScore) {
+      return `Institutional Score Low (${instScore} < ${gates.minInstitutionalScore})`;
+    }
+  }
+
+  // 3. Flow Bias Gate
+  if (gates.requiredFlowBias && gates.requiredFlowBias !== "any") {
+    const flowBias = features.flow?.flowBias ?? "neutral";
+    if (flowBias !== gates.requiredFlowBias) {
+      return `Flow Bias Mismatch (${flowBias} ≠ ${gates.requiredFlowBias})`;
+    }
+  }
+
+  // 4. Gamma Regime Gate
+  if (gates.gammaRegime && gates.gammaRegime !== "any") {
+    // Check for dealer positioning from gamma context
+    const dealerPositioning =
+      (features as any)?.dealer_positioning ??
+      (features.greeks as any)?.dealerPositioning ??
+      "NEUTRAL";
+
+    const normalizedPositioning = dealerPositioning.toLowerCase().replace("_", "_");
+    const requiredRegime = gates.gammaRegime; // 'long_gamma' or 'short_gamma'
+
+    // Map dealer positioning to regime: SHORT_GAMMA -> short_gamma, LONG_GAMMA -> long_gamma
+    const currentRegime = normalizedPositioning.includes("short")
+      ? "short_gamma"
+      : normalizedPositioning.includes("long")
+        ? "long_gamma"
+        : "neutral";
+
+    if (currentRegime !== requiredRegime) {
+      return `Gamma Regime Mismatch (${currentRegime} ≠ ${requiredRegime})`;
+    }
+  }
+
+  // 5. Gamma Exposure Gate (Dealer Net Delta threshold)
+  if (gates.minGammaExposure != null) {
+    const dealerNetDelta =
+      (features as any)?.dealer_net_delta ?? (features.greeks as any)?.dealerNetDelta ?? 0;
+    if (Math.abs(dealerNetDelta) < gates.minGammaExposure) {
+      return `Gamma Exposure Low (|${dealerNetDelta}| < ${gates.minGammaExposure})`;
+    }
+  }
+
+  return null; // All gates passed
+}
+
+/**
+ * Strategy evaluation result with optional gate rejection reason
+ */
+export interface StrategyEvaluationResult {
+  matches: boolean;
+  confidence: number;
+  /** If a smart gate failed, this contains the reason */
+  gateReason?: string;
+}
+
 export function evaluateStrategy(
   strategy: StrategyDefinition,
   features: SymbolFeatures
-): { matches: boolean; confidence: number } {
-  // time window check first
+): StrategyEvaluationResult {
+  // 1. Time window check first
   if (!isWithinTimeWindow(features.time, strategy.timeWindow)) {
     return { matches: false, confidence: 0 };
   }
+
+  // 2. Smart Gates check BEFORE technical conditions
+  const gateFailure = evaluateSmartGates(strategy.smartGates, features);
+  if (gateFailure) {
+    return { matches: false, confidence: 0, gateReason: gateFailure };
+  }
+
+  // 3. Technical conditions evaluation
   const matches = evaluateConditionTree(strategy.conditions, features);
-  // Compute graded confidence regardless of strict match, so UI can show setup readiness
+
+  // 4. Compute graded confidence regardless of strict match, so UI can show setup readiness
   const confidence = computeStrategyConfidence(strategy, features);
+
   return { matches, confidence };
 }

@@ -1,33 +1,18 @@
 // Strategy & Signal Type Definitions
 // NOTE: Database columns are snake_case; frontend uses camelCase. Mapping utilities provided below.
 
-export type StrategyCategory =
-  | 'OPTIONS_DAY_TRADE'
-  | 'SWING'
-  | 'INTRADAY'
-  | 'SPX_SPECIAL'
-  | 'OTHER';
+export type StrategyCategory = "OPTIONS_DAY_TRADE" | "SWING" | "INTRADAY" | "SPX_SPECIAL" | "OTHER";
 
-export type UnderlyingScope =
-  | 'ANY'
-  | 'SPX_ONLY'
-  | 'INDEXES'
-  | 'ETFS'
-  | 'SINGLE_STOCKS';
+export type UnderlyingScope = "ANY" | "SPX_ONLY" | "INDEXES" | "ETFS" | "SINGLE_STOCKS";
 
-export type BarTimeframe = '1m' | '5m' | '15m' | '60m' | '1d';
-export type EntrySide = 'LONG' | 'SHORT' | 'BOTH';
+export type BarTimeframe = "1m" | "5m" | "15m" | "60m" | "1d";
+export type EntrySide = "LONG" | "SHORT" | "BOTH";
 
-export type OptionsPlayType =
-  | 'single_leg'
-  | 'vertical_spread'
-  | '0dte_spx'
-  | 'lotto'
-  | 'other';
+export type OptionsPlayType = "single_leg" | "vertical_spread" | "0dte_spx" | "lotto" | "other";
 
 export interface StrategyTimeWindow {
   start: string; // 'HH:MM'
-  end: string;   // 'HH:MM'
+  end: string; // 'HH:MM'
   timezone: string; // IANA timezone
 }
 
@@ -39,7 +24,7 @@ export interface StrategyAlertBehavior {
   // Optional graded confidence thresholds (per strategy), with per-trade-type overrides.
   // If not provided, defaults are used (min=50, ready=80).
   confidenceThresholds?: {
-    min?: number;   // default min confidence to consider a signal
+    min?: number; // default min confidence to consider a signal
     ready?: number; // default confidence to consider "ready"
     SCALP?: { min?: number; ready?: number };
     DAY?: { min?: number; ready?: number };
@@ -48,20 +33,45 @@ export interface StrategyAlertBehavior {
   };
 }
 
+/**
+ * Smart Gates - Pre-condition filters based on institutional context
+ * These gates are evaluated BEFORE technical conditions to filter out trades
+ * that don't have proper institutional backing or favorable market positioning.
+ */
+export type FlowBiasGate = "bullish" | "bearish" | "any";
+export type GammaRegimeGate = "long_gamma" | "short_gamma" | "any";
+
+export interface StrategySmartGates {
+  /** Minimum flow score (0-100) from FlowAnalysisEngine. Default: no gate */
+  minFlowScore?: number;
+
+  /** Required flow bias direction. Default: 'any' */
+  requiredFlowBias?: FlowBiasGate;
+
+  /** Required gamma regime (dealer positioning). Default: 'any' */
+  gammaRegime?: GammaRegimeGate;
+
+  /** Minimum absolute dealer net delta threshold. Default: no gate */
+  minGammaExposure?: number;
+
+  /** Minimum institutional conviction score (0-100). Default: no gate */
+  minInstitutionalScore?: number;
+}
+
 // Condition Operators DSL
 export type StrategyConditionOp =
-  | '>'
-  | '>='
-  | '<'
-  | '<='
-  | '=='
-  | '!='
-  | 'crossesAbove'
-  | 'crossesBelow'
-  | 'above'
-  | 'below'
-  | 'insideRange'
-  | 'outsideRange';
+  | ">"
+  | ">="
+  | "<"
+  | "<="
+  | "=="
+  | "!="
+  | "crossesAbove"
+  | "crossesBelow"
+  | "above"
+  | "below"
+  | "insideRange"
+  | "outsideRange";
 
 export interface StrategyConditionRule {
   field: string; // dot notation path into SymbolFeatures
@@ -70,17 +80,17 @@ export interface StrategyConditionRule {
 }
 
 export interface StrategyConditionTreeRuleNode {
-  type: 'RULE';
+  type: "RULE";
   rule: StrategyConditionRule;
 }
 
 export interface StrategyConditionTreeLogicNode {
-  type: 'AND' | 'OR';
+  type: "AND" | "OR";
   children: StrategyConditionTree[];
 }
 
 export interface StrategyConditionTreeNotNode {
-  type: 'NOT';
+  type: "NOT";
   child: StrategyConditionTree;
 }
 
@@ -104,6 +114,11 @@ export interface StrategyDefinition {
   barTimeframe: BarTimeframe;
   entrySide: EntrySide;
   optionsPlayType?: OptionsPlayType;
+  /**
+   * Smart Gates - Institutional context gates evaluated BEFORE technical conditions.
+   * If any gate fails, the strategy returns { matches: false, gateReason: "..." }
+   */
+  smartGates?: StrategySmartGates;
   conditions: StrategyConditionTree;
   alertBehavior: StrategyAlertBehavior;
   cooldownMinutes: number; // minimal cooldown
@@ -113,7 +128,7 @@ export interface StrategyDefinition {
   enabled: boolean;
 }
 
-export type StrategySignalStatus = 'ACTIVE' | 'ACKED' | 'DISMISSED';
+export type StrategySignalStatus = "ACTIVE" | "ACKED" | "DISMISSED";
 
 export interface StrategySignal {
   id: string;
@@ -144,6 +159,7 @@ interface StrategyDefinitionRow {
   bar_timeframe: string;
   entry_side: string;
   options_play_type: string | null;
+  smart_gates: any | null; // JSONB smart gates
   conditions: any;
   alert_behavior: any;
   cooldown_minutes: number | null;
@@ -182,6 +198,7 @@ export function mapStrategyDefinitionRow(row: StrategyDefinitionRow): StrategyDe
     barTimeframe: row.bar_timeframe as BarTimeframe,
     entrySide: row.entry_side as EntrySide,
     optionsPlayType: (row.options_play_type as OptionsPlayType | null) || undefined,
+    smartGates: row.smart_gates as StrategySmartGates | undefined,
     conditions: row.conditions as StrategyConditionTree,
     alertBehavior: row.alert_behavior as StrategyAlertBehavior,
     cooldownMinutes: row.cooldown_minutes ?? 5,
@@ -199,7 +216,7 @@ export function mapStrategySignalRow(row: StrategySignalRow): StrategySignal {
     symbol: row.symbol,
     strategyId: row.strategy_id,
     owner: row.owner,
-    confidence: (row.confidence ?? 0),
+    confidence: row.confidence ?? 0,
     payload: row.payload ?? null,
     status: row.status as StrategySignalStatus,
     barTimeKey: row.bar_time_key,
@@ -208,9 +225,9 @@ export function mapStrategySignalRow(row: StrategySignalRow): StrategySignal {
 
 // Validation Helpers (lightweight; deeper validation can use Zod elsewhere) ----
 export function isStrategyDefinition(def: any): def is StrategyDefinition {
-  return def && typeof def.id === 'string' && typeof def.slug === 'string' && def.conditions;
+  return def && typeof def.id === "string" && typeof def.slug === "string" && def.conditions;
 }
 
 export function isStrategySignal(sig: any): sig is StrategySignal {
-  return sig && typeof sig.id === 'string' && typeof sig.symbol === 'string';
+  return sig && typeof sig.id === "string" && typeof sig.symbol === "string";
 }
