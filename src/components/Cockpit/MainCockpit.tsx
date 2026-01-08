@@ -12,36 +12,7 @@ import { HDPortfolioRail } from "../hd/layout/HDPortfolioRail";
 import { ActiveTradesDock } from "../trading/ActiveTradesDock";
 import FlowPanel from "./FlowPanel";
 import { QuickOrderBar } from "../trading/QuickOrderBar";
-import { cn } from "../../lib/utils";
-
-interface ConfluencePill {
-  label: string;
-  value: number;
-  color: string;
-}
-
-const ConfluenceBar: React.FC<{ ticker: string }> = ({ ticker }) => {
-  // Placeholder: Replace with actual confluence hook
-  const pills: ConfluencePill[] = [
-    { label: "BOS", value: 85, color: "bg-green-500" },
-    { label: "POI", value: 72, color: "bg-blue-500" },
-    { label: "FVG", value: 68, color: "bg-purple-500" },
-  ];
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-[var(--surface-2)] border-b border-[var(--border-hairline)]">
-      <span className="text-xs text-[var(--text-muted)] mr-2">Confluence:</span>
-      {pills.map((pill) => (
-        <div
-          key={pill.label}
-          className={cn("px-2 py-1 rounded text-[10px] font-medium text-white", pill.color)}
-        >
-          {pill.label} {pill.value}%
-        </div>
-      ))}
-    </div>
-  );
-};
+import { SmartContextStrip } from "../hd/common/SmartContextStrip";
 
 const EmptyState: React.FC = () => {
   const setShowAddTickerDialog = useUIStore((s) => s.setShowAddTickerDialog);
@@ -190,7 +161,7 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
           {/* Middle 25%: Options Chain */}
           <div className="flex flex-col border-b border-[var(--border-hairline)] overflow-hidden">
             <div className="flex-shrink-0">
-              <ConfluenceBar ticker={mainCockpitSymbol} />
+              <SmartContextStrip symbol={mainCockpitSymbol} />
             </div>
             <div className="flex-1 overflow-y-auto">
               {optionsLoading ? (
@@ -239,7 +210,7 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
               levels={[]}
             />
           </div>
-          <ConfluenceBar ticker={mainCockpitSymbol} />
+          <SmartContextStrip symbol={mainCockpitSymbol} compact />
           <QuickOrderBar
             symbol={mainCockpitSymbol}
             currentPrice={currentPrice}
