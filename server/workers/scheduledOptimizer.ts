@@ -272,25 +272,37 @@ async function runOptimization(): Promise<void> {
 
     // Run optimization
     const optimizer = new ConfluenceOptimizer(gaConfig);
-    const result = await optimizer.optimize();
+    const results = await optimizer.optimize();
 
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+
+    // Aggregate results from all detectors (stats are in r.stats)
+    const totalTrades = results.reduce((sum, r) => sum + (r.stats?.totalTrades || 0), 0);
+    const avgWinRate =
+      results.length > 0
+        ? results.reduce((sum, r) => sum + (r.stats?.winRate || 0), 0) / results.length
+        : 0;
+    const avgProfitFactor =
+      results.length > 0
+        ? results.reduce((sum, r) => sum + (r.stats?.profitFactor || 0), 0) / results.length
+        : 0;
 
     console.log("\n╔════════════════════════════════════════════════════════════════╗");
     console.log("║         Scheduled Weekly Optimization - Complete              ║");
     console.log("╚════════════════════════════════════════════════════════════════╝\n");
     console.log(`Duration: ${duration} minutes`);
-    console.log(`Win Rate: ${(result.winRate * 100).toFixed(1)}%`);
-    console.log(`Profit Factor: ${result.profitFactor.toFixed(2)}`);
-    console.log(`Total Trades: ${result.totalTrades}`);
+    console.log(`Detectors Optimized: ${results.length}`);
+    console.log(`Avg Win Rate: ${(avgWinRate * 100).toFixed(1)}%`);
+    console.log(`Avg Profit Factor: ${avgProfitFactor.toFixed(2)}`);
+    console.log(`Total Trades: ${totalTrades}`);
     console.log("\n✅ Optimized parameters saved to config/optimized-params.json");
     console.log("✅ Scanner will use new parameters on next restart\n");
 
     // Send success notification
     await sendDiscordNotification(true, {
-      winRate: result.winRate,
-      profitFactor: result.profitFactor,
-      totalTrades: result.totalTrades,
+      winRate: avgWinRate,
+      profitFactor: avgProfitFactor,
+      totalTrades: totalTrades,
       symbols: uniqueSymbols,
     });
   } catch (error: any) {

@@ -22,6 +22,7 @@ export interface SymbolFeatures {
     avg?: number;
     prev?: number;
     relativeToAvg?: number; // RVOL: current/avg (e.g., 2.5 = 250% of average)
+    relative_to_avg?: number; // Alias for snake_case compatibility
   };
   vwap?: {
     value?: number;
@@ -48,7 +49,9 @@ export interface SymbolFeatures {
     buyPressure?: number; // 0-100 percentage
 
     // High Value - Institutional markers
-    aggressiveness?: "PASSIVE" | "NORMAL" | "AGGRESSIVE" | "VERY_AGGRESSIVE";
+    aggressiveness?: "PASSIVE" | "NORMAL" | "MODERATE" | "AGGRESSIVE" | "VERY_AGGRESSIVE";
+    institutionalConviction?: number; // 0-100 institutional conviction score
+    optionsFlowConviction?: number; // Alias for institutionalConviction
     putCallRatio?: number; // 0-5 range (1 = balanced, <1 = call heavy, >1 = put heavy)
     largeTradePercentage?: number; // 0-100 institutional marker
     avgTradeSize?: number; // Average dollar amount per trade

@@ -17,7 +17,7 @@ async function checkCoverage() {
     return;
   }
 
-  const coverage = {};
+  const coverage: Record<string, Set<string>> = {};
   for (const row of data) {
     if (!coverage[row.symbol]) coverage[row.symbol] = new Set();
     coverage[row.symbol].add(row.timeframe);
