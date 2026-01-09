@@ -33,7 +33,11 @@ export class HistoricalOptionsProvider {
   private baseUrl: string = "https://api.massive.com";
 
   constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.MASSIVE_API_KEY || "";
+    // Browser-safe environment variable access
+    const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+    const processEnv = typeof process !== "undefined" && process.env ? process.env : {};
+
+    this.apiKey = apiKey || env.VITE_MASSIVE_API_KEY || processEnv.MASSIVE_API_KEY || "";
     if (!this.apiKey) {
       console.warn("[HistoricalOptionsProvider] No API key provided or found in environment");
     }

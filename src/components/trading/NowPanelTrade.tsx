@@ -1,19 +1,22 @@
 /**
- * NowPanelTrade - Trade Details View
+ * NowPanelTrade - Trade Details View (Definitive Trade Lifecycle UI - LOADED State)
  *
  * Displayed when focus.kind === "trade".
  * Shows different views based on trade state:
  * - WATCHING: TradePreviewCard (contract preview, suggested levels, greeks)
- * - LOADED: TradeDecisionCard (readiness, metrics, checklist)
+ * - LOADED: HDLoadedTradeCard (SmartGateList, profit targets, quality analysis) + Discord alerts
  * - ENTERED: Routes to NowPanelManage (handled in NowPanel.tsx)
  * - EXITED: TradeRecap (final P&L, summary)
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import type { Trade, TradeState, Ticker } from "../../types";
+import type { SymbolFeatures } from "../../lib/strategy/engine";
 import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
+import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
+import { useSymbolData } from "../../stores/marketDataStore";
 import { cn } from "../../lib/utils";
 import {
   fmtPrice,
@@ -21,27 +24,25 @@ import {
   fmtDelta,
   fmtDTE,
   fmtSpread,
-  getStateStyle,
-  getScoreStyle,
   getPnlStyle,
   chipStyle,
 } from "../../ui/semantics";
 import {
-  Target,
-  TrendingUp,
-  TrendingDown,
-  Shield,
-  Clock,
   Zap,
-  CheckCircle2,
-  AlertTriangle,
   Share2,
   Copy,
   MessageSquare,
   ChevronDown,
   ChevronUp,
+  Bell,
+  BellOff,
+  X,
+  Activity,
 } from "lucide-react";
 import type { DiscordChannel, Challenge } from "../../types";
+import { FlowPulse } from "../hd/terminal";
+import { useFlowContext } from "../../hooks/useFlowContext";
+import { normalizeSymbolForAPI } from "../../lib/symbolUtils";
 
 interface NowPanelTradeProps {
   trade: Trade;
@@ -56,6 +57,8 @@ interface NowPanelTradeProps {
   onChannelsChange?: (channels: string[]) => void;
   onChallengesChange?: (challenges: string[]) => void;
   onEnterAndAlert?: (channelIds: string[], challengeIds: string[]) => void;
+  /** Cancel/unload the trade */
+  onCancel?: () => void;
 }
 
 export function NowPanelTrade({
@@ -70,6 +73,7 @@ export function NowPanelTrade({
   onChannelsChange,
   onChallengesChange,
   onEnterAndAlert,
+  onCancel,
 }: NowPanelTradeProps) {
   // Get current price
   const currentPrice = useMemo(() => {
@@ -86,8 +90,8 @@ export function NowPanelTrade({
 
   return (
     <div className="h-full flex flex-col overflow-hidden min-h-0 animate-crossfade">
-      {/* Chart Section - Fixed height to leave room for content */}
-      <div className="flex-shrink-0 h-[240px] min-h-[180px] border-b border-[var(--border-hairline)]">
+      {/* Chart Section - Larger for better visualization */}
+      <div className="flex-shrink-0 h-[280px] lg:h-[320px] border-b border-[var(--border-hairline)]">
         <HDLiveChartContextAware
           ticker={trade.ticker}
           currentTrade={trade}
@@ -99,15 +103,19 @@ export function NowPanelTrade({
         />
       </div>
 
+      {/* Flow Context Strip - Always visible below chart */}
+      <FlowContextStrip symbol={trade.ticker} />
+
       {/* Content Section - State-dependent, scrollable with more space */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tradeState === "WATCHING" && (
           <TradePreviewCard trade={trade} currentPrice={currentPrice} />
         )}
         {tradeState === "LOADED" && (
-          <TradeDecisionCard
+          <LoadedTradeSection
             trade={trade}
             currentPrice={currentPrice}
+            underlyingChange={activeTicker?.changePercent}
             channels={channels}
             challenges={challenges}
             selectedChannels={selectedChannels}
@@ -115,6 +123,7 @@ export function NowPanelTrade({
             onChannelsChange={onChannelsChange}
             onChallengesChange={onChallengesChange}
             onEnterAndAlert={onEnterAndAlert}
+            onCancel={onCancel}
           />
         )}
         {/* Note: ENTERED state routes to NowPanelManage - handled in NowPanel.tsx */}
@@ -254,12 +263,13 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
 }
 
 // ============================================================================
-// LOADED State: Trade Decision Card
+// LOADED State: HDLoadedTradeCard + Discord Alert Settings
 // ============================================================================
 
-interface TradeDecisionCardProps {
+interface LoadedTradeSectionProps {
   trade: Trade;
   currentPrice: number;
+  underlyingChange?: number;
   // Alert settings
   channels?: DiscordChannel[];
   challenges?: Challenge[];
@@ -268,11 +278,13 @@ interface TradeDecisionCardProps {
   onChannelsChange?: (channels: string[]) => void;
   onChallengesChange?: (challenges: string[]) => void;
   onEnterAndAlert?: (channelIds: string[], challengeIds: string[]) => void;
+  onCancel?: () => void;
 }
 
-function TradeDecisionCard({
+function LoadedTradeSection({
   trade,
   currentPrice,
+  underlyingChange,
   channels = [],
   challenges = [],
   selectedChannels = [],
@@ -280,149 +292,62 @@ function TradeDecisionCard({
   onChannelsChange,
   onChallengesChange,
   onEnterAndAlert,
-}: TradeDecisionCardProps) {
+  onCancel,
+}: LoadedTradeSectionProps) {
   const [showAlertSettings, setShowAlertSettings] = useState(false);
-  const contract = trade.contract;
-  const dte = fmtDTE(contract?.daysToExpiry);
-  const spread = contract ? fmtSpread(contract.bid, contract.ask) : null;
+  const [sendDiscordAlert, setSendDiscordAlert] = useState(true);
 
-  // Use confluence score if available, otherwise default
-  const readinessScore = trade.confluence?.score || 75;
-  const scoreStyle = getScoreStyle(readinessScore);
+  // Get symbol features for Smart Gates
+  const symbolData = useSymbolData(trade.ticker);
+  const symbolFeatures = symbolData as unknown as SymbolFeatures | undefined;
+
+  // Handle execute action - passes through to onEnterAndAlert with Discord settings
+  const handleExecute = useCallback(() => {
+    if (onEnterAndAlert) {
+      onEnterAndAlert(sendDiscordAlert ? selectedChannels : [], selectedChallenges);
+    }
+  }, [onEnterAndAlert, sendDiscordAlert, selectedChannels, selectedChallenges]);
 
   // Toggle channel selection
-  const toggleChannel = (channelId: string) => {
-    if (!onChannelsChange) return;
-    const newChannels = selectedChannels.includes(channelId)
-      ? selectedChannels.filter((id) => id !== channelId)
-      : [...selectedChannels, channelId];
-    onChannelsChange(newChannels);
-  };
+  const toggleChannel = useCallback(
+    (channelId: string) => {
+      if (!onChannelsChange) return;
+      const newChannels = selectedChannels.includes(channelId)
+        ? selectedChannels.filter((id) => id !== channelId)
+        : [...selectedChannels, channelId];
+      onChannelsChange(newChannels);
+    },
+    [selectedChannels, onChannelsChange]
+  );
 
   // Toggle challenge selection
-  const toggleChallenge = (challengeId: string) => {
-    if (!onChallengesChange) return;
-    const newChallenges = selectedChallenges.includes(challengeId)
-      ? selectedChallenges.filter((id) => id !== challengeId)
-      : [...selectedChallenges, challengeId];
-    onChallengesChange(newChallenges);
-  };
+  const toggleChallenge = useCallback(
+    (challengeId: string) => {
+      if (!onChallengesChange) return;
+      const newChallenges = selectedChallenges.includes(challengeId)
+        ? selectedChallenges.filter((id) => id !== challengeId)
+        : [...selectedChallenges, challengeId];
+      onChallengesChange(newChallenges);
+    },
+    [selectedChallenges, onChallengesChange]
+  );
 
   return (
     <div className="animate-fade-in-up">
-      {/* Contract Header */}
-      <div className="p-4 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl font-semibold text-[var(--text-high)]">{trade.ticker}</span>
-              <span className="text-sm text-[var(--text-muted)]">
-                {contract?.strike}
-                {contract?.type}
-              </span>
-              <span className={cn("text-xs", dte.className)}>{dte.text}</span>
-            </div>
-            <div className="text-sm text-[var(--text-muted)] tabular-nums">
-              {fmtPrice(contract?.mid)} · Underlying @ {fmtPrice(currentPrice)}
-            </div>
-          </div>
-
-          {/* Readiness Score */}
-          <div
-            className={cn(
-              "flex flex-col items-center justify-center w-16 h-16 rounded-lg",
-              scoreStyle.bgClassName
-            )}
-          >
-            <span className={cn("text-2xl font-bold tabular-nums", scoreStyle.className)}>
-              {readinessScore}
-            </span>
-            <span className="text-[10px] text-[var(--text-muted)] uppercase">
-              {scoreStyle.label}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Metrics Chips */}
-      <div className="p-4 border-b border-[var(--border-hairline)]">
-        <div className="flex flex-wrap gap-2">
-          {contract?.delta && <MetricChip label="Δ" value={fmtDelta(contract.delta)} />}
-          {spread && (
-            <MetricChip
-              label="Spread"
-              value={spread.percent}
-              kind={spread.isWide ? "warn" : "neutral"}
-            />
-          )}
-          {contract?.iv && <MetricChip label="IV" value={`${(contract.iv * 100).toFixed(0)}%`} />}
-          {contract?.volume && (
-            <MetricChip
-              label="Vol"
-              value={
-                contract.volume > 1000
-                  ? `${(contract.volume / 1000).toFixed(1)}K`
-                  : contract.volume.toString()
-              }
-              kind={contract.volume > 500 ? "success" : "neutral"}
-            />
-          )}
-          {trade.confluence?.direction && (
-            <MetricChip
-              label="Trend"
-              value={trade.confluence.direction}
-              kind={trade.confluence.direction === "LONG" ? "success" : "fail"}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Take Profit / Stop Loss Levels */}
-      {(trade.targetPrice || trade.stopLoss) && (
-        <div className="p-4 border-b border-[var(--border-hairline)]">
-          <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
-            Risk Levels
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <RiskBoxCell
-              label="Target"
-              value={fmtPrice(trade.targetPrice)}
-              subValue={
-                contract?.mid && trade.targetPrice
-                  ? fmtPct(((trade.targetPrice - contract.mid) / contract.mid) * 100)
-                  : undefined
-              }
-              kind="success"
-            />
-            <RiskBoxCell
-              label="Stop"
-              value={fmtPrice(trade.stopLoss)}
-              subValue={
-                contract?.mid && trade.stopLoss
-                  ? fmtPct(((trade.stopLoss - contract.mid) / contract.mid) * 100)
-                  : undefined
-              }
-              kind="fail"
-            />
-            <RiskBoxCell
-              label="R:R"
-              value={
-                trade.stopLoss && trade.targetPrice && contract?.mid
-                  ? `${((trade.targetPrice - contract.mid) / (contract.mid - trade.stopLoss)).toFixed(1)}:1`
-                  : "—"
-              }
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Entry Checklist Summary */}
-      <div className="p-4 border-b border-[var(--border-hairline)]">
-        <ChecklistSummary trade={trade} />
-      </div>
+      {/* HDLoadedTradeCard - Smart gates, profit targets, contract quality */}
+      <HDLoadedTradeCard
+        trade={trade}
+        underlyingPrice={currentPrice}
+        underlyingChange={underlyingChange}
+        features={symbolFeatures}
+        technicalTrigger={true}
+        showActions={false} // We handle actions below with Discord integration
+        onEnter={handleExecute}
+        onDiscard={onCancel || (() => {})}
+      />
 
       {/* Alert Settings Section - Collapsible */}
-      {(channels.length > 0 || challenges.length > 0 || onEnterAndAlert) && (
+      {(channels.length > 0 || challenges.length > 0) && (
         <div className="border-b border-[var(--border-hairline)]">
           <button
             onClick={() => setShowAlertSettings(!showAlertSettings)}
@@ -502,18 +427,85 @@ function TradeDecisionCard({
         </div>
       )}
 
-      {/* Enter Trade Button */}
-      {onEnterAndAlert && (
-        <div className="p-4">
-          <button
-            onClick={() => onEnterAndAlert(selectedChannels, selectedChallenges)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-sm bg-[var(--brand-primary)] text-black hover:opacity-90 transition-all btn-press"
-          >
-            <Zap className="w-4 h-4" />
-            Enter Trade{selectedChannels.length > 0 ? " & Alert" : ""}
-          </button>
+      {/* Action Button Group */}
+      <div className="p-4 space-y-3">
+        {/* Button Row: Cancel | Execute */}
+        <div className="flex items-stretch gap-2">
+          {/* Cancel Button (Gray) */}
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className={cn(
+                "flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg",
+                "bg-[var(--surface-3)] border border-[var(--border-hairline)]",
+                "text-[var(--text-muted)] hover:text-[var(--text-high)]",
+                "hover:bg-[var(--surface-3)]/80 transition-all btn-press",
+                "text-sm font-medium"
+              )}
+            >
+              <X className="w-4 h-4" />
+              Discard
+            </button>
+          )}
+
+          {/* Execute + Alert Button (Gold/Green) */}
+          {onEnterAndAlert && (
+            <button
+              onClick={handleExecute}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg",
+                "font-semibold text-sm transition-all btn-press",
+                sendDiscordAlert && selectedChannels.length > 0
+                  ? "bg-gradient-to-r from-[var(--brand-primary)] to-[var(--accent-positive)] text-black hover:opacity-90"
+                  : "bg-[var(--brand-primary)] text-black hover:opacity-90"
+              )}
+            >
+              <Zap className="w-4 h-4" />
+              EXECUTE{sendDiscordAlert && selectedChannels.length > 0 ? " + ALERT" : ""}
+            </button>
+          )}
         </div>
-      )}
+
+        {/* Discord Alert Toggle */}
+        {onEnterAndAlert && channels.length > 0 && (
+          <div className="flex items-center justify-between px-1">
+            <button
+              onClick={() => setSendDiscordAlert(!sendDiscordAlert)}
+              className={cn(
+                "flex items-center gap-2 text-xs transition-colors",
+                sendDiscordAlert ? "text-[var(--brand-primary)]" : "text-[var(--text-faint)]"
+              )}
+            >
+              {sendDiscordAlert ? (
+                <Bell className="w-3.5 h-3.5" />
+              ) : (
+                <BellOff className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {sendDiscordAlert
+                  ? `Alert ${selectedChannels.length} channel${selectedChannels.length !== 1 ? "s" : ""}`
+                  : "No Discord alert"}
+              </span>
+            </button>
+
+            {/* Toggle Switch */}
+            <button
+              onClick={() => setSendDiscordAlert(!sendDiscordAlert)}
+              className={cn(
+                "relative w-9 h-5 rounded-full transition-colors",
+                sendDiscordAlert ? "bg-[var(--brand-primary)]" : "bg-[var(--surface-3)]"
+              )}
+            >
+              <div
+                className={cn(
+                  "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                  sendDiscordAlert ? "translate-x-4" : "translate-x-0.5"
+                )}
+              />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -664,44 +656,58 @@ function GreekCell({
   );
 }
 
-function ChecklistSummary({ trade }: { trade: Trade }) {
-  // Mock checklist items - would come from trade.setupConditions in real impl
-  const items = [
-    { label: "Trend aligned", passed: true },
-    { label: "Volume confirmed", passed: true },
-    { label: "Spread acceptable", passed: true },
-    { label: "IV favorable", passed: false },
-    { label: "Key level proximity", passed: true },
-    { label: "Time window", passed: true },
-  ];
+// ============================================================================
+// Flow Context Strip - Institutional flow visualization
+// ============================================================================
 
-  const passedCount = items.filter((i) => i.passed).length;
+function FlowContextStrip({ symbol }: { symbol: string }) {
+  const normalizedSymbol = normalizeSymbolForAPI(symbol);
+  const {
+    short: flowContext,
+    primarySentiment,
+    sweepCount,
+  } = useFlowContext(normalizedSymbol, {
+    refreshInterval: 30000,
+    windows: ["short"],
+  });
+
+  const flowData = useMemo(() => {
+    if (!flowContext) return undefined;
+    const buyPressure =
+      flowContext.totalVolume && flowContext.totalVolume > 0
+        ? (flowContext.buyVolume / flowContext.totalVolume) * 100
+        : 50;
+    return {
+      flowScore: flowContext.institutionalScore ?? 0,
+      flowBias:
+        primarySentiment === "BULLISH"
+          ? ("bullish" as const)
+          : primarySentiment === "BEARISH"
+            ? ("bearish" as const)
+            : ("neutral" as const),
+      buyPressure,
+      putCallRatio: flowContext.putCallVolumeRatio ?? 1,
+      sweepCount: sweepCount ?? 0,
+    };
+  }, [flowContext, primarySentiment, sweepCount]);
+
+  // Don't render if no flow data
+  if (!flowData) return null;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
-          Entry Checklist
+    <div className="flex-shrink-0 px-4 py-2 border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Activity className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+        <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+          Options Flow
         </span>
-        <span className="text-xs text-[var(--text-faint)]">
-          {passedCount}/{items.length} passed
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((item, idx) => (
-          <span
-            key={idx}
-            className={cn(chipStyle(item.passed ? "success" : "warn"), "text-[10px]")}
-          >
-            {item.passed ? (
-              <CheckCircle2 className="w-3 h-3 mr-1 inline" />
-            ) : (
-              <AlertTriangle className="w-3 h-3 mr-1 inline" />
-            )}
-            {item.label}
+        {sweepCount && sweepCount > 0 && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+            {sweepCount} sweeps
           </span>
-        ))}
+        )}
       </div>
+      <FlowPulse flow={flowData} compact showLabels={false} />
     </div>
   );
 }

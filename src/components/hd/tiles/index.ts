@@ -1,8 +1,7 @@
 /**
- * Tile Components - Contract-aware tiles for ActionRail
+ * Tile Components - Contract-aware tiles for NowPanel
  */
 
-export { ActionRail } from "./ActionRail";
 export { TimeDecayThetaTile } from "./TimeDecayThetaTile";
 export { ProfitTargetsTile } from "./ProfitTargetsTile";
 export { AICoachTile } from "./AICoachTile";

@@ -467,37 +467,50 @@ export function HDActiveTradePanel({
       {/* ═══════════════════════════════════════════════════════════════════════
           GAMMA REGIME CHANGE ALERT - Smart Alert Banner
           ═══════════════════════════════════════════════════════════════════════ */}
-      {gammaRegimeChanged && gammaChangeMessage && (
-        <div className="relative bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 rounded-lg border border-amber-500/40 p-3 animate-pulse">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-amber-500/20">
-                <Radar
-                  className="w-5 h-5 text-amber-400 animate-spin"
-                  style={{ animationDuration: "3s" }}
-                />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-amber-300 flex items-center gap-2">
-                  <span>⚡ GAMMA REGIME CHANGE</span>
+      {/* Layout stability: Reserve height or use absolute positioning over content if needed 
+        For now, we use a min-height container approach or simply keep it in flow but smooth entry.
+        Given the space constraints, we'll keep it in flow but ensure smooth transition. 
+      */}
+      <div
+        className={cn(
+          "transition-all duration-300 ease-in-out overflow-hidden",
+          gammaRegimeChanged && gammaChangeMessage
+            ? "max-h-20 opacity-100 mb-4"
+            : "max-h-0 opacity-0 mb-0"
+        )}
+      >
+        {gammaRegimeChanged && gammaChangeMessage && (
+          <div className="relative bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 rounded-lg border border-amber-500/40 p-3 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-full bg-amber-500/20">
+                  <Radar
+                    className="w-5 h-5 text-amber-400 animate-spin"
+                    style={{ animationDuration: "3s" }}
+                  />
                 </div>
-                <div className="text-xs text-amber-200/80">{gammaChangeMessage}</div>
+                <div>
+                  <div className="text-sm font-semibold text-amber-300 flex items-center gap-2">
+                    <span>⚡ GAMMA REGIME CHANGE</span>
+                  </div>
+                  <div className="text-xs text-amber-200/80">{gammaChangeMessage}</div>
+                </div>
               </div>
+              <button
+                onClick={dismissGammaAlert}
+                className="text-amber-400 hover:text-amber-300 text-xs px-2 py-1 rounded bg-amber-500/20"
+              >
+                Dismiss
+              </button>
             </div>
-            <button
-              onClick={dismissGammaAlert}
-              className="text-amber-400 hover:text-amber-300 text-xs px-2 py-1 rounded bg-amber-500/20"
-            >
-              Dismiss
-            </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
           MISSION CONTROL HEADER - P&L, Flow, Time
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="bg-gradient-to-r from-[var(--surface-2)] via-[var(--surface-1)] to-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] overflow-hidden">
+      <div className="bg-gradient-to-r from-[var(--surface-2)] via-[var(--surface-1)] to-[var(--surface-2)] rounded-lg border border-[var(--border-hairline)] overflow-hidden min-h-[200px] relative">
         {/* Top bar - Mission Control label */}
         <div className="flex items-center justify-between px-4 py-2 bg-[var(--surface-3)]/50 border-b border-[var(--border-hairline)]">
           <div className="flex items-center gap-2">

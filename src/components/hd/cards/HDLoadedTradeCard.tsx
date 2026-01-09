@@ -54,7 +54,7 @@ export function HDLoadedTradeCard({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Row 1: Contract Header (full width) */}
       <HDCard>
         <div className="flex items-start justify-between">
@@ -112,7 +112,7 @@ export function HDLoadedTradeCard({
       </HDCard>
 
       {/* Row 2: Quality + Targets (2-column grid) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {/* Contract Quality Analysis */}
         <HDCard className="h-fit">
           <div className="text-[var(--text-high)] text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-1.5">
@@ -139,7 +139,7 @@ export function HDLoadedTradeCard({
       </HDCard>
 
       {/* Row 4: Session + Time (2-column grid) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {/* Session Guidance + Economic Events */}
         <HDCard className="h-fit space-y-3">
           <HDSessionGuidance

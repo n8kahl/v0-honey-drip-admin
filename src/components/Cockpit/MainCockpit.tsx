@@ -9,7 +9,6 @@ import { HDContractGrid } from "../hd/common/HDContractGrid";
 import { HDMacroPanel } from "../hd/dashboard/HDMacroPanel";
 import { HDWatchlistRail } from "../hd/layout/HDWatchlistRail";
 import { HDPortfolioRail } from "../hd/layout/HDPortfolioRail";
-import { ActiveTradesDock } from "../trading/ActiveTradesDock";
 import FlowPanel from "./FlowPanel";
 import { QuickOrderBar } from "../trading/QuickOrderBar";
 import { SmartContextStrip } from "../hd/common/SmartContextStrip";
@@ -112,7 +111,6 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
         <div className="lg:hidden flex-1">
           <EmptyState />
         </div>
-        <ActiveTradesDock />
       </div>
     );
   }
@@ -219,7 +217,7 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
         </div>
 
         {/* Middle: Options Chain (scrollable) */}
-        <div className="flex-1 overflow-y-auto pb-24">
+        <div className="flex-1 overflow-y-auto">
           {optionsLoading ? (
             <div className="flex items-center justify-center h-full text-sm text-[var(--text-muted)]">
               Loading options chain...
@@ -237,9 +235,6 @@ export const MainCockpit: React.FC<MainCockpitProps> = ({ symbol }) => {
             </div>
           )}
         </div>
-
-        {/* Bottom: Active Trades Dock (peekable) */}
-        <ActiveTradesDock />
       </div>
     </>
   );

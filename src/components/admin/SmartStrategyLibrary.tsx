@@ -14,9 +14,10 @@ import {
   Zap,
   TrendingUp,
   TrendingDown,
-  Settings2,
   Sparkles,
   AlertTriangle,
+  Play,
+  Loader2,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -35,7 +36,9 @@ import {
   toggleAutoOptimize,
   applyPendingParams,
   dismissPendingParams,
+  saveOptimizationResult,
 } from "../../lib/strategy/admin";
+import { StrategyOptimizer, type OptimizationResult } from "../../lib/strategy/optimizer";
 import {
   SignalPerformanceTracker,
   type WinRateResult,
@@ -61,6 +64,8 @@ interface StrategyCardProps {
   onToggleEnabled: (id: string, enabled: boolean) => void;
   onToggleAutoOptimize: (id: string, autoOptimize: boolean) => void;
   onReviewUpgrade: (strategy: StrategyDefinition) => void;
+  onRunOptimizer: (strategy: StrategyDefinition) => void;
+  isOptimizing?: boolean;
 }
 
 // Smart Gate Badge Component
@@ -111,6 +116,8 @@ function StrategyCard({
   onToggleEnabled,
   onToggleAutoOptimize,
   onReviewUpgrade,
+  onRunOptimizer,
+  isOptimizing = false,
 }: StrategyCardProps) {
   const hasPendingUpgrade = !!strategy.pendingParams;
   const expectancyGain = strategy.pendingParams?.expectancyGain ?? 0;
@@ -229,6 +236,29 @@ function StrategyCard({
           <Settings2 className="w-3 h-3" />
           {strategy.autoOptimize ? "Auto-Opt ON" : "Auto-Opt OFF"}
         </Button>
+
+        {/* Run Optimizer Button */}
+        {!hasPendingUpgrade && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onRunOptimizer(strategy)}
+            disabled={isOptimizing}
+            className="flex items-center gap-1 ml-auto"
+          >
+            {isOptimizing ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Optimizing...
+              </>
+            ) : (
+              <>
+                <Play className="w-3 h-3" />
+                Run Optimizer
+              </>
+            )}
+          </Button>
+        )}
 
         {/* Review Upgrade Button */}
         {hasPendingUpgrade && (
@@ -431,6 +461,7 @@ export function SmartStrategyLibrary() {
   const [loading, setLoading] = useState(true);
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyDefinition | null>(null);
+  const [optimizingId, setOptimizingId] = useState<string | null>(null);
 
   // Load strategies from database
   const loadStrategies = useCallback(async () => {
@@ -532,6 +563,38 @@ export function SmartStrategyLibrary() {
     }
   };
 
+  // Optimizer Handler
+  const handleRunOptimizer = async (strategy: StrategyDefinition) => {
+    setOptimizingId(strategy.id);
+    const optimizer = new StrategyOptimizer();
+
+    try {
+      toast.info(`Starting optimization for ${strategy.name}...`);
+
+      const result = await optimizer.optimize(strategy, {
+        onProgress: (progress, message) => {
+          // Optional: could show a progress toast or update local state
+          console.log(`[Optimizer] ${message} (${progress.toFixed(0)}%)`);
+        },
+      });
+
+      if (result.improvement > 0) {
+        await saveOptimizationResult(strategy.id, result.bestParams, result.improvement);
+        toast.success(
+          `Optimization complete! Expectancy improved by ${(result.improvement * 100).toFixed(1)}%`
+        );
+        await loadStrategies();
+      } else {
+        toast.info("Optimization complete. No significant improvements found.");
+      }
+    } catch (error: any) {
+      console.error("Optimizer error:", error);
+      toast.error("Optimization failed: " + error.message);
+    } finally {
+      setOptimizingId(null);
+    }
+  };
+
   // Filter strategies with pending upgrades
   const strategiesWithUpgrades = strategies.filter((s) => s.pendingParams);
   const enabledStrategies = strategies.filter((s) => s.enabled);
@@ -620,6 +683,8 @@ export function SmartStrategyLibrary() {
               onToggleEnabled={handleToggleEnabled}
               onToggleAutoOptimize={handleToggleAutoOptimize}
               onReviewUpgrade={handleReviewUpgrade}
+              onRunOptimizer={handleRunOptimizer}
+              isOptimizing={optimizingId === strategy.id}
             />
           ))}
         </div>

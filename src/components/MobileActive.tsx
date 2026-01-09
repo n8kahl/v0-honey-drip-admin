@@ -1,8 +1,8 @@
-import { Trade } from '../types';
-import { MobileWatermark } from './MobileWatermark';
-import { TradeCard } from './trades/TradeCard';
-import { EmptyState } from './ui/EmptyState';
-import { Wallet } from 'lucide-react';
+import { Trade } from "../types";
+import { MobileWatermark } from "./MobileWatermark";
+import { HDActiveTradeRow } from "./hd/cards/HDActiveTradeRow";
+import { EmptyState } from "./ui/EmptyState";
+import { Wallet } from "lucide-react";
 
 interface MobileActiveProps {
   trades: Trade[];
@@ -10,15 +10,19 @@ interface MobileActiveProps {
   onTradeClick?: (trade: Trade) => void;
 }
 
-export function MobileActive({ trades, updatedTradeIds = new Set(), onTradeClick }: MobileActiveProps) {
+export function MobileActive({
+  trades,
+  updatedTradeIds: _updatedTradeIds = new Set(),
+  onTradeClick,
+}: MobileActiveProps) {
   // Only show ENTERED trades on this tab (EXITED trades are removed)
-  const activeTrades = trades.filter(t => t.state === 'ENTERED');
-  
+  const activeTrades = trades.filter((t) => t.state === "ENTERED");
+
   return (
     <div className="flex flex-col bg-[var(--surface-2)] relative">
       {/* Watermark - visible on all screens */}
       <MobileWatermark />
-      
+
       {/* Page Title */}
       <div className="p-4 border-b border-[var(--border-hairline)] bg-[var(--surface-1)] relative z-10">
         <h1 className="text-[var(--text-high)] text-lg font-medium">Active Trades</h1>
@@ -30,11 +34,9 @@ export function MobileActive({ trades, updatedTradeIds = new Set(), onTradeClick
         <div className="p-4">
           <div className="space-y-2">
             {activeTrades.map((trade) => (
-              <TradeCard
+              <HDActiveTradeRow
                 key={trade.id}
                 trade={trade}
-                variant="compact"
-                isUpdating={updatedTradeIds.has(trade.id)}
                 onClick={() => onTradeClick?.(trade)}
               />
             ))}

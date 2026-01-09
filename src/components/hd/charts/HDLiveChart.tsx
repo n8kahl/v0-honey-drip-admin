@@ -516,25 +516,45 @@ export function HDLiveChart({
         width: node.clientWidth,
         height,
         layout: {
-          background: { color: "#0a0a0a" },
+          background: { color: "transparent" }, // Use transparent to let CSS container bg show through
           textColor: "#9CA3AF",
         },
         grid: {
-          vertLines: { color: "#1F2937" },
-          horzLines: { color: "#1F2937" },
+          vertLines: { color: "#1F2937", style: 1, visible: false }, // Hide grid for cleaner look
+          horzLines: { color: "#1F2937", style: 1, visible: false },
         },
         crosshair: {
           mode: 1,
+          vertLine: {
+            color: "#6B7280",
+            width: 1,
+            style: 3,
+            labelBackgroundColor: "#374151",
+          },
+          horzLine: {
+            color: "#6B7280",
+            width: 1,
+            style: 3,
+            labelBackgroundColor: "#374151",
+          },
         },
         rightPriceScale: {
-          borderColor: "#374151",
+          borderColor: "rgba(55, 65, 81, 0.5)", // Faint border
         },
         timeScale: {
-          borderColor: "#374151",
+          borderColor: "rgba(55, 65, 81, 0.5)",
           timeVisible: true,
           secondsVisible: false,
-          // Enable natural interactions
-          rightOffset: 0,
+          rightOffset: 12, // More space on right
+        },
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+        },
+        handleScale: {
+          axisPressedMouseMove: true,
+          mouseWheel: true,
+          pinch: true,
         },
       });
 
@@ -557,12 +577,13 @@ export function HDLiveChart({
       // Create candlestick series using v4-style API (v5 uses different API but v4 still works)
       try {
         const candleOptions = {
-          upColor: "#16A34A",
-          downColor: "#EF4444",
-          borderUpColor: "#16A34A",
-          borderDownColor: "#EF4444",
-          wickUpColor: "#16A34A",
-          wickDownColor: "#EF4444",
+          upColor: "#2DD4BF", // Teal-400 (Premium Bullish)
+          downColor: "#F43F5E", // Rose-500 (Premium Bearish)
+          borderUpColor: "#2DD4BF",
+          borderDownColor: "#F43F5E",
+          wickUpColor: "#2DD4BF",
+          wickDownColor: "#F43F5E",
+          priceLineColor: "#E5E7EB",
         };
         candleSeriesRef.current = (chartRef.current as any).addCandlestickSeries(candleOptions);
       } catch (err) {

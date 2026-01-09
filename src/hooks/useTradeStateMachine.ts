@@ -108,9 +108,12 @@ interface TradeStateMachineActions {
   handleTickerClick: (ticker: Ticker) => void;
   handleContractSelect: (
     contract: Contract,
-    confluenceData?: { trend?: any; volatility?: any; liquidity?: any },
-    voiceReasoning?: string,
-    explicitTicker?: Ticker
+    options?: {
+      confluenceData?: { trend?: any; volatility?: any; liquidity?: any };
+      voiceReasoning?: string;
+      explicitTicker?: Ticker;
+      tradeType?: "scalp" | "day" | "swing";
+    }
   ) => void;
   handleActiveTradeClick: (trade: Trade, watchlist: Ticker[]) => void;
   handleSendAlert: (
@@ -313,11 +316,17 @@ export function useTradeStateMachine({
   const handleContractSelect = useCallback(
     async (
       contract: Contract,
-      confluenceData?: { trend?: any; volatility?: any; liquidity?: any },
-      voiceReasoning?: string,
-      explicitTicker?: Ticker
+      options?: {
+        confluenceData?: { trend?: any; volatility?: any; liquidity?: any };
+        voiceReasoning?: string;
+        explicitTicker?: Ticker;
+        tradeType?: "scalp" | "day" | "swing";
+      }
     ) => {
-      const ticker = explicitTicker || activeTicker;
+      const ticker = options?.explicitTicker || activeTicker;
+      const tradeTypeOverride = options?.tradeType;
+      const confluenceData = options?.confluenceData;
+      const voiceReasoning = options?.voiceReasoning;
 
       if (!ticker) {
         log.warn("Contract select failed: No ticker selected");
@@ -343,16 +352,35 @@ export function useTradeStateMachine({
         let targetUnderlyingPrice: number | undefined;
         let stopUnderlyingPrice: number | undefined;
 
-        try {
-          const tradeType = inferTradeTypeByDTE(
-            contract.expiry,
-            new Date(),
-            DEFAULT_DTE_THRESHOLDS
-          );
+        // Determine trade type: Manual override > DTE-inferred
+        // riskEngineTradeType = uppercase for calculateRisk ("SCALP", "DAY", "SWING")
+        // displayTradeType = title case for Trade object ("Scalp", "Day", "Swing")
+        const inferredRiskType = inferTradeTypeByDTE(
+          contract.expiry,
+          new Date(),
+          DEFAULT_DTE_THRESHOLDS
+        );
+        const riskEngineTradeType = tradeTypeOverride
+          ? (tradeTypeOverride.toUpperCase() as "SCALP" | "DAY" | "SWING")
+          : inferredRiskType;
+        const displayTradeType: Trade["tradeType"] = tradeTypeOverride
+          ? tradeTypeOverride === "scalp"
+            ? "Scalp"
+            : tradeTypeOverride === "swing"
+              ? "Swing"
+              : "Day"
+          : inferredRiskType === "SCALP"
+            ? "Scalp"
+            : inferredRiskType === "SWING"
+              ? "Swing"
+              : inferredRiskType === "LEAP"
+                ? "LEAP"
+                : "Day";
 
+        try {
           // Risk profile computed but not yet integrated into calculateRisk
           // TODO: Pass adjusted profile to risk calculations
-          let _riskProfile = RISK_PROFILES[tradeType];
+          let _riskProfile = RISK_PROFILES[riskEngineTradeType];
           if (
             confluenceData &&
             (confluenceData.trend || confluenceData.volatility || confluenceData.liquidity)
@@ -386,7 +414,7 @@ export function useTradeStateMachine({
               yearlyLow: 0,
             },
             expirationISO: contract.expiry,
-            tradeType,
+            tradeType: riskEngineTradeType,
             delta: contract.delta ?? 0.5,
             gamma: contract.gamma ?? 0,
             defaults: getRiskDefaultsFromStore(),
@@ -413,11 +441,7 @@ export function useTradeStateMachine({
           ticker: ticker.symbol,
           state: "WATCHING",
           contract,
-          tradeType: inferTradeTypeByDTE(
-            contract.expiry,
-            new Date(),
-            DEFAULT_DTE_THRESHOLDS
-          ) as Trade["tradeType"],
+          tradeType: displayTradeType,
           targetPrice,
           stopLoss,
           movePercent: 0,
@@ -593,28 +617,23 @@ export function useTradeStateMachine({
           log.warn("Failed to create TradeThread (non-blocking)", { error, ticker: trade.ticker });
         }
 
-        // 5. SEND DISCORD ALERT
+        // 5. SEND DISCORD ALERT (NON-BLOCKING)
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
         if (discordAlertsEnabled && channels.length > 0) {
-          try {
-            await discord.sendLoadAlert(
-              channels,
-              { ...trade, id: dbTrade.id, state: "LOADED" },
-              comment,
-              {
-                targetPrice: effectiveTargetPrice,
-                stopLoss: effectiveStopLoss,
-                targetUnderlyingPrice:
-                  priceOverrides?.targetUnderlyingPrice ?? trade.targetUnderlyingPrice,
-                stopUnderlyingPrice:
-                  priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice,
-              }
-            );
-          } catch (error) {
-            console.error("[Discord] Failed to send LOAD alert:", error);
-          }
+          // Fire and forget - don't await
+          discord
+            .sendLoadAlert(channels, { ...trade, id: dbTrade.id, state: "LOADED" }, comment, {
+              targetPrice: effectiveTargetPrice,
+              stopLoss: effectiveStopLoss,
+              targetUnderlyingPrice:
+                priceOverrides?.targetUnderlyingPrice ?? trade.targetUnderlyingPrice,
+              stopUnderlyingPrice: priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice,
+            })
+            .catch((error) => {
+              console.error("[Discord] Failed to send LOAD alert:", error);
+            });
         }
 
         log.transition("WATCHING", "LOADED", { tradeId: dbTrade.id, ticker: trade.ticker });
@@ -870,7 +889,7 @@ export function useTradeStateMachine({
           ActiveTradePollingService.registerTrade(enteredTrade);
         }
 
-        // SEND DISCORD ALERT
+        // SEND DISCORD ALERT (NON-BLOCKING)
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
@@ -881,8 +900,9 @@ export function useTradeStateMachine({
               description: `Wait ${formatWaitTime(waitTime)} before sending more.`,
             } as any);
           } else {
-            try {
-              const results = await discord.sendEntryAlert(
+            // Fire and forget - don't await
+            discord
+              .sendEntryAlert(
                 channels,
                 {
                   ...trade,
@@ -904,21 +924,22 @@ export function useTradeStateMachine({
                   stopUnderlyingPrice:
                     priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice,
                 }
-              );
-
-              recordAlertHistory({
-                userId,
-                tradeId: dbTradeId,
-                alertType: "enter",
-                channelIds: channels.map((c) => c.id),
-                challengeIds,
-                successCount: results.success,
-                failedCount: results.failed,
-                tradeTicker: trade.ticker,
-              }).catch(console.error);
-            } catch (error) {
-              console.error("[Discord] Failed to send ENTER alert:", error);
-            }
+              )
+              .then((results) => {
+                recordAlertHistory({
+                  userId,
+                  tradeId: dbTradeId,
+                  alertType: "enter",
+                  channelIds: channels.map((c) => c.id),
+                  challengeIds,
+                  successCount: results.success,
+                  failedCount: results.failed,
+                  tradeTicker: trade.ticker,
+                }).catch(console.error);
+              })
+              .catch((error) => {
+                console.error("[Discord] Failed to send ENTER alert:", error);
+              });
           }
         }
 
@@ -1345,76 +1366,79 @@ export function useTradeStateMachine({
 
         log.info("Alert sent successfully", { alertType, tradeId: trade.id, ticker: trade.ticker });
 
-        // Send Discord alert
+        // Send Discord alert (NON-BLOCKING)
         const channels = getDiscordChannelsForAlert(channelIds, challengeIds);
         const discordAlertsEnabled = useSettingsStore.getState().discordAlertsEnabled;
 
         if (discordAlertsEnabled && channels.length > 0) {
-          try {
-            switch (alertType) {
-              case "trim":
-                await discord.sendUpdateAlert(
-                  channels,
-                  trade,
-                  "trim",
-                  message || "Position trimmed"
-                );
-                break;
-              case "update":
-                await discord.sendUpdateAlert(
-                  channels,
-                  trade,
-                  alertOptions.updateKind === "sl" ? "update-sl" : "generic",
-                  message
-                );
-                break;
-              case "update-sl":
-                await discord.sendUpdateAlert(
-                  channels,
-                  trade,
-                  "update-sl",
-                  message || "Stop loss updated"
-                );
-                break;
-              case "trail-stop":
-                await discord.sendTrailingStopAlert(channels, trade);
-                break;
-              case "add":
-                await discord.sendUpdateAlert(
-                  channels,
-                  trade,
-                  "generic",
-                  message || "Added to position"
-                );
-                break;
-              case "exit": {
-                // Handle gains image if requested
-                let imageUrl: string | undefined;
-                if (priceOverrides?.includeGainsImage) {
-                  log.info("Gains image requested for exit alert", { tradeId: trade.id });
-                  // TODO: Implement image generation using html-to-image or server-side rendering
-                  // For now, imageUrl remains undefined
+          // Wrapped in IIFE to handle logic without blocking main thread
+          (async () => {
+            try {
+              switch (alertType) {
+                case "trim":
+                  await discord.sendUpdateAlert(
+                    channels,
+                    trade,
+                    "trim",
+                    message || "Position trimmed"
+                  );
+                  break;
+                case "update":
+                  await discord.sendUpdateAlert(
+                    channels,
+                    trade,
+                    alertOptions.updateKind === "sl" ? "update-sl" : "generic",
+                    message
+                  );
+                  break;
+                case "update-sl":
+                  await discord.sendUpdateAlert(
+                    channels,
+                    trade,
+                    "update-sl",
+                    message || "Stop loss updated"
+                  );
+                  break;
+                case "trail-stop":
+                  await discord.sendTrailingStopAlert(channels, trade);
+                  break;
+                case "add":
+                  await discord.sendUpdateAlert(
+                    channels,
+                    trade,
+                    "generic",
+                    message || "Added to position"
+                  );
+                  break;
+                case "exit": {
+                  // Handle gains image if requested
+                  let imageUrl: string | undefined;
+                  if (priceOverrides?.includeGainsImage) {
+                    log.info("Gains image requested for exit alert", { tradeId: trade.id });
+                    // TODO: Implement image generation using html-to-image or server-side rendering
+                    // For now, imageUrl remains undefined
+                  }
+                  // Spread trade with exit data - using effectiveCurrent (with user's price override)
+                  await discord.sendExitAlert(
+                    channels,
+                    {
+                      ...trade,
+                      exitPrice: effectiveCurrent,
+                      exitTime: new Date(),
+                      movePercent: trade.entryPrice
+                        ? ((effectiveCurrent - trade.entryPrice) / trade.entryPrice) * 100
+                        : 0,
+                    },
+                    message,
+                    imageUrl
+                  );
+                  break;
                 }
-                // Spread trade with exit data - using effectiveCurrent (with user's price override)
-                await discord.sendExitAlert(
-                  channels,
-                  {
-                    ...trade,
-                    exitPrice: effectiveCurrent,
-                    exitTime: new Date(),
-                    movePercent: trade.entryPrice
-                      ? ((effectiveCurrent - trade.entryPrice) / trade.entryPrice) * 100
-                      : 0,
-                  },
-                  message,
-                  imageUrl
-                );
-                break;
               }
+            } catch (error) {
+              console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
             }
-          } catch (error) {
-            console.error(`[Discord] Failed to send ${alertType.toUpperCase()} alert:`, error);
-          }
+          })();
         }
 
         showAlertToast(alertType, trade.ticker, channels);
@@ -1612,7 +1636,7 @@ export function useTradeStateMachine({
   );
 
   const handleExit = useCallback(
-    (_sendAlert?: boolean) => {
+    async (_sendAlert?: boolean) => {
       // Read directly from store to avoid stale closure
       const storeState = useTradeStore.getState();
       const trade = storeState.currentTradeId
@@ -1620,6 +1644,61 @@ export function useTradeStateMachine({
         : null;
 
       if (!trade) return;
+
+      // DETECT EXPIRATION / NULL PRICE - Force manual exit bypassing alert composer
+      const isExpired = trade.contract.expiry && new Date(trade.contract.expiry) < new Date();
+      const isZeroPrice =
+        (!trade.currentPrice || trade.currentPrice === 0) &&
+        (!trade.contract.mid || trade.contract.mid === 0);
+
+      if (isExpired || isZeroPrice) {
+        // === DIRECT EXIT FOR EXPIRED CONTRACTS ===
+        // Bypass all alert machinery and directly update DB + store
+        const now = new Date();
+        const entryPrice = trade.entryPrice || 0;
+        const exitPrice = 0; // Expired worthless
+        const movePercent = entryPrice > 0 ? -100 : 0; // Total loss
+
+        try {
+          // 1. Update database directly
+          await updateTradeApi(userId, trade.id, {
+            status: "exited",
+            exit_price: exitPrice,
+            exit_time: now.toISOString(),
+            move_percent: movePercent,
+          });
+
+          // 2. Optimistically move trade from activeTrades to historyTrades
+          const exitedTrade: Trade = {
+            ...trade,
+            state: "EXITED",
+            exitPrice,
+            exitTime: now,
+            movePercent,
+          };
+          useTradeStore.setState((state) => ({
+            activeTrades: state.activeTrades.filter((t) => t.id !== trade.id),
+            historyTrades: [...state.historyTrades, exitedTrade],
+            currentTradeId: null, // Clear focus
+          }));
+
+          // 3. Show success toast
+          toast.success("Expired Position Cleared", {
+            description: `${trade.ticker} expired contract removed from active trades.`,
+          });
+
+          // 4. Reload trades from DB
+          await loadTrades(userId);
+
+          log.info("Expired contract manually exited", { tradeId: trade.id, ticker: trade.ticker });
+        } catch (err) {
+          console.error("[handleExit] Failed to exit expired trade:", err);
+          toast.error("Failed to clear expired position", {
+            description: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
+        return;
+      }
 
       // Use domain layer to create draft
       const draft = startTradeAction("EXIT", { trade });
@@ -1634,7 +1713,7 @@ export function useTradeStateMachine({
         toast.error("Cannot exit from current state");
       }
     },
-    [toast]
+    [toast, userId, loadTrades]
   );
 
   // ========================================

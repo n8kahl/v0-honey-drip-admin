@@ -16,6 +16,8 @@ export interface SymbolFeatures {
     low?: number;
     prevClose?: number;
     prev?: number; // optional previous for crosses ops
+    gapPercent?: number; // (Open - PrevClose) / PrevClose * 100
+    gapFillStatus?: "unfilled" | "filling" | "filled";
   };
   volume?: {
     current?: number;

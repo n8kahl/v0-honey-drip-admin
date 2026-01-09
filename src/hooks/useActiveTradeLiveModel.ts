@@ -17,7 +17,7 @@
  * - Data freshness tracking with source indicators
  */
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import type { Trade } from "../types";
 import { useActiveTradePnL, useQuotes } from "./useMassiveData";
 import { useLiveGreeks } from "./useOptionsAdvanced";
@@ -480,8 +480,17 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     updateTrade,
   ]);
 
+  // State preservation - keep last known good model to prevent flickering
+  const lastValidModelRef = useRef<LiveTradeModel | null>(null);
+
+  // Debounce health status changes
+  const [debouncedHealth, setDebouncedHealth] = useState<"healthy" | "degraded" | "stale">(
+    "healthy"
+  );
+  const healthTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Build the live model
-  return useMemo(() => {
+  const currentModel = useMemo(() => {
     // Return null if no trade (hooks must be called unconditionally, but useMemo can return null)
     if (!trade) {
       return null;
@@ -538,6 +547,18 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       ask = trade.entry_ask || 0;
     }
 
+    // STABILITY CHECK: If we suddenly lost price (effectiveMid goes to 0 or becomes invalid)
+    // but we had a valid model before, keep the old price
+    if ((!effectiveMid || effectiveMid === 0) && lastValidModelRef.current && !isExpired) {
+      // Return existing model but mark as stale?
+      // Ideally we want to just keep showing the last known good price rather than 0
+      effectiveMid = lastValidModelRef.current.effectiveMid;
+      bid = lastValidModelRef.current.bid;
+      ask = lastValidModelRef.current.ask;
+      priceSource = "snapshot"; // It's now a snapshot of the past
+      // Don't update priceAsOf so age continues to increase
+    }
+
     const spread = ask - bid;
     const spreadPercent = effectiveMid > 0 ? (spread / effectiveMid) * 100 : 0;
 
@@ -569,52 +590,29 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     }
 
     // Underlying data with fallback:
-    // 1. Live quote (best) - shows current price
-    // 2. null - shows "N/A" instead of $0.00
     const underlyingPrice = underlyingQuote?.last || null;
     const underlyingChange = underlyingQuote?.change || 0;
     const underlyingChangePercent = underlyingQuote?.changePercent || 0;
     const underlyingAsOf = underlyingQuote?.asOf || 0;
+
     // Only mark as stale if we HAVE data but it's old
-    // If we have NO data (underlyingAsOf === 0), it's "unavailable" not "stale"
     const underlyingIsStale =
-      underlyingAsOf > 0 ? Date.now() - underlyingAsOf > UNDERLYING_STALE_MS : false; // No data = not stale, just unavailable
+      underlyingAsOf > 0 ? Date.now() - underlyingAsOf > UNDERLYING_STALE_MS : false;
     const underlyingIsUnavailable = !underlyingQuote?.last;
 
-    // Overall health assessment
-    // Focus on price data freshness - Greeks being static is acceptable since they don't change rapidly
-    // IMPORTANT: "unavailable" data should NOT penalize health - only "stale" (old) data does
-    let overallHealth: "healthy" | "degraded" | "stale" = "healthy";
-    if (optionIsStale && underlyingIsStale) {
-      overallHealth = "stale";
-    } else if (optionIsStale) {
-      // Option price is critical for P&L - mark as degraded
-      overallHealth = "degraded";
+    // Calculate generic health for this execution
+    let currentHealth: "healthy" | "degraded" | "stale" = "healthy";
+    const isPriceStale = isExpired ? false : Date.now() - priceAsOf > 30000;
+
+    if ((isPriceStale || optionIsStale) && underlyingIsStale) {
+      currentHealth = "stale";
+    } else if (isPriceStale || optionIsStale) {
+      currentHealth = "degraded";
     } else if (underlyingIsStale && !underlyingIsUnavailable) {
-      // Only penalize if underlying IS stale (has old data), not if it's just unavailable
-      overallHealth = "degraded";
+      currentHealth = "degraded";
     }
-    // Note: Greeks being "static" is NOT penalized since:
-    // 1. Greeks don't change as rapidly as prices
-    // 2. Contract snapshot Greeks are sufficient for display
-    // 3. This prevents false "DELAYED" badge when prices are streaming fine
-    // Note: Unavailable underlying (after hours) is NOT penalized - we just show "N/A"
 
-    // DEBUG: Log the final P&L calculation
-    console.warn(`📊 [LIVE MODEL] ${trade.ticker}:`, {
-      effectiveMid,
-      entryPrice,
-      pnlPercent: roundPrice(netPnlPercent).toFixed(2) + "%",
-      priceSource,
-      priceAsOf: new Date(priceAsOf).toISOString(),
-      priceLabel: getPriceLabel(priceSource, priceAsOf, timeState.marketOpen),
-      optionBid,
-      optionAsk,
-      storeLastPrice: trade.last_option_price,
-      storeLastPriceAt: trade.last_option_price_at,
-    });
-
-    return {
+    const model: LiveTradeModel = {
       // Core pricing
       effectiveMid,
       bid,
@@ -650,7 +648,7 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       holdTimeMinutes: timeState.holdTimeMinutes,
       holdTimeFormatted: formatHoldTime(timeState.holdTimeMinutes),
 
-      // Data health
+      // Data health (using direct values here, debounced applied in effect)
       optionSource,
       optionAsOf,
       optionIsStale,
@@ -658,13 +656,13 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       underlyingSource: underlyingQuote?.source ?? "none",
       underlyingAsOf,
       underlyingIsStale,
-      overallHealth,
+      overallHealth: currentHealth, // Will override with debounced value
 
-      // Price metadata (NEW - for P&L accuracy)
+      // Price metadata
       priceSource,
       priceAsOf,
       priceAge: Date.now() - priceAsOf,
-      priceIsStale: isExpired ? false : Date.now() - priceAsOf > 30000, // Expired = final, not stale
+      priceIsStale: isPriceStale,
       priceLabel: isExpired
         ? "Expired"
         : getPriceLabel(priceSource, priceAsOf, timeState.marketOpen),
@@ -678,6 +676,8 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
       // Contract status
       isExpired,
     };
+
+    return model;
   }, [
     trade,
     contract,
@@ -697,6 +697,48 @@ export function useActiveTradeLiveModel(trade: Trade | null): LiveTradeModel | n
     entryPrice,
     quantity,
   ]);
+
+  // Handle health debouncing and reference preservation
+  useEffect(() => {
+    if (!currentModel) return;
+
+    // Update debounced health
+    if (currentModel.overallHealth !== debouncedHealth) {
+      if (healthTimeoutRef.current) clearTimeout(healthTimeoutRef.current);
+
+      // If going to a WORSE state (healthy -> degraded -> stale), delay it
+      // If improving (stale -> healthy), do it fast
+      const isWorsening =
+        currentModel.overallHealth === "stale" ||
+        (currentModel.overallHealth === "degraded" && debouncedHealth === "healthy");
+
+      const delay = isWorsening ? 2000 : 0; // 2s buffer for bad news
+
+      healthTimeoutRef.current = setTimeout(() => {
+        setDebouncedHealth(currentModel.overallHealth);
+      }, delay);
+    }
+
+    // Preserve valid model
+    if (currentModel.effectiveMid > 0) {
+      lastValidModelRef.current = currentModel;
+    }
+
+    return () => {
+      if (healthTimeoutRef.current) clearTimeout(healthTimeoutRef.current);
+    };
+  }, [currentModel, debouncedHealth]);
+
+  // Create final stable model combining current calculations with debounced state
+  const finalModel = useMemo(() => {
+    if (!currentModel) return null;
+    return {
+      ...currentModel,
+      overallHealth: debouncedHealth,
+    };
+  }, [currentModel, debouncedHealth]);
+
+  return finalModel;
 }
 
 export default useActiveTradeLiveModel;

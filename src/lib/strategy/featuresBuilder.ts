@@ -127,9 +127,13 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
     currentBar && avgVolume > 0 ? isVolumeSpike(currentBar.volume, avgVolume) : false;
 
   // Calculate RVOL (Relative Volume)
+  // Use time-of-day logic (samePeriod=true) if we are in the first 45 minutes
+  // to avoid false positive spikes compared to pre-market/mid-day levels.
+  const useTimeOfDay = minutesSinceOpen !== undefined && minutesSinceOpen <= 45;
+
   const rvol =
     currentBar && avgVolume > 0
-      ? calculateRelativeVolume(currentBar.volume, previousBars, false)
+      ? calculateRelativeVolume(currentBar.volume, previousBars, currentBar.time, useTimeOfDay)
       : undefined;
 
   // Near Fib levels
@@ -171,6 +175,40 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       ? detectMarketRegime(bars)
       : { regime: "ranging" as const, adx: 0, atr: 0, confidence: 0 };
 
+  // Gap Analysis
+  let gapPercent: number | undefined;
+  let gapFillStatus: "unfilled" | "filling" | "filled" | undefined;
+
+  if (price.open && price.prevClose) {
+    gapPercent = ((price.open - price.prevClose) / price.prevClose) * 100;
+
+    // Check gap fill status (min 0.1% absolute gap to matter)
+    if (Math.abs(gapPercent) >= 0.1) {
+      const dayHigh = price.high ?? price.current ?? 0;
+      const dayLow = price.low ?? price.current ?? 0;
+
+      if (gapPercent > 0) {
+        // Gap UP
+        if (dayLow <= price.prevClose) {
+          gapFillStatus = "filled";
+        } else if (dayLow < price.open) {
+          gapFillStatus = "filling";
+        } else {
+          gapFillStatus = "unfilled";
+        }
+      } else {
+        // Gap DOWN
+        if (dayHigh >= price.prevClose) {
+          gapFillStatus = "filled";
+        } else if (dayHigh > price.open) {
+          gapFillStatus = "filling";
+        } else {
+          gapFillStatus = "unfilled";
+        }
+      }
+    }
+  }
+
   // Build previous snapshot for cross operations
   const prevSnapshot =
     mtf[primaryTf]?.price?.prev !== undefined
@@ -205,6 +243,8 @@ export function buildSymbolFeatures(opts: BuildFeaturesOptions): SymbolFeatures 
       low: price.low,
       prevClose: price.prevClose,
       prev: price.prev,
+      gapPercent,
+      gapFillStatus,
     },
     volume: {
       current: currentBar?.volume,

@@ -301,3 +301,32 @@ export async function getStrategyStats(): Promise<{
     byCategory,
   };
 }
+
+/**
+ * Save optimization results as pending parameters for a strategy.
+ */
+export async function saveOptimizationResult(
+  strategyId: string,
+  params: import("../../types/strategy").StrategyOptimizationParams,
+  expectancyGain: number
+): Promise<StrategyDefinition> {
+  const supabase = createClient();
+
+  const pendingParams = {
+    ...params,
+    expectancyGain,
+    optimizedAt: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from("strategy_definitions")
+    .update({
+      pending_params: pendingParams,
+    })
+    .eq("id", strategyId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapStrategyDefinitionRow(data);
+}

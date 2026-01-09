@@ -1,18 +1,17 @@
-import { useState } from 'react';
-import { Trade, DiscordChannel, Challenge } from '../types';
-import { HDTagTradeType } from './hd/common/HDTagTradeType';
-import { HDInput } from './hd/common/HDInput';
-import { HDButton } from './hd/common/HDButton';
-import { HDCard } from './hd/common/HDCard';
-import { formatPrice, formatPercent, formatDate, formatTime, cn } from '../lib/utils';
-import { getShareText } from '../lib/utils/discord';
-import { Search, Share2, Download, ChevronDown, X, Filter, History } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
-import { HDPanelDiscordAlert } from './hd/dashboard/HDPanelDiscordAlert';
-import { EmptyState } from './ui/EmptyState';
-import { useAppToast } from '../hooks/useAppToast';
-import { useDiscord } from '../hooks/useDiscord';
-import { MobileWatermark } from './MobileWatermark';
+import { useState } from "react";
+import { Trade, DiscordChannel, Challenge } from "../types";
+import { HDTagTradeType } from "./hd/common/HDTagTradeType";
+import { HDInput } from "./hd/common/HDInput";
+import { HDButton } from "./hd/common/HDButton";
+import { HDCard } from "./hd/common/HDCard";
+import { formatPrice, formatPercent, formatDate, formatTime, cn } from "../lib/utils";
+import { getShareText } from "../lib/utils/discord";
+import { Search, Share2, Download, ChevronDown, X, Filter, History, Copy } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
+import { EmptyState } from "./ui/EmptyState";
+import { useAppToast } from "../hooks/useAppToast";
+import { useDiscord } from "../hooks/useDiscord";
+import { MobileWatermark } from "./MobileWatermark";
 
 interface MobileHistoryProps {
   trades: Trade[];
@@ -20,80 +19,87 @@ interface MobileHistoryProps {
   challenges?: Challenge[];
 }
 
-type DateRangeFilter = 'all' | 'today' | '7d' | '30d';
+type DateRangeFilter = "all" | "today" | "7d" | "30d";
 
 export function MobileHistory({ trades, channels = [], challenges = [] }: MobileHistoryProps) {
   const toast = useAppToast();
   const discord = useDiscord();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>('all'); // Default to all time
-  const [challengeFilter, setChallengeFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>("all"); // Default to all time
+  const [challengeFilter, setChallengeFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
-  
+
   // Filter logic
-  const filtered = trades.filter(trade => {
-    const matchesSearch = trade.ticker.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = typeFilter === 'all' || trade.tradeType === typeFilter;
-    
-    let matchesDateRange = true;
-    if (dateRangeFilter !== 'all' && trade.exitTime) {
-      const now = new Date();
-      const exitDate = new Date(trade.exitTime);
-      const daysDiff = Math.floor((now.getTime() - exitDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (dateRangeFilter === 'today') {
-        matchesDateRange = exitDate.toDateString() === now.toDateString();
-      } else if (dateRangeFilter === '7d') {
-        matchesDateRange = daysDiff <= 7;
-      } else if (dateRangeFilter === '30d') {
-        matchesDateRange = daysDiff <= 30;
+  const filtered = trades
+    .filter((trade) => {
+      const matchesSearch = trade.ticker.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesType = typeFilter === "all" || trade.tradeType === typeFilter;
+
+      let matchesDateRange = true;
+      if (dateRangeFilter !== "all" && trade.exitTime) {
+        const now = new Date();
+        const exitDate = new Date(trade.exitTime);
+        const daysDiff = Math.floor((now.getTime() - exitDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (dateRangeFilter === "today") {
+          matchesDateRange = exitDate.toDateString() === now.toDateString();
+        } else if (dateRangeFilter === "7d") {
+          matchesDateRange = daysDiff <= 7;
+        } else if (dateRangeFilter === "30d") {
+          matchesDateRange = daysDiff <= 30;
+        }
       }
-    }
-    
-    const matchesChallenge = challengeFilter === 'all' || trade.challenges.includes(challengeFilter);
-    
-    return matchesSearch && matchesType && matchesDateRange && matchesChallenge;
-  }).sort((a, b) => {
-    const timeA = a.exitTime ? new Date(a.exitTime).getTime() : 0;
-    const timeB = b.exitTime ? new Date(b.exitTime).getTime() : 0;
-    return timeB - timeA;
-  });
-  
+
+      const matchesChallenge =
+        challengeFilter === "all" || trade.challenges.includes(challengeFilter);
+
+      return matchesSearch && matchesType && matchesDateRange && matchesChallenge;
+    })
+    .sort((a, b) => {
+      const timeA = a.exitTime ? new Date(a.exitTime).getTime() : 0;
+      const timeB = b.exitTime ? new Date(b.exitTime).getTime() : 0;
+      return timeB - timeA;
+    });
+
   const handleShareClick = (trade: Trade) => {
     setSelectedTrade(trade);
     setShowShareSheet(true);
   };
 
-  const handleSendAlert = async (channelIds: string[], challengeIds: string[], comment?: string) => {
-    const selectedChannels = channels.filter(c => channelIds.includes(c.id));
+  const handleSendAlert = async (
+    channelIds: string[],
+    challengeIds: string[],
+    comment?: string
+  ) => {
+    const selectedChannels = channels.filter((c) => channelIds.includes(c.id));
 
     if (selectedChannels.length === 0 || !selectedTrade) {
-      toast.error('Please select at least one Discord channel');
+      toast.error("Please select at least one Discord channel");
       return;
     }
 
     try {
       const results = await discord.sendExitAlert(selectedChannels, selectedTrade, comment);
       if (results.failed === 0) {
-        toast.success(`Shared to ${results.success} channel${results.success > 1 ? 's' : ''}`);
+        toast.success(`Shared to ${results.success} channel${results.success > 1 ? "s" : ""}`);
       } else {
         toast.error(`Sent to ${results.success}, failed ${results.failed}`);
       }
       setShowShareSheet(false);
     } catch (error) {
-      console.error('[MobileHistory] Failed to send Discord alert:', error);
-      toast.error('Failed to send Discord alert');
+      console.error("[MobileHistory] Failed to send Discord alert:", error);
+      toast.error("Failed to send Discord alert");
     }
   };
-  
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)] relative">
       {/* Watermark */}
       <MobileWatermark />
-      
+
       {/* Header */}
       <div className="p-4 border-b border-[var(--border-hairline)] flex-shrink-0 bg-[var(--bg-base)] relative z-10">
         <div className="flex items-center justify-between mb-3">
@@ -103,7 +109,7 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
               onClick={() => setShowFilters(!showFilters)}
               className={cn(
                 "w-9 h-9 rounded-[var(--radius)] flex items-center justify-center transition-colors",
-                showFilters 
+                showFilters
                   ? "bg-[var(--brand-primary)] text-[var(--bg-base)]"
                   : "bg-[var(--surface-2)] text-[var(--text-muted)] border border-[var(--border-hairline)]"
               )}
@@ -112,7 +118,7 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
             </button>
           </div>
         </div>
-        
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
@@ -124,7 +130,7 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
           />
         </div>
       </div>
-      
+
       {/* Filters Panel - Collapsible */}
       {showFilters && (
         <div className="p-4 bg-[var(--surface-2)] border-b border-[var(--border-hairline)] space-y-4 flex-shrink-0 relative z-10">
@@ -134,23 +140,23 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
               Trade Type
             </label>
             <div className="flex gap-2 flex-wrap">
-              {['all', 'Scalp', 'Day', 'Swing', 'LEAP'].map((type) => (
+              {["all", "Scalp", "Day", "Swing", "LEAP"].map((type) => (
                 <button
                   key={type}
                   onClick={() => setTypeFilter(type)}
                   className={cn(
-                    'px-3 h-9 rounded-[var(--radius)] text-sm transition-colors whitespace-nowrap',
+                    "px-3 h-9 rounded-[var(--radius)] text-sm transition-colors whitespace-nowrap",
                     typeFilter === type
-                      ? 'bg-[var(--brand-primary)] text-[var(--bg-base)]'
-                      : 'bg-[var(--surface-1)] text-[var(--text-muted)] border border-[var(--border-hairline)]'
+                      ? "bg-[var(--brand-primary)] text-[var(--bg-base)]"
+                      : "bg-[var(--surface-1)] text-[var(--text-muted)] border border-[var(--border-hairline)]"
                   )}
                 >
-                  {type === 'all' ? 'All' : type}
+                  {type === "all" ? "All" : type}
                 </button>
               ))}
             </div>
           </div>
-          
+
           {/* Date Range */}
           <div>
             <label className="block text-[var(--text-muted)] text-xs mb-2 uppercase tracking-wide">
@@ -167,7 +173,7 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
               <option value="all">All time</option>
             </select>
           </div>
-          
+
           {/* Challenge Filter */}
           {challenges.length > 0 && (
             <div>
@@ -190,7 +196,7 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
           )}
         </div>
       )}
-      
+
       {/* Trade Cards */}
       <div className="flex-1 overflow-y-auto relative z-10">
         {filtered.length === 0 ? (
@@ -203,102 +209,142 @@ export function MobileHistory({ trades, channels = [], challenges = [] }: Mobile
         ) : (
           <div className="p-4 space-y-3">
             {filtered.map((trade) => {
-            const isProfit = (trade.movePercent || 0) >= 0;
-            
-            return (
-              <HDCard
-                key={trade.id}
-                variant="interactive"
-                onClick={() => handleShareClick(trade)}
-                className="relative"
-              >
-                {/* Share indicator badge */}
-                <div className="absolute top-3 right-3">
-                  <div className="w-8 h-8 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] flex items-center justify-center">
-                    <Share2 className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                  </div>
-                </div>
-                
-                {/* Header */}
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[var(--text-high)]">{trade.ticker}</span>
-                      <HDTagTradeType type={trade.tradeType} className="text-micro" />
-                    </div>
-                    <div className="text-[var(--text-muted)] text-xs">
-                      {trade.contract.strike}{trade.contract.type} • {trade.contract.expiry}
+              const isProfit = (trade.movePercent || 0) >= 0;
+
+              return (
+                <HDCard
+                  key={trade.id}
+                  variant="interactive"
+                  onClick={() => handleShareClick(trade)}
+                  className="relative"
+                >
+                  {/* Share indicator badge */}
+                  <div className="absolute top-3 right-3">
+                    <div className="w-8 h-8 rounded-[var(--radius)] bg-[var(--surface-1)] border border-[var(--border-hairline)] flex items-center justify-center">
+                      <Share2 className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                     </div>
                   </div>
-                  
-                  {/* P&L Badge */}
-                  <div className={cn(
-                    'px-3 py-1.5 rounded-[var(--radius)]',
-                    isProfit ? 'bg-[var(--accent-positive)]/10' : 'bg-[var(--accent-negative)]/10'
-                  )}>
-                    <span className={cn(
-                      'font-semibold tabular-nums text-sm',
-                      isProfit ? 'text-[var(--accent-positive)]' : 'text-[var(--accent-negative)]'
-                    )}>
-                      {formatPercent(trade.movePercent || 0)}
+
+                  {/* Header */}
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[var(--text-high)]">{trade.ticker}</span>
+                        <HDTagTradeType type={trade.tradeType} className="text-micro" />
+                      </div>
+                      <div className="text-[var(--text-muted)] text-xs">
+                        {trade.contract.strike}
+                        {trade.contract.type} • {trade.contract.expiry}
+                      </div>
+                    </div>
+
+                    {/* P&L Badge */}
+                    <div
+                      className={cn(
+                        "px-3 py-1.5 rounded-[var(--radius)]",
+                        isProfit
+                          ? "bg-[var(--accent-positive)]/10"
+                          : "bg-[var(--accent-negative)]/10"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "font-semibold tabular-nums text-sm",
+                          isProfit
+                            ? "text-[var(--accent-positive)]"
+                            : "text-[var(--accent-negative)]"
+                        )}
+                      >
+                        {formatPercent(trade.movePercent || 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Price Grid */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-[var(--surface-1)] rounded-[var(--radius)] px-2.5 py-2 border border-[var(--border-hairline)]">
+                      <div className="text-[var(--text-muted)] text-micro uppercase tracking-wide mb-0.5">
+                        Entry
+                      </div>
+                      <div className="text-[var(--text-high)] text-sm tabular-nums">
+                        ${formatPrice(trade.entryPrice || 0)}
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-1)] rounded-[var(--radius)] px-2.5 py-2 border border-[var(--border-hairline)]">
+                      <div className="text-[var(--text-muted)] text-micro uppercase tracking-wide mb-0.5">
+                        Exit
+                      </div>
+                      <div className="text-[var(--text-high)] text-sm tabular-nums">
+                        ${formatPrice(trade.exitPrice || 0)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer - Date & Time */}
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border-hairline)]">
+                    <span className="text-[var(--text-muted)] text-xs">
+                      {trade.exitTime ? formatDate(trade.exitTime) : "--"}
+                    </span>
+                    <span className="text-[var(--text-muted)] text-xs">
+                      {trade.exitTime ? formatTime(trade.exitTime) : "--"}
                     </span>
                   </div>
-                </div>
-                
-                {/* Price Grid */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-[var(--surface-1)] rounded-[var(--radius)] px-2.5 py-2 border border-[var(--border-hairline)]">
-                    <div className="text-[var(--text-muted)] text-micro uppercase tracking-wide mb-0.5">Entry</div>
-                    <div className="text-[var(--text-high)] text-sm tabular-nums">
-                      ${formatPrice(trade.entryPrice || 0)}
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-1)] rounded-[var(--radius)] px-2.5 py-2 border border-[var(--border-hairline)]">
-                    <div className="text-[var(--text-muted)] text-micro uppercase tracking-wide mb-0.5">Exit</div>
-                    <div className="text-[var(--text-high)] text-sm tabular-nums">
-                      ${formatPrice(trade.exitPrice || 0)}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Footer - Date & Time */}
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border-hairline)]">
-                  <span className="text-[var(--text-muted)] text-xs">
-                    {trade.exitTime ? formatDate(trade.exitTime) : '--'}
-                  </span>
-                  <span className="text-[var(--text-muted)] text-xs">
-                    {trade.exitTime ? formatTime(trade.exitTime) : '--'}
-                  </span>
-                </div>
-              </HDCard>
-            );
+                </HDCard>
+              );
             })}
           </div>
         )}
       </div>
-      
+
       {/* Share Sheet */}
       <Sheet open={showShareSheet} onOpenChange={setShowShareSheet}>
-        <SheetContent 
-          side="bottom" 
+        <SheetContent
+          side="bottom"
           className="h-[90vh] p-0 bg-[var(--surface-1)] border-t-2 border-t-[var(--brand-primary)] flex flex-col"
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Share Trade</SheetTitle>
             <SheetDescription>Share this trade result to Discord channels</SheetDescription>
           </SheetHeader>
-          
+
+          {/* TODO: Replace with new HDAlertComposerPopover or custom share panel */}
           {selectedTrade && (
-            <HDPanelDiscordAlert
-              trade={selectedTrade}
-              alertType="update"
-              availableChannels={channels}
-              challenges={challenges}
-              onSend={handleSendAlert}
-              onCancel={() => setShowShareSheet(false)}
-              overridePreviewText={getShareText(selectedTrade)}
-              showShareCard={true}
-            />
+            <div className="flex-1 flex flex-col p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-[var(--text-high)]">Share Trade</h3>
+                <button
+                  onClick={() => setShowShareSheet(false)}
+                  className="p-2 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-muted)]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+                  <p className="text-sm font-mono whitespace-pre-wrap text-[var(--text-high)]">
+                    {getShareText(selectedTrade)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(getShareText(selectedTrade));
+                    toast.success("Copied to clipboard");
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-[var(--surface-3)] text-[var(--text-high)] hover:bg-[var(--surface-3)]/80 transition-colors"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy to Clipboard
+                </button>
+                <button
+                  onClick={() => setShowShareSheet(false)}
+                  className="py-3 px-6 rounded-lg bg-[var(--brand-primary)] text-black hover:opacity-90 transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           )}
         </SheetContent>
       </Sheet>

@@ -129,13 +129,32 @@ export function SelectedContractStrip({
       </div>
 
       {/* Metrics Chips */}
-      <div className="flex-1 flex items-center gap-3 justify-center">
+      <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-2 justify-center content-center">
+        {/* Bid / Ask Block (Critical L1) */}
+        <div className="flex items-center gap-2 px-2 py-1 bg-[var(--surface-2)] rounded border border-[var(--border-hairline)]">
+          <div className="flex flex-col items-end leading-none">
+            <span className="text-[9px] text-[var(--text-faint)] font-bold uppercase">Bid</span>
+            <span className="text-xs font-mono font-bold text-[var(--accent-positive)]">
+              {liveModel?.option.bid?.toFixed(2) || contract.bid?.toFixed(2) || "—"}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-[var(--border-hairline)]" />
+          <div className="flex flex-col items-start leading-none">
+            <span className="text-[9px] text-[var(--text-faint)] font-bold uppercase">Ask</span>
+            <span className="text-xs font-mono font-bold text-[var(--accent-negative)]">
+              {liveModel?.option.ask?.toFixed(2) || contract.ask?.toFixed(2) || "—"}
+            </span>
+          </div>
+        </div>
+
         {/* Mid Price with live indicator */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[var(--text-faint)] uppercase">Mid</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-[var(--text-faint)] font-medium uppercase tracking-wider">
+            Mid
+          </span>
           <span
             className={cn(
-              "text-xs font-medium tabular-nums",
+              "text-xs font-bold tabular-nums",
               isStale ? "text-red-400" : "text-[var(--text-high)]"
             )}
           >
@@ -152,17 +171,19 @@ export function SelectedContractStrip({
         </div>
 
         {/* Delta */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[var(--text-faint)]">Δ</span>
-          <span className="text-xs text-[var(--text-muted)] tabular-nums">{delta}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-[var(--text-faint)] font-medium">Δ</span>
+          <span className="text-xs text-[var(--text-muted)] font-mono tabular-nums">{delta}</span>
         </div>
 
         {/* Spread */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[var(--text-faint)] uppercase">Spread</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-[var(--text-faint)] font-medium uppercase tracking-wider">
+            Spread
+          </span>
           <span
             className={cn(
-              "text-xs tabular-nums",
+              "text-xs font-mono tabular-nums",
               typeof spreadPct === "string" && parseFloat(spreadPct) > 3
                 ? "text-[var(--accent-negative)]"
                 : "text-[var(--text-muted)]"
@@ -175,9 +196,12 @@ export function SelectedContractStrip({
         {/* Liquidity Grade (only when live) */}
         {liquidityGrade && (
           <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[var(--text-faint)] font-medium uppercase tracking-wider">
+              Liq
+            </span>
             <span
               className={cn(
-                "px-1.5 py-0.5 text-[10px] font-semibold rounded",
+                "px-1.5 py-0.5 text-[10px] font-bold rounded",
                 liquidityGrade === "A" && "bg-green-500/20 text-green-400",
                 liquidityGrade === "B" && "bg-yellow-500/20 text-yellow-400",
                 liquidityGrade === "C" && "bg-red-500/20 text-red-400"
@@ -190,26 +214,34 @@ export function SelectedContractStrip({
 
         {/* Expected Slippage (only when live) */}
         {slippage && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-[var(--text-faint)] uppercase">Slip</span>
-            <span className="text-xs text-[var(--text-muted)] tabular-nums">{slippage}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[var(--text-faint)] font-medium uppercase tracking-wider">
+              Slip
+            </span>
+            <span className="text-xs text-[var(--text-muted)] font-mono tabular-nums">
+              {slippage}
+            </span>
           </div>
         )}
 
         {/* IV */}
         {contract.iv && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-[var(--text-faint)] uppercase">IV</span>
-            <span className="text-xs text-[var(--text-muted)] tabular-nums">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[var(--text-faint)] font-medium uppercase tracking-wider">
+              IV
+            </span>
+            <span className="text-xs text-[var(--text-muted)] font-mono tabular-nums">
               {(contract.iv * 100).toFixed(0)}%
             </span>
           </div>
         )}
 
         {/* OI */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[var(--text-faint)] uppercase">OI</span>
-          <span className="text-xs text-[var(--text-muted)] tabular-nums">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-[var(--text-faint)] font-medium uppercase tracking-wider">
+            OI
+          </span>
+          <span className="text-xs text-[var(--text-muted)] font-mono tabular-nums">
             {contract.openInterest > 1000
               ? `${(contract.openInterest / 1000).toFixed(1)}k`
               : contract.openInterest.toLocaleString()}
