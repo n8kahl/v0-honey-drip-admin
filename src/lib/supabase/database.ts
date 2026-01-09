@@ -377,6 +377,7 @@ export async function createTrade(
     notes?: string;
     challenge_id?: string;
     contract?: any; // Full contract object to persist
+    trade_type?: "Scalp" | "Day" | "Swing" | "LEAP"; // Trade duration type
   }
 ) {
   const supabase = createClient();
@@ -395,6 +396,7 @@ export async function createTrade(
       notes: trade.notes,
       challenge_id: trade.challenge_id,
       contract: trade.contract || null, // Store full contract as JSONB
+      trade_type: trade.trade_type || "Day", // Default to Day if not provided
     })
     .select()
     .single();

@@ -447,12 +447,16 @@ export const useTradeStore = create<TradeStore>()(
             openInterest: 0,
           };
 
+          // FIX: Use trade_type from DB response, fallback to input tradeType, then default to "Day"
+          const dbTradeType = (newTrade as any).trade_type as TradeType | undefined;
+          const resolvedTradeType: TradeType = dbTradeType || tradeData.tradeType || "Day";
+
           const mappedTrade: Trade = {
             id: newTrade.id,
             ticker: newTrade.ticker,
             contract,
             state: mapStatusToState(newTrade.state),
-            tradeType: "Day" as TradeType,
+            tradeType: resolvedTradeType,
             updates: [],
             discordChannels: [],
             challenges: newTrade.challenge_id ? [newTrade.challenge_id] : [],
@@ -742,6 +746,11 @@ export const useTradeStore = create<TradeStore>()(
             const currentPriceRaw = (t as any).current_price ?? t.entry_price ?? entryPrice;
             const currentPrice = currentPriceRaw ? parseFloat(currentPriceRaw) : undefined;
 
+            // FIX: Map trade_type from DB (snake_case) to tradeType (camelCase)
+            // DB stores: 'Scalp', 'Day', 'Swing', 'LEAP'
+            const dbTradeType = (t as any).trade_type as TradeType | undefined;
+            const tradeType: TradeType = dbTradeType || "Day";
+
             return {
               id: t.id,
               ticker: t.ticker,
@@ -758,7 +767,7 @@ export const useTradeStore = create<TradeStore>()(
               movePercent,
               state: mapStatusToState(t.state),
               updates: mappedUpdates,
-              tradeType: "Day" as TradeType,
+              tradeType,
               discordChannels,
               challenges:
                 challenges.length > 0 ? challenges : t.challenge_id ? [t.challenge_id] : [],
