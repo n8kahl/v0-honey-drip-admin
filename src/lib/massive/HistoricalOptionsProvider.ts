@@ -34,7 +34,10 @@ export class HistoricalOptionsProvider {
 
   constructor(apiKey?: string) {
     // Browser-safe environment variable access
-    const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+    const env =
+      typeof import.meta !== "undefined" && import.meta.env
+        ? (import.meta.env as Record<string, string | undefined>)
+        : {};
     const processEnv = typeof process !== "undefined" && process.env ? process.env : {};
 
     this.apiKey = apiKey || env.VITE_MASSIVE_API_KEY || processEnv.MASSIVE_API_KEY || "";
