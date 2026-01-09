@@ -70,6 +70,7 @@ function SmartScorePill({ score }: { score: number }) {
 /**
  * FlowSparkline - Mini bar chart showing recent call/put sweep activity
  * Green bars = call sweeps, Red bars = put sweeps
+ * Bar heights are deterministic based on position and buyPressure
  */
 function FlowSparkline({
   sweepCount,
@@ -82,20 +83,31 @@ function FlowSparkline({
 }) {
   // Generate 5 mini bars based on buy pressure
   // buyPressure of 75 = 3-4 green bars
+  // Bar heights are deterministic: center tallest, edges shorter
   const bars = useMemo(() => {
-    const result: ("call" | "put" | "neutral")[] = [];
+    const result: { type: "call" | "put" | "neutral"; height: number }[] = [];
     const callBars = Math.round((buyPressure / 100) * 5);
+
+    // Deterministic height pattern: edges lower, center higher
+    // Scaled by sweepCount for activity intensity
+    const baseHeights = [50, 70, 90, 70, 50];
+    const intensityBoost = Math.min(sweepCount * 2, 30); // Max 30% boost from sweep count
+
     for (let i = 0; i < 5; i++) {
+      let type: "call" | "put" | "neutral";
       if (i < callBars) {
-        result.push("call");
-      } else if (i >= 5 - (5 - callBars)) {
-        result.push("put");
+        type = "call";
       } else {
-        result.push("neutral");
+        type = "put";
       }
+
+      // Calculate deterministic height based on position and intensity
+      const height = Math.min(baseHeights[i] + intensityBoost, 100);
+
+      result.push({ type, height });
     }
     return result;
-  }, [buyPressure]);
+  }, [buyPressure, sweepCount]);
 
   if (sweepCount === 0) {
     return (
@@ -109,16 +121,16 @@ function FlowSparkline({
 
   return (
     <div className="flex items-end gap-px h-3" title={`${sweepCount} sweeps | ${flowBias}`}>
-      {bars.map((type, i) => (
+      {bars.map((bar, i) => (
         <div
           key={i}
           className={cn(
             "w-1 rounded-sm transition-all",
-            type === "call" && "bg-emerald-500",
-            type === "put" && "bg-red-500",
-            type === "neutral" && "bg-zinc-600"
+            bar.type === "call" && "bg-emerald-500",
+            bar.type === "put" && "bg-red-500",
+            bar.type === "neutral" && "bg-zinc-600"
           )}
-          style={{ height: `${40 + Math.random() * 60}%` }}
+          style={{ height: `${bar.height}%` }}
         />
       ))}
     </div>
