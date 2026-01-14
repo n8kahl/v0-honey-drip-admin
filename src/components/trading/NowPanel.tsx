@@ -1,17 +1,24 @@
 /**
  * NowPanel - State Orchestrator (Center Panel)
  *
+ * COCKPIT LAYOUT INTEGRATION - This is now a thin router that delegates
+ * to cockpit-based child panels.
+ *
  * The central "State Orchestrator" that switches between views based on trade lifecycle:
- * - WATCHING (no trade or viewing symbol) → NowPanelSymbol
- * - LOADED (trade ready to enter) → NowPanelTrade
- * - ENTERED (actively managing) → NowPanelManage
- * - EXITED → NowPanelTrade (recap mode)
+ * - WATCHING (no trade or viewing symbol) → NowPanelSymbol (cockpit layout)
+ * - LOADED (trade ready to enter) → NowPanelTrade (cockpit layout)
+ * - ENTERED (actively managing) → NowPanelManage (cockpit layout)
+ * - EXITED → NowPanelTrade (cockpit layout, recap mode)
  *
  * Uses framer-motion for smooth view transitions.
  * Integrates with useTradeActionManager to pass actions to child panels.
+ *
+ * NOTE: The duplicate header has been removed since CockpitHeader in each
+ * child panel now handles state badge, dual pricing, and data freshness.
+ * The AlertPopover is kept as a floating element for quick alert access.
  */
 
-import React, { useMemo, useCallback, useState, useEffect } from "react";
+import React, { useMemo, useCallback } from "react";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 import type { Ticker, Contract, Trade, TradeState, DiscordChannel, Challenge } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
@@ -29,8 +36,7 @@ import { useTradeActionManager } from "../../hooks/useTradeActionManager";
 import { HDAlertComposerPopover, type AlertMode } from "../hd/alerts/HDAlertComposerPopover";
 import { useDiscord } from "../../hooks/useDiscord";
 import { useUIStore } from "../../stores/uiStore";
-import { cn } from "../../lib/utils";
-import { Bell, Clock, AlertTriangle } from "lucide-react";
+import { Bell } from "lucide-react";
 
 // ============================================================================
 // Types
@@ -154,9 +160,6 @@ export function NowPanel({
         : activeTrades.find((t) => t.id === focus.tradeId)) || null
     );
   }, [focus, currentTrade, activeTrades]);
-
-  // Determine panel mode
-  const mode: PanelMode = viewState === "entered" ? "manage" : "setup";
 
   // Check if auto-select should be disabled
   const hasActiveTrade = tradeState === "LOADED" || tradeState === "ENTERED";
@@ -345,61 +348,6 @@ export function NowPanel({
     [focusedTrade, channels, sendUpdateAlert]
   );
 
-  // Get header title based on view state
-  const headerTitle = useMemo(() => {
-    switch (viewState) {
-      case "symbol":
-        return focus?.kind === "symbol" ? focus.symbol : activeTicker?.symbol || "Symbol";
-      case "plan":
-        return focusedTrade?.ticker || "Trade Preview";
-      case "loaded":
-        return focusedTrade?.ticker || "Trade Setup";
-      case "entered":
-        return focusedTrade?.ticker || "Managing Trade";
-      case "exited":
-        return focusedTrade?.ticker || "Trade Complete";
-      default:
-        return "Now Panel";
-    }
-  }, [viewState, focus, activeTicker, focusedTrade]);
-
-  // Track last update time for stale detection
-  const [lastUpdateTime, setLastUpdateTime] = useState<Date>(new Date());
-  const [isStale, setIsStale] = useState(false);
-
-  // Update timestamp when key data changes
-  useEffect(() => {
-    setLastUpdateTime(new Date());
-    setIsStale(false);
-  }, [focusedTrade, activeTicker?.last, currentTrade]);
-
-  // Check for stale data every 10 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const age = Date.now() - lastUpdateTime.getTime();
-      setIsStale(age > 30000); // Stale after 30s
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [lastUpdateTime]);
-
-  // Get next action CTA text based on view state
-  const nextActionText = useMemo(() => {
-    switch (viewState) {
-      case "symbol":
-        return "Select contract to load";
-      case "plan":
-        return "Load & Alert →";
-      case "loaded":
-        return "Execute →";
-      case "entered":
-        return "Manage position";
-      case "exited":
-        return "Review complete";
-      default:
-        return "";
-    }
-  }, [viewState]);
-
   // ============================================================================
   // Loading Overlay (during transitions)
   // ============================================================================
@@ -408,57 +356,9 @@ export function NowPanel({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
-      {/* Context-Aware Sticky Header Strip */}
+      {/* Floating Alert Button - Quick access to Discord alerts */}
       {viewState !== "empty" && (
-        <div
-          className="flex-shrink-0 sticky top-0 z-20 px-3 py-2 flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--surface-1)]/95 backdrop-blur-sm"
-          data-testid="now-panel-sticky-header"
-        >
-          {/* Left: View Title + State Badge */}
-          <div className="flex items-center gap-3">
-            <span
-              className={cn(
-                "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded",
-                viewState === "entered"
-                  ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
-                  : viewState === "loaded"
-                    ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
-                    : viewState === "plan"
-                      ? "bg-[var(--accent-warning)]/20 text-[var(--accent-warning)]"
-                      : viewState === "exited"
-                        ? "bg-[var(--text-muted)]/20 text-[var(--text-muted)]"
-                        : "bg-[var(--surface-2)] text-[var(--text-muted)]"
-              )}
-              data-testid="state-badge"
-            >
-              {viewState === "symbol" ? "WATCH" : viewState === "plan" ? "PLAN" : viewState === "entered" ? "MANAGE" : viewState === "exited" ? "REVIEW" : viewState.toUpperCase()}
-            </span>
-            <span className="text-base font-semibold text-[var(--text-high)]">{headerTitle}</span>
-
-            {/* Last Update Time + Stale Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
-              <Clock className="w-3 h-3" />
-              <span>{lastUpdateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              {isStale && (
-                <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
-                  <AlertTriangle className="w-3 h-3" />
-                  Stale
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Center: Next Action CTA */}
-          {nextActionText && (
-            <div
-              className="hidden md:block text-xs font-medium text-[var(--text-muted)] px-3 py-1 bg-[var(--surface-2)] rounded-full"
-              data-testid="next-action-cta"
-            >
-              {nextActionText}
-            </div>
-          )}
-
-          {/* Right: Alert Popover Button or Configure CTA */}
+        <div className="absolute top-2 right-2 z-30">
           {channels.length > 0 ? (
             <HDAlertComposerPopover
               trade={focusedTrade || undefined}
@@ -469,11 +369,11 @@ export function NowPanel({
           ) : (
             <button
               onClick={() => useUIStore.getState().openDiscordSettings()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/20 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--surface-1)]/90 backdrop-blur border border-[var(--border-hairline)] text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
               data-testid="configure-alerts-btn"
             >
               <Bell className="w-3.5 h-3.5" />
-              Configure Alerts
+              <span className="hidden sm:inline">Alerts</span>
             </button>
           )}
         </div>
