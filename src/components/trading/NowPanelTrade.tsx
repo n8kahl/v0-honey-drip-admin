@@ -36,6 +36,7 @@ import {
   type CockpitViewState,
 } from "./cockpit";
 import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
+import {
   Zap,
   Share2,
   Copy,
@@ -193,7 +194,6 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
           </div>
         </div>
       </div>
-
       {/* Key Metrics */}
       <div className="p-4 border-b border-[var(--border-hairline)]">
         <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
@@ -212,7 +212,6 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
           )}
         </div>
       </div>
-
       {/* Suggested Levels */}
       <div className="p-4 border-b border-[var(--border-hairline)]">
         <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
@@ -224,7 +223,6 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
           <RiskBoxCell label="R:R" value={riskReward} />
         </div>
       </div>
-
       {/* Greeks Preview */}
       {(contract?.delta || contract?.gamma || contract?.theta || contract?.iv) && (
         <div className="p-4 border-b border-[var(--border-hairline)]">
@@ -239,17 +237,15 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
           </div>
         </div>
       )}
-
-        /* ========== CONFLUENCE PANEL ========== */
-        confluence: (
-          <ConfluencePanelPro
-            symbol={trade.ticker}
-            viewState={viewState}
-            keyLevels={keyLevels}
-            currentPrice={currentPrice}
-            showDegradationWarnings={viewState !== "watch"}
-          />
-        ),
+      /* ========== CONFLUENCE PANEL ========== */ confluence: (
+      <ConfluencePanelPro
+        symbol={trade.ticker}
+        viewState={viewState}
+        keyLevels={keyLevels}
+        currentPrice={currentPrice}
+        showDegradationWarnings={viewState !== "watch"}
+      />
+      ),
       {/* Volume & Open Interest */}
       <div className="p-4">
         <div className="flex flex-wrap gap-2">
