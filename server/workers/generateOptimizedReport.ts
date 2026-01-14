@@ -277,10 +277,10 @@ async function runOptimizedReport() {
       winRate: stats.winRate,
       profitFactor: stats.profitFactor,
       totalTrades: stats.totalTrades,
-      avgHoldBars: stats.avgHoldBars,
+      avgHoldBars: stats.avgBarsHeld,
       expectancy: stats.expectancy,
-      wins: stats.wins,
-      losses: stats.losses,
+      wins: stats.winners,
+      losses: stats.losers,
       recommendedStyle,
     });
 

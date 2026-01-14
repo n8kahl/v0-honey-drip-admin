@@ -477,7 +477,7 @@ describe("POST /api/optimizer/run", () => {
   });
 
   it("provides correct duration estimate for full mode", () => {
-    const mode = "full";
+    const mode: string = "full";
     const estimatedDuration = mode === "quick" ? "5-10 minutes" : "30-60 minutes";
 
     expect(estimatedDuration).toBe("30-60 minutes");

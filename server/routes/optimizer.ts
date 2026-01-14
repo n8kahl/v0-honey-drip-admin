@@ -209,7 +209,7 @@ router.get("/detectors", async (_req: Request, res: Response) => {
 
     const detectors = [...BACKTESTABLE_DETECTORS_WITH_KCU, ...FLOW_PRIMARY_DETECTORS]
       .filter(Boolean)
-      .map((d) => ({
+      .map((d: any) => ({
         type: d.type,
         name: d.name || d.type,
         category: d.category || "unknown",
