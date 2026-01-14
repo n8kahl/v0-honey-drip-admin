@@ -274,6 +274,24 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   } catch (error) {
     console.error("[Server] Failed to start composite scanner worker:", error);
   }
+
+  // Start signal outcome worker (evaluates expired signals)
+  try {
+    const { SignalOutcomeWorker } = await import("./workers/signalOutcomeWorker.js");
+    const outcomeWorker = new SignalOutcomeWorker();
+    await outcomeWorker.start();
+  } catch (error) {
+    console.error("[Server] Failed to start signal outcome worker:", error);
+  }
+
+  // Start signal performance worker (aggregates daily metrics)
+  try {
+    const { SignalPerformanceWorker } = await import("./workers/signalPerformanceWorker.js");
+    const performanceWorker = new SignalPerformanceWorker();
+    await performanceWorker.start();
+  } catch (error) {
+    console.error("[Server] Failed to start signal performance worker:", error);
+  }
 });
 
 export default app;
