@@ -4,13 +4,40 @@
  * Routes:
  * - GET /api/optimizer/status - Returns current optimization params and report
  * - POST /api/optimizer/run - Kicks off background optimization (quick mode)
+ * - PATCH /api/optimizer/activate/:strategyId - Activate pending params for a strategy
+ * - POST /api/optimizer/activate-all - Activate all pending params
+ * - GET /api/optimizer/pending - Get strategies with pending params
  */
 
 import express, { Request, Response } from "express";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { createClient } from "@supabase/supabase-js";
 
 const router = express.Router();
+
+// ============================================================================
+// Supabase Client
+// ============================================================================
+
+let supabase: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabase) {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!url || !key) {
+      throw new Error(
+        "Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
+      );
+    }
+
+    supabase = createClient(url, key);
+  }
+
+  return supabase;
+}
 
 // ============================================================================
 // Types
@@ -223,6 +250,302 @@ router.get("/detectors", async (_req: Request, res: Response) => {
     console.error("[Optimizer] Failed to load detectors:", error);
     res.status(500).json({
       error: "Failed to load detector list",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+/**
+ * GET /api/optimizer/pending
+ *
+ * Returns strategies with pending optimization params awaiting activation.
+ */
+router.get("/pending", async (_req: Request, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+
+    const { data, error } = await supabase
+      .from("strategy_definitions")
+      .select(
+        "id, name, slug, category, pending_params, active_params, last_optimized_at, baseline_expectancy"
+      )
+      .eq("enabled", true)
+      .not("pending_params", "is", null)
+      .order("last_optimized_at", { ascending: false });
+
+    if (error) {
+      console.error("[Optimizer] Error fetching pending params:", error);
+      return res.status(500).json({ error: "Failed to fetch pending params" });
+    }
+
+    // Calculate improvement for each strategy
+    const strategies = (data || []).map((s: any) => {
+      const pendingExpectancy = s.pending_params?.newExpectancy;
+      const baselineExpectancy = s.baseline_expectancy;
+      let improvement = null;
+
+      if (pendingExpectancy != null && baselineExpectancy != null && baselineExpectancy > 0) {
+        improvement = ((pendingExpectancy - baselineExpectancy) / baselineExpectancy) * 100;
+      }
+
+      return {
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        category: s.category,
+        pendingParams: s.pending_params,
+        activeParams: s.active_params,
+        lastOptimizedAt: s.last_optimized_at,
+        baselineExpectancy,
+        newExpectancy: pendingExpectancy,
+        improvementPercent: improvement != null ? Math.round(improvement * 10) / 10 : null,
+        isActivated: s.active_params != null,
+      };
+    });
+
+    res.status(200).json({
+      count: strategies.length,
+      strategies,
+    });
+  } catch (error) {
+    console.error("[Optimizer] Error in /pending:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+/**
+ * PATCH /api/optimizer/activate/:strategyId
+ *
+ * Activates pending params for a specific strategy.
+ * Copies pending_params → active_params.
+ */
+router.patch("/activate/:strategyId", async (req: Request, res: Response) => {
+  try {
+    const { strategyId } = req.params;
+
+    if (!strategyId) {
+      return res.status(400).json({ error: "Missing strategyId parameter" });
+    }
+
+    const supabase = getSupabaseClient();
+
+    // First, check if strategy exists and has pending params
+    const { data: strategy, error: fetchError } = await supabase
+      .from("strategy_definitions")
+      .select("id, name, slug, pending_params, active_params")
+      .eq("id", strategyId)
+      .single();
+
+    if (fetchError || !strategy) {
+      return res.status(404).json({
+        error: "Strategy not found",
+        strategyId,
+      });
+    }
+
+    if (!strategy.pending_params) {
+      return res.status(400).json({
+        error: "No pending params to activate",
+        strategyId,
+        strategyName: strategy.name,
+      });
+    }
+
+    // Copy pending_params to active_params
+    const { data: updated, error: updateError } = await supabase
+      .from("strategy_definitions")
+      .update({
+        active_params: strategy.pending_params,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", strategyId)
+      .select("id, name, slug, active_params, pending_params")
+      .single();
+
+    if (updateError) {
+      console.error("[Optimizer] Error activating params:", updateError);
+      return res.status(500).json({ error: "Failed to activate params" });
+    }
+
+    console.log(`[Optimizer] ✅ Activated params for strategy: ${updated.name} (${strategyId})`);
+
+    res.status(200).json({
+      success: true,
+      strategy: {
+        id: updated.id,
+        name: updated.name,
+        slug: updated.slug,
+        activeParams: updated.active_params,
+      },
+      message: `Activated optimization params for ${updated.name}`,
+    });
+  } catch (error) {
+    console.error("[Optimizer] Error in /activate/:strategyId:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+/**
+ * POST /api/optimizer/activate-all
+ *
+ * Activates pending params for ALL strategies that have pending_params.
+ * Query params:
+ * - minImprovement: Minimum improvement percentage required (default: 0)
+ */
+router.post("/activate-all", async (req: Request, res: Response) => {
+  try {
+    const minImprovement = parseFloat(req.query.minImprovement as string) || 0;
+
+    const supabase = getSupabaseClient();
+
+    // Fetch all strategies with pending params
+    const { data: strategies, error: fetchError } = await supabase
+      .from("strategy_definitions")
+      .select("id, name, slug, pending_params, baseline_expectancy")
+      .eq("enabled", true)
+      .not("pending_params", "is", null);
+
+    if (fetchError) {
+      console.error("[Optimizer] Error fetching strategies:", fetchError);
+      return res.status(500).json({ error: "Failed to fetch strategies" });
+    }
+
+    if (!strategies || strategies.length === 0) {
+      return res.status(200).json({
+        success: true,
+        activated: 0,
+        skipped: 0,
+        message: "No strategies with pending params found",
+      });
+    }
+
+    // Filter by minimum improvement if specified
+    const toActivate: string[] = [];
+    const skipped: Array<{ id: string; name: string; reason: string }> = [];
+
+    for (const strategy of strategies) {
+      const pendingExpectancy = strategy.pending_params?.newExpectancy;
+      const baseline = strategy.baseline_expectancy;
+
+      let improvement = 0;
+      if (pendingExpectancy != null && baseline != null && baseline > 0) {
+        improvement = ((pendingExpectancy - baseline) / baseline) * 100;
+      }
+
+      if (improvement >= minImprovement) {
+        toActivate.push(strategy.id);
+      } else {
+        skipped.push({
+          id: strategy.id,
+          name: strategy.name,
+          reason: `Improvement ${improvement.toFixed(1)}% < minimum ${minImprovement}%`,
+        });
+      }
+    }
+
+    if (toActivate.length === 0) {
+      return res.status(200).json({
+        success: true,
+        activated: 0,
+        skipped: skipped.length,
+        skippedStrategies: skipped,
+        message: "No strategies met the minimum improvement threshold",
+      });
+    }
+
+    // Individual updates for each strategy
+    let activated = 0;
+    for (const id of toActivate) {
+      const strategy = strategies.find((s: any) => s.id === id);
+      if (!strategy) continue;
+
+      const { error } = await supabase
+        .from("strategy_definitions")
+        .update({
+          active_params: strategy.pending_params,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+
+      if (!error) {
+        activated++;
+        console.log(`[Optimizer] ✅ Activated params for: ${strategy.name}`);
+      } else {
+        console.error(`[Optimizer] Failed to activate ${strategy.name}:`, error);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      activated,
+      skipped: skipped.length,
+      skippedStrategies: skipped,
+      message: `Activated ${activated} strategies`,
+    });
+  } catch (error) {
+    console.error("[Optimizer] Error in /activate-all:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+/**
+ * DELETE /api/optimizer/deactivate/:strategyId
+ *
+ * Deactivates (clears) active params for a specific strategy.
+ */
+router.delete("/deactivate/:strategyId", async (req: Request, res: Response) => {
+  try {
+    const { strategyId } = req.params;
+
+    if (!strategyId) {
+      return res.status(400).json({ error: "Missing strategyId parameter" });
+    }
+
+    const supabase = getSupabaseClient();
+
+    const { data: updated, error } = await supabase
+      .from("strategy_definitions")
+      .update({
+        active_params: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", strategyId)
+      .select("id, name, slug")
+      .single();
+
+    if (error) {
+      console.error("[Optimizer] Error deactivating params:", error);
+      return res.status(500).json({ error: "Failed to deactivate params" });
+    }
+
+    if (!updated) {
+      return res.status(404).json({ error: "Strategy not found" });
+    }
+
+    console.log(`[Optimizer] ⏹️ Deactivated params for: ${updated.name}`);
+
+    res.status(200).json({
+      success: true,
+      strategy: {
+        id: updated.id,
+        name: updated.name,
+        slug: updated.slug,
+      },
+      message: `Deactivated optimization params for ${updated.name}`,
+    });
+  } catch (error) {
+    console.error("[Optimizer] Error in /deactivate/:strategyId:", error);
+    res.status(500).json({
+      error: "Internal server error",
       message: error instanceof Error ? error.message : "Unknown error",
     });
   }

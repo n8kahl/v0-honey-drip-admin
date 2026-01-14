@@ -7,11 +7,13 @@
  * - Quotes: bid/ask/mid, spread %, IV, OI, volume
  * - Liquidity rating badge (Good/Fair/Poor)
  * - Last quote time
+ * - Select Contract button (opens ContractPicker)
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { cn } from "../../../lib/utils";
-import type { Trade, Ticker, Contract } from "../../../types";
+import type { Trade, Ticker, Contract, TradeState } from "../../../types";
+import type { ContractRecommendation } from "../../../hooks/useContractRecommendation";
 import { fmtDTE, formatExpirationShort } from "../../../ui/semantics";
 import {
   BarChart2,
@@ -21,7 +23,9 @@ import {
   AlertCircle,
   CheckCircle,
   MinusCircle,
+  ListFilter,
 } from "lucide-react";
+import { ContractPicker, ContractPickerTrigger } from "./ContractPicker";
 
 interface CockpitContractPanelProps {
   symbol: string;
@@ -32,6 +36,12 @@ interface CockpitContractPanelProps {
   underlyingChange?: number | null;
   lastQuoteTime?: Date | null;
   className?: string;
+  /** Trade state to determine if contract can be changed */
+  tradeState?: TradeState;
+  /** Callback when a new contract is selected */
+  onContractSelect?: (contract: Contract) => void;
+  /** Recommended contract to highlight in picker */
+  recommendation?: ContractRecommendation | null;
 }
 
 export function CockpitContractPanel({
@@ -43,9 +53,34 @@ export function CockpitContractPanel({
   underlyingChange,
   lastQuoteTime,
   className,
+  tradeState,
+  onContractSelect,
+  recommendation,
 }: CockpitContractPanelProps) {
+  // Contract picker state
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   // Derive contract from trade if not provided
   const effectiveContract = contract ?? trade?.contract ?? null;
+
+  // Determine effective trade state
+  const effectiveState = tradeState ?? trade?.state;
+
+  // Can change contract? Only in WATCHING, LOADED (pre-entry), or plan preview mode
+  const canChangeContract =
+    !effectiveState || effectiveState === "WATCHING" || effectiveState === "LOADED";
+  const isEntered = effectiveState === "ENTERED" || effectiveState === "EXITED";
+
+  // Handle contract selection from picker
+  const handleContractSelected = useCallback(
+    (newContract: Contract) => {
+      if (onContractSelect && canChangeContract) {
+        onContractSelect(newContract);
+      }
+      setPickerOpen(false);
+    },
+    [onContractSelect, canChangeContract]
+  );
 
   // Derive underlying price
   const effectiveUnderlyingPrice = underlyingPrice ?? activeTicker?.last ?? null;
@@ -119,7 +154,21 @@ export function CockpitContractPanel({
             Contract & Liquidity
           </span>
         </div>
-        {liquidityMetrics && <LiquidityBadge rating={liquidityMetrics.rating} />}
+        <div className="flex items-center gap-2">
+          {liquidityMetrics && <LiquidityBadge rating={liquidityMetrics.rating} />}
+          {/* Select Contract button */}
+          {onContractSelect && (
+            <ContractPickerTrigger
+              onClick={() => setPickerOpen(true)}
+              disabled={isEntered}
+              disabledReason={isEntered ? "Can't change contract after entry" : undefined}
+              label={effectiveContract ? "Change" : "Select"}
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2"
+            />
+          )}
+        </div>
       </div>
 
       {/* No Contract State */}
@@ -242,6 +291,21 @@ export function CockpitContractPanel({
             </div>
           </div>
         </>
+      )}
+
+      {/* Contract Picker Modal/Sheet */}
+      {onContractSelect && (
+        <ContractPicker
+          symbol={symbol}
+          currentPrice={effectiveUnderlyingPrice ?? 0}
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={handleContractSelected}
+          recommendation={recommendation}
+          currentContract={effectiveContract}
+          disabled={isEntered}
+          disabledReason={isEntered ? "Can't change contract after entry" : undefined}
+        />
       )}
     </div>
   );

@@ -218,6 +218,12 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
               </div>
             </HDCard>
           </section>
+
+          {/* Setup Edge Dashboard - Promoted for trader visibility */}
+          <section>
+            <SetupOptimizationDashboard />
+          </section>
+
           {/* Profile Section */}
           <section>
             <HDCard>
@@ -803,11 +809,6 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
               Save Settings
             </HDButton>
           </div>
-
-          {/* Setup Detection & Optimization Dashboard */}
-          <section>
-            <SetupOptimizationDashboard />
-          </section>
         </div>
       </div>
     </div>

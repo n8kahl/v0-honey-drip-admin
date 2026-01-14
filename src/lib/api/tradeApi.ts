@@ -131,6 +131,74 @@ export async function updateTradeApi(userId: string, tradeId: string, updates: a
 }
 
 /**
+ * Update trade contract via API
+ *
+ * Use this for changing the contract on a LOADED trade (pre-entry).
+ * Will be rejected for ENTERED or EXITED trades.
+ *
+ * @param userId - User ID
+ * @param tradeId - Trade ID to update
+ * @param contract - New contract object with strike, expiry, type, bid/ask/mid, etc.
+ * @param planUpdates - Optional plan fields to update (entry_price, stop_loss, target_price)
+ */
+export async function updateTradeContractApi(
+  userId: string,
+  tradeId: string,
+  contract: {
+    id?: string;
+    strike: number;
+    expiry: string;
+    type: "C" | "P";
+    bid?: number;
+    ask?: number;
+    mid?: number;
+    volume?: number;
+    openInterest?: number;
+    iv?: number;
+    delta?: number;
+    gamma?: number;
+    theta?: number;
+    vega?: number;
+    daysToExpiry?: number;
+    symbol?: string;
+  },
+  planUpdates?: {
+    entry_price?: number;
+    stop_loss?: number;
+    target_price?: number;
+    take_profit_1?: number;
+    take_profit_2?: number;
+    take_profit_3?: number;
+  }
+): Promise<any> {
+  const headers = await getAuthHeaders(userId);
+
+  const payload = {
+    contract,
+    ...planUpdates,
+  };
+
+  return apiCallWithRetry(async () => {
+    const response = await fetch(`/api/trades/${tradeId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      // Provide specific error for contract change rejection
+      if (response.status === 409) {
+        throw new Error(error.details || "Cannot change contract after trade entry");
+      }
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  });
+}
+
+/**
  * Delete a trade via API
  */
 export async function deleteTradeApi(userId: string, tradeId: string): Promise<any> {

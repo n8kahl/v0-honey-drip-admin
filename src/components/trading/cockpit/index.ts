@@ -16,3 +16,4 @@ export { CockpitConfluencePanel } from "./CockpitConfluencePanel";
 export { CockpitPlanPanel } from "./CockpitPlanPanel";
 export { CockpitContractPanel } from "./CockpitContractPanel";
 export { CockpitActionsBar } from "./CockpitActionsBar";
+export { ContractPicker, ContractPickerTrigger } from "./ContractPicker";

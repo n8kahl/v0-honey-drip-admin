@@ -458,21 +458,98 @@ router.patch("/api/trades/:tradeId", async (req: Request, res: Response) => {
         .json({ error: "Invalid state value. Must be: watching, loaded, entered, or exited" });
     }
 
-    // Update trade
+    // Check if this is a contract update request
+    const isContractUpdate =
+      updates.contract !== undefined ||
+      updates.strike_price !== undefined ||
+      updates.expiration_date !== undefined ||
+      updates.contract_type !== undefined;
+
+    // If updating contract, verify trade is in LOADED state (not yet ENTERED)
+    if (isContractUpdate) {
+      // First, fetch the current trade to check its state
+      const { data: currentTrade, error: fetchError } = await getSupabaseClient()
+        .from("trades")
+        .select("state, entry_time, ticker")
+        .eq("id", tradeId)
+        .eq("user_id", userId)
+        .single();
+
+      if (fetchError || !currentTrade) {
+        return res.status(404).json({ error: "Trade not found or unauthorized" });
+      }
+
+      const tradeData = currentTrade as {
+        state: string;
+        entry_time: string | null;
+        ticker: string;
+      };
+
+      // Reject contract updates for ENTERED or EXITED trades
+      if (tradeData.state === "entered" || tradeData.state === "exited" || tradeData.entry_time) {
+        return res.status(409).json({
+          error: "Cannot change contract after trade entry",
+          details: "Contract updates are only allowed for trades in WATCHING or LOADED state",
+        });
+      }
+
+      // Validate contract.symbol matches trade.ticker if contract object provided
+      if (updates.contract && updates.contract.symbol) {
+        const contractSymbol = updates.contract.symbol || updates.contract.ticker;
+        if (contractSymbol && contractSymbol !== tradeData.ticker) {
+          return res.status(400).json({
+            error: "Contract symbol mismatch",
+            details: `Contract symbol '${contractSymbol}' does not match trade ticker '${tradeData.ticker}'`,
+          });
+        }
+      }
+    }
+
+    // Build update object
     // NOTE: Database column is 'state' with constraint for lowercase values
-    const updateData: TradeUpdate = {
-      state: lowerState,
-      entry_price: updates.entry_price,
-      entry_time: updates.entry_time,
-      exit_price: updates.exit_price,
-      exit_time: updates.exit_time,
-      target_price: updates.targetPrice || updates.target_price,
-      stop_loss: updates.stopLoss || updates.stop_loss,
-      current_price: updates.currentPrice || updates.current_price,
-      move_percent: updates.movePercent || updates.move_percent,
-      notes: updates.notes,
+    const updateData: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
+
+    // Standard update fields
+    if (lowerState !== undefined) updateData.state = lowerState;
+    if (updates.entry_price !== undefined) updateData.entry_price = updates.entry_price;
+    if (updates.entry_time !== undefined) updateData.entry_time = updates.entry_time;
+    if (updates.exit_price !== undefined) updateData.exit_price = updates.exit_price;
+    if (updates.exit_time !== undefined) updateData.exit_time = updates.exit_time;
+    if (updates.targetPrice !== undefined || updates.target_price !== undefined) {
+      updateData.target_price = updates.targetPrice || updates.target_price;
+    }
+    if (updates.stopLoss !== undefined || updates.stop_loss !== undefined) {
+      updateData.stop_loss = updates.stopLoss || updates.stop_loss;
+    }
+    if (updates.currentPrice !== undefined || updates.current_price !== undefined) {
+      updateData.current_price = updates.currentPrice || updates.current_price;
+    }
+    if (updates.movePercent !== undefined || updates.move_percent !== undefined) {
+      updateData.move_percent = updates.movePercent || updates.move_percent;
+    }
+    if (updates.notes !== undefined) updateData.notes = updates.notes;
+
+    // Contract update fields (only for LOADED trades - validated above)
+    if (updates.contract !== undefined) {
+      updateData.contract = updates.contract;
+      // Also update individual columns for backwards compatibility
+      if (updates.contract.strike) updateData.strike = updates.contract.strike;
+      if (updates.contract.expiry || updates.contract.expiration) {
+        updateData.expiration = updates.contract.expiry || updates.contract.expiration;
+      }
+      if (updates.contract.type) updateData.contract_type = updates.contract.type;
+    }
+    // Individual contract field updates
+    if (updates.strike_price !== undefined) updateData.strike = updates.strike_price;
+    if (updates.expiration_date !== undefined) updateData.expiration = updates.expiration_date;
+    if (updates.contract_type !== undefined) updateData.contract_type = updates.contract_type;
+
+    // Plan fields (recalculated after contract change)
+    if (updates.take_profit_1 !== undefined) updateData.take_profit_1 = updates.take_profit_1;
+    if (updates.take_profit_2 !== undefined) updateData.take_profit_2 = updates.take_profit_2;
+    if (updates.take_profit_3 !== undefined) updateData.take_profit_3 = updates.take_profit_3;
 
     const { data, error } = await (getSupabaseClient().from("trades") as any)
       .update(updateData)

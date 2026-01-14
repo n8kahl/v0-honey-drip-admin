@@ -19,6 +19,7 @@ import youtubeRouter from "./routes/youtube.js";
 import aiRouter from "./routes/ai.js";
 import publicRouter from "./routes/public.js";
 import optimizerRouter from "./routes/optimizer.js";
+import performanceRouter from "./routes/performance.js";
 import { attachWsServers } from "./ws/index.js";
 import { connectionPoolHealthEndpoint } from "./ws/connectionPool.js";
 
@@ -96,6 +97,7 @@ app.use("/api/youtube", youtubeRouter); // YouTube pre-market video routes
 app.use("/api/ai", aiRouter); // Drip Coach AI trading assistant
 app.use("/api/public", publicRouter); // Public portal API (no auth required)
 app.use("/api/optimizer", optimizerRouter); // Optimizer status and control
+app.use("/api/performance", performanceRouter); // Edge stats and setup performance
 
 // Diagnostic: expose limited MASSIVE_API_KEY presence (no full key)
 app.get("/api/massive-key-status", (_req: Request, res: Response) => {
@@ -273,6 +275,38 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
     await scannerWorker.start();
   } catch (error) {
     console.error("[Server] Failed to start composite scanner worker:", error);
+  }
+
+  // Start signal outcome worker (evaluates expired signals)
+  try {
+    const { SignalOutcomeWorker } = await import("./workers/signalOutcomeWorker.js");
+    const outcomeWorker = new SignalOutcomeWorker();
+    await outcomeWorker.start();
+  } catch (error) {
+    console.error("[Server] Failed to start signal outcome worker:", error);
+  }
+
+  // Start signal performance worker (aggregates daily metrics)
+  try {
+    const { SignalPerformanceWorker } = await import("./workers/signalPerformanceWorker.js");
+    const performanceWorker = new SignalPerformanceWorker();
+    await performanceWorker.start();
+  } catch (error) {
+    console.error("[Server] Failed to start signal performance worker:", error);
+  }
+
+  // Start optimizer worker (runs GA optimization on schedule)
+  // Can be disabled via DISABLE_OPTIMIZER=true environment variable
+  if (process.env.DISABLE_OPTIMIZER !== "true") {
+    try {
+      const { OptimizerWorker } = await import("./workers/confluenceOptimizer.js");
+      const optimizerWorker = new OptimizerWorker();
+      await optimizerWorker.start();
+    } catch (error) {
+      console.error("[Server] Failed to start optimizer worker:", error);
+    }
+  } else {
+    console.log("[Server] Optimizer worker disabled via DISABLE_OPTIMIZER env var");
   }
 });
 
