@@ -119,21 +119,17 @@ export function NowPanelSymbol({
   // The recommended contract is still HIGHLIGHTED in the chain, just not auto-loaded.
 
   // Handle manual contract selection from chain
-  const handleContractSelect = useCallback(
-    (contract: Contract) => {
-      setManualContract(contract);
-      onContractSelect(contract);
-    },
-    [onContractSelect]
-  );
+  // NOTE: This ONLY updates local state. Does NOT trigger trade creation.
+  // The user must explicitly click "LOAD STRATEGY" to create a trade.
+  const handleContractSelect = useCallback((contract: Contract) => {
+    setManualContract(contract);
+  }, []);
 
   // Handle revert to recommended
+  // NOTE: This ONLY clears local state. Does NOT trigger trade creation.
   const handleRevertToRecommended = useCallback(() => {
     setManualContract(null);
-    if (recommendation?.bestContract) {
-      onContractSelect(recommendation.bestContract);
-    }
-  }, [recommendation?.bestContract, onContractSelect]);
+  }, []);
 
   // Handle load strategy click - persist LOADED trade to database
   const handleLoadStrategy = useCallback(() => {
