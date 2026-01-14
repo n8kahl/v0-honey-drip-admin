@@ -294,6 +294,20 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   } catch (error) {
     console.error("[Server] Failed to start signal performance worker:", error);
   }
+
+  // Start optimizer worker (runs GA optimization on schedule)
+  // Can be disabled via DISABLE_OPTIMIZER=true environment variable
+  if (process.env.DISABLE_OPTIMIZER !== "true") {
+    try {
+      const { OptimizerWorker } = await import("./workers/confluenceOptimizer.js");
+      const optimizerWorker = new OptimizerWorker();
+      await optimizerWorker.start();
+    } catch (error) {
+      console.error("[Server] Failed to start optimizer worker:", error);
+    }
+  } else {
+    console.log("[Server] Optimizer worker disabled via DISABLE_OPTIMIZER env var");
+  }
 });
 
 export default app;

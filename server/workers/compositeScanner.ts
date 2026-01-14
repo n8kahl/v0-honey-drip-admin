@@ -49,6 +49,11 @@ import {
   applyEdgeToScore,
   type EdgeMetadata,
 } from "./lib/edgeStatsCache.js";
+import {
+  loadOptimizedParamsFromDB,
+  clearParamsCache,
+  getParamsCacheStatus,
+} from "./lib/optimizedParamsLoader.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -86,16 +91,15 @@ function getSupabaseClient(): SupabaseClient<any> {
 const supabase = getSupabaseClient();
 
 /**
- * Phase 6: Load optimized parameters from configuration file
+ * Phase 6: Load optimized parameters from configuration file (fallback)
  */
-function loadOptimizedParameters(): ParameterConfig | undefined {
+function loadOptimizedParametersFromFile(): ParameterConfig | undefined {
   try {
     const configPath =
       process.env.OPTIMIZED_PARAMS_PATH || join(process.cwd(), "config", "optimized-params.json");
 
     if (!existsSync(configPath)) {
-      console.log("[Composite Scanner] 📊 No optimized parameters found at", configPath);
-      console.log("[Composite Scanner] ℹ️  Using default parameters");
+      console.log("[Composite Scanner] 📊 No optimized parameters file found at", configPath);
       return undefined;
     }
 
@@ -103,24 +107,58 @@ function loadOptimizedParameters(): ParameterConfig | undefined {
     const config = JSON.parse(configFile);
 
     if (config.parameters) {
-      console.log("[Composite Scanner] ✅ Loaded optimized parameters:");
+      console.log("[Composite Scanner] ✅ Loaded optimized parameters from file:");
       console.log(`  Win Rate: ${(config.performance?.winRate * 100 || 0).toFixed(1)}%`);
       console.log(`  Profit Factor: ${config.performance?.profitFactor?.toFixed(2) || "N/A"}`);
       console.log(`  Optimization Date: ${config.timestamp || "Unknown"}`);
       return config.parameters as ParameterConfig;
     }
 
-    console.warn("[Composite Scanner] ⚠️  Invalid config format, using defaults");
     return undefined;
   } catch (error) {
-    console.error("[Composite Scanner] ❌ Error loading optimized parameters:", error);
-    console.log("[Composite Scanner] ℹ️  Falling back to default parameters");
+    console.error("[Composite Scanner] ❌ Error loading optimized parameters from file:", error);
     return undefined;
   }
 }
 
-// Load optimized parameters on startup
-const OPTIMIZED_PARAMS = loadOptimizedParameters();
+/**
+ * Phase 7: Load optimized parameters with DB-first strategy
+ * Priority: 1) Database (active_params), 2) JSON file, 3) Default
+ */
+async function loadOptimizedParameters(): Promise<ParameterConfig | undefined> {
+  // Try loading from database first (preferred)
+  try {
+    const dbParams = await loadOptimizedParamsFromDB(supabase);
+    const cacheStatus = getParamsCacheStatus();
+
+    if (cacheStatus.isCached && cacheStatus.params) {
+      console.log("[Composite Scanner] ✅ Loaded optimized parameters from database");
+      console.log(`  Cache age: ${Math.round((cacheStatus.cacheAge || 0) / 1000)}s`);
+      console.log(
+        `  Min scores: scalp=${dbParams.minScores.scalp}, day=${dbParams.minScores.day}, swing=${dbParams.minScores.swing}`
+      );
+      console.log(
+        `  Risk/Reward: target=${dbParams.riskReward.targetMultiple}x, stop=${dbParams.riskReward.stopMultiple}x`
+      );
+      return dbParams;
+    }
+  } catch (dbErr) {
+    console.warn("[Composite Scanner] ⚠️ Could not load params from DB:", dbErr);
+  }
+
+  // Fallback to file-based config
+  const fileParams = loadOptimizedParametersFromFile();
+  if (fileParams) {
+    console.log("[Composite Scanner] ℹ️ Using file-based params (DB empty or unavailable)");
+    return fileParams;
+  }
+
+  console.log("[Composite Scanner] ℹ️ Using default parameters (no DB or file params)");
+  return undefined;
+}
+
+// Global optimized params (loaded on first scan)
+let OPTIMIZED_PARAMS: ParameterConfig | undefined = undefined;
 
 /**
  * Performance statistics
@@ -947,6 +985,13 @@ async function scanAllUsers(): Promise<void> {
   console.log(`[Composite Scanner] ====== Starting scan at ${new Date().toISOString()} ======`);
 
   try {
+    // Phase 7: Load/refresh optimized parameters from DB (cached for 5 minutes)
+    const previousParams = OPTIMIZED_PARAMS;
+    OPTIMIZED_PARAMS = await loadOptimizedParameters();
+    if (OPTIMIZED_PARAMS !== previousParams) {
+      console.log("[Composite Scanner] 🔄 Optimized parameters refreshed from DB");
+    }
+
     // Fetch all user IDs
     const { data: profiles, error: profilesErr } = await supabase.from("profiles").select("id");
 
