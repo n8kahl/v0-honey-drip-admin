@@ -10,12 +10,11 @@
  * Part of the Opportunity Stack [DEEP] tab.
  */
 
-import { useMemo } from "react";
 import { useUIStore } from "../../../stores/uiStore";
 import { useSymbolData } from "../../../stores/marketDataStore";
-import { useFlowContext } from "../../../hooks/useFlowContext";
-import { normalizeSymbolForAPI } from "../../../lib/symbolUtils";
-import { SmartScoreBadge, FlowPulse } from "../../hd/terminal";
+import { useKeyLevels } from "../../../hooks/useKeyLevels";
+import { SmartScoreBadge } from "../../hd/terminal";
+import { FlowIntelligencePanel } from "../../hd/terminal/FlowIntelligencePanel";
 import { HDMiniSparkline } from "../../hd/charts/HDMiniSparkline";
 import { HDSignalChips } from "../../hd/common/HDSignalChips";
 import { BarChart3, Target, TrendingUp, TrendingDown, Layers, Activity } from "lucide-react";
@@ -30,15 +29,9 @@ export function MobileDeepScreen({ onAnalyzeMore }: MobileDeepScreenProps) {
   const focusSymbol = useUIStore((s) => s.mainCockpitSymbol);
   const symbolData = useSymbolData(focusSymbol || "");
 
-  // Get live flow context
-  const normalizedSymbol = normalizeSymbolForAPI(focusSymbol || "");
-  const {
-    short: flowContext,
-    primarySentiment,
-    sweepCount,
-  } = useFlowContext(normalizedSymbol, {
-    refreshInterval: 30000,
-    windows: ["short"],
+  // Get key levels including options flow levels
+  const { keyLevels } = useKeyLevels(focusSymbol || "", {
+    enabled: !!focusSymbol,
   });
 
   // Extract confluence data
@@ -49,28 +42,8 @@ export function MobileDeepScreen({ onAnalyzeMore }: MobileDeepScreenProps) {
   const indicators = symbolData?.indicators;
   const mtfTrend = symbolData?.mtfTrend;
 
-  // Flow data for FlowPulse
-  const flowData = useMemo(() => {
-    if (!flowContext) return undefined;
-
-    const buyPressure =
-      flowContext.totalVolume && flowContext.totalVolume > 0
-        ? (flowContext.buyVolume / flowContext.totalVolume) * 100
-        : 50;
-
-    return {
-      flowScore: flowContext.institutionalScore ?? 0,
-      flowBias:
-        primarySentiment === "BULLISH"
-          ? ("bullish" as const)
-          : primarySentiment === "BEARISH"
-            ? ("bearish" as const)
-            : ("neutral" as const),
-      buyPressure,
-      putCallRatio: flowContext.putCallVolumeRatio ?? 1,
-      sweepCount: sweepCount ?? 0,
-    };
-  }, [flowContext, primarySentiment, sweepCount]);
+  // Get current price from symbolData
+  const currentPrice = symbolData?.price ?? 0;
 
   // No symbol selected state - Institutional Radar
   if (!focusSymbol) {
@@ -119,22 +92,12 @@ export function MobileDeepScreen({ onAnalyzeMore }: MobileDeepScreenProps) {
         <HDSignalChips components={confluenceComponents} showAll />
       </div>
 
-      {/* Options Flow Section */}
-      <div className="p-4 border-b border-[var(--border-hairline)]">
-        <div className="flex items-center gap-2 mb-3">
-          <Activity className="w-4 h-4 text-[var(--brand-primary)]" />
-          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-            Options Flow
-          </span>
-          {sweepCount && sweepCount > 0 && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
-              {sweepCount} sweeps
-            </span>
-          )}
-        </div>
-
-        <FlowPulse flow={flowData} showLabels />
-      </div>
+      {/* Options Flow Section - Full institutional intelligence */}
+      <FlowIntelligencePanel
+        symbol={focusSymbol}
+        currentPrice={currentPrice}
+        optionsFlow={keyLevels?.optionsFlow}
+      />
 
       {/* MTF Trend Section */}
       {mtfTrend && (

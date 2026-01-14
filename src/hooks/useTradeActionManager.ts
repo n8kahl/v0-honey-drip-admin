@@ -122,6 +122,8 @@ export interface ExitTradeParams {
   exitPrice?: number;
   /** Price overrides for Discord alert */
   priceOverrides?: PriceOverrides;
+  /** Mark as expired (allows $0.00 exit price) */
+  markAsExpired?: boolean;
 }
 
 // ============================================================================
@@ -426,6 +428,16 @@ export function useTradeActionManager(
         const stopLoss = overrideParams?.stopLoss ?? activeTrade.stopLoss;
         const now = new Date();
 
+        // VALIDATION: Reject $0.00 entry price
+        if (entryPrice <= 0) {
+          setError("Cannot enter with $0.00 price");
+          toast.error("Invalid Entry Price", {
+            description:
+              "Entry price must be greater than $0.00. Wait for live quote or set manual price.",
+          });
+          return null;
+        }
+
         // Update trade in database
         await updateTradeApi(user.id, activeTrade.id, {
           status: "entered",
@@ -533,6 +545,16 @@ export function useTradeActionManager(
         const entryPrice = activeTrade.entryPrice ?? 0;
         const quantity = activeTrade.quantity ?? 1;
         const now = new Date();
+
+        // VALIDATION: Reject $0.00 exit unless explicitly marking as expired
+        if (exitPrice <= 0 && !params.markAsExpired) {
+          setError("Cannot exit with $0.00 price");
+          toast.error("Invalid Exit Price", {
+            description:
+              "Exit price must be greater than $0.00. Use 'Mark as Expired' for worthless options.",
+          });
+          return null;
+        }
 
         // Calculate P&L
         // If exit price is 0 (expired), force -100% loss

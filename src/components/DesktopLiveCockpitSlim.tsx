@@ -53,7 +53,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     onRemoveChallenge,
     onExitedTrade,
     onEnteredTrade,
-    channels: _channels, // Kept for NowPanel alerts
+    channels, // Passed to NowPanel for alerts
     onMobileTabChange,
     onOpenActiveTrade,
     onOpenReviewTrade,
@@ -163,9 +163,12 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               onContractSelect={(contract, options) =>
                 actions.handleContractSelect(contract, options)
               }
+              onLoadStrategy={(contract, options) => actions.handleLoadStrategy(contract, options)}
               compositeSignals={compositeSignals}
               watchlist={watchlist}
               isTransitioning={isTransitioning}
+              channels={channels}
+              challenges={challenges}
               // Action callbacks for NowPanelManage (absorbed from ActionRail)
               onTrim={actions.handleTrim}
               onMoveSLToBreakeven={actions.handleUpdateSL}

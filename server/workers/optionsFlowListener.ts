@@ -53,10 +53,128 @@ function getSupabaseClient() {
 const supabase = getSupabaseClient();
 
 // Configuration
-const WATCHED_SYMBOLS = ["SPX", "NDX", "SPY", "QQQ", "IWM"]; // Add more as needed
+const DEFAULT_SYMBOLS = ["SPX", "NDX", "SPY", "QQQ", "IWM"]; // Fallback if no watchlist data
 const RECONNECT_DELAY = 5000; // 5 seconds
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const MIN_TRADE_SIZE = 10; // Minimum contract size to track
+const SYMBOL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh subscriptions every 5 minutes
+const MAX_SYMBOLS = parseInt(process.env.FLOW_MAX_SYMBOLS || "50", 10); // Safety limit
+
+// ============================================================================
+// Dynamic Symbol Loading (Pure Functions for Testing)
+// ============================================================================
+
+/**
+ * Normalize and deduplicate symbols
+ * @param symbols - Array of symbols (may contain duplicates, mixed case)
+ * @returns Unique, uppercase, sorted symbols
+ */
+export function normalizeSymbols(symbols: string[]): string[] {
+  const uniqueSet = new Set<string>();
+  for (const sym of symbols) {
+    if (sym && typeof sym === "string") {
+      uniqueSet.add(sym.toUpperCase().trim());
+    }
+  }
+  return Array.from(uniqueSet).sort();
+}
+
+/**
+ * Apply safety limit to symbol list
+ * @param symbols - Array of symbols
+ * @param maxSymbols - Maximum number of symbols allowed
+ * @returns Truncated array if necessary
+ */
+export function applySymbolLimit(symbols: string[], maxSymbols: number): string[] {
+  if (symbols.length <= maxSymbols) return symbols;
+  console.log(`[FlowListener] ⚠️ Symbol limit: truncating ${symbols.length} → ${maxSymbols}`);
+  return symbols.slice(0, maxSymbols);
+}
+
+/**
+ * Merge symbols from multiple sources
+ * @param sources - Arrays of symbols from different sources
+ * @returns Merged, normalized, limited symbol array
+ */
+export function mergeSymbolSources(
+  sources: string[][],
+  maxSymbols: number = MAX_SYMBOLS
+): string[] {
+  const allSymbols: string[] = [];
+  for (const source of sources) {
+    allSymbols.push(...source);
+  }
+  const normalized = normalizeSymbols(allSymbols);
+  return applySymbolLimit(normalized, maxSymbols);
+}
+
+/**
+ * Load symbols from Supabase watchlist and active trades
+ * Uses service role for server-side access (bypasses RLS)
+ */
+async function loadDynamicSymbols(supabase: ReturnType<typeof createClient>): Promise<string[]> {
+  try {
+    // Query watchlist symbols
+    const { data: watchlistData, error: watchlistError } = await supabase
+      .from("watchlist")
+      .select("symbol");
+
+    if (watchlistError) {
+      console.error("[FlowListener] Watchlist query error:", watchlistError.message);
+    }
+
+    const watchlistSymbols = (watchlistData || []).map((row: { symbol: string }) => row.symbol);
+
+    // Query active trade symbols (LOADED or ENTERED states)
+    const { data: tradesData, error: tradesError } = await supabase
+      .from("trades")
+      .select("ticker")
+      .in("state", ["LOADED", "ENTERED"]);
+
+    if (tradesError) {
+      console.error("[FlowListener] Trades query error:", tradesError.message);
+    }
+
+    // Extract underlying symbol from ticker (e.g., "O:SPY250117C00622000" → "SPY")
+    const tradeSymbols = (tradesData || [])
+      .map((row: { ticker: string }) => {
+        const match = row.ticker?.match(/^O:([A-Z]+)/);
+        return match ? match[1] : null;
+      })
+      .filter((s): s is string => s !== null);
+
+    // Merge all sources with defaults as fallback
+    const allSources = [watchlistSymbols, tradeSymbols];
+    const hasData = watchlistSymbols.length > 0 || tradeSymbols.length > 0;
+
+    if (!hasData) {
+      console.log("[FlowListener] ℹ️ No watchlist/trade data, using defaults");
+      return DEFAULT_SYMBOLS;
+    }
+
+    // Always include core index symbols for institutional flow
+    allSources.push(DEFAULT_SYMBOLS);
+
+    const merged = mergeSymbolSources(allSources, MAX_SYMBOLS);
+    console.log(
+      `[FlowListener] 📊 Loaded ${merged.length} symbols (watchlist: ${watchlistSymbols.length}, trades: ${tradeSymbols.length})`
+    );
+
+    return merged;
+  } catch (error) {
+    console.error("[FlowListener] Symbol loading error:", error);
+    return DEFAULT_SYMBOLS;
+  }
+}
+
+/**
+ * Check if two symbol arrays are equal (same symbols in any order)
+ */
+export function symbolsAreEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setA = new Set(a);
+  return b.every((sym) => setA.has(sym));
+}
 
 // Stats tracking
 interface Stats {
@@ -91,11 +209,78 @@ class OptionsFlowListener {
   private ws: WebSocket | null = null;
   private isConnected = false;
   private subscriptions = new Set<string>();
+  private watchedSymbols: string[] = DEFAULT_SYMBOLS;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private symbolRefreshInterval: NodeJS.Timeout | null = null;
 
   constructor() {
+    this.initializeWithDynamicSymbols();
+  }
+
+  /**
+   * Initialize listener with dynamically loaded symbols
+   */
+  private async initializeWithDynamicSymbols() {
+    console.log("[FlowListener] 🔄 Loading initial symbols from database...");
+    this.watchedSymbols = await loadDynamicSymbols(supabase);
+    console.log(`[FlowListener] ✅ Initial symbols: ${this.watchedSymbols.length} symbols`);
+
+    // Connect after symbols are loaded
     this.connect();
+
+    // Set up periodic symbol refresh
+    this.startSymbolRefresh();
+  }
+
+  /**
+   * Start periodic symbol refresh (every 5 minutes)
+   */
+  private startSymbolRefresh() {
+    if (this.symbolRefreshInterval) {
+      clearInterval(this.symbolRefreshInterval);
+    }
+
+    this.symbolRefreshInterval = setInterval(async () => {
+      await this.refreshSymbols();
+    }, SYMBOL_REFRESH_INTERVAL);
+
+    console.log(
+      `[FlowListener] ⏰ Symbol refresh scheduled every ${SYMBOL_REFRESH_INTERVAL / 60000} minutes`
+    );
+  }
+
+  /**
+   * Refresh symbols from database and update subscriptions if changed
+   */
+  private async refreshSymbols() {
+    console.log("[FlowListener] 🔄 Refreshing symbols...");
+
+    const newSymbols = await loadDynamicSymbols(supabase);
+
+    if (symbolsAreEqual(this.watchedSymbols, newSymbols)) {
+      console.log("[FlowListener] ✓ No symbol changes");
+      return;
+    }
+
+    console.log(
+      `[FlowListener] 📝 Symbols changed: ${this.watchedSymbols.length} → ${newSymbols.length}`
+    );
+    this.watchedSymbols = newSymbols;
+
+    // Update subscriptions (will be filtered client-side)
+    this.subscriptions.clear();
+    newSymbols.forEach((s) => this.subscriptions.add(s));
+
+    // Log the new symbol set (no sensitive data)
+    console.log(`[FlowListener] 📊 Now watching ${this.watchedSymbols.length} symbols`);
+  }
+
+  /**
+   * Get current watched symbols (for external access)
+   */
+  getWatchedSymbols(): string[] {
+    return [...this.watchedSymbols];
   }
 
   /**
@@ -150,7 +335,7 @@ class OptionsFlowListener {
         stats.connectionUptime = Date.now();
 
         // Hub handles auth - subscribe immediately using options.trades format
-        this.subscribeViaHub(WATCHED_SYMBOLS);
+        this.subscribeViaHub(this.watchedSymbols);
         this.startHeartbeat();
       });
 
@@ -204,17 +389,19 @@ class OptionsFlowListener {
   }
 
   /**
-   * Subscribe via hub proxy using options.trades format
+   * Subscribe via hub proxy using T.* format
    *
-   * Per Massive docs: Use `*` for ALL option contracts (not SPY* per-underlying)
+   * Per Massive docs (https://massive.com/docs/websocket/options/trades):
+   * - Use `T.*` for ALL option trades (not SPY* per-underlying)
+   * - Event type is "T" for trades
    * We'll filter by underlying symbol on our end.
    */
   private subscribeViaHub(symbols: string[]) {
     console.log(`[FlowListener] 📡 Subscribing via hub to ALL options trades...`);
     console.log(`[FlowListener]   Will filter for: ${symbols.join(", ")}`);
 
-    // Use * for ALL options trades (per docs: "use * to subscribe to all option contracts")
-    const tradesChannel = `options.trades:*`;
+    // Per Massive docs: use T.* for all options trades
+    const tradesChannel = `T.*`;
 
     this.send({
       action: "subscribe",
@@ -299,7 +486,7 @@ class OptionsFlowListener {
     if (message.status === "auth_success") {
       console.log("[FlowListener] 🔐 Authentication successful");
       // Now that we're authenticated, subscribe to trade feeds
-      this.subscribeToSymbols(WATCHED_SYMBOLS);
+      this.subscribeToSymbols(this.watchedSymbols);
     } else if (message.status === "auth_failed") {
       console.error("[FlowListener] ❌ Authentication failed");
       process.exit(1);
@@ -543,6 +730,10 @@ class OptionsFlowListener {
       clearTimeout(this.reconnectTimeout);
     }
 
+    if (this.symbolRefreshInterval) {
+      clearInterval(this.symbolRefreshInterval);
+    }
+
     if (this.ws) {
       this.ws.close(1000, "Graceful shutdown");
     }
@@ -560,9 +751,11 @@ console.log("╔═════════════════════�
 console.log("║       Options Flow Listener - Phase 4 Integration             ║");
 console.log("╚════════════════════════════════════════════════════════════════╝\n");
 
-console.log(`[FlowListener] Watching symbols: ${WATCHED_SYMBOLS.join(", ")}`);
+console.log(`[FlowListener] Dynamic symbol loading from Supabase watchlists`);
+console.log(`[FlowListener] Max symbols: ${MAX_SYMBOLS} (FLOW_MAX_SYMBOLS env override)`);
+console.log(`[FlowListener] Symbol refresh: every ${SYMBOL_REFRESH_INTERVAL / 60000} minutes`);
 console.log(`[FlowListener] Min trade size: ${MIN_TRADE_SIZE} contracts`);
-console.log(`[FlowListener] Database: ${SUPABASE_URL}\n`);
+console.log(`[FlowListener] Database connected\n`);
 
 // Create listener
 const listener = new OptionsFlowListener();

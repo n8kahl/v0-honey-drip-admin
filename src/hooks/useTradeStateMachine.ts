@@ -64,11 +64,11 @@ import {
 // 4. UI-only state (activeTicker, contracts, showAlert) is kept local
 // ============================================================================
 
-// Focus Target Type - Single source of truth for what CENTER panel shows
-export type FocusTarget =
-  | { kind: "symbol"; symbol: string }
-  | { kind: "trade"; tradeId: string }
-  | null;
+// Import from centralized viewRouter
+import { type FocusTarget, deriveFocus } from "../domain/viewRouter";
+
+// Re-export for backward compatibility
+export type { FocusTarget };
 
 // Helper to get risk defaults from TP settings store
 function getRiskDefaultsFromStore() {
@@ -107,6 +107,16 @@ interface TradeStateMachineState {
 interface TradeStateMachineActions {
   handleTickerClick: (ticker: Ticker) => void;
   handleContractSelect: (
+    contract: Contract,
+    options?: {
+      confluenceData?: { trend?: any; volatility?: any; liquidity?: any };
+      voiceReasoning?: string;
+      explicitTicker?: Ticker;
+      tradeType?: "scalp" | "day" | "swing";
+    }
+  ) => void;
+  /** Directly loads strategy to LOADED state (persists to DB without alert) */
+  handleLoadStrategy: (
     contract: Contract,
     options?: {
       confluenceData?: { trend?: any; volatility?: any; liquidity?: any };
@@ -487,6 +497,205 @@ export function useTradeStateMachine({
       }
     },
     [activeTicker, toast, keyLevels, setFocusedTrade]
+  );
+
+  // ========================================
+  // LOAD STRATEGY - Directly persist to LOADED (no alert)
+  // ========================================
+  const handleLoadStrategy = useCallback(
+    async (
+      contract: Contract,
+      options?: {
+        confluenceData?: { trend?: any; volatility?: any; liquidity?: any };
+        voiceReasoning?: string;
+        explicitTicker?: Ticker;
+        tradeType?: "scalp" | "day" | "swing";
+      }
+    ) => {
+      const ticker = options?.explicitTicker || activeTicker;
+      const tradeTypeOverride = options?.tradeType;
+      const confluenceData = options?.confluenceData;
+      const voiceReasoning = options?.voiceReasoning;
+
+      if (!ticker) {
+        log.warn("Load strategy failed: No ticker selected");
+        toast.error("Unable to load trade: No ticker selected");
+        return;
+      }
+
+      // GUARD: Prevent duplicate transitions
+      if (isTransitioning) {
+        log.warn("Load strategy blocked: transition already in progress");
+        return;
+      }
+
+      const correlationId = log.actionStart("handleLoadStrategy", {
+        ticker: ticker.symbol,
+        strike: contract.strike,
+        type: contract.type,
+        expiry: contract.expiry,
+      });
+
+      setIsTransitioning(true);
+
+      try {
+        // Calculate initial TP/SL (round to avoid floating point artifacts)
+        let targetPrice = roundPrice(contract.mid * 1.5);
+        let stopLoss = roundPrice(contract.mid * 0.5);
+        const underlyingPrice = ticker.last;
+        let targetUnderlyingPrice: number | undefined;
+        let stopUnderlyingPrice: number | undefined;
+
+        // Determine trade type: Manual override > DTE-inferred
+        const inferredRiskType = inferTradeTypeByDTE(
+          contract.expiry,
+          new Date(),
+          DEFAULT_DTE_THRESHOLDS
+        );
+        const riskEngineTradeType = tradeTypeOverride
+          ? (tradeTypeOverride.toUpperCase() as "SCALP" | "DAY" | "SWING")
+          : inferredRiskType;
+        const displayTradeType: Trade["tradeType"] = tradeTypeOverride
+          ? tradeTypeOverride === "scalp"
+            ? "Scalp"
+            : tradeTypeOverride === "swing"
+              ? "Swing"
+              : "Day"
+          : inferredRiskType === "SCALP"
+            ? "Scalp"
+            : inferredRiskType === "SWING"
+              ? "Swing"
+              : inferredRiskType === "LEAP"
+                ? "LEAP"
+                : "Day";
+
+        try {
+          let _riskProfile = RISK_PROFILES[riskEngineTradeType];
+          if (
+            confluenceData &&
+            (confluenceData.trend || confluenceData.volatility || confluenceData.liquidity)
+          ) {
+            _riskProfile = adjustProfileByConfluence(_riskProfile, confluenceData);
+          }
+
+          const risk = calculateRisk({
+            entryPrice: contract.mid,
+            currentUnderlyingPrice: underlyingPrice,
+            currentOptionMid: contract.mid,
+            keyLevels: keyLevels || {
+              preMarketHigh: 0,
+              preMarketLow: 0,
+              orbHigh: 0,
+              orbLow: 0,
+              priorDayHigh: 0,
+              priorDayLow: 0,
+              vwap: 0,
+              vwapUpperBand: 0,
+              vwapLowerBand: 0,
+              bollingerUpper: 0,
+              bollingerLower: 0,
+              weeklyHigh: 0,
+              weeklyLow: 0,
+              monthlyHigh: 0,
+              monthlyLow: 0,
+              quarterlyHigh: 0,
+              quarterlyLow: 0,
+              yearlyHigh: 0,
+              yearlyLow: 0,
+            },
+            expirationISO: contract.expiry,
+            tradeType: riskEngineTradeType,
+            delta: contract.delta ?? 0.5,
+            gamma: contract.gamma ?? 0,
+            defaults: getRiskDefaultsFromStore(),
+          });
+          if (risk.targetPrice) targetPrice = risk.targetPrice;
+          if (risk.stopLoss) stopLoss = risk.stopLoss;
+          if (risk.targetUnderlyingPrice) targetUnderlyingPrice = risk.targetUnderlyingPrice;
+          if (risk.stopUnderlyingPrice) stopUnderlyingPrice = risk.stopUnderlyingPrice;
+        } catch {
+          /* fallback silently */
+        }
+
+        // Get initial confluence
+        const direction: "LONG" | "SHORT" = contract.type === "C" ? "LONG" : "SHORT";
+        const initialConfluence = await getInitialConfluence(
+          ticker.symbol,
+          direction,
+          keyLevels || null
+        );
+
+        // 1. PERSIST TO DATABASE DIRECTLY AS LOADED
+        const dbTrade = await createTradeApi(userId, {
+          ticker: ticker.symbol,
+          contract,
+          tradeType: displayTradeType,
+          targetPrice,
+          stopLoss,
+          status: "loaded",
+          discordChannelIds: [],
+          challengeIds: [],
+          confluence: initialConfluence || undefined,
+          confluenceUpdatedAt: initialConfluence ? new Date().toISOString() : undefined,
+        });
+
+        // 2. OPTIMISTIC UPDATE - Add to activeTrades immediately
+        const loadedTrade: Trade = {
+          id: dbTrade.id,
+          ticker: ticker.symbol,
+          state: "LOADED",
+          contract,
+          tradeType: displayTradeType,
+          targetPrice,
+          stopLoss,
+          movePercent: 0,
+          discordChannels: [],
+          challenges: [],
+          updates: [],
+          confluence: initialConfluence || undefined,
+          confluenceUpdatedAt: initialConfluence ? new Date() : undefined,
+          underlyingPriceAtLoad: underlyingPrice,
+          targetUnderlyingPrice,
+          stopUnderlyingPrice,
+          voiceContext: voiceReasoning,
+        };
+
+        useTradeStore.setState((state) => ({
+          activeTrades: [...state.activeTrades, loadedTrade],
+          previewTrade: null,
+          currentTradeId: dbTrade.id,
+        }));
+
+        // Clear alert state since we're not showing alert composer
+        setShowAlert(false);
+        setAlertType("enter");
+
+        // 3. BACKGROUND RELOAD - Refresh from DB to get any server-side computed data
+        loadTrades(userId).catch((err) => {
+          log.warn("Background loadTrades failed", { error: err?.message });
+        });
+
+        log.transition("SYMBOL", "LOADED", { tradeId: dbTrade.id, ticker: ticker.symbol });
+        log.actionEnd("handleLoadStrategy", correlationId, {
+          dbTradeId: dbTrade.id,
+          ticker: ticker.symbol,
+          targetPrice,
+          stopLoss,
+        });
+
+        toast.success(`${ticker.symbol} strategy loaded`, {
+          description: `${contract.strike}${contract.type} ready for entry`,
+        });
+      } catch (error) {
+        log.actionFail("handleLoadStrategy", correlationId, error, { ticker: ticker.symbol });
+        toast.error("Failed to load strategy", {
+          description: error instanceof Error ? error.message : "Unknown error occurred",
+        } as any);
+      } finally {
+        setIsTransitioning(false);
+      }
+    },
+    [activeTicker, userId, toast, keyLevels, loadTrades, isTransitioning]
   );
 
   // ========================================
@@ -1719,34 +1928,11 @@ export function useTradeStateMachine({
   // ========================================
   // COMPUTED FOCUS TARGET
   // ========================================
-  const focus: FocusTarget = useMemo(() => {
-    // PRIORITY: If currentTradeId is explicitly null, show symbol focus
-    // This ensures clicking a watchlist item clears trade focus immediately
-    // The currentTradeId check is more reliable than currentTrade because
-    // it's a primitive value that Zustand compares with strict equality
-    if (currentTradeId === null) {
-      // Trade ID is explicitly cleared - show symbol if we have one
-      if (activeTicker) {
-        return { kind: "symbol", symbol: activeTicker.symbol };
-      }
-      return null;
-    }
-
-    // If we have a currentTrade, show trade focus
-    if (currentTrade) {
-      const effectiveState = currentTrade.state;
-      // Show trade focus for all trade states
-      if (["WATCHING", "LOADED", "ENTERED", "EXITED"].includes(effectiveState)) {
-        return { kind: "trade", tradeId: currentTrade.id };
-      }
-    }
-
-    // Fallback to symbol focus if we have an active ticker
-    if (activeTicker) {
-      return { kind: "symbol", symbol: activeTicker.symbol };
-    }
-    return null;
-  }, [currentTradeId, currentTrade, activeTicker]);
+  // Uses centralized viewRouter for single source of truth
+  const focus: FocusTarget = useMemo(
+    () => deriveFocus(currentTradeId, currentTrade, activeTicker),
+    [currentTradeId, currentTrade, activeTicker]
+  );
 
   return {
     // State (from store + local UI state)
@@ -1767,6 +1953,7 @@ export function useTradeStateMachine({
     actions: {
       handleTickerClick,
       handleContractSelect,
+      handleLoadStrategy,
       handleActiveTradeClick,
       handleSendAlert,
       handleLoadAndAlert,

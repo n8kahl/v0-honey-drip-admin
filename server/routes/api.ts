@@ -38,13 +38,17 @@ const router = Router();
 const TOKEN_EXPIRY_MS = 5 * 60 * 1000;
 
 // Supabase client for database operations (with service role for write operations)
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// NOTE: Environment variables are read lazily inside the function to ensure dotenv has loaded
+// (ES module imports are hoisted before module code executes)
 let supabaseClient: ReturnType<typeof createClient> | null = null;
 
 function getSupabaseClient() {
-  if (!supabaseClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  if (!supabaseClient) {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (url && key) {
+      supabaseClient = createClient(url, key);
+    }
   }
   return supabaseClient;
 }
