@@ -35,7 +35,7 @@ export const RISK_PROFILES: Record<TradeType, RiskProfile> = {
     atrTF: "1m",
     atrLen: 14,
     vwap: "session",
-    useLevels: ["PremarketHL", "ORB", "VWAP", "VWAPBands", "PrevDayHL", "Boll20"],
+    useLevels: ["PremarketHL", "ORB", "VWAP", "VWAPBands", "PrevDayHL", "Boll20", "GammaWall"],
     levelWeights: {
       ORB: 1.0,
       VWAP: 1.0,
@@ -43,6 +43,7 @@ export const RISK_PROFILES: Record<TradeType, RiskProfile> = {
       PremarketHL: 0.8,
       PrevDayHL: 0.5,
       Boll20: 0.4,
+      GammaWall: 0.9, // Gamma wall critical for 0DTE volatility inflection
     },
     tpATRFrac: [0.25, 0.5],
     slATRFrac: 0.2,
@@ -55,7 +56,17 @@ export const RISK_PROFILES: Record<TradeType, RiskProfile> = {
     atrTF: "5m",
     atrLen: 14,
     vwap: "session",
-    useLevels: ["PremarketHL", "ORB", "VWAP", "VWAPBands", "PrevDayHL", "Boll20"],
+    useLevels: [
+      "PremarketHL",
+      "ORB",
+      "VWAP",
+      "VWAPBands",
+      "PrevDayHL",
+      "Boll20",
+      "MaxPain",
+      "CallWall",
+      "PutWall",
+    ],
     levelWeights: {
       ORB: 1.0,
       VWAP: 1.0,
@@ -63,6 +74,9 @@ export const RISK_PROFILES: Record<TradeType, RiskProfile> = {
       PremarketHL: 0.7,
       PrevDayHL: 0.6,
       Boll20: 0.5,
+      MaxPain: 0.8, // Expiration pin magnet - good target
+      CallWall: 0.7, // Resistance from call OI concentration
+      PutWall: 0.7, // Support from put OI concentration
     },
     tpATRFrac: [0.4, 0.8],
     slATRFrac: 0.25,
@@ -75,13 +89,15 @@ export const RISK_PROFILES: Record<TradeType, RiskProfile> = {
     atrTF: "1h",
     atrLen: 14,
     vwap: "anchored-session",
-    useLevels: ["PrevDayHL", "WeeklyHL", "MonthlyHL", "VWAP", "Boll20"],
+    useLevels: ["PrevDayHL", "WeeklyHL", "MonthlyHL", "VWAP", "Boll20", "CallWall", "PutWall"],
     levelWeights: {
       WeeklyHL: 1.0,
       PrevDayHL: 0.8,
       VWAP: 0.7,
       MonthlyHL: 0.7,
       Boll20: 0.6,
+      CallWall: 0.6, // Institutional positioning - useful for swing targets
+      PutWall: 0.6, // Institutional positioning - useful for swing stops
     },
     tpATRFrac: [0.8, 1.5],
     slATRFrac: 0.4,
@@ -93,13 +109,15 @@ export const RISK_PROFILES: Record<TradeType, RiskProfile> = {
     atrTF: "1d",
     atrLen: 14,
     vwap: "anchored-long",
-    useLevels: ["MonthlyHL", "QuarterlyHL", "YearlyHL", "VWAP", "Boll20"],
+    useLevels: ["MonthlyHL", "QuarterlyHL", "YearlyHL", "VWAP", "Boll20", "CallWall", "PutWall"],
     levelWeights: {
       MonthlyHL: 1.0,
       QuarterlyHL: 0.9,
       VWAP: 0.8,
       YearlyHL: 0.8,
       Boll20: 0.6,
+      CallWall: 0.5, // Longer-term institutional positioning reference
+      PutWall: 0.5, // Longer-term institutional positioning reference
     },
     tpATRFrac: [1.0, 2.0],
     slATRFrac: 0.5,

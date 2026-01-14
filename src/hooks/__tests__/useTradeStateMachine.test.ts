@@ -426,4 +426,96 @@ describe("useTradeStateMachine", () => {
     expect(result.current.currentTrade?.updates).toHaveLength(2);
     expect(result.current.currentTrade?.updates[1].type).toBe("add");
   });
+
+  describe("handleLoadStrategy", () => {
+    // Note: These tests require proper Zustand store mocking.
+    // The handleLoadStrategy function directly persists to DB and updates the store.
+    // Similar to the other .skip tests above, these need full store mocking to pass.
+
+    it("should expose handleLoadStrategy action", () => {
+      const { result } = renderHook(() => useTradeStateMachine());
+
+      // Verify the action exists
+      expect(result.current.actions.handleLoadStrategy).toBeDefined();
+      expect(typeof result.current.actions.handleLoadStrategy).toBe("function");
+    });
+
+    it.skip("should directly create LOADED trade from contract select (skipping WATCHING)", async () => {
+      // Requires: useTradeStore mock with loadTrades, setCurrentTradeId, setActiveTrades
+      // Expected behavior:
+      // 1. After handleLoadStrategy(contract): tradeState === "LOADED"
+      // 2. currentTrade.state === "LOADED"
+      // 3. activeTrades contains the new trade
+      const { result } = renderHook(() => useTradeStateMachine());
+
+      act(() => {
+        result.current.actions.handleTickerClick(mockTicker);
+      });
+
+      await act(async () => {
+        result.current.actions.handleLoadStrategy(mockContract, { tradeType: "day" });
+      });
+
+      expect(result.current.tradeState).toBe("LOADED");
+      expect(result.current.currentTrade?.state).toBe("LOADED");
+      expect(result.current.activeTrades).toHaveLength(1);
+    });
+
+    it.skip("should persist trade to database via createTradeApi", async () => {
+      // Requires: useTradeStore mock, createTradeApi mock verification
+      // Expected: createTradeApi called with { state: "LOADED", contract, ticker }
+      const { createTradeApi } = await import("../../lib/api/tradeApi");
+      const { result } = renderHook(() => useTradeStateMachine());
+
+      act(() => {
+        result.current.actions.handleTickerClick(mockTicker);
+      });
+
+      await act(async () => {
+        result.current.actions.handleLoadStrategy(mockContract);
+      });
+
+      expect(createTradeApi).toHaveBeenCalledWith(
+        "test-user-123",
+        expect.objectContaining({
+          ticker: "SPY",
+          state: "LOADED",
+          contract: mockContract,
+        })
+      );
+    });
+
+    it.skip("should calculate TP/SL using risk engine", async () => {
+      // Requires: Full store mock setup
+      // Expected: currentTrade has targetPrice and stopLoss defined
+      const { result } = renderHook(() => useTradeStateMachine());
+
+      act(() => {
+        result.current.actions.handleTickerClick(mockTicker);
+      });
+
+      await act(async () => {
+        result.current.actions.handleLoadStrategy(mockContract);
+      });
+
+      expect(result.current.currentTrade?.targetPrice).toBeDefined();
+      expect(result.current.currentTrade?.stopLoss).toBeDefined();
+    });
+
+    it.skip("should not show alert dialog after load strategy (silent load)", async () => {
+      // Requires: Full store mock setup
+      // Expected: showAlert === false (no alert composer shown)
+      const { result } = renderHook(() => useTradeStateMachine());
+
+      act(() => {
+        result.current.actions.handleTickerClick(mockTicker);
+      });
+
+      await act(async () => {
+        result.current.actions.handleLoadStrategy(mockContract);
+      });
+
+      expect(result.current.showAlert).toBe(false);
+    });
+  });
 });

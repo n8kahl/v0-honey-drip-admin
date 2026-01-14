@@ -223,6 +223,41 @@ export function HDContractMetricsPanelCompact({
           </>
         )}
 
+        {/* Options Flow Levels - Institutional positioning */}
+        {(keyLevels?.optionsFlow?.callWall ||
+          keyLevels?.optionsFlow?.putWall ||
+          keyLevels?.optionsFlow?.maxPain) && (
+          <div className="border-t border-[var(--border-hairline)]/50 pt-1.5 mt-1.5 space-y-1">
+            <div className="text-[8px] text-pink-400 uppercase tracking-wide font-medium">
+              Options Flow
+            </div>
+            {keyLevels?.optionsFlow?.callWall && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">Call Wall</span>
+                <span className="text-xs text-emerald-400">
+                  {formatPrice(keyLevels.optionsFlow.callWall)}
+                </span>
+              </div>
+            )}
+            {keyLevels?.optionsFlow?.putWall && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">Put Wall</span>
+                <span className="text-xs text-red-400">
+                  {formatPrice(keyLevels.optionsFlow.putWall)}
+                </span>
+              </div>
+            )}
+            {keyLevels?.optionsFlow?.maxPain && (
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-[var(--text-muted)]">Max Pain</span>
+                <span className="text-xs text-purple-400">
+                  {formatPrice(keyLevels.optionsFlow.maxPain)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* No key levels available - show nothing if data unavailable (stocks plan not available) */}
         {!keyLevels && (
           <div className="text-[10px] text-[var(--text-faint)] italic">Levels unavailable</div>

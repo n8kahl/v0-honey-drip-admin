@@ -80,6 +80,12 @@ function projectLevels(
     QuarterlyHL: direction === "long" ? keyLevels.quarterlyHigh : keyLevels.quarterlyLow,
     YearlyHL: direction === "long" ? keyLevels.yearlyHigh : keyLevels.yearlyLow,
     Boll20: direction === "long" ? keyLevels.bollingerUpper : keyLevels.bollingerLower,
+    // Options flow levels (institutional positioning)
+    // CallWall: resistance (TP for longs), PutWall: support (SL for longs)
+    CallWall: keyLevels.optionsFlow?.callWall ?? undefined,
+    PutWall: keyLevels.optionsFlow?.putWall ?? undefined,
+    MaxPain: keyLevels.optionsFlow?.maxPain ?? undefined,
+    GammaWall: keyLevels.optionsFlow?.gammaWall ?? undefined,
   };
 
   // Filter to profile's used levels

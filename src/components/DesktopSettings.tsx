@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
-import { HDInput } from "./hd/common/HDInput";
 import { HDButton } from "./hd/common/HDButton";
 import { HDCard } from "./hd/common/HDCard";
 import { Settings, Activity, Info, User } from "lucide-react";
 import { MobileWatermark } from "./MobileWatermark";
 import { useAuth } from "../contexts/AuthContext";
 import { createBrowserClient } from "@supabase/ssr";
-import { SmartStrategyLibrary } from "./admin/SmartStrategyLibrary";
+import { SetupOptimizationDashboard } from "./settings/SetupOptimizationDashboard";
 import { useTPSettings, saveTPSettings } from "../hooks/useTPSettings";
 
 interface DesktopSettingsProps {
@@ -805,9 +804,9 @@ export function DesktopSettings({ onOpenDiscordSettings, onClose }: DesktopSetti
             </HDButton>
           </div>
 
-          {/* Strategy Library */}
+          {/* Setup Detection & Optimization Dashboard */}
           <section>
-            <SmartStrategyLibrary />
+            <SetupOptimizationDashboard />
           </section>
         </div>
       </div>

@@ -48,7 +48,6 @@ export function CompactChain({
   const [expandedOTM, setExpandedOTM] = useState<Record<string, boolean>>({});
   const [expandedITM, setExpandedITM] = useState<Record<string, boolean>>({});
   const selectedRowRef = useRef<HTMLButtonElement>(null);
-  const hasAutoSelected = useRef(false);
 
   // Auto-switch to calls/puts based on recommendation direction
   useEffect(() => {
@@ -135,18 +134,10 @@ export function CompactChain({
     setExpandedExpiry((prev) => (prev === expiry ? null : expiry));
   }, []);
 
-  // Auto-select recommended contract on mount or when recommendation changes
-  useEffect(() => {
-    if (recommendation?.bestContract && !selectedContractId && !hasAutoSelected.current) {
-      hasAutoSelected.current = true;
-      onContractSelect?.(recommendation.bestContract);
-    }
-  }, [recommendation?.bestContract?.id, selectedContractId, onContractSelect]);
-
-  // Reset auto-select flag when ticker changes
-  useEffect(() => {
-    hasAutoSelected.current = false;
-  }, [ticker]);
+  // NOTE: Removed auto-select useEffect that was triggering onContractSelect on mount.
+  // This was causing a bug where clicking a symbol would immediately show CONTRACT PREVIEW
+  // instead of the options chain. Users must now explicitly click a contract to select it.
+  // The recommended contract is still HIGHLIGHTED in the chain, just not auto-selected.
 
   // Scroll selected into view
   useEffect(() => {
