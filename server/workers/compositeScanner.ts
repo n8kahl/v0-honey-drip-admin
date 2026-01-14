@@ -43,6 +43,12 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { ParameterConfig } from "../../src/types/optimizedParameters.js";
 import { fetchBarsForRange } from "./lib/barProvider.js";
+import {
+  fetchEdgeStats,
+  getStatsKey,
+  applyEdgeToScore,
+  type EdgeMetadata,
+} from "./lib/edgeStatsCache.js";
 
 // Configuration
 const SCAN_INTERVAL = 60000; // 1 minute
@@ -755,6 +761,14 @@ async function scanUserWatchlist(userId: string): Promise<number> {
     );
     console.log(`[DEBUG] Watchlist raw data:`, watchlist.slice(0, 3)); // Show first 3 for debugging
 
+    // Phase 7: Fetch edge stats for this user (cached for 10 minutes)
+    const edgeStatsMap = await fetchEdgeStats(userId, supabase);
+    if (edgeStatsMap.size > 0) {
+      console.log(
+        `[Composite Scanner] Loaded ${edgeStatsMap.size} edge stat entries for user ${userId.slice(0, 8)}`
+      );
+    }
+
     // Create scanner instance for this user with optimized configuration
     // Phase 6: Include optimized parameters if available
     const scanner = new CompositeScanner({
@@ -838,20 +852,57 @@ async function scanUserWatchlist(userId: string): Promise<number> {
         }
 
         if (result.signal) {
+          // Phase 7: Apply edge stats to signal
+          const statsKey = getStatsKey(
+            result.signal.opportunityType,
+            result.signal.recommendedStyle
+          );
+          const edgeStats = edgeStatsMap.get(statsKey) || null;
+          const edgeMetadata = applyEdgeToScore(result.signal.baseScore, edgeStats);
+
+          // Update signal with edge-adjusted score and metadata
+          const signalWithEdge = {
+            ...result.signal,
+            // Store edge metadata in features for transparency
+            features: {
+              ...result.signal.features,
+              edge: edgeMetadata,
+            },
+          };
+
+          // Log edge application
+          if (edgeStats) {
+            console.log(
+              `[Composite Scanner] Edge applied to ${symbol} ${result.signal.opportunityType}: ` +
+                `WR=${edgeMetadata.winRate.toFixed(0)}% PF=${edgeMetadata.profitFactor.toFixed(2)} ` +
+                `x${edgeMetadata.edgeMultiplier.toFixed(2)} → adjusted=${edgeMetadata.adjustedScore.toFixed(0)} ` +
+                `(${edgeMetadata.confidence} confidence, ${edgeMetadata.sampleSize} samples)`
+            );
+          }
+
           // Insert signal to database
           try {
             console.log(
               `[Composite Scanner] Attempting to insert signal: ${symbol} ${result.signal.opportunityType}`
             );
 
-            const inserted = await insertCompositeSignal(result.signal, supabase);
+            const inserted = await insertCompositeSignal(signalWithEdge, supabase);
 
             console.log(
-              `[Composite Scanner] 🎯 NEW SIGNAL SAVED: ${symbol} ${result.signal.opportunityType} (${result.signal.baseScore.toFixed(0)}/100) ID: ${inserted.id}`
+              `[Composite Scanner] 🎯 NEW SIGNAL SAVED: ${symbol} ${result.signal.opportunityType} ` +
+                `(base=${result.signal.baseScore.toFixed(0)}/100, edge=${edgeMetadata.adjustedScore.toFixed(0)}/100) ID: ${inserted.id}`
             );
 
-            // Send Discord alert
-            await sendDiscordAlerts(userId, inserted);
+            // Phase 7: Check if signal is low-edge before sending alert
+            if (edgeMetadata.isLowEdge) {
+              console.log(
+                `[Composite Scanner] ⚠️ LOW EDGE - Alert suppressed: ${edgeMetadata.filterReason}`
+              );
+              // Signal is saved but alert is not sent
+            } else {
+              // Send Discord alert (only for signals with acceptable edge)
+              await sendDiscordAlerts(userId, inserted);
+            }
 
             // Update stats
             stats.totalSignals++;
