@@ -11,11 +11,16 @@
  * Integrates with useTradeActionManager to pass actions to child panels.
  */
 
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useState, useEffect } from "react";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
-import type { FocusTarget } from "../../hooks/useTradeStateMachine";
 import type { Ticker, Contract, Trade, TradeState, DiscordChannel, Challenge } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
+import {
+  type FocusTarget,
+  type ViewState,
+  deriveViewState,
+  deriveAlertMode,
+} from "../../domain/viewRouter";
 import { NowPanelEmpty } from "./NowPanelEmpty";
 import { NowPanelSymbol, type TradeType } from "./NowPanelSymbol";
 import { NowPanelTrade } from "./NowPanelTrade";
@@ -23,14 +28,16 @@ import { NowPanelManage } from "./NowPanelManage";
 import { useTradeActionManager } from "../../hooks/useTradeActionManager";
 import { HDAlertComposerPopover, type AlertMode } from "../hd/alerts/HDAlertComposerPopover";
 import { useDiscord } from "../../hooks/useDiscord";
+import { useUIStore } from "../../stores/uiStore";
 import { cn } from "../../lib/utils";
+import { Bell, Clock, AlertTriangle } from "lucide-react";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-/** View state derived from trade lifecycle */
-export type ViewState = "empty" | "symbol" | "loaded" | "entered" | "exited";
+// ViewState is imported from viewRouter - re-export for consumers
+export type { ViewState };
 
 /** Panel mode for distinguishing Setup vs Manage mode */
 export type PanelMode = "setup" | "manage";
@@ -43,6 +50,8 @@ export interface NowPanelProps {
   contracts: Contract[];
   activeTrades: Trade[];
   onContractSelect: (contract: Contract, options?: { tradeType?: TradeType }) => void;
+  /** Callback to load strategy (persists LOADED trade to database) */
+  onLoadStrategy?: (contract: Contract, options?: { tradeType?: TradeType }) => void;
   compositeSignals?: CompositeSignal[];
   // For symbol view - watchlist reference
   watchlist?: Ticker[];
@@ -92,58 +101,7 @@ const viewAnimationVariants: Variants = {
 // Helper Functions
 // ============================================================================
 
-/**
- * Derive the view state from focus and trade state
- */
-function deriveViewState(
-  focus: FocusTarget,
-  currentTrade: Trade | null,
-  activeTrades: Trade[],
-  tradeState: TradeState
-): ViewState {
-  // No focus → empty
-  if (!focus) {
-    return "empty";
-  }
-
-  // Symbol focus → symbol view
-  if (focus.kind === "symbol") {
-    return "symbol";
-  }
-
-  // Trade focus → determine based on trade state
-  if (focus.kind === "trade") {
-    // Find the trade from activeTrades or currentTrade
-    const trade =
-      currentTrade?.id === focus.tradeId
-        ? currentTrade
-        : activeTrades.find((t) => t.id === focus.tradeId);
-
-    if (!trade) {
-      return "empty";
-    }
-
-    // Use trade.state as the source of truth
-    const effectiveState = trade.state;
-
-    switch (effectiveState) {
-      case "WATCHING":
-        // WATCHING = preview state (Load Strategy clicked)
-        // Show NowPanelTrade in 'setup' mode
-        return "loaded";
-      case "LOADED":
-        return "loaded";
-      case "ENTERED":
-        return "entered";
-      case "EXITED":
-        return "exited";
-      default:
-        return "symbol";
-    }
-  }
-
-  return "empty";
-}
+// deriveViewState and deriveAlertMode are now imported from viewRouter
 
 // ============================================================================
 // Main Component
@@ -157,6 +115,7 @@ export function NowPanel({
   contracts,
   activeTrades,
   onContractSelect,
+  onLoadStrategy,
   compositeSignals,
   watchlist = [],
   isTransitioning = false,
@@ -219,15 +178,43 @@ export function NowPanel({
             activeTicker={activeTicker}
             contracts={contracts}
             onContractSelect={onContractSelect}
+            onLoadStrategy={onLoadStrategy}
             compositeSignals={compositeSignals}
             watchlist={watchlist}
             disableAutoSelect={disableAutoSelect}
           />
         );
 
+      case "plan":
+        // WATCHING state - trade preview (not yet persisted)
+        if (!focusedTrade) {
+          return <NowPanelEmpty message="No trade selected" />;
+        }
+
+        return (
+          <NowPanelTrade
+            trade={focusedTrade}
+            tradeState={focusedTrade.state}
+            activeTicker={activeTicker}
+            watchlist={watchlist}
+            channels={channels}
+            challenges={challenges}
+            selectedChannels={manager.alertConfig.channelIds}
+            selectedChallenges={manager.alertConfig.challengeIds}
+            onChannelsChange={(channelIds) => manager.actions.updateAlertSettings({ channelIds })}
+            onChallengesChange={(challengeIds) =>
+              manager.actions.updateAlertSettings({ challengeIds })
+            }
+            onEnterAndAlert={async (channelIds, challengeIds) => {
+              // For WATCHING state, this will "Load and Alert" first
+              manager.actions.updateAlertSettings({ channelIds, challengeIds, sendAlert: true });
+              await manager.actions.enterTrade();
+            }}
+          />
+        );
+
       case "loaded":
-        // LOADED or WATCHING state - show trade preparation view
-        // If we have an activeTicker but no trade selected, show symbol view
+        // LOADED state - trade persisted, ready to enter
         if (!focusedTrade && activeTicker) {
           return (
             <NowPanelSymbol
@@ -235,6 +222,7 @@ export function NowPanel({
               activeTicker={activeTicker}
               contracts={contracts}
               onContractSelect={onContractSelect}
+              onLoadStrategy={onLoadStrategy}
               compositeSignals={compositeSignals}
               watchlist={watchlist}
               disableAutoSelect={disableAutoSelect}
@@ -242,7 +230,7 @@ export function NowPanel({
           );
         }
 
-        // Trade is LOADED - show decision card
+        // Trade is LOADED - show decision card with "Enter" option
         if (focusedTrade) {
           return (
             <NowPanelTrade
@@ -333,13 +321,11 @@ export function NowPanel({
   // Alert Popover Logic
   // ============================================================================
 
-  // Determine alert mode based on view/trade state
-  const alertMode: AlertMode = useMemo(() => {
-    if (viewState === "entered") return "update";
-    if (viewState === "loaded" && focusedTrade?.state === "LOADED") return "entry";
-    if (viewState === "exited") return "exit";
-    return "load";
-  }, [viewState, focusedTrade?.state]);
+  // Determine alert mode using centralized viewRouter
+  const alertMode: AlertMode = useMemo(
+    () => deriveAlertMode(viewState, focusedTrade),
+    [viewState, focusedTrade]
+  );
 
   // Discord hook for sending alerts
   const { sendUpdateAlert } = useDiscord();
@@ -364,6 +350,8 @@ export function NowPanel({
     switch (viewState) {
       case "symbol":
         return focus?.kind === "symbol" ? focus.symbol : activeTicker?.symbol || "Symbol";
+      case "plan":
+        return focusedTrade?.ticker || "Trade Preview";
       case "loaded":
         return focusedTrade?.ticker || "Trade Setup";
       case "entered":
@@ -375,6 +363,43 @@ export function NowPanel({
     }
   }, [viewState, focus, activeTicker, focusedTrade]);
 
+  // Track last update time for stale detection
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date>(new Date());
+  const [isStale, setIsStale] = useState(false);
+
+  // Update timestamp when key data changes
+  useEffect(() => {
+    setLastUpdateTime(new Date());
+    setIsStale(false);
+  }, [focusedTrade, activeTicker?.last, currentTrade]);
+
+  // Check for stale data every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const age = Date.now() - lastUpdateTime.getTime();
+      setIsStale(age > 30000); // Stale after 30s
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [lastUpdateTime]);
+
+  // Get next action CTA text based on view state
+  const nextActionText = useMemo(() => {
+    switch (viewState) {
+      case "symbol":
+        return "Select contract to load";
+      case "plan":
+        return "Load & Alert →";
+      case "loaded":
+        return "Execute →";
+      case "entered":
+        return "Manage position";
+      case "exited":
+        return "Review complete";
+      default:
+        return "";
+    }
+  }, [viewState]);
+
   // ============================================================================
   // Loading Overlay (during transitions)
   // ============================================================================
@@ -383,36 +408,73 @@ export function NowPanel({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
-      {/* Context-Aware Header Strip */}
+      {/* Context-Aware Sticky Header Strip */}
       {viewState !== "empty" && (
-        <div className="flex-shrink-0 h-10 px-3 flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--surface-1)]">
-          {/* Left: View Title */}
-          <div className="flex items-center gap-2">
+        <div
+          className="flex-shrink-0 sticky top-0 z-20 px-3 py-2 flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--surface-1)]/95 backdrop-blur-sm"
+          data-testid="now-panel-sticky-header"
+        >
+          {/* Left: View Title + State Badge */}
+          <div className="flex items-center gap-3">
             <span
               className={cn(
-                "text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded",
+                "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded",
                 viewState === "entered"
                   ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
                   : viewState === "loaded"
                     ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
-                    : viewState === "exited"
-                      ? "bg-[var(--text-muted)]/20 text-[var(--text-muted)]"
-                      : "bg-[var(--surface-2)] text-[var(--text-muted)]"
+                    : viewState === "plan"
+                      ? "bg-[var(--accent-warning)]/20 text-[var(--accent-warning)]"
+                      : viewState === "exited"
+                        ? "bg-[var(--text-muted)]/20 text-[var(--text-muted)]"
+                        : "bg-[var(--surface-2)] text-[var(--text-muted)]"
               )}
+              data-testid="state-badge"
             >
-              {viewState === "symbol" ? "Watch" : viewState}
+              {viewState === "symbol" ? "WATCH" : viewState === "plan" ? "PLAN" : viewState === "entered" ? "MANAGE" : viewState === "exited" ? "REVIEW" : viewState.toUpperCase()}
             </span>
-            <span className="text-sm font-medium text-[var(--text-high)]">{headerTitle}</span>
+            <span className="text-base font-semibold text-[var(--text-high)]">{headerTitle}</span>
+
+            {/* Last Update Time + Stale Badge */}
+            <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
+              <Clock className="w-3 h-3" />
+              <span>{lastUpdateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              {isStale && (
+                <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                  <AlertTriangle className="w-3 h-3" />
+                  Stale
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Right: Alert Popover Button */}
-          {channels.length > 0 && (
+          {/* Center: Next Action CTA */}
+          {nextActionText && (
+            <div
+              className="hidden md:block text-xs font-medium text-[var(--text-muted)] px-3 py-1 bg-[var(--surface-2)] rounded-full"
+              data-testid="next-action-cta"
+            >
+              {nextActionText}
+            </div>
+          )}
+
+          {/* Right: Alert Popover Button or Configure CTA */}
+          {channels.length > 0 ? (
             <HDAlertComposerPopover
               trade={focusedTrade || undefined}
               mode={alertMode}
               channels={channels}
               onSend={handleAlertSend}
             />
+          ) : (
+            <button
+              onClick={() => useUIStore.getState().openDiscordSettings()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/20 transition-colors"
+              data-testid="configure-alerts-btn"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              Configure Alerts
+            </button>
           )}
         </div>
       )}

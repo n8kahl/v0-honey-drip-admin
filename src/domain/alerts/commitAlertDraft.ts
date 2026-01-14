@@ -287,6 +287,11 @@ export function validateAlertDraft(draft: AlertDraft): string[] {
     errors.push("Entry price is required for ENTER action");
   }
 
+  // CRITICAL: Entry price must be > 0 to prevent $0.00 alerts
+  if (draft.intent === "ENTER" && draft.editablePrices.entry !== undefined && draft.editablePrices.entry <= 0) {
+    errors.push("Entry price must be greater than $0.00");
+  }
+
   if (draft.intent === "UPDATE_SL" && !draft.editablePrices.stop) {
     errors.push("Stop loss price is required for UPDATE_SL action");
   }
@@ -295,10 +300,124 @@ export function validateAlertDraft(draft: AlertDraft): string[] {
     errors.push("Exit price is required for EXIT action");
   }
 
+  // CRITICAL: Exit price must be > 0 to prevent $0.00 alerts
+  if (draft.intent === "EXIT" && draft.editablePrices.current !== undefined && draft.editablePrices.current <= 0) {
+    errors.push("Exit price must be greater than $0.00");
+  }
+
   // Validate channels if sendAlert is enabled
   if (draft.sendAlert && draft.channels.length === 0) {
     errors.push("At least one Discord channel required when sending alerts");
   }
 
   return errors;
+}
+
+// ============================================================================
+// Unified Alert Send Function
+// ============================================================================
+
+/**
+ * Validation result for sendTradeAlertFromDraft
+ */
+export interface AlertValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/**
+ * Result of sending an alert from a draft
+ */
+export interface SendAlertResult {
+  success: boolean;
+  trade?: Trade;
+  error?: string;
+  validationErrors?: string[];
+}
+
+/**
+ * Validate an alert draft for sending
+ *
+ * Performs comprehensive validation including:
+ * - Required fields for intent
+ * - Price > 0 validation for ENTER/EXIT (prevents $0.00 alerts)
+ * - Channel requirements when sendAlert is enabled
+ *
+ * @param draft - The alert draft to validate
+ * @returns Validation result with errors array
+ */
+export function validateAlertDraftForSend(draft: AlertDraft): AlertValidationResult {
+  const errors: string[] = [];
+
+  // Basic draft validation
+  const basicErrors = validateAlertDraft(draft);
+  errors.push(...basicErrors);
+
+  // Additional validation using zod schema
+  const contextValidation = validateAlertDraftWithContext(draft);
+  if (!contextValidation.success) {
+    // Add any errors not already captured
+    for (const err of contextValidation.errors) {
+      if (!errors.includes(err)) {
+        errors.push(err);
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
+ * Send a trade alert from a draft - UNIFIED PIPELINE
+ *
+ * This is the single function that both desktop and mobile should use
+ * to send trade alerts. It ensures:
+ * 1. Consistent validation (price > 0 for entry/exit)
+ * 2. Consistent DB persistence via commitAlertDraft
+ * 3. Consistent Discord alert sending
+ * 4. Proper error handling with user-friendly messages
+ *
+ * @param draft - The completed AlertDraft
+ * @param userId - Authenticated user ID
+ * @param discord - Discord service instance (optional, for sending alerts)
+ * @returns SendAlertResult with success status and any errors
+ *
+ * @example
+ * ```typescript
+ * const draft = createAlertDraft({ intent: 'ENTER', trade, currentPrice: 5.50 });
+ * const result = await sendTradeAlertFromDraft(draft, userId, discord);
+ * if (!result.success) {
+ *   console.error(result.validationErrors || result.error);
+ * }
+ * ```
+ */
+export async function sendTradeAlertFromDraft(
+  draft: AlertDraft,
+  userId: string,
+  discord?: DiscordAlertService
+): Promise<SendAlertResult> {
+  // Step 1: Validate draft
+  const validation = validateAlertDraftForSend(draft);
+
+  if (!validation.valid) {
+    console.warn("[sendTradeAlertFromDraft] Validation failed:", validation.errors);
+    return {
+      success: false,
+      validationErrors: validation.errors,
+      error: `Validation failed: ${validation.errors[0]}`,
+    };
+  }
+
+  // Step 2: Commit the alert (DB + Discord)
+  const result = await commitAlertDraft(draft, userId, discord);
+
+  // Step 3: Return unified result
+  return {
+    success: result.success,
+    trade: result.trade,
+    error: result.error,
+  };
 }

@@ -54,6 +54,7 @@ import {
 import { FlowDashboard } from "../hd/flow";
 import { HDSignalContext } from "../hd/signals/HDSignalContext";
 import { HDDynamicProfitTargets } from "../hd/dashboard/HDDynamicProfitTargets";
+import { AlertAuditLog } from "../hd/alerts/AlertAuditLog";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCompositeSignals } from "../../hooks/useCompositeSignals";
 
@@ -1160,34 +1161,71 @@ function MTFLadder({ mtfTrend, symbolData, indicators }: MTFLadderProps) {
 }
 
 // ============================================================================
-// Trade Tape Section
+// Trade Tape Section - Using AlertAuditLog for Enhanced Display
 // ============================================================================
 
 function TradeTapeSection({ trade }: { trade: Trade }) {
+  const [viewMode, setViewMode] = useState<"audit" | "tape">("audit");
   const updates = trade.updates || [];
 
   return (
     <div className="flex-shrink-0 border-t border-[var(--border-hairline)]">
+      {/* Header with View Toggle */}
       <div className="p-3 flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--surface-2)]">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="w-3.5 h-3.5 text-[var(--text-muted)]" />
           <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
-            Trade Tape
+            Alert Audit Log
           </span>
         </div>
-        <span className="text-[10px] text-[var(--text-faint)]">{updates.length} events</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-[var(--text-faint)]">{updates.length} events</span>
+          {/* View Toggle */}
+          <div className="flex rounded overflow-hidden border border-[var(--border-hairline)]">
+            <button
+              onClick={() => setViewMode("audit")}
+              className={cn(
+                "px-2 py-0.5 text-[9px] font-medium transition-colors",
+                viewMode === "audit"
+                  ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
+                  : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]"
+              )}
+            >
+              Audit
+            </button>
+            <button
+              onClick={() => setViewMode("tape")}
+              className={cn(
+                "px-2 py-0.5 text-[9px] font-medium transition-colors",
+                viewMode === "tape"
+                  ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
+                  : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]"
+              )}
+            >
+              Tape
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="max-h-32 overflow-y-auto p-3 space-y-2">
-        {updates.length === 0 ? (
-          <div className="text-xs text-[var(--text-faint)] text-center py-4">
-            No trade events yet
-          </div>
+      {/* Content */}
+      <div className="max-h-48 overflow-y-auto">
+        {viewMode === "audit" ? (
+          <AlertAuditLog trade={trade} maxEntries={10} showTimestamps compact={false} className="p-2" />
         ) : (
-          updates.map((update, idx) => <TapeEvent key={update.id || idx} update={update} />)
+          <div className="p-3 space-y-2">
+            {updates.length === 0 ? (
+              <div className="text-xs text-[var(--text-faint)] text-center py-4">
+                No trade events yet
+              </div>
+            ) : (
+              updates.map((update, idx) => <TapeEvent key={update.id || idx} update={update} />)
+            )}
+          </div>
         )}
 
-        <div className="flex items-center gap-2 p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+        {/* Live indicator */}
+        <div className="flex items-center gap-2 p-3 bg-[var(--surface-2)] border-t border-[var(--border-hairline)]">
           <div className="w-2 h-2 rounded-full bg-[var(--accent-negative)] animate-pulse" />
           <span className="text-xs text-[var(--text-muted)]">NOW · Holding position</span>
         </div>

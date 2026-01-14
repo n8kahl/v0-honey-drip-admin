@@ -171,9 +171,15 @@ export function validateAlertDraftWithContext(draft: unknown): {
   const schemaValidation = validateAlertDraft(draft);
 
   if (!schemaValidation.success) {
-    const errors = schemaValidation.error.errors.map(
+    // Safely extract errors from Zod validation
+    const zodErrors = schemaValidation.error?.errors ?? [];
+    const errors = zodErrors.map(
       (err) => `${err.path.join(".")}: ${err.message}`
     );
+    // If no specific errors, provide a generic message
+    if (errors.length === 0) {
+      errors.push("Invalid alert draft format");
+    }
     return { success: false, errors };
   }
 
