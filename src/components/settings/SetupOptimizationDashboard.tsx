@@ -1,33 +1,49 @@
 /**
- * SetupOptimizationDashboard - Optimizer Status and Detection Dashboard
+ * SetupOptimizationDashboard - Setup Edge Dashboard
  *
- * Displays optimization status, current parameters, and detector rankings
- * from the backend optimizer API.
+ * Displays live win rates, profit factors, and sample sizes per setup type.
+ * Shows "What Works Now" recommendations based on historical performance.
  *
  * Sections:
- * - A) Last Optimization (timestamp, win rate, PF, symbols tested)
- * - B) Current Parameters (targetMultiple, stopMultiple, maxHoldBars, boosts)
- * - C) Top Day Trader Detectors (table with win rate, PF, trades)
- * - D) What's Enabled (list, explain "Day Trader First" gating)
+ * - A) Overview Stats (total signals, exited, win rate summary)
+ * - B) Top Performing Setups ("What Works Now")
+ * - C) All Setup Performance (full table/cards)
+ * - D) Optimizer Parameters (from file-based optimizer, if available)
  */
 
+import { useState } from "react";
 import {
   RefreshCw,
-  Zap,
   TrendingUp,
-  Shield,
-  Clock,
-  CheckCircle2,
+  Trophy,
+  BarChart3,
   AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  Settings2,
 } from "lucide-react";
 import { HDCard } from "../hd/common/HDCard";
 import { HDButton } from "../hd/common/HDButton";
 import {
-  useOptimizerStatus,
-  getTopDetectors,
+  useEdgeStats,
+  formatOpportunityType,
+  formatStyle,
   formatWinRate,
   formatProfitFactor,
+  formatRMultiple,
   formatLastUpdated,
+  getConfidenceColor,
+  getConfidenceBadge,
+  isProfitable,
+  isUnderperforming,
+  type EdgeStat,
+  type TopSetup,
+} from "../../hooks/useEdgeStats";
+import {
+  useOptimizerStatus,
+  formatWinRate as formatOptimizerWinRate,
+  formatProfitFactor as formatOptimizerPF,
 } from "../../hooks/useOptimizerStatus";
 
 // ============================================================================
@@ -64,12 +80,299 @@ function StatBox({ label, value, subtext, positive, negative }: StatBoxProps) {
   );
 }
 
+interface ConfidenceBadgeProps {
+  confidence: "low" | "medium" | "high";
+}
+
+function ConfidenceBadge({ confidence }: ConfidenceBadgeProps) {
+  const colors: Record<string, string> = {
+    high: "bg-[var(--accent-positive)]/10 text-[var(--accent-positive)] border-[var(--accent-positive)]/30",
+    medium: "bg-amber-500/10 text-amber-400 border-amber-400/30",
+    low: "bg-[var(--surface-1)] text-[var(--text-muted)] border-[var(--border-hairline)]",
+  };
+
+  return (
+    <span className={`px-2 py-0.5 text-[10px] font-medium rounded border ${colors[confidence]}`}>
+      {getConfidenceBadge(confidence)}
+    </span>
+  );
+}
+
+interface TopSetupCardProps {
+  setup: TopSetup;
+  rank: number;
+}
+
+function TopSetupCard({ setup, rank }: TopSetupCardProps) {
+  const isTop = rank === 1;
+
+  return (
+    <div
+      className={`p-4 rounded-[var(--radius)] border ${
+        isTop
+          ? "bg-[var(--brand-primary)]/5 border-[var(--brand-primary)]/30"
+          : "bg-[var(--surface-1)] border-[var(--border-hairline)]"
+      }`}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {isTop && <Trophy className="w-4 h-4 text-amber-500" />}
+          <span
+            className={`text-xs font-bold ${isTop ? "text-amber-500" : "text-[var(--text-muted)]"}`}
+          >
+            #{rank}
+          </span>
+        </div>
+        <ConfidenceBadge confidence={setup.confidence} />
+      </div>
+
+      <div className="mb-2">
+        <div className="text-sm font-semibold text-[var(--text-high)] leading-tight">
+          {formatOpportunityType(setup.opportunityType)}
+        </div>
+        <div className="text-xs text-[var(--text-muted)]">
+          {formatStyle(setup.recommendedStyle)}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div>
+          <div
+            className={`text-sm font-bold ${
+              setup.winRate >= 50
+                ? "text-[var(--accent-positive)]"
+                : setup.winRate >= 40
+                  ? "text-amber-400"
+                  : "text-[var(--accent-negative)]"
+            }`}
+          >
+            {formatWinRate(setup.winRate)}
+          </div>
+          <div className="text-[10px] text-[var(--text-muted)]">Win Rate</div>
+        </div>
+        <div>
+          <div className="text-sm font-bold text-[var(--text-high)]">
+            {formatProfitFactor(setup.profitFactor)}
+          </div>
+          <div className="text-[10px] text-[var(--text-muted)]">PF</div>
+        </div>
+        <div>
+          <div className="text-sm font-bold text-[var(--text-high)]">{setup.totalExited}</div>
+          <div className="text-[10px] text-[var(--text-muted)]">Trades</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface SetupRowProps {
+  stat: EdgeStat;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+function SetupRow({ stat, isExpanded, onToggle }: SetupRowProps) {
+  const profitable = isProfitable(stat);
+  const underperforming = isUnderperforming(stat);
+
+  return (
+    <>
+      {/* Desktop Row */}
+      <tr
+        className={`border-b border-[var(--border-hairline)] cursor-pointer hover:bg-[var(--surface-1)]/50 hidden md:table-row ${
+          profitable
+            ? "bg-[var(--accent-positive)]/5"
+            : underperforming
+              ? "bg-[var(--accent-negative)]/5"
+              : ""
+        }`}
+        onClick={onToggle}
+      >
+        <td className="py-2 px-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[var(--text-high)] font-medium truncate max-w-[180px]">
+              {formatOpportunityType(stat.opportunityType)}
+            </span>
+          </div>
+          <div className="text-[10px] text-[var(--text-muted)]">
+            {formatStyle(stat.recommendedStyle)}
+          </div>
+        </td>
+        <td
+          className={`text-right py-2 px-2 font-mono ${
+            stat.winRate >= 50
+              ? "text-[var(--accent-positive)]"
+              : stat.winRate >= 40
+                ? "text-amber-400"
+                : "text-[var(--accent-negative)]"
+          }`}
+        >
+          {formatWinRate(stat.winRate)}
+        </td>
+        <td className="text-right py-2 px-2 font-mono text-[var(--text-high)]">
+          {formatProfitFactor(stat.profitFactor)}
+        </td>
+        <td className="text-right py-2 px-2 text-[var(--text-muted)]">{stat.totalExited}</td>
+        <td className="text-center py-2 px-2">
+          <ConfidenceBadge confidence={stat.confidence} />
+        </td>
+        <td className="text-right py-2 px-2">
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+          )}
+        </td>
+      </tr>
+
+      {/* Expanded Details Row (Desktop) */}
+      {isExpanded && (
+        <tr className="border-b border-[var(--border-hairline)] bg-[var(--surface-1)] hidden md:table-row">
+          <td colSpan={6} className="py-3 px-4">
+            <div className="grid grid-cols-4 gap-4 text-sm">
+              <div>
+                <span className="text-[var(--text-muted)]">W/L: </span>
+                <span className="text-[var(--text-high)] font-mono">
+                  {stat.totalWins}/{stat.totalLosses}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--text-muted)]">Avg R: </span>
+                <span
+                  className={`font-mono ${stat.avgRMultiple >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"}`}
+                >
+                  {formatRMultiple(stat.avgRMultiple)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--text-muted)]">Avg RR: </span>
+                <span className="text-[var(--text-high)] font-mono">
+                  {stat.avgRiskReward.toFixed(2)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--text-muted)]">Updated: </span>
+                <span className="text-[var(--text-high)]">
+                  {formatLastUpdated(stat.lastUpdated)}
+                </span>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+
+      {/* Mobile Card */}
+      <tr className="md:hidden">
+        <td colSpan={6} className="p-0">
+          <div
+            className={`p-3 border-b border-[var(--border-hairline)] ${
+              profitable
+                ? "bg-[var(--accent-positive)]/5"
+                : underperforming
+                  ? "bg-[var(--accent-negative)]/5"
+                  : ""
+            }`}
+            onClick={onToggle}
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <div className="text-sm font-semibold text-[var(--text-high)]">
+                  {formatOpportunityType(stat.opportunityType)}
+                </div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  {formatStyle(stat.recommendedStyle)}
+                </div>
+              </div>
+              <ConfidenceBadge confidence={stat.confidence} />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div
+                  className={`text-sm font-bold ${
+                    stat.winRate >= 50
+                      ? "text-[var(--accent-positive)]"
+                      : stat.winRate >= 40
+                        ? "text-amber-400"
+                        : "text-[var(--accent-negative)]"
+                  }`}
+                >
+                  {formatWinRate(stat.winRate)}
+                </div>
+                <div className="text-[10px] text-[var(--text-muted)]">Win Rate</div>
+              </div>
+              <div>
+                <div className="text-sm font-bold text-[var(--text-high)]">
+                  {formatProfitFactor(stat.profitFactor)}
+                </div>
+                <div className="text-[10px] text-[var(--text-muted)]">PF</div>
+              </div>
+              <div>
+                <div className="text-sm font-bold text-[var(--text-high)]">{stat.totalExited}</div>
+                <div className="text-[10px] text-[var(--text-muted)]">Trades</div>
+              </div>
+            </div>
+
+            {isExpanded && (
+              <div className="mt-3 pt-3 border-t border-[var(--border-hairline)] grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-[var(--text-muted)]">W/L: </span>
+                  <span className="text-[var(--text-high)] font-mono">
+                    {stat.totalWins}/{stat.totalLosses}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--text-muted)]">Avg R: </span>
+                  <span
+                    className={`font-mono ${stat.avgRMultiple >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"}`}
+                  >
+                    {formatRMultiple(stat.avgRMultiple)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--text-muted)]">Avg RR: </span>
+                  <span className="text-[var(--text-high)] font-mono">
+                    {stat.avgRiskReward.toFixed(2)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--text-muted)]">Updated: </span>
+                  <span className="text-[var(--text-high)]">
+                    {formatLastUpdated(stat.lastUpdated)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </td>
+      </tr>
+    </>
+  );
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
 
 export function SetupOptimizationDashboard() {
-  const { data, isLoading, error, refetch } = useOptimizerStatus();
+  const [windowDays, setWindowDays] = useState(30);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [showOptimizer, setShowOptimizer] = useState(false);
+
+  const { summary, topSetups, isLoading, error, refetch } = useEdgeStats(windowDays);
+  const { data: optimizerData, isLoading: optimizerLoading } = useOptimizerStatus();
+
+  const toggleRow = (key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
 
   // Loading state
   if (isLoading) {
@@ -77,7 +380,7 @@ export function SetupOptimizationDashboard() {
       <HDCard>
         <div className="flex items-center justify-center py-12">
           <RefreshCw className="w-6 h-6 animate-spin text-[var(--brand-primary)]" />
-          <span className="ml-2 text-[var(--text-muted)]">Loading optimizer status...</span>
+          <span className="ml-2 text-[var(--text-muted)]">Loading edge stats...</span>
         </div>
       </HDCard>
     );
@@ -89,7 +392,7 @@ export function SetupOptimizationDashboard() {
       <HDCard>
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <AlertTriangle className="w-8 h-8 text-[var(--accent-negative)] mb-2" />
-          <p className="text-[var(--text-high)] font-medium">Failed to load optimizer status</p>
+          <p className="text-[var(--text-high)] font-medium">Failed to load edge stats</p>
           <p className="text-[var(--text-muted)] text-sm mt-1">{error}</p>
           <HDButton variant="secondary" onClick={refetch} className="mt-4">
             <RefreshCw className="w-4 h-4 mr-2" />
@@ -100,229 +403,157 @@ export function SetupOptimizationDashboard() {
     );
   }
 
-  // No data state
-  if (!data || data.missingFiles.length === 2) {
+  // Empty state
+  if (!summary || summary.totalExited === 0) {
     return (
       <HDCard>
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Zap className="w-8 h-8 text-[var(--text-muted)] mb-2" />
-          <p className="text-[var(--text-high)] font-medium">No Optimization Data</p>
+          <Activity className="w-8 h-8 text-[var(--text-muted)] mb-2" />
+          <p className="text-[var(--text-high)] font-medium">No Outcomes Yet</p>
           <p className="text-[var(--text-muted)] text-sm mt-1 max-w-md">
-            Run the optimizer to generate parameters and performance reports.
+            Edge stats will populate after signals are evaluated. The outcome worker processes
+            expired signals every 5 minutes.
           </p>
           <div className="mt-4 p-3 bg-[var(--surface-1)] rounded-[var(--radius)] text-left">
-            <p className="text-xs text-[var(--text-muted)] mb-2">CLI Commands:</p>
-            <code className="block text-xs text-[var(--brand-primary)] font-mono">
-              pnpm run optimizer
-            </code>
-            <code className="block text-xs text-[var(--brand-primary)] font-mono mt-1">
-              pnpm run report
-            </code>
+            <p className="text-xs text-[var(--text-muted)] mb-2">How it works:</p>
+            <ol className="text-xs text-[var(--text-muted)] list-decimal list-inside space-y-1">
+              <li>Composite scanner generates signals with entry/stop/target</li>
+              <li>Signals expire after their validity window</li>
+              <li>Outcome worker walks historical bars to determine exit</li>
+              <li>Performance metrics are aggregated here</li>
+            </ol>
           </div>
         </div>
       </HDCard>
     );
   }
 
-  const { paramsConfig, report } = data;
-  const topDetectors = getTopDetectors(report, 10);
+  // Calculate summary stats
+  const totalWins = summary.stats.reduce((sum, s) => sum + s.totalWins, 0);
+  const totalLosses = summary.stats.reduce((sum, s) => sum + s.totalLosses, 0);
+  const overallWinRate = summary.totalExited > 0 ? (totalWins / summary.totalExited) * 100 : 0;
+  const highConfidenceSetups = summary.stats.filter((s) => s.confidence === "high").length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-xl font-bold text-[var(--text-high)] flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-500" />
-            Setup Detection & Optimization
+            <TrendingUp className="w-5 h-5 text-[var(--brand-primary)]" />
+            Setup Edge
           </h2>
           <p className="text-sm text-[var(--text-muted)] mt-1">
-            GA-optimized parameters for day trading strategies
+            Live performance metrics from composite signal outcomes
           </p>
         </div>
-        <HDButton variant="secondary" onClick={refetch} disabled={isLoading}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-          Refresh
-        </HDButton>
+        <div className="flex items-center gap-2">
+          <select
+            value={windowDays}
+            onChange={(e) => setWindowDays(parseInt(e.target.value))}
+            className="px-3 py-1.5 text-sm bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-[var(--radius)] text-[var(--text-high)]"
+          >
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+            <option value={60}>60 days</option>
+            <option value={90}>90 days</option>
+          </select>
+          <HDButton variant="secondary" onClick={refetch} disabled={isLoading}>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+          </HDButton>
+        </div>
       </div>
 
-      {/* Section A: Last Optimization */}
+      {/* Section A: Overview Stats */}
       <HDCard>
         <div className="space-y-4">
           <div className="flex items-start gap-3">
-            <Clock className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
+            <BarChart3 className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h3 className="text-[var(--text-high)] font-semibold">Last Optimization</h3>
+              <h3 className="text-[var(--text-high)] font-semibold">Overview</h3>
               <p className="text-[var(--text-muted)] text-xs">
-                Performance summary from the most recent optimization run
+                Last {windowDays} days of signal performance
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatBox
-              label="Last Run"
-              value={formatLastUpdated(data.lastUpdated)}
-              subtext={
-                data.lastUpdated ? new Date(data.lastUpdated).toLocaleDateString() : undefined
-              }
-            />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <StatBox label="Total Signals" value={summary.totalSignals} subtext="generated" />
+            <StatBox label="Evaluated" value={summary.totalExited} subtext="with outcomes" />
             <StatBox
               label="Win Rate"
-              value={
-                paramsConfig?.performance?.winRate !== undefined
-                  ? formatWinRate(paramsConfig.performance.winRate)
-                  : "—"
-              }
-              positive={
-                paramsConfig?.performance?.winRate ? paramsConfig.performance.winRate >= 0.5 : false
-              }
-              negative={
-                paramsConfig?.performance?.winRate ? paramsConfig.performance.winRate < 0.4 : false
-              }
+              value={`${overallWinRate.toFixed(1)}%`}
+              positive={overallWinRate >= 50}
+              negative={overallWinRate < 40}
             />
             <StatBox
-              label="Profit Factor"
-              value={
-                paramsConfig?.performance?.profitFactor !== undefined
-                  ? formatProfitFactor(paramsConfig.performance.profitFactor)
-                  : "—"
-              }
-              positive={
-                paramsConfig?.performance?.profitFactor
-                  ? paramsConfig.performance.profitFactor >= 1.5
-                  : false
-              }
+              label="W/L"
+              value={`${totalWins}/${totalLosses}`}
+              positive={totalWins > totalLosses}
             />
             <StatBox
-              label="Total Trades"
-              value={paramsConfig?.performance?.totalTrades ?? "—"}
-              subtext={report?.testedSymbols ? `${report.testedSymbols.length} symbols` : undefined}
+              label="High Confidence"
+              value={highConfidenceSetups}
+              subtext={`of ${summary.stats.length} setups`}
             />
           </div>
 
-          {report?.testedSymbols && (
-            <div className="flex flex-wrap gap-1.5">
-              <span className="text-xs text-[var(--text-muted)]">Symbols:</span>
-              {report.testedSymbols.map((symbol) => (
-                <span
-                  key={symbol}
-                  className="px-2 py-0.5 text-xs bg-[var(--surface-1)] rounded text-[var(--text-high)]"
-                >
-                  {symbol}
-                </span>
+          {summary.lastUpdated && (
+            <div className="text-xs text-[var(--text-muted)] text-right">
+              Last outcome: {formatLastUpdated(summary.lastUpdated)}
+            </div>
+          )}
+        </div>
+      </HDCard>
+
+      {/* Section B: Top Performing Setups */}
+      {topSetups && topSetups.setups.length > 0 && (
+        <HDCard>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <Trophy className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-[var(--text-high)] font-semibold">What Works Now</h3>
+                <p className="text-[var(--text-muted)] text-xs">
+                  Top setups ranked by expectancy (min 10 samples)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {topSetups.setups.map((setup) => (
+                <TopSetupCard
+                  key={`${setup.opportunityType}:${setup.recommendedStyle}`}
+                  setup={setup}
+                  rank={setup.rank}
+                />
               ))}
             </div>
-          )}
-        </div>
-      </HDCard>
+          </div>
+        </HDCard>
+      )}
 
-      {/* Section B: Current Parameters */}
+      {/* Section C: All Setup Performance */}
       <HDCard>
         <div className="space-y-4">
           <div className="flex items-start gap-3">
-            <Shield className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
+            <BarChart3 className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h3 className="text-[var(--text-high)] font-semibold">Current Parameters</h3>
+              <h3 className="text-[var(--text-high)] font-semibold">All Setups</h3>
               <p className="text-[var(--text-muted)] text-xs">
-                Active risk/reward and boost parameters
+                Performance by opportunity type and style
               </p>
             </div>
           </div>
 
-          {paramsConfig?.parameters ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Risk/Reward */}
-              <div className="p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
-                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">
-                  Risk/Reward
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Target Multiple</span>
-                    <span className="font-mono text-[var(--text-high)]">
-                      {paramsConfig.parameters.riskReward.targetMultiple.toFixed(2)}x ATR
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Stop Multiple</span>
-                    <span className="font-mono text-[var(--text-high)]">
-                      {paramsConfig.parameters.riskReward.stopMultiple.toFixed(2)}x ATR
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Max Hold Bars</span>
-                    <span className="font-mono text-[var(--text-high)]">
-                      {paramsConfig.parameters.riskReward.maxHoldBars}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Boosts */}
-              <div className="p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
-                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">
-                  Score Boosts
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Low IV</span>
-                    <span
-                      className={`font-mono ${paramsConfig.parameters.ivBoosts.lowIV >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"}`}
-                    >
-                      {paramsConfig.parameters.ivBoosts.lowIV >= 0 ? "+" : ""}
-                      {(paramsConfig.parameters.ivBoosts.lowIV * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Flow Aligned</span>
-                    <span
-                      className={`font-mono ${paramsConfig.parameters.flowBoosts.aligned >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"}`}
-                    >
-                      {paramsConfig.parameters.flowBoosts.aligned >= 0 ? "+" : ""}
-                      {(paramsConfig.parameters.flowBoosts.aligned * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Short Gamma</span>
-                    <span
-                      className={`font-mono ${paramsConfig.parameters.gammaBoosts.shortGamma >= 0 ? "text-[var(--accent-positive)]" : "text-[var(--accent-negative)]"}`}
-                    >
-                      {paramsConfig.parameters.gammaBoosts.shortGamma >= 0 ? "+" : ""}
-                      {(paramsConfig.parameters.gammaBoosts.shortGamma * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-6 text-[var(--text-muted)] text-sm">
-              No parameter data available
-            </div>
-          )}
-        </div>
-      </HDCard>
-
-      {/* Section C: Top Day Trader Detectors */}
-      <HDCard>
-        <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <TrendingUp className="w-5 h-5 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="text-[var(--text-high)] font-semibold">Top Day Trader Detectors</h3>
-              <p className="text-[var(--text-muted)] text-xs">
-                Ranked by win rate (minimum 3 trades)
-              </p>
-            </div>
-          </div>
-
-          {topDetectors.length > 0 ? (
+          {summary.stats.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="hidden md:table-header-group">
                   <tr className="border-b border-[var(--border-hairline)]">
                     <th className="text-left py-2 px-2 text-xs font-semibold text-[var(--text-muted)] uppercase">
-                      Detector
+                      Setup
                     </th>
                     <th className="text-right py-2 px-2 text-xs font-semibold text-[var(--text-muted)] uppercase">
                       Win Rate
@@ -333,120 +564,178 @@ export function SetupOptimizationDashboard() {
                     <th className="text-right py-2 px-2 text-xs font-semibold text-[var(--text-muted)] uppercase">
                       Trades
                     </th>
+                    <th className="text-center py-2 px-2 text-xs font-semibold text-[var(--text-muted)] uppercase">
+                      Confidence
+                    </th>
+                    <th className="w-8"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {topDetectors.map((detector, idx) => (
-                    <tr
-                      key={detector.detector}
-                      className={`border-b border-[var(--border-hairline)] ${idx === 0 ? "bg-[var(--brand-primary)]/5" : ""}`}
-                    >
-                      <td className="py-2 px-2">
-                        <div className="flex items-center gap-2">
-                          {idx === 0 && <span className="text-amber-500 text-xs">1st</span>}
-                          <span className="text-[var(--text-high)] font-medium truncate max-w-[200px]">
-                            {detector.detector.replace(/_/g, " ")}
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        className={`text-right py-2 px-2 font-mono ${
-                          detector.winRate >= 0.5
-                            ? "text-[var(--accent-positive)]"
-                            : detector.winRate >= 0.4
-                              ? "text-amber-400"
-                              : "text-[var(--accent-negative)]"
-                        }`}
-                      >
-                        {formatWinRate(detector.winRate)}
-                      </td>
-                      <td className="text-right py-2 px-2 font-mono text-[var(--text-high)]">
-                        {formatProfitFactor(detector.profitFactor)}
-                      </td>
-                      <td className="text-right py-2 px-2 text-[var(--text-muted)]">
-                        {detector.totalTrades}
-                      </td>
-                    </tr>
-                  ))}
+                  {summary.stats.map((stat) => {
+                    const key = `${stat.opportunityType}:${stat.recommendedStyle}`;
+                    return (
+                      <SetupRow
+                        key={key}
+                        stat={stat}
+                        isExpanded={expandedRows.has(key)}
+                        onToggle={() => toggleRow(key)}
+                      />
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
             <div className="text-center py-6 text-[var(--text-muted)] text-sm">
-              No detector performance data available
+              No setup data available
             </div>
           )}
         </div>
       </HDCard>
 
-      {/* Section D: What's Enabled */}
-      <HDCard>
-        <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-[var(--accent-positive)] flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="text-[var(--text-high)] font-semibold">What's Enabled</h3>
-              <p className="text-[var(--text-muted)] text-xs">
-                Current detection and gating configuration
-              </p>
+      {/* Section D: Optimizer Parameters (Collapsible) */}
+      {optimizerData && !optimizerData.missingFiles.includes("optimized-params.json") && (
+        <HDCard>
+          <button
+            onClick={() => setShowOptimizer(!showOptimizer)}
+            className="w-full flex items-center justify-between"
+          >
+            <div className="flex items-start gap-3">
+              <Settings2 className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0 mt-0.5" />
+              <div className="flex-1 text-left">
+                <h3 className="text-[var(--text-high)] font-semibold">Optimizer Parameters</h3>
+                <p className="text-[var(--text-muted)] text-xs">
+                  GA-optimized detection thresholds
+                </p>
+              </div>
             </div>
-          </div>
+            {showOptimizer ? (
+              <ChevronUp className="w-5 h-5 text-[var(--text-muted)]" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-[var(--text-muted)]" />
+            )}
+          </button>
 
-          <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3 bg-[var(--surface-1)] rounded-[var(--radius)]">
-              <CheckCircle2 className="w-4 h-4 text-[var(--accent-positive)] flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm text-[var(--text-high)] font-medium">
-                  Day Trader First Gating
+          {showOptimizer && optimizerData.paramsConfig?.parameters && (
+            <div className="mt-4 pt-4 border-t border-[var(--border-hairline)]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Risk/Reward */}
+                <div className="p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
+                  <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">
+                    Risk/Reward
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Target Multiple</span>
+                      <span className="font-mono text-[var(--text-high)]">
+                        {optimizerData.paramsConfig.parameters.riskReward.targetMultiple.toFixed(2)}
+                        x ATR
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Stop Multiple</span>
+                      <span className="font-mono text-[var(--text-high)]">
+                        {optimizerData.paramsConfig.parameters.riskReward.stopMultiple.toFixed(2)}x
+                        ATR
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Max Hold Bars</span>
+                      <span className="font-mono text-[var(--text-high)]">
+                        {optimizerData.paramsConfig.parameters.riskReward.maxHoldBars}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Signals are filtered by optimized score thresholds. Only setups meeting the
-                  minimum Day score ({paramsConfig?.parameters?.minScores?.day ?? 80}) are surfaced.
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-start gap-3 p-3 bg-[var(--surface-1)] rounded-[var(--radius)]">
-              <CheckCircle2 className="w-4 h-4 text-[var(--accent-positive)] flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm text-[var(--text-high)] font-medium">IV-Adjusted Entry</div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Low IV environments get a{" "}
-                  {((paramsConfig?.parameters?.ivBoosts?.lowIV ?? 0.15) * 100).toFixed(0)}% score
-                  boost. High IV environments are penalized.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-[var(--surface-1)] rounded-[var(--radius)]">
-              <CheckCircle2 className="w-4 h-4 text-[var(--accent-positive)] flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm text-[var(--text-high)] font-medium">Flow Confluence</div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Aligned institutional flow adds{" "}
-                  {((paramsConfig?.parameters?.flowBoosts?.aligned ?? 0.2) * 100).toFixed(0)}% to
-                  score. Opposing flow reduces signal confidence.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-[var(--surface-1)] rounded-[var(--radius)]">
-              <CheckCircle2 className="w-4 h-4 text-[var(--accent-positive)] flex-shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm text-[var(--text-high)] font-medium">
-                  MTF Trend Weighting
+                {/* Score Boosts */}
+                <div className="p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
+                  <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">
+                    Score Boosts
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Low IV</span>
+                      <span
+                        className={`font-mono ${
+                          optimizerData.paramsConfig.parameters.ivBoosts.lowIV >= 0
+                            ? "text-[var(--accent-positive)]"
+                            : "text-[var(--accent-negative)]"
+                        }`}
+                      >
+                        {optimizerData.paramsConfig.parameters.ivBoosts.lowIV >= 0 ? "+" : ""}
+                        {(optimizerData.paramsConfig.parameters.ivBoosts.lowIV * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Flow Aligned</span>
+                      <span
+                        className={`font-mono ${
+                          optimizerData.paramsConfig.parameters.flowBoosts.aligned >= 0
+                            ? "text-[var(--accent-positive)]"
+                            : "text-[var(--accent-negative)]"
+                        }`}
+                      >
+                        {optimizerData.paramsConfig.parameters.flowBoosts.aligned >= 0 ? "+" : ""}
+                        {(optimizerData.paramsConfig.parameters.flowBoosts.aligned * 100).toFixed(
+                          0
+                        )}
+                        %
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">Short Gamma</span>
+                      <span
+                        className={`font-mono ${
+                          optimizerData.paramsConfig.parameters.gammaBoosts.shortGamma >= 0
+                            ? "text-[var(--accent-positive)]"
+                            : "text-[var(--accent-negative)]"
+                        }`}
+                      >
+                        {optimizerData.paramsConfig.parameters.gammaBoosts.shortGamma >= 0
+                          ? "+"
+                          : ""}
+                        {(
+                          optimizerData.paramsConfig.parameters.gammaBoosts.shortGamma * 100
+                        ).toFixed(0)}
+                        %
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Weekly ({paramsConfig?.parameters?.mtfWeights?.weekly ?? 3}x), Daily (
-                  {paramsConfig?.parameters?.mtfWeights?.daily ?? 2}x), Hourly (
-                  {paramsConfig?.parameters?.mtfWeights?.hourly ?? 1}x), 15m (
-                  {paramsConfig?.parameters?.mtfWeights?.fifteenMin ?? 0.5}x) weights applied.
-                </p>
               </div>
+
+              {optimizerData.performanceSummary && (
+                <div className="mt-4 p-3 bg-[var(--surface-1)] rounded-[var(--radius)] border border-[var(--border-hairline)]">
+                  <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">
+                    Backtested Performance
+                  </div>
+                  <div className="flex gap-4 text-sm">
+                    <span className="text-[var(--text-muted)]">
+                      Win Rate:{" "}
+                      <span className="text-[var(--text-high)] font-mono">
+                        {formatOptimizerWinRate(optimizerData.performanceSummary.winRate)}
+                      </span>
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      PF:{" "}
+                      <span className="text-[var(--text-high)] font-mono">
+                        {formatOptimizerPF(optimizerData.performanceSummary.profitFactor)}
+                      </span>
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      Trades:{" "}
+                      <span className="text-[var(--text-high)] font-mono">
+                        {optimizerData.performanceSummary.totalTrades}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      </HDCard>
+          )}
+        </HDCard>
+      )}
     </div>
   );
 }
