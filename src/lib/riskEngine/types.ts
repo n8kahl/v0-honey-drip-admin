@@ -132,3 +132,75 @@ export interface LiquidityQuality {
   quality: "excellent" | "good" | "fair" | "poor";
   warnings: string[];
 }
+
+// ============================================================================
+// Trade Plan Anchors - TP/SL with structure-based rationale
+// ============================================================================
+
+/** Anchor types for TP/SL levels */
+export type AnchorType =
+  | "VWAP"
+  | "ORB_HIGH"
+  | "ORB_LOW"
+  | "PDH" // Prior Day High
+  | "PDL" // Prior Day Low
+  | "GAMMA_WALL"
+  | "CALL_WALL"
+  | "PUT_WALL"
+  | "MAX_PAIN"
+  | "WEEKLY_HIGH"
+  | "WEEKLY_LOW"
+  | "ATR_FALLBACK"
+  | "PERCENT_FALLBACK";
+
+/** An anchor point with price and rationale */
+export interface PlanAnchor {
+  /** Type of anchor (VWAP, ORB, GAMMA_WALL, etc.) */
+  type: AnchorType;
+  /** Price level */
+  price: number;
+  /** Human-readable reason for this anchor */
+  reason: string;
+  /** Optional underlying price (for dual display) */
+  underlyingPrice?: number;
+  /** Optional premium price (for options) */
+  premiumPrice?: number;
+  /** Distance from current price (percentage) */
+  distancePercent?: number;
+  /** Whether this is a fallback (no structural anchor found) */
+  isFallback?: boolean;
+}
+
+/** Target anchor with label */
+export interface TargetAnchor extends PlanAnchor {
+  /** Target label (TP1, TP2, TP3) */
+  label: "TP1" | "TP2" | "TP3";
+}
+
+/** Overall plan quality assessment */
+export interface PlanQuality {
+  /** Quality score 0-100 */
+  score: number;
+  /** Quality level */
+  level: "strong" | "moderate" | "weak";
+  /** Warnings about the plan */
+  warnings: string[];
+  /** Reasons for the quality assessment */
+  reasons: string[];
+}
+
+/** Complete trade plan anchors */
+export interface TradePlanAnchors {
+  /** Stop loss anchor with rationale */
+  stopAnchor: PlanAnchor;
+  /** Target anchors (TP1, TP2, optional TP3) */
+  targets: TargetAnchor[];
+  /** Overall plan quality */
+  planQuality: PlanQuality;
+  /** Direction of the trade */
+  direction: "long" | "short";
+  /** Current underlying price used for calculations */
+  currentUnderlyingPrice: number;
+  /** Trade type (SCALP, DAY, SWING) */
+  tradeType?: TradeType;
+}
