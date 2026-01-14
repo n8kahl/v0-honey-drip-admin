@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Play,
   Loader2,
+  Settings2,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "../ui/card";
 import { Badge } from "../ui/badge";
