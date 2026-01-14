@@ -35,12 +35,12 @@ import type { DiscordChannel, Challenge } from "../../types";
 import {
   CockpitLayout,
   CockpitHeader,
-  CockpitConfluencePanel,
   CockpitPlanPanel,
   CockpitContractPanel,
   CockpitActionsBar,
   type CockpitViewState,
 } from "./cockpit";
+import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
 
 interface NowPanelTradeProps {
   trade: Trade;
@@ -193,10 +193,12 @@ export function NowPanelTrade({
 
         /* ========== CONFLUENCE PANEL ========== */
         confluence: (
-          <CockpitConfluencePanel
+          <ConfluencePanelPro
             symbol={trade.ticker}
+            viewState={viewState}
             keyLevels={keyLevels}
             currentPrice={currentPrice}
+            showDegradationWarnings={viewState !== "watch"}
           />
         ),
 
