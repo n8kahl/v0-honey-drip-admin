@@ -333,11 +333,19 @@ router.patch("/activate/:strategyId", async (req: Request, res: Response) => {
     const supabase = getSupabaseClient();
 
     // First, check if strategy exists and has pending params
-    const { data: strategy, error: fetchError } = await supabase
+    const { data: strategyData, error: fetchError } = await supabase
       .from("strategy_definitions")
       .select("id, name, slug, pending_params, active_params")
       .eq("id", strategyId)
       .single();
+
+    const strategy = strategyData as {
+      id: string;
+      name: string;
+      slug: string;
+      pending_params: any;
+      active_params: any;
+    } | null;
 
     if (fetchError || !strategy) {
       return res.status(404).json({
@@ -355,8 +363,9 @@ router.patch("/activate/:strategyId", async (req: Request, res: Response) => {
     }
 
     // Copy pending_params to active_params
-    const { data: updated, error: updateError } = await supabase
-      .from("strategy_definitions")
+    const { data: updatedData, error: updateError } = await (
+      supabase.from("strategy_definitions") as any
+    )
       .update({
         active_params: strategy.pending_params,
         updated_at: new Date().toISOString(),
@@ -365,7 +374,15 @@ router.patch("/activate/:strategyId", async (req: Request, res: Response) => {
       .select("id, name, slug, active_params, pending_params")
       .single();
 
-    if (updateError) {
+    const updated = updatedData as {
+      id: string;
+      name: string;
+      slug: string;
+      active_params: any;
+      pending_params: any;
+    } | null;
+
+    if (updateError || !updated) {
       console.error("[Optimizer] Error activating params:", updateError);
       return res.status(500).json({ error: "Failed to activate params" });
     }
@@ -405,11 +422,19 @@ router.post("/activate-all", async (req: Request, res: Response) => {
     const supabase = getSupabaseClient();
 
     // Fetch all strategies with pending params
-    const { data: strategies, error: fetchError } = await supabase
+    const { data: strategiesData, error: fetchError } = await supabase
       .from("strategy_definitions")
       .select("id, name, slug, pending_params, baseline_expectancy")
       .eq("enabled", true)
       .not("pending_params", "is", null);
+
+    const strategies = strategiesData as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      pending_params: any;
+      baseline_expectancy: number | null;
+    }> | null;
 
     if (fetchError) {
       console.error("[Optimizer] Error fetching strategies:", fetchError);
@@ -462,11 +487,10 @@ router.post("/activate-all", async (req: Request, res: Response) => {
     // Individual updates for each strategy
     let activated = 0;
     for (const id of toActivate) {
-      const strategy = strategies.find((s: any) => s.id === id);
+      const strategy = strategies.find((s) => s.id === id);
       if (!strategy) continue;
 
-      const { error } = await supabase
-        .from("strategy_definitions")
+      const { error } = await (supabase.from("strategy_definitions") as any)
         .update({
           active_params: strategy.pending_params,
           updated_at: new Date().toISOString(),
@@ -512,8 +536,7 @@ router.delete("/deactivate/:strategyId", async (req: Request, res: Response) => 
 
     const supabase = getSupabaseClient();
 
-    const { data: updated, error } = await supabase
-      .from("strategy_definitions")
+    const { data: updatedData, error } = await (supabase.from("strategy_definitions") as any)
       .update({
         active_params: null,
         updated_at: new Date().toISOString(),
@@ -521,6 +544,8 @@ router.delete("/deactivate/:strategyId", async (req: Request, res: Response) => 
       .eq("id", strategyId)
       .select("id, name, slug")
       .single();
+
+    const updated = updatedData as { id: string; name: string; slug: string } | null;
 
     if (error) {
       console.error("[Optimizer] Error deactivating params:", error);

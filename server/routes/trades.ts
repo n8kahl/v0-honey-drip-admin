@@ -3,6 +3,70 @@ import { createClient } from "@supabase/supabase-js";
 
 const router = express.Router();
 
+// ============================================================================
+// Contract Key Generation (Server-side)
+// ============================================================================
+
+type AssetType = "STK" | "OPT" | "FUT" | "CASH" | "IDX";
+type OptionRight = "C" | "P";
+
+/**
+ * Generate a canonical contract key for tracking and joining data.
+ *
+ * Format:
+ * - Stocks: STK:SPY
+ * - Futures: FUT:ES:2026-03
+ * - Options: OPT:SPY:2026-02-19:510:C
+ */
+function generateContractKey(contract: {
+  assetType?: AssetType;
+  symbol?: string;
+  expiry?: string;
+  expiration?: string;
+  strike?: number;
+  right?: OptionRight;
+  type?: OptionRight;
+}): string | null {
+  const symbol = contract.symbol?.toUpperCase();
+  if (!symbol) return null;
+
+  const assetType = contract.assetType || "OPT";
+  const expiry = contract.expiry || contract.expiration;
+  const right = contract.right || contract.type;
+
+  switch (assetType) {
+    case "STK":
+    case "CASH":
+    case "IDX":
+      return `${assetType}:${symbol}`;
+
+    case "FUT": {
+      if (!expiry) return null;
+      const futExpiry = expiry.length > 7 ? expiry.substring(0, 7) : expiry;
+      return `FUT:${symbol}:${futExpiry}`;
+    }
+
+    case "OPT":
+      if (!expiry || contract.strike === undefined || !right) return null;
+      return `OPT:${symbol}:${expiry}:${contract.strike}:${right}`;
+
+    default:
+      return `${assetType}:${symbol}`;
+  }
+}
+
+/**
+ * Extract underlying symbol from options ticker
+ * e.g., "O:SPY250117C00622000" -> "SPY"
+ */
+function extractUnderlyingSymbol(ticker: string): string | null {
+  if (ticker.startsWith("O:")) {
+    const match = ticker.match(/^O:([A-Z]+)/);
+    return match ? match[1] : null;
+  }
+  return ticker;
+}
+
 // Lazy initialization of Supabase client
 // This prevents crashes when env vars are missing at module load time
 let supabase: ReturnType<typeof createClient> | null = null;
@@ -186,6 +250,27 @@ function validateTradeInput(trade: any): { valid: boolean; error?: string } {
   if (trade.contract && typeof trade.contract !== "object") {
     return { valid: false, error: "Invalid contract object" };
   }
+
+  // Validate contract for options trades
+  // Options tickers start with "O:" (e.g., "O:SPY250117C00622000")
+  const isOptionsTrade = trade.ticker.startsWith("O:");
+  if (isOptionsTrade) {
+    const contract = trade.contract;
+    if (!contract) {
+      return { valid: false, error: "Options trade requires contract object" };
+    }
+    // Validate required contract fields for options
+    if (contract.strike === undefined || contract.strike === null) {
+      return { valid: false, error: "Options contract requires strike price" };
+    }
+    if (!contract.expiry && !contract.expiration) {
+      return { valid: false, error: "Options contract requires expiry date" };
+    }
+    if (!contract.type && !contract.right) {
+      return { valid: false, error: "Options contract requires type (C/P)" };
+    }
+  }
+
   // Validate state/status - accept any case, will be normalized to lowercase
   // (verified from production database: state IN ('loaded', 'entered', 'exited'))
   const stateValue = (trade.state || trade.status || "").toLowerCase();
@@ -332,6 +417,11 @@ router.post("/api/trades", async (req: Request, res: Response) => {
     // Final fallback
     if (!tradeType) tradeType = "Day";
 
+    // Generate contract key for options trades
+    const underlyingSymbol = extractUnderlyingSymbol(trade.ticker);
+    const contractWithSymbol = { ...contract, symbol: underlyingSymbol };
+    const contractKey = generateContractKey(contractWithSymbol);
+
     const tradeData: Record<string, any> = {
       user_id: userId,
       ticker: trade.ticker,
@@ -347,7 +437,9 @@ router.post("/api/trades", async (req: Request, res: Response) => {
       contract_type: contract.type || null,
       quantity: trade.quantity || 1, // Default to 1 contract
       // Also store full contract object as JSONB (migration 011)
-      contract: contract,
+      contract: contractKey ? { ...contract, contractKey } : contract,
+      // Canonical contract key for tracking (e.g., "OPT:SPY:2026-01-17:600:C")
+      contract_key: contractKey,
       // Pricing fields
       entry_price: trade.entryPrice || trade.entry_price || null,
       target_price: trade.targetPrice || trade.target_price || null,

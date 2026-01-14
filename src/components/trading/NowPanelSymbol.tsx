@@ -387,6 +387,8 @@ export function NowPanelSymbol({
             underlyingPrice={currentPrice}
             underlyingChange={activeTicker?.changePercent}
             lastQuoteTime={lastUpdateTime}
+            onContractSelect={handleContractSelect}
+            recommendation={recommendation}
           />
         ),
 
