@@ -32,12 +32,12 @@ import { useMarketDataStore } from "../../stores/marketDataStore";
 import {
   CockpitLayout,
   CockpitHeader,
-  CockpitConfluencePanel,
   CockpitPlanPanel,
   CockpitContractPanel,
   CockpitActionsBar,
   type CockpitViewState,
 } from "./cockpit";
+import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
 
 /** Trade type preset options */
 type TradeType = "scalp" | "day" | "swing";
@@ -315,10 +315,12 @@ export function NowPanelSymbol({
 
         /* ========== CONFLUENCE PANEL ========== */
         confluence: (
-          <CockpitConfluencePanel
+          <ConfluencePanelPro
             symbol={symbol}
+            viewState="watch"
             keyLevels={keyLevels}
             currentPrice={currentPrice}
+            showDegradationWarnings={false}
           />
         ),
 

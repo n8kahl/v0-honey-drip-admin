@@ -2,9 +2,10 @@
  * CockpitPlanPanel - Trade plan display / Management summary
  *
  * For PLAN/LOADED states:
- * - Entry / Stop / TP1 / TP2 / R:R
+ * - Entry / Stop / TP1 / TP2 / R:R with anchor labels and rationale
+ * - Dual price display (Underlying + Premium)
+ * - Plan quality warnings if anchors are weak
  * - Confidence score + top 2-3 "WHY" bullets
- * - Underlying entry trigger + contract target/stop
  *
  * For ENTERED state:
  * - Live P&L, R multiple, distance to stop/TP, time in trade
@@ -15,8 +16,10 @@ import React from "react";
 import { cn } from "../../../lib/utils";
 import type { Trade, Contract } from "../../../types";
 import type { CockpitViewState } from "./CockpitLayout";
+import type { TradePlanAnchors, PlanAnchor, TargetAnchor } from "../../../lib/riskEngine/types";
+import { getShortAnchorLabel } from "../../../lib/riskEngine/planAnchors";
 import { useActiveTradeLiveModel } from "../../../hooks/useActiveTradeLiveModel";
-import { fmtDTE, getPnlStyle } from "../../../ui/semantics";
+import { getPnlStyle } from "../../../ui/semantics";
 import {
   Target,
   Shield,
@@ -25,8 +28,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Crosshair,
-  ArrowUp,
-  ArrowDown,
+  Info,
+  Anchor,
 } from "lucide-react";
 
 interface CockpitPlanPanelProps {
@@ -41,6 +44,10 @@ interface CockpitPlanPanelProps {
   riskReward?: number | null;
   confidence?: number | null;
   whyBullets?: string[];
+  /** Plan anchors with rationale */
+  planAnchors?: TradePlanAnchors | null;
+  /** Entry underlying price for dual display */
+  entryUnderlyingPrice?: number | null;
   className?: string;
 }
 
@@ -56,6 +63,8 @@ export function CockpitPlanPanel({
   riskReward,
   confidence,
   whyBullets,
+  planAnchors,
+  entryUnderlyingPrice,
   className,
 }: CockpitPlanPanelProps) {
   // For ENTERED state, show management view
@@ -81,6 +90,8 @@ export function CockpitPlanPanel({
       riskReward={riskReward}
       confidence={confidence}
       whyBullets={whyBullets}
+      planAnchors={planAnchors}
+      entryUnderlyingPrice={entryUnderlyingPrice}
       className={className}
     />
   );
@@ -101,6 +112,8 @@ interface PlanDetailsProps {
   riskReward?: number | null;
   confidence?: number | null;
   whyBullets?: string[];
+  planAnchors?: TradePlanAnchors | null;
+  entryUnderlyingPrice?: number | null;
   className?: string;
 }
 
@@ -115,13 +128,27 @@ function PlanDetails({
   riskReward,
   confidence,
   whyBullets,
+  planAnchors,
+  entryUnderlyingPrice,
   className,
 }: PlanDetailsProps) {
   // Derive values from trade/contract if not provided
   const effectiveEntry = entryPrice ?? contract?.mid ?? trade?.entryPrice ?? null;
   const effectiveStop = stopLoss ?? trade?.stopLoss ?? null;
   const effectiveTP = targetPrice ?? trade?.targetPrice ?? null;
-  const effectiveRR = riskReward ?? trade?.riskReward ?? null;
+  // Calculate R:R from entry, stop, target if not provided
+  const effectiveRR =
+    riskReward ??
+    (effectiveEntry && effectiveStop && effectiveTP && effectiveEntry !== effectiveStop
+      ? (effectiveTP - effectiveEntry) / (effectiveEntry - effectiveStop)
+      : null);
+
+  // Get anchors
+  const stopAnchor = planAnchors?.stopAnchor;
+  const tp1Anchor = planAnchors?.targets?.[0];
+  const tp2Anchor = planAnchors?.targets?.[1];
+  const planWarnings = planAnchors?.planQuality?.warnings ?? [];
+  const planScore = planAnchors?.planQuality?.score;
 
   // Default why bullets if not provided
   const defaultBullets = [
@@ -131,6 +158,7 @@ function PlanDetails({
   const bullets = whyBullets ?? defaultBullets;
 
   const hasContract = !!contract || !!trade?.contract;
+  const hasAnchors = !!planAnchors;
 
   return (
     <div
@@ -138,107 +166,154 @@ function PlanDetails({
       data-testid="cockpit-plan-panel"
     >
       {/* Header */}
-      <div className="flex items-center justify-between flex-shrink-0 mb-3">
+      <div className="flex items-center justify-between flex-shrink-0 mb-2">
         <div className="flex items-center gap-2">
           <Target className="w-4 h-4 text-[var(--brand-primary)]" />
           <span className="text-sm font-semibold text-[var(--text-high)]">Trade Plan</span>
         </div>
-        {confidence !== null && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-[var(--text-faint)]">Confidence</span>
-            <span
+        <div className="flex items-center gap-2">
+          {/* Plan Quality Score */}
+          {planScore !== undefined && (
+            <div
               className={cn(
-                "text-sm font-bold tabular-nums",
-                confidence >= 80
-                  ? "text-[var(--accent-positive)]"
-                  : confidence >= 60
-                    ? "text-[var(--brand-primary)]"
-                    : "text-[var(--text-muted)]"
+                "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium",
+                planScore >= 70
+                  ? "bg-[var(--accent-positive)]/20 text-[var(--accent-positive)]"
+                  : planScore >= 50
+                    ? "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
+                    : "bg-amber-500/20 text-amber-400"
               )}
             >
-              {confidence}%
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Price Levels Grid */}
-      <div className="grid grid-cols-2 gap-2 flex-shrink-0">
-        {/* Entry */}
-        <PriceLevelCard
-          label="Entry"
-          value={effectiveEntry}
-          icon={<Crosshair className="w-3.5 h-3.5" />}
-          color="brand"
-        />
-
-        {/* Stop Loss */}
-        <PriceLevelCard
-          label="Stop Loss"
-          value={effectiveStop}
-          icon={<Shield className="w-3.5 h-3.5" />}
-          color="negative"
-        />
-
-        {/* Target 1 */}
-        <PriceLevelCard
-          label="Target 1"
-          value={effectiveTP}
-          icon={<Target className="w-3.5 h-3.5" />}
-          color="positive"
-        />
-
-        {/* R:R */}
-        <div
-          className={cn(
-            "p-2 rounded border",
-            "bg-[var(--surface-2)] border-[var(--border-hairline)]"
+              <Anchor className="w-3 h-3" />
+              {planScore}%
+            </div>
           )}
-        >
-          <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-0.5">
-            Risk : Reward
-          </div>
-          <div className="flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-            <span
-              className={cn(
-                "text-lg font-bold tabular-nums",
-                effectiveRR && effectiveRR >= 2
-                  ? "text-[var(--accent-positive)]"
-                  : effectiveRR && effectiveRR >= 1.5
-                    ? "text-[var(--brand-primary)]"
-                    : "text-[var(--text-muted)]"
-              )}
-            >
-              {effectiveRR !== null ? `1:${effectiveRR.toFixed(1)}` : "--"}
-            </span>
-          </div>
+          {/* Confidence */}
+          {confidence !== null && !planScore && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-[var(--text-faint)]">Conf</span>
+              <span
+                className={cn(
+                  "text-sm font-bold tabular-nums",
+                  confidence >= 80
+                    ? "text-[var(--accent-positive)]"
+                    : confidence >= 60
+                      ? "text-[var(--brand-primary)]"
+                      : "text-[var(--text-muted)]"
+                )}
+              >
+                {confidence}%
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Target 2 (if available) */}
-      {tp2Price && (
-        <div className="mt-2 flex-shrink-0">
-          <PriceLevelCard
-            label="Target 2"
-            value={tp2Price}
-            icon={<Target className="w-3.5 h-3.5" />}
-            color="positive"
-            secondary
-          />
+      {/* Plan Warnings */}
+      {planWarnings.length > 0 && (
+        <div className="flex-shrink-0 mb-2 p-2 rounded bg-amber-500/10 border border-amber-500/30">
+          <div className="flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="text-[10px] text-amber-400 leading-tight">{planWarnings[0]}</div>
+          </div>
         </div>
       )}
 
-      {/* Why Bullets */}
-      <div className="flex-1 min-h-0 mt-3 overflow-y-auto">
-        <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-1.5">
+      {/* Price Levels with Anchors */}
+      <div className="space-y-2 flex-shrink-0">
+        {/* Entry + Stop Row */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* Entry */}
+          <AnchoredPriceCard
+            label="Entry"
+            premiumPrice={effectiveEntry}
+            underlyingPrice={entryUnderlyingPrice}
+            icon={<Crosshair className="w-3.5 h-3.5" />}
+            color="brand"
+          />
+
+          {/* Stop Loss */}
+          <AnchoredPriceCard
+            label="Stop"
+            premiumPrice={effectiveStop}
+            underlyingPrice={stopAnchor?.underlyingPrice}
+            anchor={stopAnchor}
+            icon={<Shield className="w-3.5 h-3.5" />}
+            color="negative"
+          />
+        </div>
+
+        {/* Targets Row */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* Target 1 */}
+          <AnchoredPriceCard
+            label="TP1"
+            premiumPrice={effectiveTP}
+            underlyingPrice={tp1Anchor?.underlyingPrice}
+            anchor={tp1Anchor}
+            icon={<Target className="w-3.5 h-3.5" />}
+            color="positive"
+          />
+
+          {/* R:R or TP2 */}
+          {tp2Anchor || tp2Price ? (
+            <AnchoredPriceCard
+              label="TP2"
+              premiumPrice={tp2Price ?? tp2Anchor?.premiumPrice}
+              underlyingPrice={tp2Anchor?.underlyingPrice}
+              anchor={tp2Anchor}
+              icon={<Target className="w-3.5 h-3.5" />}
+              color="positive"
+              secondary
+            />
+          ) : (
+            <div
+              className={cn(
+                "p-2 rounded border",
+                "bg-[var(--surface-2)] border-[var(--border-hairline)]"
+              )}
+            >
+              <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-0.5">
+                Risk : Reward
+              </div>
+              <div className="flex items-center gap-1">
+                <TrendingUp className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                <span
+                  className={cn(
+                    "text-lg font-bold tabular-nums",
+                    effectiveRR && effectiveRR >= 2
+                      ? "text-[var(--accent-positive)]"
+                      : effectiveRR && effectiveRR >= 1.5
+                        ? "text-[var(--brand-primary)]"
+                        : "text-[var(--text-muted)]"
+                  )}
+                >
+                  {effectiveRR !== null ? `1:${effectiveRR.toFixed(1)}` : "--"}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Anchor Reasons (if available) */}
+      {hasAnchors && (stopAnchor || tp1Anchor) && (
+        <div className="flex-shrink-0 mt-2 space-y-1">
+          {stopAnchor && <AnchorReasonRow label="SL" anchor={stopAnchor} color="negative" />}
+          {tp1Anchor && <AnchorReasonRow label="TP1" anchor={tp1Anchor} color="positive" />}
+        </div>
+      )}
+
+      {/* Why Bullets / Trade Thesis */}
+      <div className="flex-1 min-h-0 mt-2 overflow-y-auto">
+        <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-1">
           Trade Thesis
         </div>
-        <ul className="space-y-1">
+        <ul className="space-y-0.5">
           {bullets.slice(0, 3).map((bullet, idx) => (
-            <li key={idx} className="flex items-start gap-1.5 text-xs text-[var(--text-muted)]">
+            <li key={idx} className="flex items-start gap-1.5 text-[11px] text-[var(--text-muted)]">
               <CheckCircle2 className="w-3 h-3 text-[var(--brand-primary)] flex-shrink-0 mt-0.5" />
-              <span>{bullet}</span>
+              <span className="leading-tight">{bullet}</span>
             </li>
           ))}
         </ul>
@@ -257,27 +332,36 @@ function PlanDetails({
 }
 
 // ============================================================================
-// Price Level Card
+// Anchored Price Card - Dual price with anchor label
 // ============================================================================
 
-function PriceLevelCard({
-  label,
-  value,
-  icon,
-  color,
-  secondary = false,
-}: {
+interface AnchoredPriceCardProps {
   label: string;
-  value: number | null;
+  premiumPrice?: number | null;
+  underlyingPrice?: number | null;
+  anchor?: PlanAnchor | TargetAnchor | null;
   icon: React.ReactNode;
   color: "brand" | "positive" | "negative";
   secondary?: boolean;
-}) {
+}
+
+function AnchoredPriceCard({
+  label,
+  premiumPrice,
+  underlyingPrice,
+  anchor,
+  icon,
+  color,
+  secondary = false,
+}: AnchoredPriceCardProps) {
   const colorStyles = {
     brand: "text-[var(--brand-primary)]",
     positive: "text-[var(--accent-positive)]",
     negative: "text-[var(--accent-negative)]",
   };
+
+  const anchorLabel = anchor ? getShortAnchorLabel(anchor.type) : null;
+  const isFallback = anchor?.isFallback ?? false;
 
   return (
     <div
@@ -288,15 +372,66 @@ function PriceLevelCard({
           : "bg-[var(--surface-2)] border-[var(--border-hairline)]"
       )}
     >
-      <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-0.5">
-        {label}
+      {/* Label + Anchor Badge */}
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide">{label}</span>
+        {anchorLabel && (
+          <span
+            className={cn(
+              "text-[8px] font-medium px-1 py-0.5 rounded",
+              isFallback
+                ? "bg-amber-500/20 text-amber-400"
+                : "bg-[var(--brand-primary)]/20 text-[var(--brand-primary)]"
+            )}
+          >
+            {anchorLabel}
+          </span>
+        )}
       </div>
-      <div className="flex items-center gap-1">
+
+      {/* Dual Price Display */}
+      <div className="flex items-baseline gap-1.5">
         <span className={colorStyles[color]}>{icon}</span>
-        <span className={cn("text-lg font-bold tabular-nums", colorStyles[color])}>
-          {value !== null ? `$${value.toFixed(2)}` : "--"}
+        <span className={cn("text-base font-bold tabular-nums", colorStyles[color])}>
+          {premiumPrice !== null && premiumPrice !== undefined
+            ? `$${premiumPrice.toFixed(2)}`
+            : "--"}
         </span>
+        {underlyingPrice !== null && underlyingPrice !== undefined && (
+          <span className="text-[10px] text-[var(--text-muted)] tabular-nums">
+            @{underlyingPrice.toFixed(2)}
+          </span>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Anchor Reason Row - Shows WHY for each anchor
+// ============================================================================
+
+interface AnchorReasonRowProps {
+  label: string;
+  anchor: PlanAnchor | TargetAnchor;
+  color: "positive" | "negative";
+}
+
+function AnchorReasonRow({ label, anchor, color }: AnchorReasonRowProps) {
+  const colorStyles = {
+    positive: "text-[var(--accent-positive)]",
+    negative: "text-[var(--accent-negative)]",
+  };
+
+  const isFallback = anchor.isFallback ?? false;
+
+  return (
+    <div className="flex items-start gap-1.5 text-[10px]">
+      <span className={cn("font-medium flex-shrink-0", colorStyles[color])}>{label}:</span>
+      <span className="text-[var(--text-muted)] leading-tight">
+        {isFallback && <span className="text-amber-400 mr-1">[Fallback]</span>}
+        {anchor.reason}
+      </span>
     </div>
   );
 }
@@ -398,7 +533,7 @@ function ManagementSummary({ trade, className }: { trade: Trade; className?: str
               <span>Stop</span>
             </div>
             <span className="tabular-nums text-[var(--text-muted)]">
-              ${liveModel.stopPrice?.toFixed(2) ?? "--"}
+              ${liveModel.stopLoss?.toFixed(2) ?? "--"}
             </span>
           </div>
           <div className="flex items-center justify-between bg-[var(--surface-2)] rounded p-2">

@@ -7,6 +7,9 @@ export * from "./marketContext";
 // Phase 2.2: Level-Aware Stops
 export * from "./LevelAwareStops";
 
+// Phase 4: Plan Anchors with rationale
+export * from "./planAnchors";
+
 // Default admin settings
 import { AdminRiskDefaults } from "./types";
 

@@ -28,12 +28,12 @@ import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
 import {
   CockpitLayout,
   CockpitHeader,
-  CockpitConfluencePanel,
   CockpitPlanPanel,
   CockpitContractPanel,
   CockpitActionsBar,
   type CockpitViewState,
 } from "./cockpit";
+import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
 
 // ============================================================================
 // Props
@@ -181,10 +181,12 @@ export function NowPanelManage({
 
         /* ========== CONFLUENCE PANEL ========== */
         confluence: (
-          <CockpitConfluencePanel
+          <ConfluencePanelPro
             symbol={trade.ticker}
+            viewState={viewState}
             keyLevels={keyLevels}
             currentPrice={currentPrice}
+            showDegradationWarnings={true}
           />
         ),
 

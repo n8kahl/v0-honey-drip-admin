@@ -28,6 +28,14 @@ import {
   chipStyle,
 } from "../../ui/semantics";
 import {
+  CockpitLayout,
+  CockpitHeader,
+  CockpitPlanPanel,
+  CockpitContractPanel,
+  CockpitActionsBar,
+  type CockpitViewState,
+} from "./cockpit";
+import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
   Zap,
   Share2,
   Copy,
@@ -232,6 +240,16 @@ function TradePreviewCard({ trade, currentPrice }: TradePreviewCardProps) {
         </div>
       )}
 
+        /* ========== CONFLUENCE PANEL ========== */
+        confluence: (
+          <ConfluencePanelPro
+            symbol={trade.ticker}
+            viewState={viewState}
+            keyLevels={keyLevels}
+            currentPrice={currentPrice}
+            showDegradationWarnings={viewState !== "watch"}
+          />
+        ),
       {/* Volume & Open Interest */}
       <div className="p-4">
         <div className="flex flex-wrap gap-2">
