@@ -500,55 +500,114 @@ export class TransportPolicy {
         // FIX: Use underlying snapshot + search FIRST (direct contract lookup returns empty)
         // The Massive API /v3/snapshot/options/{underlying} returns ~10-250 contracts reliably
         // The /v3/snapshot/options/{O:fullTicker} returns 76 bytes empty - doesn't work
-        const underlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+        const extractedUnderlying = fullTicker.replace(/^O:/, "").match(/^([A-Z]+)/)?.[1];
+
+        // Index options use special symbols in Massive.com API:
+        // SPX options → SPXW (weeklys) or SPX (monthlies)
+        // NDX options → NDX or NDXP
+        // RUT options → RUT
+        const INDEX_OPTIONS_MAP: Record<string, string[]> = {
+          SPX: ["SPXW", "SPX"], // Try SPXW first (more common), then SPX
+          NDX: ["NDX", "NDXP"],
+          RUT: ["RUT", "RUTW"],
+          VIX: ["VIX", "VIXW"],
+        };
+
+        // For index options, we need to try multiple underlying symbols
+        const underlyingsToTry = INDEX_OPTIONS_MAP[extractedUnderlying || ""] || [
+          extractedUnderlying,
+        ];
 
         try {
-          if (underlying) {
-            // PRIMARY: Fetch underlying snapshot and search for our contract
-            const snapshotResponse = await massive.getOptionsSnapshot(underlying);
-            const results = snapshotResponse?.results || [];
-            const foundContract = results.find(
-              (c: any) =>
-                c.details?.ticker === fullTicker ||
-                c.ticker === fullTicker ||
-                c.details?.ticker === fullTicker.replace(/^O:/, "") ||
-                c.ticker === fullTicker.replace(/^O:/, "")
-            );
+          let foundContract: any = null;
+          let successfulUnderlying: string | null = null;
 
-            if (
-              foundContract &&
-              (foundContract.last_quote || foundContract.last_trade || foundContract.day)
-            ) {
-              data = {
-                symbol: fullTicker,
-                last:
-                  foundContract.last_trade?.price ??
-                  foundContract.last_trade?.p ??
-                  foundContract.day?.close ??
-                  0,
-                bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
-                ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
-                volume: foundContract.day?.volume ?? 0,
-                change: foundContract.day?.change ?? 0,
-                changePercent: foundContract.day?.change_percent ?? 0,
-                open: foundContract.day?.open ?? 0,
-                high: foundContract.day?.high ?? 0,
-                low: foundContract.day?.low ?? 0,
-                timestamp:
-                  foundContract.last_trade?.sip_timestamp ??
-                  foundContract.last_quote?.sip_timestamp ??
-                  Date.now(),
-              };
-              // Successfully found contract in underlying snapshot
-            } else {
-              console.warn(
-                `[TransportPolicy] Contract ${fullTicker} not found in ${underlying} snapshot (${results.length} contracts returned)`
+          // Try each possible underlying symbol until we find the contract
+          for (const underlying of underlyingsToTry) {
+            if (!underlying) continue;
+
+            try {
+              const snapshotResponse = await massive.getOptionsSnapshot(underlying);
+              const results = snapshotResponse?.results || [];
+
+              foundContract = results.find(
+                (c: any) =>
+                  c.details?.ticker === fullTicker ||
+                  c.ticker === fullTicker ||
+                  c.details?.ticker === fullTicker.replace(/^O:/, "") ||
+                  c.ticker === fullTicker.replace(/^O:/, "")
               );
+
+              if (foundContract) {
+                successfulUnderlying = underlying;
+                console.log(`[TransportPolicy] Found ${fullTicker} in ${underlying} snapshot`);
+                break;
+              }
+            } catch (err) {
+              // Continue to next underlying
+              console.warn(`[TransportPolicy] Snapshot for ${underlying} failed, trying next...`);
             }
+          }
+
+          if (
+            foundContract &&
+            (foundContract.last_quote || foundContract.last_trade || foundContract.day)
+          ) {
+            data = {
+              symbol: fullTicker,
+              last:
+                foundContract.last_trade?.price ??
+                foundContract.last_trade?.p ??
+                foundContract.day?.close ??
+                0,
+              bid: foundContract.last_quote?.bid ?? foundContract.last_quote?.bp ?? 0,
+              ask: foundContract.last_quote?.ask ?? foundContract.last_quote?.ap ?? 0,
+              volume: foundContract.day?.volume ?? 0,
+              change: foundContract.day?.change ?? 0,
+              changePercent: foundContract.day?.change_percent ?? 0,
+              open: foundContract.day?.open ?? 0,
+              high: foundContract.day?.high ?? 0,
+              low: foundContract.day?.low ?? 0,
+              timestamp:
+                foundContract.last_trade?.sip_timestamp ??
+                foundContract.last_quote?.sip_timestamp ??
+                Date.now(),
+            };
+            // Successfully found contract
+          } else if (extractedUnderlying) {
+            // Fallback: Try direct contract snapshot as last resort
+            try {
+              const directSnapshot = await massive.getContractSnapshot(fullTicker);
+              if (directSnapshot?.results?.[0]) {
+                const contract = directSnapshot.results[0];
+                data = {
+                  symbol: fullTicker,
+                  last: contract.last_trade?.price ?? contract.day?.close ?? 0,
+                  bid: contract.last_quote?.bid ?? 0,
+                  ask: contract.last_quote?.ask ?? 0,
+                  volume: contract.day?.volume ?? 0,
+                  change: contract.day?.change ?? 0,
+                  changePercent: contract.day?.change_percent ?? 0,
+                  open: contract.day?.open ?? 0,
+                  high: contract.day?.high ?? 0,
+                  low: contract.day?.low ?? 0,
+                  timestamp: contract.last_trade?.sip_timestamp ?? Date.now(),
+                };
+                console.log(`[TransportPolicy] Found ${fullTicker} via direct contract snapshot`);
+              }
+            } catch (directErr) {
+              console.warn(`[TransportPolicy] Direct contract snapshot failed for ${fullTicker}`);
+            }
+          }
+
+          if (!data) {
+            console.warn(
+              `[TransportPolicy] Contract ${fullTicker} not found in any snapshot (tried: ${underlyingsToTry.join(", ")})`
+            );
           }
         } catch (snapshotError) {
           console.error(
-            `[TransportPolicy] Underlying snapshot failed for ${fullTicker}:`,
+            `[TransportPolicy] Snapshot lookup failed for ${fullTicker}:`,
             snapshotError
           );
         }

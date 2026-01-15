@@ -15,6 +15,7 @@ import { cn } from "../../../lib/utils";
 import type { Trade, Ticker, Contract, TradeState } from "../../../types";
 import type { ContractRecommendation } from "../../../hooks/useContractRecommendation";
 import { fmtDTE, formatExpirationShort } from "../../../ui/semantics";
+import { getLiquidityGrade, SPREAD_THRESHOLDS } from "../../../lib/market/contractQuality";
 import {
   BarChart2,
   Clock,
@@ -93,24 +94,32 @@ export function CockpitContractPanel({
     const bid = effectiveContract.bid ?? 0;
     const ask = effectiveContract.ask ?? 0;
     const mid = effectiveContract.mid ?? (bid + ask) / 2;
-    const spreadPct = mid > 0 ? ((ask - bid) / mid) * 100 : 0;
+
+    // Check if we have valid pricing data (at least one of bid/ask/mid is > 0)
+    const hasValidPricing = mid > 0.01 || bid > 0 || ask > 0;
+    // Only calculate spread if we have valid pricing data
+    const spreadPct = hasValidPricing && mid > 0.01 ? ((ask - bid) / mid) * 100 : null;
+
     const volume = effectiveContract.volume ?? 0;
     const openInterest = effectiveContract.openInterest ?? 0;
-    const iv = effectiveContract.impliedVolatility ?? effectiveContract.iv ?? 0;
+    // iv may come from different API responses as either 'iv' or 'impliedVolatility'
+    const iv = effectiveContract.iv ?? (effectiveContract as any).impliedVolatility ?? 0;
 
-    // Liquidity rating
-    let rating: "good" | "fair" | "poor" = "poor";
-    if (spreadPct < 1 && volume > 100 && openInterest > 500) {
-      rating = "good";
-    } else if (spreadPct < 3 && volume > 50 && openInterest > 100) {
-      rating = "fair";
-    }
+    // Liquidity rating based on spread percentage
+    // Uses consistent thresholds from contractQuality.ts:
+    // A (good): ≤3% spread, B (fair): ≤8% spread, C (poor): >8% spread
+    // If no valid spread data, default to "poor" to indicate caution
+    const spreadDecimal = spreadPct !== null ? spreadPct / 100 : 1; // Default to 100% (poor) if no data
+    const grade = getLiquidityGrade(spreadDecimal);
+    const rating: "good" | "fair" | "poor" =
+      spreadPct === null ? "poor" : grade === "A" ? "good" : grade === "B" ? "fair" : "poor";
 
     return {
       bid,
       ask,
       mid,
       spreadPct,
+      hasValidPricing,
       volume,
       openInterest,
       iv: iv * 100, // Convert to percentage
@@ -227,13 +236,19 @@ export function CockpitContractPanel({
             {/* Spread */}
             <MetricCard
               label="Spread"
-              value={`${liquidityMetrics.spreadPct.toFixed(2)}%`}
+              value={
+                liquidityMetrics.spreadPct !== null
+                  ? `${liquidityMetrics.spreadPct.toFixed(2)}%`
+                  : "—"
+              }
               className={cn(
-                liquidityMetrics.spreadPct < 1
-                  ? "text-[var(--accent-positive)]"
-                  : liquidityMetrics.spreadPct < 3
-                    ? "text-amber-400"
-                    : "text-[var(--accent-negative)]"
+                liquidityMetrics.spreadPct === null
+                  ? "text-[var(--text-muted)]"
+                  : liquidityMetrics.spreadPct < 1
+                    ? "text-[var(--accent-positive)]"
+                    : liquidityMetrics.spreadPct < 3
+                      ? "text-amber-400"
+                      : "text-[var(--accent-negative)]"
               )}
             />
             {/* IV */}
@@ -248,10 +263,10 @@ export function CockpitContractPanel({
                     : "text-blue-400"
               )}
             />
-            {/* Volume */}
+            {/* Volume - show "--" when 0 (indicates data unavailable, not zero trades) */}
             <MetricCard
               label="Volume"
-              value={liquidityMetrics.volume.toLocaleString()}
+              value={liquidityMetrics.volume > 0 ? liquidityMetrics.volume.toLocaleString() : "--"}
               className="text-[var(--text-high)]"
             />
             {/* OI */}

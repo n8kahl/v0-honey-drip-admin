@@ -187,6 +187,7 @@ export function NowPanelManage({
             keyLevels={keyLevels}
             currentPrice={currentPrice}
             showDegradationWarnings={true}
+            contractIV={trade.contract?.iv}
           />
         ),
 

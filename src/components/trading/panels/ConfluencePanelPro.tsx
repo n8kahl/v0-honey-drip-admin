@@ -75,6 +75,8 @@ export interface ConfluencePanelProProps {
   mtfData?: MTFData[];
   /** Show degradation warnings */
   showDegradationWarnings?: boolean;
+  /** Contract IV for fallback when Greeks not available */
+  contractIV?: number;
   className?: string;
 }
 
@@ -104,10 +106,11 @@ export function ConfluencePanelPro({
   gamma,
   mtfData,
   showDegradationWarnings = true,
+  contractIV,
   className,
 }: ConfluencePanelProProps) {
-  // Get confluence data from hooks
-  const confluence = useSymbolConfluence(symbol);
+  // Get confluence data from hooks (pass contractIV as fallback for IV percentile)
+  const confluence = useSymbolConfluence(symbol, { contractIV });
   const flowContext = useFlowContext(symbol);
   const { session } = useMarketSession();
 
@@ -248,18 +251,22 @@ export function ConfluencePanelPro({
             <div className="flex items-center justify-between mt-1.5 text-[10px]">
               <div className="flex items-center gap-2">
                 <span className="text-[var(--text-muted)]">Alignment</span>
-                {/* MTF staleness indicator */}
-                {confluence.mtfHasStale && (
+                {/* MTF data status indicator */}
+                {(confluence.mtfHasNoData || confluence.mtfHasStale) && (
                   <span
                     className={cn(
                       "flex items-center gap-1 px-1.5 py-0.5 rounded",
                       isMarketClosed
                         ? "bg-zinc-700/50 text-zinc-400"
-                        : "bg-amber-500/20 text-amber-400"
+                        : confluence.mtfHasNoData
+                          ? "bg-zinc-600/30 text-zinc-400"
+                          : "bg-amber-500/20 text-amber-400"
                     )}
                   >
                     {isMarketClosed ? (
                       <>CLOSED</>
+                    ) : confluence.mtfHasNoData ? (
+                      <>NO DATA</>
                     ) : (
                       <>
                         <AlertCircle className="w-3 h-3" />

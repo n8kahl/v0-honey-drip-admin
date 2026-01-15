@@ -8,16 +8,46 @@ export interface OptionsFlowLevels {
 }
 
 /**
+ * Extract underlying symbol from various ticker formats:
+ * - "O:SPY250117C00622000" → "SPY"
+ * - "I:SPX" → "SPX"
+ * - "SPY" → "SPY"
+ */
+function extractUnderlying(ticker: string): string {
+  // Handle option tickers: O:SPY250117C00622000 → SPY
+  if (ticker.startsWith("O:")) {
+    // Option ticker format: O:SYMBOL + date + type + strike
+    // Extract symbol by finding where the digits start
+    const withoutPrefix = ticker.slice(2); // Remove "O:"
+    const match = withoutPrefix.match(/^([A-Z]+)/);
+    return match ? match[1] : withoutPrefix;
+  }
+  // Handle index tickers: I:SPX → SPX
+  if (ticker.startsWith("I:")) {
+    return ticker.slice(2);
+  }
+  return ticker;
+}
+
+/**
  * Calculates key levels based on options flow (GEX, OI concentration, Max Pain)
  */
 export async function calculateOptionsFlowLevels(symbol: string): Promise<OptionsFlowLevels> {
   try {
-    const underlying = symbol.replace(/^I:/, "");
+    const underlying = extractUnderlying(symbol);
+    console.log(
+      `[calculateOptionsFlowLevels] Fetching options snapshot for ${underlying} (from ${symbol})`
+    );
     const snapshot = await massive.getOptionsSnapshot(underlying);
 
     if (!snapshot?.results || snapshot.results.length === 0) {
+      console.warn(`[calculateOptionsFlowLevels] No snapshot data returned for ${underlying}`);
       return { gammaWall: null, callWall: null, putWall: null, maxPain: null };
     }
+
+    console.log(
+      `[calculateOptionsFlowLevels] Processing ${snapshot.results.length} contracts for ${underlying}`
+    );
 
     const contracts = snapshot.results;
     let maxGamma = -Infinity;

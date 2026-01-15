@@ -51,6 +51,8 @@ export interface MTFData {
   lastBarAt: number | null;
   /** Whether this timeframe's data is stale (>60s since last bar) */
   isStale: boolean;
+  /** Whether this timeframe has no data at all (never received bars) */
+  noData: boolean;
 }
 
 export type TradingStyle = "scalp" | "day" | "swing";
@@ -66,8 +68,10 @@ export interface SymbolConfluence {
   mtfTotal: number; // Total timeframes considered
   /** Most recent MTF bar update across all timeframes */
   mtfLastUpdated: number | null;
-  /** Whether any MTF timeframe data is stale */
+  /** Whether any MTF timeframe data is stale (>60s old) */
   mtfHasStale: boolean;
+  /** Whether any MTF timeframe has no data at all */
+  mtfHasNoData: boolean;
   overallScore: number; // 0-100
   threshold: number; // Score needed for "hot" status
   isHot: boolean; // score >= 90% of threshold
@@ -414,6 +418,7 @@ function calculateMTFAlignment(
   data: MTFData[];
   lastUpdated: number | null;
   hasStale: boolean;
+  hasNoData: boolean;
   evidence: string;
 } {
   const timeframes: Timeframe[] = ["1m", "5m", "15m", "60m"];
@@ -422,6 +427,7 @@ function calculateMTFAlignment(
   let bearCount = 0;
   let mostRecentUpdate: number | null = null;
   let hasStale = false;
+  let hasNoData = false;
   const now = Date.now();
 
   timeframes.forEach((tf) => {
@@ -434,8 +440,16 @@ function calculateMTFAlignment(
 
     // Get per-timeframe last bar timestamp
     const tfLastBarAt = lastBarAt?.[tf] ?? null;
-    const tfIsStale = tfLastBarAt ? now - tfLastBarAt > MTF_STALE_THRESHOLD_MS : true;
 
+    // Distinguish between "no data" and "stale data"
+    // - noData: never received bars for this timeframe (lastBarAt is null)
+    // - isStale: received bars but they're older than 60s
+    const tfNoData = tfLastBarAt === null;
+    const tfIsStale = !tfNoData && now - tfLastBarAt > MTF_STALE_THRESHOLD_MS;
+
+    // Track data availability
+    if (tfNoData) hasNoData = true;
+    // Only mark hasStale if data exists but is old (not when missing entirely)
     if (tfIsStale) hasStale = true;
     if (tfLastBarAt && (mostRecentUpdate === null || tfLastBarAt > mostRecentUpdate)) {
       mostRecentUpdate = tfLastBarAt;
@@ -447,6 +461,7 @@ function calculateMTFAlignment(
       label: tf,
       lastBarAt: tfLastBarAt,
       isStale: tfIsStale,
+      noData: tfNoData,
     });
   });
 
@@ -473,6 +488,7 @@ function calculateMTFAlignment(
     data,
     lastUpdated: mostRecentUpdate,
     hasStale,
+    hasNoData,
     evidence,
   };
 }
@@ -646,21 +662,26 @@ function calculateKeyLevels(symbolData: SymbolData): {
   };
 }
 
-function calculateIVPercentile(symbolData: SymbolData): {
+function calculateIVPercentile(
+  symbolData: SymbolData,
+  contractIV?: number
+): {
   value: number;
   displayValue: string;
   percentComplete: number;
   evidence: string;
 } {
-  // IV percentile from Greeks if available
+  // IV percentile from Greeks if available (ENTERED trades)
+  // Fallback to contract IV from options chain (WATCHING trades)
   const greeks = symbolData.greeks;
+  const iv = greeks?.iv ?? contractIV;
 
-  if (!greeks?.iv) {
+  if (!iv) {
     return { value: 0, displayValue: "N/A", percentComplete: 50, evidence: "IV data unavailable" }; // Neutral when missing
   }
 
   // Assuming IV is a decimal (0.30 = 30%)
-  const ivPercent = greeks.iv * 100;
+  const ivPercent = iv * 100;
 
   // Optimal for buying: 20-50%
   // Below 20%: IV cheap but maybe too quiet
@@ -823,8 +844,12 @@ function createPlaceholderFactors(): FactorData[] {
 // Main Hook
 // ============================================================================
 
-export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
+export function useSymbolConfluence(
+  symbol: string,
+  options?: { contractIV?: number }
+): SymbolConfluence | null {
   const symbolData = useMarketDataStore((state) => state.symbols[symbol?.toUpperCase()]);
+  const contractIV = options?.contractIV;
 
   return useMemo(() => {
     if (!symbol) {
@@ -851,34 +876,39 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
             direction: "neutral" as const,
             label: "1m",
             lastBarAt: null,
-            isStale: true,
+            isStale: false,
+            noData: true,
           },
           {
             timeframe: "5m",
             direction: "neutral" as const,
             label: "5m",
             lastBarAt: null,
-            isStale: true,
+            isStale: false,
+            noData: true,
           },
           {
             timeframe: "15m",
             direction: "neutral" as const,
             label: "15m",
             lastBarAt: null,
-            isStale: true,
+            isStale: false,
+            noData: true,
           },
           {
             timeframe: "60m",
             direction: "neutral" as const,
             label: "60m",
             lastBarAt: null,
-            isStale: true,
+            isStale: false,
+            noData: true,
           },
         ],
         mtfAligned: 0,
         mtfTotal: 4,
         mtfLastUpdated: null,
-        mtfHasStale: true,
+        mtfHasStale: false,
+        mtfHasNoData: true,
         overallScore: 0,
         threshold,
         isHot: false,
@@ -921,6 +951,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         mtfTotal: 4,
         mtfLastUpdated: mtfResult.lastUpdated,
         mtfHasStale: mtfResult.hasStale,
+        mtfHasNoData: mtfResult.hasNoData,
         overallScore: symbolData.confluence?.overall || 0,
         threshold,
         isHot: false,
@@ -945,7 +976,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
     const emaData = calculateEMAStack(symbolData.indicators, symbolData);
     const regimeData = calculateMarketRegime(symbolData, symbolData.indicators);
     const levelsData = calculateKeyLevels(symbolData);
-    const ivData = calculateIVPercentile(symbolData);
+    const ivData = calculateIVPercentile(symbolData, contractIV);
 
     // Build factors array
     const factors: FactorData[] = [
@@ -1122,6 +1153,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
       mtfTotal: mtfData.total,
       mtfLastUpdated: mtfData.lastUpdated,
       mtfHasStale: mtfData.hasStale,
+      mtfHasNoData: mtfData.hasNoData,
       overallScore,
       threshold,
       isHot,
@@ -1130,7 +1162,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
       styleScores,
       lastUpdated: symbolData.lastUpdated,
     };
-  }, [symbol, symbolData]);
+  }, [symbol, symbolData, contractIV]);
 }
 
 export default useSymbolConfluence;

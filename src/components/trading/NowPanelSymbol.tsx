@@ -18,15 +18,17 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect } from "react";
-import type { Ticker, Contract } from "../../types";
+import type { Ticker, Contract, Trade } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
-import { HDLiveChart } from "../hd/charts/HDLiveChart";
+import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { useContractRecommendation } from "../../hooks/useContractRecommendation";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { useLoadedTradeLiveModel } from "../../hooks/useLoadedTradeLiveModel";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { Zap, Clock, TrendingUp } from "lucide-react";
 import { useMarketDataStore } from "../../stores/marketDataStore";
+import { buildChartLevelsForCandidate } from "../../lib/riskEngine/chartLevels";
+import type { RiskCalculationInput } from "../../lib/riskEngine/types";
 
 // Cockpit components
 import {
@@ -194,10 +196,12 @@ export function NowPanelSymbol({
     };
   }, [activeContract, liveModel, currentPrice, currentProfile]);
 
-  // Chart levels with plan visualization
+  // Chart levels using canonical level builder
   const chartLevels = useMemo(() => {
-    const levels: any[] = keyLevels
-      ? [
+    if (!keyLevels || !activeContract || !liveModel || currentPrice <= 0) {
+      // Fallback: basic key levels only
+      if (keyLevels) {
+        return [
           ...(keyLevels.vwap
             ? [{ price: keyLevels.vwap, label: "VWAP", type: "VWAP" as const }]
             : []),
@@ -207,27 +211,63 @@ export function NowPanelSymbol({
           ...(keyLevels.priorDayLow
             ? [{ price: keyLevels.priorDayLow, label: "PDL", type: "PREV_DAY_LOW" as const }]
             : []),
-        ]
-      : [];
-
-    if (planMetrics) {
-      levels.push({
-        price: planMetrics.targetUnderlying,
-        label: `T +${currentProfile.target}%`,
-        type: "RESISTANCE",
-        color: "#4ade80",
-        lineStyle: "dashed",
-      });
-      levels.push({
-        price: planMetrics.stopUnderlying,
-        label: `S -${currentProfile.stop}%`,
-        type: "SUPPORT",
-        color: "#ef4444",
-        lineStyle: "dashed",
-      });
+        ];
+      }
+      return [];
     }
-    return levels;
-  }, [keyLevels, planMetrics, currentProfile]);
+
+    // Build canonical chart levels using risk engine
+    const optPrice = liveModel.option.mid || activeContract.mid || 0;
+    const delta = liveModel.greeks.delta || activeContract.delta || 0.5;
+
+    if (optPrice <= 0) {
+      return [];
+    }
+
+    const riskInput: RiskCalculationInput = {
+      entryPrice: optPrice,
+      currentUnderlyingPrice: currentPrice,
+      currentOptionMid: optPrice,
+      keyLevels: keyLevels,
+      delta: delta,
+      defaults: {
+        mode: "calculated",
+        tpPercent: currentProfile.target,
+        slPercent: currentProfile.stop,
+      },
+      tradeType:
+        selectedTradeType === "scalp" ? "SCALP" : selectedTradeType === "day" ? "DAY" : "SWING",
+    };
+
+    return buildChartLevelsForCandidate(symbol, currentPrice, keyLevels, riskInput);
+  }, [
+    keyLevels,
+    activeContract,
+    liveModel,
+    currentPrice,
+    currentProfile,
+    selectedTradeType,
+    symbol,
+  ]);
+
+  // Build a mock trade object for HDLiveChartContextAware
+  const mockTrade: Trade | null = useMemo(() => {
+    if (!activeContract) return null;
+    return {
+      id: "preview",
+      ticker: symbol,
+      state: "WATCHING" as const,
+      contract: activeContract,
+      entryPrice: planMetrics?.entry,
+      targetPrice: planMetrics?.target,
+      stopLoss: planMetrics?.stop,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: "",
+      tradeType:
+        selectedTradeType === "scalp" ? "Scalp" : selectedTradeType === "day" ? "Day" : "Swing",
+    } as unknown as Trade;
+  }, [activeContract, symbol, planMetrics, selectedTradeType]);
 
   // Determine cockpit view state
   const viewState: CockpitViewState = activeContract ? "plan" : "watch";
@@ -286,19 +326,17 @@ export function NowPanelSymbol({
 
         /* ========== CHART ========== */
         chart: (
-          <div className="h-full w-full relative">
-            <HDLiveChart
+          <div className="h-full w-full relative" data-testid="chart-container">
+            <HDLiveChartContextAware
               ticker={symbol}
-              height={180}
-              initialTimeframe="5"
-              indicators={{
-                ema: { periods: [9, 21] },
-                vwap: { enabled: true, bands: false },
-              }}
-              events={[]}
+              tradeState={activeContract ? "LOADED" : "WATCHING"}
+              currentTrade={mockTrade}
+              activeTicker={activeTicker}
+              hasLoadedContract={!!activeContract}
               levels={chartLevels}
-              showControls={false}
-              showHeader={false}
+              keyLevels={keyLevels}
+              height={180}
+              singleChart={true}
             />
             {/* Plan active indicator */}
             {activeContract && (
@@ -317,6 +355,7 @@ export function NowPanelSymbol({
             keyLevels={keyLevels}
             currentPrice={currentPrice}
             showDegradationWarnings={false}
+            contractIV={activeContract?.iv}
           />
         ),
 

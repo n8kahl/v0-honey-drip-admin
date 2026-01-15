@@ -220,6 +220,11 @@ export interface SymbolData {
   lastUpdated: number;
   isSubscribed: boolean;
   primaryTimeframe: Timeframe; // Which timeframe to use for indicators
+
+  // Granular staleness tracking per data source
+  lastQuoteAt?: number; // Last time quote/price was received via WS
+  lastBarAt?: Record<Timeframe, number>; // Last time bar was received per timeframe
+  lastFlowAt?: number; // Last time flow data was updated
 }
 
 export interface WebSocketConnection {
@@ -378,6 +383,23 @@ interface MarketDataStore {
 
   /** Check if data is stale */
   isStale: (symbol: string, maxAgeMs?: number) => boolean;
+
+  /** Check if quote data is stale (price updates) */
+  isQuoteStale: (symbol: string, maxAgeMs?: number) => boolean;
+
+  /** Check if bar data is stale for a specific timeframe */
+  isBarStale: (symbol: string, timeframe: Timeframe, maxAgeMs?: number) => boolean;
+
+  /** Check if flow data is stale */
+  isFlowStale: (symbol: string, maxAgeMs?: number) => boolean;
+
+  /** Get staleness info for all data sources */
+  getStalenessInfo: (symbol: string) => {
+    quote: { lastAt: number | null; isStale: boolean };
+    bars: Record<Timeframe, { lastAt: number | null; isStale: boolean }>;
+    flow: { lastAt: number | null; isStale: boolean };
+    overall: { lastAt: number | null; isStale: boolean };
+  } | null;
 }
 
 // ============================================================================
@@ -434,6 +456,16 @@ function createEmptySymbolData(symbol: string): SymbolData {
     lastUpdated: Date.now(),
     isSubscribed: false,
     primaryTimeframe: DEFAULT_PRIMARY_TIMEFRAME,
+    // Granular staleness tracking
+    lastQuoteAt: undefined,
+    lastBarAt: {
+      "1m": undefined as unknown as number,
+      "5m": undefined as unknown as number,
+      "15m": undefined as unknown as number,
+      "60m": undefined as unknown as number,
+      "1D": undefined as unknown as number,
+    },
+    lastFlowAt: undefined,
   };
 }
 
@@ -872,15 +904,54 @@ export const useMarketDataStore = create<MarketDataStore>()(
       },
 
       subscribeToSymbols: () => {
-        const { subscribedSymbols } = get();
+        const { subscribedSymbols, unsubscribers } = get();
 
         if (subscribedSymbols.size === 0) {
           console.warn("[v0] marketDataStore: No symbols to subscribe to");
           return;
         }
 
+        // Clean up previous subscriptions
+        unsubscribers.forEach((unsub) => {
+          try {
+            unsub();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        });
+
         const symbols = Array.from(subscribedSymbols);
-        // Update watchlist using unified massive API
+        const newUnsubscribers: Array<() => void> = [];
+
+        console.log("[v0] 📡 Wiring WebSocket subscriptions for", symbols.length, "symbols");
+
+        // Subscribe to quote updates
+        const unsubQuotes = massive.subscribeQuotes(symbols, (message) => {
+          if (message.type === "quote" && message.data) {
+            const { symbol, last } = message.data;
+            if (symbol && last !== undefined) {
+              get().handleQuoteUpdate(symbol, last);
+            }
+          }
+        });
+        newUnsubscribers.push(unsubQuotes);
+
+        // Subscribe to aggregate bar updates (1-minute bars)
+        const unsubAggs = massive.subscribeAggregates(
+          symbols,
+          (message) => {
+            if (message.type === "aggregate" && message.data) {
+              get().handleAggregateBar(message.data);
+            }
+          },
+          "minute"
+        );
+        newUnsubscribers.push(unsubAggs);
+
+        // Store unsubscribers for cleanup
+        set({ unsubscribers: newUnsubscribers });
+
+        // Also update watchlist using unified massive API
         massive.updateWatchlist(symbols);
       },
 
@@ -904,6 +975,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
        */
       handleQuoteUpdate: (symbol: string, price: number) => {
         const normalized = symbol.toUpperCase();
+        const now = Date.now();
 
         set(
           produce((draft) => {
@@ -912,10 +984,11 @@ export const useMarketDataStore = create<MarketDataStore>()(
               draft.symbols[normalized] = createEmptySymbolData(normalized);
             }
 
-            // Update last price and timestamp
+            // Update last price and timestamps (including granular lastQuoteAt)
             if (draft.symbols[normalized]) {
               draft.symbols[normalized].lastPrice = price;
-              draft.symbols[normalized].lastUpdated = Date.now();
+              draft.symbols[normalized].lastUpdated = now;
+              draft.symbols[normalized].lastQuoteAt = now;
             }
           })
         );
@@ -1074,6 +1147,13 @@ export const useMarketDataStore = create<MarketDataStore>()(
               );
             }
 
+            const now = Date.now();
+
+            // Initialize lastBarAt tracking if needed
+            if (!symbolData.lastBarAt) {
+              symbolData.lastBarAt = {} as Record<Timeframe, number>;
+            }
+
             // Auto-rollup higher timeframes when 1m candles are loaded
             if (timeframe === "1m" && trimmedCandles.length > 0) {
               const candles5m = rollupBars(trimmedCandles, "5m");
@@ -1085,11 +1165,19 @@ export const useMarketDataStore = create<MarketDataStore>()(
               symbolData.candles["5m"] = candles5m;
               symbolData.candles["15m"] = candles15m;
               symbolData.candles["60m"] = candles60m;
+
+              // Track lastBarAt for rolled-up timeframes
+              symbolData.lastBarAt["5m"] = now;
+              symbolData.lastBarAt["15m"] = now;
+              symbolData.lastBarAt["60m"] = now;
             }
 
             // Update the specified timeframe
             symbolData.candles[timeframe] = trimmedCandles;
-            symbolData.lastUpdated = Date.now();
+            symbolData.lastUpdated = now;
+
+            // Track lastBarAt for this timeframe (so staleness detection knows data exists)
+            symbolData.lastBarAt[timeframe] = now;
           })
         );
 
@@ -1102,6 +1190,7 @@ export const useMarketDataStore = create<MarketDataStore>()(
 
       mergeBar: (symbol: string, timeframe: Timeframe, bar: Candle) => {
         const normalized = symbol.toUpperCase();
+        const now = Date.now();
 
         // Use Immer's produce to avoid race conditions with concurrent updates
         set(
@@ -1133,15 +1222,26 @@ export const useMarketDataStore = create<MarketDataStore>()(
               }
             }
 
+            // Track lastBarAt per timeframe for granular staleness
+            if (!symbolData.lastBarAt) {
+              symbolData.lastBarAt = {} as Record<Timeframe, number>;
+            }
+
             // Auto-rollup higher timeframes from 1m bars
             if (timeframe === "1m") {
               // Roll up to 5m, 15m, 60m automatically
               symbolData.candles["5m"] = rollupBars(existingCandles, "5m");
               symbolData.candles["15m"] = rollupBars(existingCandles, "15m");
               symbolData.candles["60m"] = rollupBars(existingCandles, "60m");
+
+              // Track lastBarAt for rolled-up timeframes
+              symbolData.lastBarAt["5m"] = now;
+              symbolData.lastBarAt["15m"] = now;
+              symbolData.lastBarAt["60m"] = now;
             }
 
-            symbolData.lastUpdated = Date.now();
+            symbolData.lastUpdated = now;
+            symbolData.lastBarAt[timeframe] = now;
           })
         );
 
@@ -1548,6 +1648,75 @@ export const useMarketDataStore = create<MarketDataStore>()(
         const age = Date.now() - symbolData.lastUpdated;
         return age > maxAgeMs;
       },
+
+      isQuoteStale: (symbol: string, maxAgeMs = STALE_THRESHOLD_MS) => {
+        const normalized = symbol.toUpperCase();
+        const symbolData = get().symbols[normalized];
+        if (!symbolData || !symbolData.lastQuoteAt) return true;
+
+        const age = Date.now() - symbolData.lastQuoteAt;
+        return age > maxAgeMs;
+      },
+
+      isBarStale: (symbol: string, timeframe: Timeframe, maxAgeMs = STALE_THRESHOLD_MS) => {
+        const normalized = symbol.toUpperCase();
+        const symbolData = get().symbols[normalized];
+        if (!symbolData || !symbolData.lastBarAt || !symbolData.lastBarAt[timeframe]) return true;
+
+        const age = Date.now() - symbolData.lastBarAt[timeframe];
+        return age > maxAgeMs;
+      },
+
+      isFlowStale: (symbol: string, maxAgeMs = STALE_THRESHOLD_MS) => {
+        const normalized = symbol.toUpperCase();
+        const symbolData = get().symbols[normalized];
+        if (!symbolData || !symbolData.lastFlowAt) return true;
+
+        const age = Date.now() - symbolData.lastFlowAt;
+        return age > maxAgeMs;
+      },
+
+      getStalenessInfo: (symbol: string) => {
+        const normalized = symbol.toUpperCase();
+        const symbolData = get().symbols[normalized];
+        if (!symbolData) return null;
+
+        const now = Date.now();
+        const DEFAULT_STALE_MS = STALE_THRESHOLD_MS;
+
+        // Quote staleness
+        const quoteLastAt = symbolData.lastQuoteAt ?? null;
+        const quoteIsStale = quoteLastAt ? now - quoteLastAt > DEFAULT_STALE_MS : true;
+
+        // Bar staleness per timeframe
+        const timeframes: Timeframe[] = ["1m", "5m", "15m", "60m", "1D"];
+        const bars = {} as Record<Timeframe, { lastAt: number | null; isStale: boolean }>;
+        for (const tf of timeframes) {
+          const lastAt = symbolData.lastBarAt?.[tf] ?? null;
+          const isStale = lastAt ? now - lastAt > DEFAULT_STALE_MS : true;
+          bars[tf] = { lastAt, isStale };
+        }
+
+        // Flow staleness
+        const flowLastAt = symbolData.lastFlowAt ?? null;
+        const flowIsStale = flowLastAt ? now - flowLastAt > DEFAULT_STALE_MS : true;
+
+        // Overall staleness (any source updated recently = not stale)
+        const overallLastAt =
+          Math.max(
+            quoteLastAt ?? 0,
+            ...(Object.values(symbolData.lastBarAt ?? {}) as number[]),
+            flowLastAt ?? 0
+          ) || null;
+        const overallIsStale = overallLastAt ? now - overallLastAt > DEFAULT_STALE_MS : true;
+
+        return {
+          quote: { lastAt: quoteLastAt, isStale: quoteIsStale },
+          bars,
+          flow: { lastAt: flowLastAt, isStale: flowIsStale },
+          overall: { lastAt: overallLastAt, isStale: overallIsStale },
+        };
+      },
     }),
     { name: "MarketDataStore" }
   )
@@ -1617,4 +1786,24 @@ export function useAreGreeksStale(symbol: string, maxAgeMs?: number) {
 /** Check if symbol data is stale */
 export function useIsStale(symbol: string, maxAgeMs?: number) {
   return useMarketDataStore((state) => state.isStale(symbol, maxAgeMs));
+}
+
+/** Check if quote data is stale (price updates via WS) */
+export function useIsQuoteStale(symbol: string, maxAgeMs?: number) {
+  return useMarketDataStore((state) => state.isQuoteStale(symbol, maxAgeMs));
+}
+
+/** Check if bar data is stale for a specific timeframe */
+export function useIsBarStale(symbol: string, timeframe: Timeframe, maxAgeMs?: number) {
+  return useMarketDataStore((state) => state.isBarStale(symbol, timeframe, maxAgeMs));
+}
+
+/** Check if flow data is stale */
+export function useIsFlowStale(symbol: string, maxAgeMs?: number) {
+  return useMarketDataStore((state) => state.isFlowStale(symbol, maxAgeMs));
+}
+
+/** Get detailed staleness info for all data sources */
+export function useStalenessInfo(symbol: string) {
+  return useMarketDataStore((state) => state.getStalenessInfo(symbol));
 }
