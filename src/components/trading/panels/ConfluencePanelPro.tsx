@@ -29,6 +29,8 @@ import {
   Layers,
   BarChart3,
   Zap,
+  Clock,
+  Info,
 } from "lucide-react";
 
 // Visual Components
@@ -40,6 +42,7 @@ import { GammaLevelsMap } from "@/components/hd/terminal/GammaLevelsMap";
 // Hooks & Types
 import { useSymbolConfluence, type MTFData } from "@/hooks/useSymbolConfluence";
 import { useFlowContext } from "@/hooks/useFlowContext";
+import { useMarketSession } from "@/hooks/useMarketSession";
 import type { KeyLevels } from "@/lib/riskEngine/types";
 import type { SymbolFeatures } from "@/lib/strategy/engine";
 import type { CockpitViewState } from "../cockpit/CockpitLayout";
@@ -76,6 +79,19 @@ export interface ConfluencePanelProProps {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/** Format timestamp as relative time (e.g., "12s ago", "2m ago") */
+function formatRelativeTime(ts: number | null | undefined): string {
+  if (!ts) return "never";
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -93,6 +109,10 @@ export function ConfluencePanelPro({
   // Get confluence data from hooks
   const confluence = useSymbolConfluence(symbol);
   const flowContext = useFlowContext(symbol);
+  const { session } = useMarketSession();
+
+  // Determine if market is closed (flow data won't update)
+  const isMarketClosed = session === "CLOSED";
 
   // Derive effective flow
   const effectiveFlow = useMemo(() => {
@@ -226,17 +246,48 @@ export function ConfluencePanelPro({
           {hasMTF && <MTFHeatmap timeframes={mtfStates} />}
           {hasMTF && confluence?.mtfAligned !== undefined && (
             <div className="flex items-center justify-between mt-1.5 text-[10px]">
-              <span className="text-[var(--text-muted)]">Alignment</span>
-              <span
-                className={cn(
-                  "font-semibold",
-                  confluence.mtfAligned >= 3
-                    ? "text-[var(--accent-positive)]"
-                    : "text-[var(--text-muted)]"
+              <div className="flex items-center gap-2">
+                <span className="text-[var(--text-muted)]">Alignment</span>
+                {/* MTF staleness indicator */}
+                {confluence.mtfHasStale && (
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded",
+                      isMarketClosed
+                        ? "bg-zinc-700/50 text-zinc-400"
+                        : "bg-amber-500/20 text-amber-400"
+                    )}
+                  >
+                    {isMarketClosed ? (
+                      <>CLOSED</>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-3 h-3" />
+                        STALE
+                      </>
+                    )}
+                  </span>
                 )}
-              >
-                {confluence.mtfAligned}/{mtfStates.length} aligned
-              </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "font-semibold",
+                    confluence.mtfAligned >= 3
+                      ? "text-[var(--accent-positive)]"
+                      : "text-[var(--text-muted)]"
+                  )}
+                >
+                  {confluence.mtfAligned}/{mtfStates.length} aligned
+                </span>
+                {/* MTF last updated timestamp */}
+                {confluence.mtfLastUpdated && (
+                  <span className="flex items-center gap-1 text-[var(--text-faint)]">
+                    <Clock className="w-3 h-3" />
+                    {formatRelativeTime(confluence.mtfLastUpdated)}
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </Section>
@@ -253,7 +304,16 @@ export function ConfluencePanelPro({
               : "Flow data unavailable for this symbol"
           }
         >
-          {hasFlow && <FlowPulse flow={effectiveFlow} compact showLabels={false} />}
+          {hasFlow && (
+            <FlowPulse
+              flow={effectiveFlow}
+              compact
+              showLabels={false}
+              lastUpdated={flowContext.lastUpdated}
+              isStale={flowContext.isStale}
+              isMarketClosed={isMarketClosed}
+            />
+          )}
           {hasFlow && (
             <div className="flex items-center justify-between mt-1.5 text-[10px]">
               <div className="flex items-center gap-2">
@@ -261,6 +321,26 @@ export function ConfluencePanelPro({
                   <span className="flex items-center gap-1 text-[var(--accent-warning)]">
                     <Zap className="w-3 h-3" />
                     {effectiveFlow.sweepCount} sweeps
+                  </span>
+                )}
+                {/* Stale/Market Closed indicator */}
+                {(flowContext.isStale || isMarketClosed) && (
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded",
+                      isMarketClosed
+                        ? "bg-zinc-700/50 text-zinc-400"
+                        : "bg-amber-500/20 text-amber-400"
+                    )}
+                  >
+                    {isMarketClosed ? (
+                      <>CLOSED</>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-3 h-3" />
+                        STALE
+                      </>
+                    )}
                   </span>
                 )}
               </div>
@@ -319,6 +399,44 @@ export function ConfluencePanelPro({
             </div>
           )}
         </Section>
+
+        {/* ---------- WHY EVIDENCE ---------- */}
+        {confluence?.factors && confluence.factors.length > 0 && (
+          <Section
+            title="WHY"
+            icon={<Info className="w-3.5 h-3.5" />}
+            context="underlying"
+            hasData={true}
+            emptyMessage=""
+          >
+            <div className="space-y-1">
+              {confluence.factors
+                .filter((f) => f.evidence && f.status !== "missing")
+                .slice(0, 6) // Show top 6 factors with evidence
+                .map((factor) => (
+                  <div key={factor.name} className="flex items-start gap-2 text-[10px]">
+                    <span
+                      className={cn(
+                        "flex-shrink-0 w-12 font-semibold uppercase",
+                        factor.status === "strong"
+                          ? "text-[var(--accent-positive)]"
+                          : factor.status === "good"
+                            ? "text-emerald-400"
+                            : factor.status === "building"
+                              ? "text-amber-400"
+                              : "text-[var(--text-muted)]"
+                      )}
+                    >
+                      {factor.label}
+                    </span>
+                    <span className="text-[var(--text-medium)] leading-tight">
+                      {factor.evidence}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </Section>
+        )}
       </div>
 
       {/* ========== FOOTER: What's Missing (WATCH state) ========== */}

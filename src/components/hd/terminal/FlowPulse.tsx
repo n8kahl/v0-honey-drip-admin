@@ -5,16 +5,30 @@
  * Left side: Put Premium (Red) | Right side: Call Premium (Green)
  * Center marker shows the zero line (balanced flow).
  * Overlay shows institutional conviction score and bias.
+ *
+ * TRUTHFUL PULSE: Only pulses when there's a real recent data update,
+ * not a fake CSS animation. Shows stale/market closed states honestly.
  */
 
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { AlertTriangle, Clock } from "lucide-react";
 import type { SymbolFeatures } from "@/lib/strategy/engine";
 
 interface FlowPulseProps {
   flow?: SymbolFeatures["flow"];
   compact?: boolean;
   showLabels?: boolean;
+  /** Timestamp of last flow data update */
+  lastUpdated?: number | null;
+  /** Whether flow data is stale (>60s old) */
+  isStale?: boolean;
+  /** Whether market is closed */
+  isMarketClosed?: boolean;
 }
+
+/** Threshold for "recent" update pulse animation (5 seconds) */
+const RECENT_UPDATE_MS = 5_000;
 
 function getBiasColor(bias?: "bullish" | "bearish" | "neutral"): string {
   switch (bias) {
@@ -38,7 +52,31 @@ function getBiasGradient(bias?: "bullish" | "bearish" | "neutral"): string {
   }
 }
 
-export function FlowPulse({ flow, compact = false, showLabels = true }: FlowPulseProps) {
+export function FlowPulse({
+  flow,
+  compact = false,
+  showLabels = true,
+  lastUpdated,
+  isStale = false,
+  isMarketClosed = false,
+}: FlowPulseProps) {
+  // Track if we should show the pulse animation (real update within RECENT_UPDATE_MS)
+  const [showPulse, setShowPulse] = useState(false);
+
+  // Trigger pulse animation on real updates
+  useEffect(() => {
+    if (!lastUpdated) return;
+
+    const age = Date.now() - lastUpdated;
+    if (age < RECENT_UPDATE_MS) {
+      // Recent update - show pulse
+      setShowPulse(true);
+      // Clear pulse after animation duration
+      const timer = setTimeout(() => setShowPulse(false), RECENT_UPDATE_MS);
+      return () => clearTimeout(timer);
+    }
+  }, [lastUpdated]);
+
   // Extract flow metrics with defaults
   const score = flow?.flowScore ?? flow?.institutionalConviction ?? 0;
   const bias = flow?.flowBias ?? "neutral";
@@ -56,7 +94,15 @@ export function FlowPulse({ flow, compact = false, showLabels = true }: FlowPuls
 
   // Determine if flow is significant
   const isSignificant = score > 60;
-  const isStrong = score > 80;
+
+  // Format the last update time for display
+  const formatLastUpdate = (ts: number | null | undefined): string => {
+    if (!ts) return "never";
+    const seconds = Math.floor((Date.now() - ts) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    return `${Math.floor(seconds / 3600)}h ago`;
+  };
 
   return (
     <div className={cn("w-full", compact ? "space-y-1" : "space-y-2")}>
@@ -70,6 +116,32 @@ export function FlowPulse({ flow, compact = false, showLabels = true }: FlowPuls
             </span>
             <span className="text-muted-foreground">|</span>
             <span className="text-muted-foreground font-mono">{score.toFixed(0)}/100</span>
+            {/* Stale/Market Closed indicator */}
+            {(isStale || isMarketClosed) && (
+              <>
+                <span className="text-muted-foreground">|</span>
+                <span
+                  className={cn(
+                    "flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded",
+                    isMarketClosed
+                      ? "bg-zinc-700/50 text-zinc-400"
+                      : "bg-amber-500/20 text-amber-400"
+                  )}
+                >
+                  {isMarketClosed ? (
+                    <>
+                      <Clock className="w-3 h-3" />
+                      CLOSED
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-3 h-3" />
+                      STALE
+                    </>
+                  )}
+                </span>
+              </>
+            )}
           </div>
           <span className="text-emerald-400 font-medium uppercase tracking-wider">Call Flow</span>
         </div>
@@ -101,13 +173,16 @@ export function FlowPulse({ flow, compact = false, showLabels = true }: FlowPuls
           {/* Center zero line */}
           <div className="absolute inset-y-0 left-1/2 w-px bg-zinc-400/60 -translate-x-1/2" />
 
-          {/* Flow position indicator */}
+          {/* Flow position indicator - TRUTHFUL PULSE: only animates on real recent updates */}
           <div
             className={cn(
               "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-500",
               compact ? "w-2 h-2" : "w-3 h-3",
               "rounded-full border-2 border-white shadow-lg",
-              isStrong && "animate-pulse",
+              // Only pulse on real updates, never when stale or market closed
+              showPulse && !isStale && !isMarketClosed && "animate-pulse",
+              // Dim the indicator when stale or market closed
+              isStale || isMarketClosed ? "opacity-50" : "",
               `bg-gradient-to-br ${getBiasGradient(bias)}`
             )}
             style={{ left: `${position}%` }}
@@ -182,6 +257,24 @@ export function FlowPulse({ flow, compact = false, showLabels = true }: FlowPuls
               <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground">Sweeps:</span>
                 <span className="font-mono font-semibold text-amber-400">{flow.sweepCount}</span>
+              </div>
+            </>
+          )}
+
+          {/* Last update timestamp */}
+          {lastUpdated && (
+            <>
+              <span className="text-muted-foreground">|</span>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3 h-3 text-muted-foreground" />
+                <span
+                  className={cn(
+                    "text-[10px] font-mono",
+                    isStale ? "text-amber-400" : "text-muted-foreground"
+                  )}
+                >
+                  {formatLastUpdate(lastUpdated)}
+                </span>
               </div>
             </>
           )}

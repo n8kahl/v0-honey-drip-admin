@@ -39,12 +39,18 @@ export interface FactorData {
   contribution: number; // weight × percentComplete
   direction?: "bullish" | "bearish" | "neutral";
   tooltip?: string;
+  /** Evidence string explaining WHY this factor matters - derived from computed values */
+  evidence?: string;
 }
 
 export interface MTFData {
   timeframe: string;
   direction: "up" | "down" | "neutral";
   label: string;
+  /** Timestamp of last bar update for this timeframe */
+  lastBarAt: number | null;
+  /** Whether this timeframe's data is stale (>60s since last bar) */
+  isStale: boolean;
 }
 
 export type TradingStyle = "scalp" | "day" | "swing";
@@ -58,6 +64,10 @@ export interface SymbolConfluence {
   mtf: MTFData[];
   mtfAligned: number; // Count of aligned timeframes (e.g., 3/4)
   mtfTotal: number; // Total timeframes considered
+  /** Most recent MTF bar update across all timeframes */
+  mtfLastUpdated: number | null;
+  /** Whether any MTF timeframe data is stale */
+  mtfHasStale: boolean;
   overallScore: number; // 0-100
   threshold: number; // Score needed for "hot" status
   isHot: boolean; // score >= 90% of threshold
@@ -180,12 +190,13 @@ function calculateRVOL(symbolData: SymbolData): {
   value: number;
   displayValue: string;
   percentComplete: number;
+  evidence: string;
 } {
   // RVOL = current volume / average volume
   // For now, we use the volume from the last candle vs previous candles
   const candles1m = symbolData.candles["1m"];
   if (candles1m.length < 20) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0 };
+    return { value: 0, displayValue: "N/A", percentComplete: 0, evidence: "Insufficient data" };
   }
 
   const recentCandles = candles1m.slice(-20);
@@ -199,10 +210,23 @@ function calculateRVOL(symbolData: SymbolData): {
   const target = FACTOR_THRESHOLDS.rvol.ideal || 2.0;
   const percentComplete = Math.min(100, (rvol / target) * 100);
 
+  // Generate evidence string based on computed values
+  let evidence: string;
+  if (rvol >= 2.0) {
+    evidence = `${rvol.toFixed(1)}x avg volume → strong institutional interest`;
+  } else if (rvol >= 1.5) {
+    evidence = `${rvol.toFixed(1)}x avg volume → elevated activity`;
+  } else if (rvol >= 1.0) {
+    evidence = `${rvol.toFixed(1)}x avg volume → normal activity`;
+  } else {
+    evidence = `${rvol.toFixed(1)}x avg volume → below average interest`;
+  }
+
   return {
     value: rvol,
     displayValue: `${rvol.toFixed(1)}x`,
     percentComplete,
+    evidence,
   };
 }
 
@@ -211,12 +235,19 @@ function calculateFlowBias(symbolData: SymbolData): {
   displayValue: string;
   percentComplete: number;
   direction: "bullish" | "bearish" | "neutral";
+  evidence: string;
 } {
   // Flow bias is calculated from buy/sell pressure
   // For now, we derive it from price action and volume
   const candles1m = symbolData.candles["1m"];
   if (candles1m.length < 10) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0, direction: "neutral" };
+    return {
+      value: 0,
+      displayValue: "N/A",
+      percentComplete: 0,
+      direction: "neutral",
+      evidence: "Insufficient data",
+    };
   }
 
   const recent = candles1m.slice(-10);
@@ -242,11 +273,29 @@ function calculateFlowBias(symbolData: SymbolData): {
   const target = FACTOR_THRESHOLDS.flow.ideal || 60;
   const percentComplete = Math.min(100, (Math.abs(flowBias) / target) * 100);
 
+  // Generate evidence string based on computed values
+  let evidence: string;
+  const absFlow = Math.abs(flowBias);
+  if (flowBias >= 60) {
+    evidence = `+${flowBias.toFixed(0)} buy pressure → strong accumulation`;
+  } else if (flowBias >= 40) {
+    evidence = `+${flowBias.toFixed(0)} buy pressure → buyers in control`;
+  } else if (flowBias <= -60) {
+    evidence = `${flowBias.toFixed(0)} sell pressure → heavy distribution`;
+  } else if (flowBias <= -40) {
+    evidence = `${flowBias.toFixed(0)} sell pressure → sellers in control`;
+  } else if (absFlow < 20) {
+    evidence = `${flowBias >= 0 ? "+" : ""}${flowBias.toFixed(0)} → balanced, no clear bias`;
+  } else {
+    evidence = `${flowBias >= 0 ? "+" : ""}${flowBias.toFixed(0)} → slight ${flowBias > 0 ? "buying" : "selling"} pressure`;
+  }
+
   return {
     value: flowBias,
     displayValue: flowBias >= 0 ? `+${flowBias.toFixed(0)}` : flowBias.toFixed(0),
     percentComplete,
     direction,
+    evidence,
   };
 }
 
@@ -255,10 +304,17 @@ function calculateRSI(indicators: Indicators): {
   displayValue: string;
   percentComplete: number;
   direction: "bullish" | "bearish" | "neutral";
+  evidence: string;
 } {
   const rsi = indicators.rsi14;
   if (rsi === undefined) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0, direction: "neutral" };
+    return {
+      value: 0,
+      displayValue: "N/A",
+      percentComplete: 0,
+      direction: "neutral",
+      evidence: "RSI data unavailable",
+    };
   }
 
   // RSI 30-45 is bullish (oversold reversal zone)
@@ -266,26 +322,32 @@ function calculateRSI(indicators: Indicators): {
   // RSI 45-55 is neutral
   let direction: "bullish" | "bearish" | "neutral" = "neutral";
   let percentComplete = 0;
+  let evidence: string;
 
   if (rsi >= 30 && rsi <= 45) {
     direction = "bullish";
     // Closer to 38 is ideal for bullish (middle of zone)
     percentComplete = 100 - Math.abs(rsi - 38) * 6;
+    evidence = `RSI ${rsi.toFixed(0)} → oversold reversal zone, bounce likely`;
   } else if (rsi >= 55 && rsi <= 70) {
     direction = "bearish";
     // Closer to 62 is ideal for bearish
     percentComplete = 100 - Math.abs(rsi - 62) * 6;
+    evidence = `RSI ${rsi.toFixed(0)} → overbought, pullback likely`;
   } else if (rsi < 30) {
     // Extremely oversold - potentially bullish but risky
     direction = "bullish";
     percentComplete = 60;
+    evidence = `RSI ${rsi.toFixed(0)} → deeply oversold, watch for reversal`;
   } else if (rsi > 70) {
     // Extremely overbought - potentially bearish but risky
     direction = "bearish";
     percentComplete = 60;
+    evidence = `RSI ${rsi.toFixed(0)} → deeply overbought, extended`;
   } else {
     // Neutral zone (45-55)
     percentComplete = 30;
+    evidence = `RSI ${rsi.toFixed(0)} → neutral zone, no edge`;
   }
 
   return {
@@ -293,19 +355,20 @@ function calculateRSI(indicators: Indicators): {
     displayValue: rsi.toFixed(0),
     percentComplete: Math.max(0, Math.min(100, percentComplete)),
     direction,
+    evidence,
   };
 }
 
 function calculateVWAPDistance(
   symbolData: SymbolData,
   indicators: Indicators
-): { value: number; displayValue: string; percentComplete: number } {
+): { value: number; displayValue: string; percentComplete: number; evidence: string } {
   const vwap = indicators.vwap;
   const candles1m = symbolData.candles["1m"];
   const lastCandle = candles1m[candles1m.length - 1];
 
   if (!vwap || !lastCandle) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0 };
+    return { value: 0, displayValue: "N/A", percentComplete: 0, evidence: "VWAP data unavailable" };
   }
 
   const price = lastCandle.close;
@@ -315,23 +378,51 @@ function calculateVWAPDistance(
   const absDistance = Math.abs(distance);
   const percentComplete = absDistance <= 0.3 ? 100 : Math.max(0, 100 - (absDistance - 0.3) * 100);
 
+  // Generate evidence string
+  let evidence: string;
+  const sign = distance >= 0 ? "+" : "";
+  if (absDistance <= 0.1) {
+    evidence = `${sign}${distance.toFixed(2)}% from VWAP → at fair value`;
+  } else if (absDistance <= 0.3) {
+    evidence = `${sign}${distance.toFixed(2)}% from VWAP → near equilibrium`;
+  } else if (distance > 0.5) {
+    evidence = `${sign}${distance.toFixed(2)}% above VWAP → premium, may revert`;
+  } else if (distance < -0.5) {
+    evidence = `${sign}${distance.toFixed(2)}% below VWAP → discount, may bounce`;
+  } else {
+    evidence = `${sign}${distance.toFixed(2)}% from VWAP → ${distance > 0 ? "slight premium" : "slight discount"}`;
+  }
+
   return {
     value: distance,
     displayValue: `${distance >= 0 ? "+" : ""}${distance.toFixed(2)}%`,
     percentComplete,
+    evidence,
   };
 }
 
-function calculateMTFAlignment(mtfTrend: Record<Timeframe, MTFTrend>): {
+/** Stale threshold for MTF data (60 seconds) */
+const MTF_STALE_THRESHOLD_MS = 60_000;
+
+function calculateMTFAlignment(
+  mtfTrend: Record<Timeframe, MTFTrend>,
+  lastBarAt?: Record<Timeframe, number>
+): {
   aligned: number;
   total: number;
   percentComplete: number;
   data: MTFData[];
+  lastUpdated: number | null;
+  hasStale: boolean;
+  evidence: string;
 } {
   const timeframes: Timeframe[] = ["1m", "5m", "15m", "60m"];
   const data: MTFData[] = [];
   let bullCount = 0;
   let bearCount = 0;
+  let mostRecentUpdate: number | null = null;
+  let hasStale = false;
+  const now = Date.now();
 
   timeframes.forEach((tf) => {
     const trend = mtfTrend[tf];
@@ -341,21 +432,48 @@ function calculateMTFAlignment(mtfTrend: Record<Timeframe, MTFTrend>): {
     if (trend === "bull") bullCount++;
     if (trend === "bear") bearCount++;
 
+    // Get per-timeframe last bar timestamp
+    const tfLastBarAt = lastBarAt?.[tf] ?? null;
+    const tfIsStale = tfLastBarAt ? now - tfLastBarAt > MTF_STALE_THRESHOLD_MS : true;
+
+    if (tfIsStale) hasStale = true;
+    if (tfLastBarAt && (mostRecentUpdate === null || tfLastBarAt > mostRecentUpdate)) {
+      mostRecentUpdate = tfLastBarAt;
+    }
+
     data.push({
       timeframe: tf,
       direction,
       label: tf,
+      lastBarAt: tfLastBarAt,
+      isStale: tfIsStale,
     });
   });
 
   const maxAligned = Math.max(bullCount, bearCount);
   const percentComplete = (maxAligned / timeframes.length) * 100;
+  const dominantBias = bullCount >= bearCount ? "bullish" : "bearish";
+
+  // Generate evidence string
+  let evidence: string;
+  if (maxAligned === 4) {
+    evidence = `4/4 TFs ${dominantBias} → perfect alignment, high conviction`;
+  } else if (maxAligned === 3) {
+    evidence = `3/4 TFs ${dominantBias} → strong alignment`;
+  } else if (maxAligned === 2) {
+    evidence = `2/4 TFs aligned → mixed signals, lower conviction`;
+  } else {
+    evidence = `Conflicting TFs → no clear trend, wait for alignment`;
+  }
 
   return {
     aligned: maxAligned,
     total: timeframes.length,
     percentComplete,
     data,
+    lastUpdated: mostRecentUpdate,
+    hasStale,
+    evidence,
   };
 }
 
@@ -367,12 +485,19 @@ function calculateEMAStack(
   displayValue: string;
   percentComplete: number;
   direction: "bullish" | "bearish" | "neutral";
+  evidence: string;
 } {
   const { ema9, ema20, ema50 } = indicators;
   const lastCandle = symbolData.candles["1m"][symbolData.candles["1m"].length - 1];
 
   if (!ema9 || !ema20 || !lastCandle) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0, direction: "neutral" };
+    return {
+      value: 0,
+      displayValue: "N/A",
+      percentComplete: 0,
+      direction: "neutral",
+      evidence: "EMA data unavailable",
+    };
   }
 
   const price = lastCandle.close;
@@ -396,24 +521,42 @@ function calculateEMAStack(
   const alignedCount = Math.max(bullishPoints, bearishPoints);
   const percentComplete = (alignedCount / maxPoints) * 100;
 
+  // Generate evidence string
+  let evidence: string;
+  if (alignedCount === maxPoints && direction === "bullish") {
+    evidence = `Price > EMA9 > EMA20${ema50 ? " > EMA50" : ""} → bullish structure`;
+  } else if (alignedCount === maxPoints && direction === "bearish") {
+    evidence = `Price < EMA9 < EMA20${ema50 ? " < EMA50" : ""} → bearish structure`;
+  } else if (alignedCount >= 2) {
+    evidence = `${alignedCount}/${maxPoints} EMAs aligned → ${direction} bias forming`;
+  } else {
+    evidence = `EMAs mixed → no clear trend structure`;
+  }
+
   return {
     value: alignedCount,
     displayValue: `${alignedCount}/${maxPoints}`,
     percentComplete,
     direction,
+    evidence,
   };
 }
 
 function calculateMarketRegime(
   symbolData: SymbolData,
   indicators: Indicators
-): { value: number; displayValue: string; percentComplete: number } {
+): { value: number; displayValue: string; percentComplete: number; evidence: string } {
   // Simplified regime detection based on ATR and trend
   const atr = indicators.atr14;
   const candles = symbolData.candles["15m"];
 
   if (!atr || candles.length < 20) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0 };
+    return {
+      value: 0,
+      displayValue: "N/A",
+      percentComplete: 0,
+      evidence: "Regime data unavailable",
+    };
   }
 
   // Check for trending vs ranging
@@ -426,11 +569,23 @@ function calculateMarketRegime(
 
   // If both highs and lows are trending in same direction = trending
   const isTrending = (highTrend > 0 && lowTrend > 0) || (highTrend < 0 && lowTrend < 0);
+  const trendDirection = highTrend > 0 ? "up" : "down";
+
+  // Generate evidence string
+  let evidence: string;
+  if (isTrending && trendDirection === "up") {
+    evidence = `Higher highs & higher lows → uptrend, momentum strategies favor`;
+  } else if (isTrending && trendDirection === "down") {
+    evidence = `Lower highs & lower lows → downtrend, momentum strategies favor`;
+  } else {
+    evidence = `No clear HH/HL or LH/LL → range-bound, mean reversion favor`;
+  }
 
   return {
     value: isTrending ? 1 : 0,
     displayValue: isTrending ? "TRENDING" : "RANGING",
     percentComplete: isTrending ? 100 : 40,
+    evidence,
   };
 }
 
@@ -438,13 +593,19 @@ function calculateKeyLevels(symbolData: SymbolData): {
   value: number;
   displayValue: string;
   percentComplete: number;
+  evidence: string;
 } {
   // Check proximity to key levels (ORB, swing highs/lows)
   // For now, use a simplified version based on recent range
   const candles1m = symbolData.candles["1m"];
 
   if (candles1m.length < 60) {
-    return { value: 0, displayValue: "N/A", percentComplete: 0 };
+    return {
+      value: 0,
+      displayValue: "N/A",
+      percentComplete: 0,
+      evidence: "Key levels data unavailable",
+    };
   }
 
   // Get first 30 minutes for ORB (assuming market open data)
@@ -460,11 +621,28 @@ function calculateKeyLevels(symbolData: SymbolData): {
   // Within 0.5% of ORB = strong
   const percentComplete = minDist <= 0.5 ? 100 : Math.max(0, 100 - minDist * 50);
   const nearLevel = distToHigh < distToLow ? "ORB Hi" : "ORB Lo";
+  const isAboveOrb = currentPrice > orbHigh;
+  const isBelowOrb = currentPrice < orbLow;
+
+  // Generate evidence string
+  let evidence: string;
+  if (minDist <= 0.2) {
+    evidence = `${minDist.toFixed(1)}% from ${nearLevel} → at key level, watch for reaction`;
+  } else if (minDist <= 0.5) {
+    evidence = `${minDist.toFixed(1)}% from ${nearLevel} → near decision point`;
+  } else if (isAboveOrb) {
+    evidence = `${distToHigh.toFixed(1)}% above ORB high → breakout territory`;
+  } else if (isBelowOrb) {
+    evidence = `${distToLow.toFixed(1)}% below ORB low → breakdown territory`;
+  } else {
+    evidence = `${minDist.toFixed(1)}% from ${nearLevel} → inside ORB range`;
+  }
 
   return {
     value: minDist,
     displayValue: `${nearLevel} (${minDist.toFixed(1)}%)`,
     percentComplete,
+    evidence,
   };
 }
 
@@ -472,12 +650,13 @@ function calculateIVPercentile(symbolData: SymbolData): {
   value: number;
   displayValue: string;
   percentComplete: number;
+  evidence: string;
 } {
   // IV percentile from Greeks if available
   const greeks = symbolData.greeks;
 
   if (!greeks?.iv) {
-    return { value: 0, displayValue: "N/A", percentComplete: 50 }; // Neutral when missing
+    return { value: 0, displayValue: "N/A", percentComplete: 50, evidence: "IV data unavailable" }; // Neutral when missing
   }
 
   // Assuming IV is a decimal (0.30 = 30%)
@@ -487,19 +666,27 @@ function calculateIVPercentile(symbolData: SymbolData): {
   // Below 20%: IV cheap but maybe too quiet
   // Above 50%: IV elevated, premium expensive
   let percentComplete = 0;
+  let evidence: string;
 
   if (ivPercent >= 20 && ivPercent <= 50) {
     percentComplete = 100;
+    evidence = `IV ${ivPercent.toFixed(0)}% → optimal for debit strategies`;
   } else if (ivPercent < 20) {
     percentComplete = 50 + (ivPercent / 20) * 50;
+    evidence = `IV ${ivPercent.toFixed(0)}% → low IV, cheap premium but quiet`;
+  } else if (ivPercent <= 70) {
+    percentComplete = Math.max(0, 100 - (ivPercent - 50) * 2);
+    evidence = `IV ${ivPercent.toFixed(0)}% → elevated, consider credit strategies`;
   } else {
     percentComplete = Math.max(0, 100 - (ivPercent - 50) * 2);
+    evidence = `IV ${ivPercent.toFixed(0)}% → high IV, premium expensive`;
   }
 
   return {
     value: ivPercent,
     displayValue: `${ivPercent.toFixed(0)}%`,
     percentComplete,
+    evidence,
   };
 }
 
@@ -520,6 +707,7 @@ function createPlaceholderFactors(): FactorData[] {
       weight: FACTOR_THRESHOLDS.rvol.weight,
       contribution: 0,
       tooltip: "Relative Volume - data unavailable (market closed)",
+      evidence: "Volume data unavailable",
     },
     {
       name: "flow",
@@ -533,6 +721,7 @@ function createPlaceholderFactors(): FactorData[] {
       contribution: 0,
       direction: "neutral" as const,
       tooltip: "Buy/Sell pressure - data unavailable (market closed)",
+      evidence: "Flow data unavailable",
     },
     {
       name: "rsi",
@@ -546,6 +735,7 @@ function createPlaceholderFactors(): FactorData[] {
       contribution: 0,
       direction: "neutral" as const,
       tooltip: "RSI - data unavailable (market closed)",
+      evidence: "RSI data unavailable",
     },
     {
       name: "vwap",
@@ -558,6 +748,7 @@ function createPlaceholderFactors(): FactorData[] {
       weight: FACTOR_THRESHOLDS.vwapDistance.weight,
       contribution: 0,
       tooltip: "VWAP distance - data unavailable (market closed)",
+      evidence: "VWAP data unavailable",
     },
     {
       name: "mtf",
@@ -570,6 +761,7 @@ function createPlaceholderFactors(): FactorData[] {
       weight: FACTOR_THRESHOLDS.mtfAlignment.weight,
       contribution: 0,
       tooltip: "MTF alignment - data unavailable (market closed)",
+      evidence: "MTF data unavailable",
     },
     {
       name: "ema",
@@ -583,6 +775,7 @@ function createPlaceholderFactors(): FactorData[] {
       contribution: 0,
       direction: "neutral" as const,
       tooltip: "EMA stack - data unavailable (market closed)",
+      evidence: "EMA data unavailable",
     },
     {
       name: "regime",
@@ -595,6 +788,7 @@ function createPlaceholderFactors(): FactorData[] {
       weight: FACTOR_THRESHOLDS.regime.weight,
       contribution: 0,
       tooltip: "Market regime - data unavailable (market closed)",
+      evidence: "Regime data unavailable",
     },
     {
       name: "levels",
@@ -607,6 +801,7 @@ function createPlaceholderFactors(): FactorData[] {
       weight: FACTOR_THRESHOLDS.keyLevels.weight,
       contribution: 0,
       tooltip: "Key levels - data unavailable (market closed)",
+      evidence: "Key levels data unavailable",
     },
     {
       name: "iv",
@@ -619,6 +814,7 @@ function createPlaceholderFactors(): FactorData[] {
       weight: FACTOR_THRESHOLDS.ivPercentile.weight,
       contribution: 0,
       tooltip: "IV percentile - data unavailable (market closed)",
+      evidence: "IV data unavailable",
     },
   ];
 }
@@ -650,13 +846,39 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         changePercent: 0,
         factors: createPlaceholderFactors(),
         mtf: [
-          { timeframe: "1m", direction: "neutral" as const, label: "1m" },
-          { timeframe: "5m", direction: "neutral" as const, label: "5m" },
-          { timeframe: "15m", direction: "neutral" as const, label: "15m" },
-          { timeframe: "60m", direction: "neutral" as const, label: "60m" },
+          {
+            timeframe: "1m",
+            direction: "neutral" as const,
+            label: "1m",
+            lastBarAt: null,
+            isStale: true,
+          },
+          {
+            timeframe: "5m",
+            direction: "neutral" as const,
+            label: "5m",
+            lastBarAt: null,
+            isStale: true,
+          },
+          {
+            timeframe: "15m",
+            direction: "neutral" as const,
+            label: "15m",
+            lastBarAt: null,
+            isStale: true,
+          },
+          {
+            timeframe: "60m",
+            direction: "neutral" as const,
+            label: "60m",
+            lastBarAt: null,
+            isStale: true,
+          },
         ],
         mtfAligned: 0,
         mtfTotal: 4,
+        mtfLastUpdated: null,
+        mtfHasStale: true,
         overallScore: 0,
         threshold,
         isHot: false,
@@ -682,24 +904,23 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         "60m": "neutral",
       };
 
+      // Use calculateMTFAlignment to get proper staleness info even without candles
+      const mtfResult = calculateMTFAlignment(
+        mtfTrend as Record<Timeframe, MTFTrend>,
+        symbolData.lastBarAt
+      );
+
       return {
         symbol: normalized,
         price: 0,
         change: 0,
         changePercent: 0,
         factors: createPlaceholderFactors(),
-        mtf: (["1m", "5m", "15m", "60m"] as const).map((tf) => ({
-          timeframe: tf,
-          direction:
-            mtfTrend[tf] === "bull"
-              ? ("up" as const)
-              : mtfTrend[tf] === "bear"
-                ? ("down" as const)
-                : ("neutral" as const),
-          label: tf,
-        })),
+        mtf: mtfResult.data,
         mtfAligned: 0,
         mtfTotal: 4,
+        mtfLastUpdated: mtfResult.lastUpdated,
+        mtfHasStale: mtfResult.hasStale,
         overallScore: symbolData.confluence?.overall || 0,
         threshold,
         isHot: false,
@@ -720,7 +941,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
     const flowData = calculateFlowBias(symbolData);
     const rsiData = calculateRSI(symbolData.indicators);
     const vwapData = calculateVWAPDistance(symbolData, symbolData.indicators);
-    const mtfData = calculateMTFAlignment(symbolData.mtfTrend);
+    const mtfData = calculateMTFAlignment(symbolData.mtfTrend, symbolData.lastBarAt);
     const emaData = calculateEMAStack(symbolData.indicators, symbolData);
     const regimeData = calculateMarketRegime(symbolData, symbolData.indicators);
     const levelsData = calculateKeyLevels(symbolData);
@@ -739,6 +960,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         weight: FACTOR_THRESHOLDS.rvol.weight,
         contribution: FACTOR_THRESHOLDS.rvol.weight * rvolData.percentComplete,
         tooltip: "Relative Volume - current vs 20-bar average",
+        evidence: rvolData.evidence,
       },
       {
         name: "flow",
@@ -752,6 +974,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         contribution: FACTOR_THRESHOLDS.flow.weight * flowData.percentComplete,
         direction: flowData.direction,
         tooltip: "Buy/Sell pressure indicator (-100 to +100)",
+        evidence: flowData.evidence,
       },
       {
         name: "rsi",
@@ -765,6 +988,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         contribution: FACTOR_THRESHOLDS.rsi.weight * rsiData.percentComplete,
         direction: rsiData.direction,
         tooltip: "Relative Strength Index - momentum oscillator",
+        evidence: rsiData.evidence,
       },
       {
         name: "vwap",
@@ -777,6 +1001,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         weight: FACTOR_THRESHOLDS.vwapDistance.weight,
         contribution: FACTOR_THRESHOLDS.vwapDistance.weight * vwapData.percentComplete,
         tooltip: "Distance from Volume Weighted Average Price",
+        evidence: vwapData.evidence,
       },
       {
         name: "mtf",
@@ -789,6 +1014,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         weight: FACTOR_THRESHOLDS.mtfAlignment.weight,
         contribution: FACTOR_THRESHOLDS.mtfAlignment.weight * mtfData.percentComplete,
         tooltip: "Multi-timeframe trend alignment",
+        evidence: mtfData.evidence,
       },
       {
         name: "ema",
@@ -802,6 +1028,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         contribution: FACTOR_THRESHOLDS.emaStack.weight * emaData.percentComplete,
         direction: emaData.direction,
         tooltip: "9/21/50 EMA alignment in price direction",
+        evidence: emaData.evidence,
       },
       {
         name: "regime",
@@ -814,6 +1041,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         weight: FACTOR_THRESHOLDS.regime.weight,
         contribution: FACTOR_THRESHOLDS.regime.weight * regimeData.percentComplete,
         tooltip: "Market regime - trending vs ranging",
+        evidence: regimeData.evidence,
       },
       {
         name: "levels",
@@ -826,6 +1054,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         weight: FACTOR_THRESHOLDS.keyLevels.weight,
         contribution: FACTOR_THRESHOLDS.keyLevels.weight * levelsData.percentComplete,
         tooltip: "Proximity to ORB, swing highs/lows",
+        evidence: levelsData.evidence,
       },
       {
         name: "iv",
@@ -838,6 +1067,7 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
         weight: FACTOR_THRESHOLDS.ivPercentile.weight,
         contribution: FACTOR_THRESHOLDS.ivPercentile.weight * ivData.percentComplete,
         tooltip: "IV percentile - optimal for buying premium",
+        evidence: ivData.evidence,
       },
     ];
 
@@ -890,6 +1120,8 @@ export function useSymbolConfluence(symbol: string): SymbolConfluence | null {
       mtf: mtfData.data,
       mtfAligned: mtfData.aligned,
       mtfTotal: mtfData.total,
+      mtfLastUpdated: mtfData.lastUpdated,
+      mtfHasStale: mtfData.hasStale,
       overallScore,
       threshold,
       isHot,

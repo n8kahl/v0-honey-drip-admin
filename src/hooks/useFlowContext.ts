@@ -27,6 +27,10 @@ export interface FlowContextState {
   isLoading: boolean;
   error: string | null;
 
+  // Timing state
+  lastUpdated: number | null; // Timestamp of last successful fetch
+  isStale: boolean; // True if data is older than threshold
+
   // Computed helpers
   primarySentiment: FlowSentiment;
   primaryStrength: number;
@@ -85,10 +89,14 @@ export function useFlowContext(
   const [long, setLong] = useState<FlowContext | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   // Track last refresh to avoid duplicate requests
   const lastRefreshRef = useRef<number>(0);
   const symbolRef = useRef<string | null | undefined>(symbol);
+
+  // Stale threshold (60 seconds - flow should update at least once per minute during market hours)
+  const STALE_THRESHOLD_MS = 60_000;
 
   // Reset when symbol changes
   useEffect(() => {
@@ -98,6 +106,7 @@ export function useFlowContext(
       setMedium(null);
       setLong(null);
       setError(null);
+      setLastUpdated(null);
     }
   }, [symbol]);
 
@@ -135,6 +144,8 @@ export function useFlowContext(
       }
 
       await Promise.all(promises);
+      // Mark successful update timestamp
+      setLastUpdated(Date.now());
     } catch (err) {
       console.error("[useFlowContext] Error fetching flow context:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch flow context");
@@ -176,12 +187,17 @@ export function useFlowContext(
   const institutionalScore = primaryContext?.institutionalScore || 0;
   const recommendation = primaryContext?.recommendation || "NEUTRAL";
 
+  // Compute staleness - data is stale if no update in STALE_THRESHOLD_MS
+  const isStale = lastUpdated ? Date.now() - lastUpdated > STALE_THRESHOLD_MS : true;
+
   return {
     short,
     medium,
     long,
     isLoading,
     error,
+    lastUpdated,
+    isStale,
     primarySentiment,
     primaryStrength,
     sweepCount,
