@@ -90,6 +90,8 @@ export function CockpitRightPanel({
   className,
 }: CockpitRightPanelProps) {
   const [activityExpanded, setActivityExpanded] = useState(true);
+  // BUGFIX: Lift pickerOpen state to parent so "Change Contract" button can use it
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const effectiveContract = contract ?? trade?.contract ?? null;
   const isEntered = viewState === "entered" || viewState === "exited";
@@ -120,13 +122,28 @@ export function CockpitRightPanel({
 
       {/* Change Contract Button - Positioned prominently after hero section */}
       {onContractSelect && !isEntered && (
-        <ContractPickerTrigger
-          onClick={() => setPickerOpen(true)}
-          label="Change Contract"
-          size="sm"
-          variant="ghost"
-          className="w-full h-7"
-        />
+        <>
+          <ContractPickerTrigger
+            onClick={() => setPickerOpen(true)}
+            label="Change Contract"
+            size="sm"
+            variant="ghost"
+            className="w-full h-7"
+          />
+          <ContractPicker
+            symbol={symbol}
+            currentPrice={underlyingPrice ?? currentPrice ?? 0}
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            onSelect={(newContract) => {
+              onContractSelect(newContract);
+              setPickerOpen(false);
+            }}
+            recommendation={recommendation}
+            currentContract={effectiveContract}
+            disabled={isEntered}
+          />
+        </>
       )}
 
       {/* Section 2: Key Levels - Always visible (not collapsible) for better visibility */}
@@ -168,6 +185,8 @@ export function CockpitRightPanel({
           onContractSelect={onContractSelect}
           recommendation={recommendation}
           underlyingPrice={underlyingPrice}
+          pickerOpen={pickerOpen}
+          setPickerOpen={setPickerOpen}
         />
       </CollapsibleSection>
     </div>
@@ -487,6 +506,8 @@ function ContractActivitySection({
   onContractSelect,
   recommendation,
   underlyingPrice,
+  pickerOpen,
+  setPickerOpen,
 }: {
   symbol: string;
   contract: Contract | null;
@@ -495,8 +516,10 @@ function ContractActivitySection({
   onContractSelect?: (contract: Contract) => void;
   recommendation?: ContractRecommendation | null;
   underlyingPrice?: number | null;
+  pickerOpen: boolean;
+  setPickerOpen: (open: boolean) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // BUGFIX: pickerOpen state is now lifted to parent CockpitRightPanel
 
   const handleContractSelected = useCallback(
     (newContract: Contract) => {

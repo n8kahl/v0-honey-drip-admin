@@ -19,7 +19,7 @@
  */
 
 import React, { useMemo, useCallback, useEffect } from "react";
-import { AnimatePresence, motion, type Variants } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import type { Ticker, Contract, Trade, TradeState, DiscordChannel, Challenge } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
 import {
@@ -94,33 +94,6 @@ export interface NowPanelProps {
   onTakeProfit?: (sendAlert: boolean) => void;
   onBroadcastUpdate?: (message: string) => void;
 }
-
-// ============================================================================
-// Animation Variants
-// ============================================================================
-
-const viewAnimationVariants: Variants = {
-  initial: {
-    opacity: 0,
-    y: 20,
-  },
-  animate: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.25,
-      ease: "easeOut",
-    },
-  },
-  exit: {
-    opacity: 0,
-    y: -10,
-    transition: {
-      duration: 0.15,
-      ease: "easeIn",
-    },
-  },
-};
 
 // ============================================================================
 // Helper Functions
@@ -453,19 +426,8 @@ export function NowPanel({
           </div>
         )}
 
-        {/* Animated View Transition */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={viewState}
-            variants={viewAnimationVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="flex-1 flex flex-col overflow-hidden"
-          >
-            {renderContent()}
-          </motion.div>
-        </AnimatePresence>
+        {/* View Container - No unmount/remount on state transitions to preserve chart state */}
+        <div className="flex-1 flex flex-col overflow-hidden">{renderContent()}</div>
 
         {/* Loading Overlay */}
         {showLoadingOverlay && (

@@ -272,7 +272,17 @@ describe("TP/SL Calculation Flow", () => {
   });
 
   describe("Chart Levels Generation", () => {
-    const createMockTrade = (entryPrice: number, targetPrice: number, stopLoss: number): Trade => {
+    // Note: Chart displays UNDERLYING prices, so TP/SL need to be in underlying terms
+    // The trade object stores both option prices (entryPrice, targetPrice, stopLoss)
+    // and underlying prices (targetUnderlyingPrice, stopUnderlyingPrice, underlyingAtEntry)
+    const createMockTrade = (
+      entryPrice: number,
+      targetPrice: number,
+      stopLoss: number,
+      underlyingAtEntry: number = 600, // SPY underlying price
+      targetUnderlyingPrice: number = 605, // TP in underlying terms
+      stopUnderlyingPrice: number = 595 // SL in underlying terms
+    ): Trade => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 1);
 
@@ -291,12 +301,17 @@ describe("TP/SL Calculation Flow", () => {
           ask: entryPrice + 0.05,
           volume: 1000,
           openInterest: 5000,
+          delta: 0.5,
         } as Contract,
         tradeType: "Day",
         state: "ENTERED",
-        entryPrice,
-        targetPrice,
-        stopLoss,
+        entryPrice, // Option entry price
+        targetPrice, // Option TP price
+        stopLoss, // Option SL price
+        // Underlying prices for chart overlays
+        underlyingAtEntry,
+        targetUnderlyingPrice,
+        stopUnderlyingPrice,
         currentPrice: entryPrice,
         movePercent: 0,
         discordChannels: [],
@@ -305,8 +320,9 @@ describe("TP/SL Calculation Flow", () => {
       };
     };
 
-    it("should generate chart levels with TP and SL", () => {
-      const trade = createMockTrade(5.0, 6.5, 4.0);
+    it("should generate chart levels with TP and SL in UNDERLYING prices", () => {
+      // Entry: $5 option, $600 underlying; TP: $6.5 option, $605 underlying; SL: $4 option, $595 underlying
+      const trade = createMockTrade(5.0, 6.5, 4.0, 600, 605, 595);
 
       const levels = buildChartLevelsForTrade(trade, mockKeyLevels);
 
@@ -317,29 +333,31 @@ describe("TP/SL Calculation Flow", () => {
       expect(tpLevels.length).toBeGreaterThan(0);
       expect(slLevels.length).toBeGreaterThan(0);
 
-      // Verify TP price
+      // Verify TP price - should be UNDERLYING price (605), not option price (6.5)
       const tp1 = tpLevels.find((l) => l.label === "TP1");
       expect(tp1).toBeDefined();
-      expect(tp1?.price).toBe(6.5);
+      expect(tp1?.price).toBe(605);
 
-      // Verify SL price
+      // Verify SL price - should be UNDERLYING price (595), not option price (4.0)
       const sl = slLevels.find((l) => l.label === "SL");
       expect(sl).toBeDefined();
-      expect(sl?.price).toBe(4.0);
+      expect(sl?.price).toBe(595);
     });
 
-    it("should include Entry level for ENTERED trades", () => {
-      const trade = createMockTrade(5.0, 6.5, 4.0);
+    it("should include Entry level using UNDERLYING price for ENTERED trades", () => {
+      // Entry: $5 option, $600 underlying
+      const trade = createMockTrade(5.0, 6.5, 4.0, 600, 605, 595);
 
       const levels = buildChartLevelsForTrade(trade, mockKeyLevels);
 
+      // Entry level should be the UNDERLYING price (600), not option price (5.0)
       const entryLevel = levels.find((l) => l.type === "ENTRY");
       expect(entryLevel).toBeDefined();
-      expect(entryLevel?.price).toBe(5.0);
+      expect(entryLevel?.price).toBe(600);
     });
 
     it("should generate key levels (VWAP, ORB, etc.)", () => {
-      const trade = createMockTrade(5.0, 6.5, 4.0);
+      const trade = createMockTrade(5.0, 6.5, 4.0, 600, 605, 595);
 
       const levels = buildChartLevelsForTrade(trade, mockKeyLevels);
 

@@ -58,7 +58,9 @@ export function buildChartLevelsForTrade(
    * For puts: underlying decreases when option increases (negative delta)
    */
   function calculateUnderlyingFromOption(optionPrice: number): number | null {
-    if (!baseUnderlyingPrice || !referenceOptionPrice || !delta) return null;
+    if (!baseUnderlyingPrice || !referenceOptionPrice || !delta) {
+      return null;
+    }
     const optionChange = optionPrice - referenceOptionPrice;
     // Use absolute delta for calculation, direction handled by call/put logic
     const underlyingChange = optionChange / Math.abs(delta);
@@ -245,12 +247,13 @@ export function buildChartLevelsForCandidate(
   // Calculate TP/SL
   const riskResult = calculateRisk(riskInput);
 
-  // Add TP levels
-  if (riskResult.targetPrice) {
+  // Add TP levels - use UNDERLYING prices for chart display
+  // riskResult.targetUnderlyingPrice is the underlying price where option hits TP
+  if (riskResult.targetUnderlyingPrice && riskResult.targetUnderlyingPrice > 0) {
     levels.push({
       type: "TP",
       label: "TP1",
-      price: riskResult.targetPrice,
+      price: riskResult.targetUnderlyingPrice,
       meta: {
         tpIndex: 1,
         reason: riskResult.reasoning,
@@ -258,11 +261,15 @@ export function buildChartLevelsForCandidate(
     });
   }
 
-  if (riskResult.targetPrice2) {
+  // TP2 if available (underlying price)
+  if (
+    (riskResult as any).targetUnderlyingPrice2 &&
+    (riskResult as any).targetUnderlyingPrice2 > 0
+  ) {
     levels.push({
       type: "TP",
       label: "TP2",
-      price: riskResult.targetPrice2,
+      price: (riskResult as any).targetUnderlyingPrice2,
       meta: {
         tpIndex: 2,
       },
@@ -270,8 +277,8 @@ export function buildChartLevelsForCandidate(
   }
 
   // TP3 if available (from extended risk result)
-  const tp3 = (riskResult as any)?.targetPrice3;
-  if (tp3) {
+  const tp3 = (riskResult as any)?.targetUnderlyingPrice3;
+  if (tp3 && tp3 > 0) {
     levels.push({
       type: "TP",
       label: "TP3",
@@ -282,12 +289,12 @@ export function buildChartLevelsForCandidate(
     });
   }
 
-  // Add SL
-  if (riskResult.stopLoss) {
+  // Add SL - use UNDERLYING price for chart display
+  if (riskResult.stopUnderlyingPrice && riskResult.stopUnderlyingPrice > 0) {
     levels.push({
       type: "SL",
       label: "SL",
-      price: riskResult.stopLoss,
+      price: riskResult.stopUnderlyingPrice,
       meta: {
         reason: riskResult.reasoning,
       },

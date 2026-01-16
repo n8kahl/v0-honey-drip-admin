@@ -362,7 +362,8 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
     confidence = "low";
   }
 
-  // Return option premium prices for TP/SL (not underlying prices)
+  // Return option premium prices for TP/SL (used for P&L calculations)
+  // ALSO return underlying prices for chart overlays
   return {
     targetPrice: targetPremium,
     stopLoss: stopLossPremium,
@@ -370,6 +371,9 @@ function calculateCalculatedMode(input: RiskCalculationInput): RiskCalculationRe
     targetPremium,
     targetPremium2,
     stopLossPremium,
+    // Underlying prices for chart overlays (TP/SL levels on price chart)
+    targetUnderlyingPrice: targetPrice,
+    stopUnderlyingPrice: stopLoss,
     riskRewardRatio,
     confidence,
     reasoning: `${tradeType}: TP=${targetReasoning}, SL=${stopReasoning}`,
