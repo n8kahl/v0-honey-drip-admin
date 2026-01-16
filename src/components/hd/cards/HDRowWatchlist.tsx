@@ -367,11 +367,13 @@ export function HDRowWatchlist({
                   {ticker.symbol}
                 </span>
 
-                {/* Composite signal indicator (if any active) */}
+                {/* Composite signal badge (if any active) */}
                 {compositeSignals && compositeSignals.length > 0 && (
-                  <span className="text-[9px] font-bold text-amber-400">
-                    {compositeSignals.length} SIG
-                  </span>
+                  <CompositeSignalBadge
+                    symbol={ticker.symbol}
+                    signals={compositeSignals}
+                    compact={true}
+                  />
                 )}
               </div>
 

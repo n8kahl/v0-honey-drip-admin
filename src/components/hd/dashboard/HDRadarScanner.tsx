@@ -4,27 +4,22 @@
  * Displays active composite signals with filtering and sorting capabilities
  */
 
-import { useState, useMemo } from 'react';
-import { useCompositeSignals } from '../../../hooks/useCompositeSignals';
-import { CompositeSignalBadge } from '../signals/CompositeSignalBadge';
-import { Search, SlidersHorizontal, TrendingUp, TrendingDown } from 'lucide-react';
-import type { CompositeSignal } from '../../../lib/composite/CompositeSignal';
+import { useState, useMemo } from "react";
+import { useCompositeSignals } from "../../../hooks/useCompositeSignals";
+import { CompositeSignalBadge } from "../signals/CompositeSignalBadge";
+import { Search, SlidersHorizontal, TrendingUp, TrendingDown } from "lucide-react";
+import type { CompositeSignal } from "../../../lib/composite/CompositeSignal";
 
 interface HDRadarScannerProps {
   userId: string;
 }
 
 export function HDRadarScanner({ userId }: HDRadarScannerProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [minScore, setMinScore] = useState(50);
   const [showFilters, setShowFilters] = useState(false);
 
-  const {
-    signals,
-    activeSignals,
-    loading,
-    error
-  } = useCompositeSignals({
+  const { signals, activeSignals, loading, error } = useCompositeSignals({
     userId,
     autoSubscribe: true,
     autoExpire: true,
@@ -36,13 +31,13 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
 
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(signal =>
+      filtered = filtered.filter((signal) =>
         signal.symbol.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     // Score filter
-    filtered = filtered.filter(signal => signal.baseScore >= minScore);
+    filtered = filtered.filter((signal) => signal.baseScore >= minScore);
 
     // Sort by score (highest first)
     return filtered.sort((a, b) => b.baseScore - a.baseScore);
@@ -51,7 +46,7 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
   // Group signals by ticker
   const signalsByTicker = useMemo(() => {
     const grouped = new Map<string, CompositeSignal[]>();
-    filteredSignals.forEach(signal => {
+    filteredSignals.forEach((signal) => {
       const existing = grouped.get(signal.symbol) || [];
       grouped.set(signal.symbol, [...existing, signal]);
     });
@@ -69,7 +64,9 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-[var(--accent-negative)]">Error loading signals: {error}</div>
+        <div className="text-[var(--accent-negative)]">
+          Error loading signals: {error?.message || String(error)}
+        </div>
       </div>
     );
   }
@@ -141,11 +138,11 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
                 <div>
                   <h3 className="text-lg font-medium text-[var(--text-high)]">{ticker}</h3>
                   <p className="text-sm text-[var(--text-muted)]">
-                    {tickerSignals.length} {tickerSignals.length === 1 ? 'signal' : 'signals'}
+                    {tickerSignals.length} {tickerSignals.length === 1 ? "signal" : "signals"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {tickerSignals[0].direction === 'bullish' ? (
+                  {tickerSignals[0].direction === "LONG" ? (
                     <TrendingUp className="w-5 h-5 text-[var(--accent-positive)]" />
                   ) : (
                     <TrendingDown className="w-5 h-5 text-[var(--accent-negative)]" />
@@ -160,22 +157,16 @@ export function HDRadarScanner({ userId }: HDRadarScannerProps) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {tickerSignals.map((signal, idx) => (
-                  <CompositeSignalBadge
-                    key={`${signal.symbol}-${signal.id || signal.signalId}-${idx}`}
-                    signal={signal}
-                    size="sm"
-                  />
-                ))}
+                <CompositeSignalBadge symbol={ticker} signals={tickerSignals} compact={false} />
               </div>
 
-              {tickerSignals[0].reasoning && (
-                <div className="mt-3 pt-3 border-t border-[var(--border-hairline)]">
-                  <p className="text-sm text-[var(--text-muted)]">
-                    {tickerSignals[0].reasoning}
-                  </p>
-                </div>
-              )}
+              {/* Opportunity type label */}
+              <div className="mt-3 pt-3 border-t border-[var(--border-hairline)]">
+                <p className="text-sm text-[var(--text-muted)]">
+                  {tickerSignals[0].opportunityType.replace(/_/g, " ")} • R:R{" "}
+                  {tickerSignals[0].riskReward.toFixed(1)}
+                </p>
+              </div>
             </div>
           ))
         )}

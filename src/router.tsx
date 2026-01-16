@@ -10,8 +10,6 @@ const PageLoader = () => (
 
 // Lazy load secondary pages
 const TradeDetailPage = lazy(() => import("./pages/TradeDetailPage"));
-const RadarPage = lazy(() => import("./pages/RadarPage"));
-const PlanPage = lazy(() => import("./pages/PlanPage"));
 const ProfilePage = lazy(() =>
   import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage }))
 );
@@ -33,8 +31,6 @@ const ProfilePage = lazy(() =>
  * - /wins → Public wins/losses feed (no auth)
  * - /member → Member dashboard (auth required)
  * - /profile → User profile page
- * - /radar → Composite Signal Radar (legacy)
- * - /plan → Plan tab (Mission Playbook)
  * - /trades/:id → Trade detail page
  */
 export const router = createBrowserRouter([
@@ -75,22 +71,6 @@ export const router = createBrowserRouter([
     element: (
       <Suspense fallback={<PageLoader />}>
         <ProfilePage />
-      </Suspense>
-    ),
-  },
-  {
-    path: "/radar",
-    element: (
-      <Suspense fallback={<PageLoader />}>
-        <RadarPage />
-      </Suspense>
-    ),
-  },
-  {
-    path: "/plan",
-    element: (
-      <Suspense fallback={<PageLoader />}>
-        <PlanPage />
       </Suspense>
     ),
   },

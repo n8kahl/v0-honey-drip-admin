@@ -27,6 +27,8 @@ import { cn } from "../../../lib/utils";
 import { getFullChallengeStats } from "../../../lib/challengeHelpers";
 import { useState, useMemo, useCallback } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useCompositeSignals } from "../../../hooks/useCompositeSignals";
+import { useAuth } from "../../../contexts/AuthContext";
 
 // Maximum visible items in the capped list (fits 1440x900 without scrollbar)
 const MAX_VISIBLE_WATCHLIST = 6;
@@ -70,9 +72,27 @@ export function HDWatchlistRail({
   activeTicker,
 }: HDWatchlistRailProps) {
   const watchlist = useMarketStore((state) => state.watchlist);
+  const { user } = useAuth();
 
   // Get symbol data for Smart Score sorting
   const symbolsData = useMarketDataStore((state) => state.symbols);
+
+  // Fetch composite signals for all watchlist symbols
+  const { activeSignals } = useCompositeSignals({
+    userId: user?.id || "",
+    autoSubscribe: true,
+    autoExpire: true,
+  });
+
+  // Group signals by symbol for easy lookup
+  const signalsBySymbol = useMemo(() => {
+    const grouped = new Map<string, typeof activeSignals>();
+    activeSignals.forEach((signal) => {
+      const existing = grouped.get(signal.symbol) || [];
+      grouped.set(signal.symbol, [...existing, signal]);
+    });
+    return grouped;
+  }, [activeSignals]);
 
   // Sort watchlist by Smart Score (confluence score) - highest first
   const sortedWatchlist = useMemo(() => {
@@ -230,6 +250,7 @@ export function HDWatchlistRail({
                     viewMode={watchlistViewMode}
                     isExpanded={expandedWatchlistRow === ticker.symbol}
                     onExpandChange={(expanded) => handleExpandChange(ticker.symbol, expanded)}
+                    compositeSignals={signalsBySymbol.get(ticker.symbol)}
                   />
                 ))}
                 {/* View All button when list is truncated */}
@@ -417,6 +438,7 @@ export function HDWatchlistRail({
                   viewMode={watchlistViewMode}
                   isExpanded={false}
                   onExpandChange={() => {}}
+                  compositeSignals={signalsBySymbol.get(ticker.symbol)}
                 />
               ))}
             </div>
