@@ -8,6 +8,7 @@
  * - Macro Context Panel (market regime, VIX, etc.)
  * - Watchlist sorted by Smart Score (highest first)
  * - Active Challenges with progress tracking
+ * - NO internal scrollbar - capped list with "View All" modal
  *
  * Anti-Pattern: NO trade management here - discovery only.
  * Trade management happens in HDPortfolioRail.
@@ -21,10 +22,15 @@ import { HDDialogEditChallenge } from "../forms/HDDialogEditChallenge";
 import { HDChallengeDetailSheet } from "../forms/HDChallengeDetailSheet";
 import { HDChallengeShare } from "../forms/HDChallengeShare";
 import { Ticker, Challenge } from "../../../types";
-import { Plus, Trash2, Edit } from "lucide-react";
+import { Plus, Trash2, Edit, ChevronRight, X } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { getFullChallengeStats } from "../../../lib/challengeHelpers";
 import { useState, useMemo, useCallback } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+
+// Maximum visible items in the capped list (fits 1440x900 without scrollbar)
+const MAX_VISIBLE_WATCHLIST = 6;
+const MAX_VISIBLE_CHALLENGES = 3;
 
 interface HDWatchlistRailProps {
   /** Callback when a watchlist ticker is clicked */
@@ -98,6 +104,7 @@ export function HDWatchlistRail({
   const [showDetailSheet, setShowDetailSheet] = useState(false);
   const [sharingChallenge, setSharingChallenge] = useState<Challenge | null>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showWatchlistModal, setShowWatchlistModal] = useState(false);
 
   // Watchlist expand state - use uiStore for consistency
   const watchlistViewMode = useUIStore((state) => state.watchlistViewMode);
@@ -177,19 +184,28 @@ export function HDWatchlistRail({
     };
   }, [sharingChallenge, allTrades]);
 
+  // Capped lists for display (no scrollbar)
+  const visibleWatchlist = sortedWatchlist.slice(0, MAX_VISIBLE_WATCHLIST);
+  const hasMoreWatchlist = sortedWatchlist.length > MAX_VISIBLE_WATCHLIST;
+  const visibleChallenges = activeChallenges.slice(0, MAX_VISIBLE_CHALLENGES);
+  const hasMoreChallenges = activeChallenges.length > MAX_VISIBLE_CHALLENGES;
+
   return (
-    <div className="w-full border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto">
+    <div
+      className="w-full border-r border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]"
+      data-testid="watchlist-rail"
+    >
+      {/* No overflow-y-auto - capped list with View All modal */}
+      <div className="flex-1 flex flex-col">
         {/* Macro Context Panel */}
         <div className="p-3 border-b border-[var(--border-hairline)]">
           <HDMacroPanel />
         </div>
 
-        {/* Watchlist Section - Primary content, takes remaining vertical space */}
-        <div className="flex-1 flex flex-col">
+        {/* Watchlist Section - Capped list */}
+        <div className="flex flex-col">
           <SectionHeader title="Watchlist" onAdd={onAddTicker} />
-          <div className="divide-y divide-[var(--border-hairline)]">
+          <div className="divide-y divide-[var(--border-hairline)]" data-testid="watchlist-list">
             {sortedWatchlist.length === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-sm text-[var(--text-muted)] mb-3">No tickers in watchlist</p>
@@ -202,29 +218,42 @@ export function HDWatchlistRail({
                 </button>
               </div>
             ) : (
-              sortedWatchlist.map((ticker, index) => (
-                <HDRowWatchlist
-                  key={ticker.id}
-                  ticker={ticker}
-                  active={activeTicker === ticker.symbol}
-                  onClick={() => onTickerClick?.(ticker)}
-                  onRemove={onRemoveTicker ? () => onRemoveTicker(ticker) : undefined}
-                  animationDelay={index * 40}
-                  viewMode={watchlistViewMode}
-                  isExpanded={expandedWatchlistRow === ticker.symbol}
-                  onExpandChange={(expanded) => handleExpandChange(ticker.symbol, expanded)}
-                />
-              ))
+              <>
+                {visibleWatchlist.map((ticker, index) => (
+                  <HDRowWatchlist
+                    key={ticker.id}
+                    ticker={ticker}
+                    active={activeTicker === ticker.symbol}
+                    onClick={() => onTickerClick?.(ticker)}
+                    onRemove={onRemoveTicker ? () => onRemoveTicker(ticker) : undefined}
+                    animationDelay={index * 40}
+                    viewMode={watchlistViewMode}
+                    isExpanded={expandedWatchlistRow === ticker.symbol}
+                    onExpandChange={(expanded) => handleExpandChange(ticker.symbol, expanded)}
+                  />
+                ))}
+                {/* View All button when list is truncated */}
+                {hasMoreWatchlist && (
+                  <button
+                    onClick={() => setShowWatchlistModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                    data-testid="watchlist-view-all-btn"
+                  >
+                    View All ({sortedWatchlist.length})
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
 
-        {/* Challenges Section */}
+        {/* Challenges Section - Capped list */}
         <div className="mt-4">
           <SectionHeader title="Challenges" onAdd={() => setShowAddChallengeDialog(true)} />
           {activeChallenges.length > 0 ? (
             <div className="p-3 space-y-2">
-              {activeChallenges.map((challenge) => {
+              {visibleChallenges.map((challenge) => {
                 // Use centralized stats helper for consistency with detail sheet
                 // Pass allTrades (active + history) so exited trades are included
                 const stats = getFullChallengeStats(challenge.id, allTrades);
@@ -296,6 +325,16 @@ export function HDWatchlistRail({
                   </div>
                 );
               })}
+              {/* View All button for challenges when list is truncated */}
+              {hasMoreChallenges && (
+                <button
+                  onClick={() => setShowAddChallengeDialog(true)}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-[var(--brand-primary)] hover:bg-[var(--surface-2)] rounded transition-colors"
+                >
+                  View All ({activeChallenges.length})
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              )}
             </div>
           ) : (
             <div className="p-6 text-center">
@@ -338,6 +377,63 @@ export function HDWatchlistRail({
         stats={shareStats}
         availableChannels={discordChannels}
       />
+
+      {/* Watchlist View All Modal */}
+      <Dialog.Root open={showWatchlistModal} onOpenChange={setShowWatchlistModal}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] max-h-[80vh] bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-xl shadow-2xl z-50 flex flex-col"
+            data-testid="watchlist-modal"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-hairline)]">
+              <Dialog.Title className="text-sm font-semibold text-[var(--text-high)]">
+                Watchlist ({sortedWatchlist.length})
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-[var(--surface-3)] transition-colors"
+                  data-testid="watchlist-modal-close"
+                >
+                  <X className="w-4 h-4 text-[var(--text-muted)]" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto divide-y divide-[var(--border-hairline)]">
+              {sortedWatchlist.map((ticker, index) => (
+                <HDRowWatchlist
+                  key={ticker.id}
+                  ticker={ticker}
+                  active={activeTicker === ticker.symbol}
+                  onClick={() => {
+                    onTickerClick?.(ticker);
+                    setShowWatchlistModal(false);
+                  }}
+                  onRemove={onRemoveTicker ? () => onRemoveTicker(ticker) : undefined}
+                  animationDelay={0}
+                  viewMode={watchlistViewMode}
+                  isExpanded={false}
+                  onExpandChange={() => {}}
+                />
+              ))}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-4 py-3 border-t border-[var(--border-hairline)] flex justify-end">
+              <button
+                onClick={onAddTicker}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--brand-primary)] text-[var(--bg-base)] text-xs font-medium hover:bg-[var(--brand-primary)]/90 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Ticker
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

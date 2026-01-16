@@ -1,30 +1,30 @@
 /**
- * CockpitContractPanel - Contract and liquidity information
+ * CockpitContractPanel V3 - Focused on unique data only
  *
- * Shows:
- * - Underlying: price, change %, key level nearest
- * - Contract: strike, exp, type (C/P), DTE
- * - Quotes: bid/ask/mid, spread %, IV, OI, volume
- * - Liquidity rating badge (Good/Fair/Poor)
+ * REWORKED: Header now handles basic contract info (strike, type, DTE, Greeks)
+ * This panel only shows:
+ * - Volume/OI (trading activity)
+ * - Liquidity rating + thresholds
+ * - Contract picker button
  * - Last quote time
- * - Select Contract button (opens ContractPicker)
+ *
+ * Kept compact to fit in the smaller right column space
  */
 
 import React, { useMemo, useState, useCallback } from "react";
 import { cn } from "../../../lib/utils";
 import type { Trade, Ticker, Contract, TradeState } from "../../../types";
 import type { ContractRecommendation } from "../../../hooks/useContractRecommendation";
-import { fmtDTE, formatExpirationShort } from "../../../ui/semantics";
-import { getLiquidityGrade, SPREAD_THRESHOLDS } from "../../../lib/market/contractQuality";
+import { getLiquidityGrade } from "../../../lib/market/contractQuality";
 import {
   BarChart2,
   Clock,
-  DollarSign,
-  Activity,
   AlertCircle,
   CheckCircle,
   MinusCircle,
-  ListFilter,
+  Settings2,
+  Users,
+  TrendingUp,
 } from "lucide-react";
 import { ContractPicker, ContractPickerTrigger } from "./ContractPicker";
 
@@ -37,11 +37,8 @@ interface CockpitContractPanelProps {
   underlyingChange?: number | null;
   lastQuoteTime?: Date | null;
   className?: string;
-  /** Trade state to determine if contract can be changed */
   tradeState?: TradeState;
-  /** Callback when a new contract is selected */
   onContractSelect?: (contract: Contract) => void;
-  /** Recommended contract to highlight in picker */
   recommendation?: ContractRecommendation | null;
 }
 
@@ -51,28 +48,20 @@ export function CockpitContractPanel({
   contract,
   activeTicker,
   underlyingPrice,
-  underlyingChange,
   lastQuoteTime,
   className,
   tradeState,
   onContractSelect,
   recommendation,
 }: CockpitContractPanelProps) {
-  // Contract picker state
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Derive contract from trade if not provided
   const effectiveContract = contract ?? trade?.contract ?? null;
-
-  // Determine effective trade state
   const effectiveState = tradeState ?? trade?.state;
-
-  // Can change contract? Only in WATCHING, LOADED (pre-entry), or plan preview mode
   const canChangeContract =
     !effectiveState || effectiveState === "WATCHING" || effectiveState === "LOADED";
   const isEntered = effectiveState === "ENTERED" || effectiveState === "EXITED";
 
-  // Handle contract selection from picker
   const handleContractSelected = useCallback(
     (newContract: Contract) => {
       if (onContractSelect && canChangeContract) {
@@ -83,65 +72,34 @@ export function CockpitContractPanel({
     [onContractSelect, canChangeContract]
   );
 
-  // Derive underlying price
   const effectiveUnderlyingPrice = underlyingPrice ?? activeTicker?.last ?? null;
-  const effectiveUnderlyingChange = underlyingChange ?? activeTicker?.changePercent ?? null;
 
-  // Calculate liquidity metrics
+  // Calculate liquidity metrics (Volume, OI, rating)
   const liquidityMetrics = useMemo(() => {
     if (!effectiveContract) return null;
 
     const bid = effectiveContract.bid ?? 0;
     const ask = effectiveContract.ask ?? 0;
     const mid = effectiveContract.mid ?? (bid + ask) / 2;
-
-    // Check if we have valid pricing data (at least one of bid/ask/mid is > 0)
     const hasValidPricing = mid > 0.01 || bid > 0 || ask > 0;
-    // Only calculate spread if we have valid pricing data
     const spreadPct = hasValidPricing && mid > 0.01 ? ((ask - bid) / mid) * 100 : null;
 
     const volume = effectiveContract.volume ?? 0;
     const openInterest = effectiveContract.openInterest ?? 0;
-    // iv may come from different API responses as either 'iv' or 'impliedVolatility'
-    const iv = effectiveContract.iv ?? (effectiveContract as any).impliedVolatility ?? 0;
 
-    // Liquidity rating based on spread percentage
-    // Uses consistent thresholds from contractQuality.ts:
-    // A (good): ≤3% spread, B (fair): ≤8% spread, C (poor): >8% spread
-    // If no valid spread data, default to "poor" to indicate caution
-    const spreadDecimal = spreadPct !== null ? spreadPct / 100 : 1; // Default to 100% (poor) if no data
+    const spreadDecimal = spreadPct !== null ? spreadPct / 100 : 1;
     const grade = getLiquidityGrade(spreadDecimal);
     const rating: "good" | "fair" | "poor" =
       spreadPct === null ? "poor" : grade === "A" ? "good" : grade === "B" ? "fair" : "poor";
 
     return {
-      bid,
-      ask,
-      mid,
-      spreadPct,
-      hasValidPricing,
       volume,
       openInterest,
-      iv: iv * 100, // Convert to percentage
       rating,
+      spreadPct,
     };
   }, [effectiveContract]);
 
-  // Contract info
-  const contractInfo = useMemo(() => {
-    if (!effectiveContract) return null;
-    const dte = fmtDTE(effectiveContract.daysToExpiry);
-    return {
-      strike: effectiveContract.strike,
-      type: effectiveContract.type,
-      expiry: effectiveContract.expiry,
-      dte: dte.text,
-      dteClass: dte.className,
-      daysToExpiry: effectiveContract.daysToExpiry,
-    };
-  }, [effectiveContract]);
-
-  // Format last quote time
   const formattedQuoteTime = lastQuoteTime
     ? lastQuoteTime.toLocaleTimeString([], {
         hour: "2-digit",
@@ -155,17 +113,14 @@ export function CockpitContractPanel({
       className={cn("h-full flex flex-col p-3 overflow-hidden", className)}
       data-testid="cockpit-contract-panel"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between flex-shrink-0 mb-2">
+      {/* Header Row */}
+      <div className="flex items-center justify-between flex-shrink-0 mb-3">
         <div className="flex items-center gap-2">
           <BarChart2 className="w-4 h-4 text-[var(--brand-primary)]" />
-          <span className="text-sm font-semibold text-[var(--text-high)]">
-            Contract & Liquidity
-          </span>
+          <span className="text-sm font-semibold text-[var(--text-high)]">Activity</span>
         </div>
         <div className="flex items-center gap-2">
           {liquidityMetrics && <LiquidityBadge rating={liquidityMetrics.rating} />}
-          {/* Select Contract button */}
           {onContractSelect && (
             <ContractPickerTrigger
               onClick={() => setPickerOpen(true)}
@@ -183,132 +138,82 @@ export function CockpitContractPanel({
       {/* No Contract State */}
       {!effectiveContract && (
         <div className="flex-1 flex items-center justify-center text-center">
-          <div className="text-sm text-[var(--text-faint)]">No contract selected</div>
+          <div className="flex flex-col items-center gap-2">
+            <Settings2 className="w-8 h-8 text-[var(--text-faint)]" />
+            <span className="text-sm text-[var(--text-faint)]">No contract selected</span>
+            {onContractSelect && (
+              <ContractPickerTrigger
+                onClick={() => setPickerOpen(true)}
+                label="Select Contract"
+                size="sm"
+                variant="default"
+              />
+            )}
+          </div>
         </div>
       )}
 
-      {/* Contract Details */}
-      {effectiveContract && contractInfo && liquidityMetrics && (
-        <>
-          {/* Contract Description Row */}
-          <div className="flex items-center justify-between bg-[var(--surface-2)] rounded p-2 mb-2 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-[var(--text-high)]">
-                ${contractInfo.strike}
-                {contractInfo.type}
-              </span>
-              <span className={cn("text-xs font-medium", contractInfo.dteClass)}>
-                {contractInfo.dte}
-              </span>
+      {/* Contract Activity Info */}
+      {effectiveContract && liquidityMetrics && (
+        <div className="flex-1 flex flex-col gap-3">
+          {/* Volume & OI Grid */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingUp className="w-3 h-3 text-[var(--brand-primary)]" />
+                <span className="text-[10px] text-[var(--text-faint)] uppercase">Volume</span>
+              </div>
+              <div className="text-lg font-bold tabular-nums text-[var(--text-high)]">
+                {liquidityMetrics.volume > 0 ? liquidityMetrics.volume.toLocaleString() : "--"}
+              </div>
             </div>
-            {contractInfo.expiry && (
-              <span className="text-xs text-[var(--text-muted)]">
-                Exp: {formatExpirationShort(contractInfo.expiry)}
-              </span>
-            )}
-          </div>
-
-          {/* Pricing Grid */}
-          <div className="grid grid-cols-3 gap-2 flex-shrink-0 mb-2">
-            {/* Bid */}
-            <MetricCard
-              label="Bid"
-              value={`$${liquidityMetrics.bid.toFixed(2)}`}
-              className="text-[var(--accent-positive)]"
-            />
-            {/* Ask */}
-            <MetricCard
-              label="Ask"
-              value={`$${liquidityMetrics.ask.toFixed(2)}`}
-              className="text-[var(--accent-negative)]"
-            />
-            {/* Mid */}
-            <MetricCard
-              label="Mid"
-              value={`$${liquidityMetrics.mid.toFixed(2)}`}
-              className="text-[var(--brand-primary)]"
-              highlight
-            />
-          </div>
-
-          {/* Metrics Grid */}
-          <div className="grid grid-cols-2 gap-2 flex-1 min-h-0">
-            {/* Spread */}
-            <MetricCard
-              label="Spread"
-              value={
-                liquidityMetrics.spreadPct !== null
-                  ? `${liquidityMetrics.spreadPct.toFixed(2)}%`
-                  : "—"
-              }
-              className={cn(
-                liquidityMetrics.spreadPct === null
-                  ? "text-[var(--text-muted)]"
-                  : liquidityMetrics.spreadPct < 1
-                    ? "text-[var(--accent-positive)]"
-                    : liquidityMetrics.spreadPct < 3
-                      ? "text-amber-400"
-                      : "text-[var(--accent-negative)]"
-              )}
-            />
-            {/* IV */}
-            <MetricCard
-              label="IV"
-              value={`${liquidityMetrics.iv.toFixed(1)}%`}
-              className={cn(
-                liquidityMetrics.iv > 50
-                  ? "text-amber-400"
-                  : liquidityMetrics.iv > 30
-                    ? "text-[var(--text-high)]"
-                    : "text-blue-400"
-              )}
-            />
-            {/* Volume - show "--" when 0 (indicates data unavailable, not zero trades) */}
-            <MetricCard
-              label="Volume"
-              value={liquidityMetrics.volume > 0 ? liquidityMetrics.volume.toLocaleString() : "--"}
-              className="text-[var(--text-high)]"
-            />
-            {/* OI */}
-            <MetricCard
-              label="Open Interest"
-              value={liquidityMetrics.openInterest.toLocaleString()}
-              className="text-[var(--text-high)]"
-            />
-          </div>
-
-          {/* Underlying Context */}
-          <div className="mt-2 pt-2 border-t border-[var(--border-hairline)] flex items-center justify-between text-xs flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[var(--text-faint)]">{symbol}</span>
-              {effectiveUnderlyingPrice !== null && (
-                <span className="text-[var(--text-high)] font-medium tabular-nums">
-                  ${effectiveUnderlyingPrice.toFixed(2)}
+            <div className="p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Users className="w-3 h-3 text-[var(--brand-primary)]" />
+                <span className="text-[10px] text-[var(--text-faint)] uppercase">
+                  Open Interest
                 </span>
-              )}
-              {effectiveUnderlyingChange !== null && (
-                <span
-                  className={cn(
-                    "tabular-nums",
-                    effectiveUnderlyingChange >= 0
-                      ? "text-[var(--accent-positive)]"
-                      : "text-[var(--accent-negative)]"
-                  )}
-                >
-                  {effectiveUnderlyingChange >= 0 ? "+" : ""}
-                  {effectiveUnderlyingChange.toFixed(2)}%
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1 text-[var(--text-faint)]">
-              <Clock className="w-3 h-3" />
-              <span className="tabular-nums">{formattedQuoteTime}</span>
+              </div>
+              <div className="text-lg font-bold tabular-nums text-[var(--text-high)]">
+                {liquidityMetrics.openInterest.toLocaleString()}
+              </div>
             </div>
           </div>
-        </>
+
+          {/* Vol/OI Ratio - trader's signal */}
+          {liquidityMetrics.volume > 0 && liquidityMetrics.openInterest > 0 && (
+            <div className="p-2 rounded bg-[var(--surface-2)] border border-[var(--border-hairline)]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-[var(--text-faint)] uppercase">Vol/OI Ratio</span>
+                <VolOIRatio volume={liquidityMetrics.volume} oi={liquidityMetrics.openInterest} />
+              </div>
+            </div>
+          )}
+
+          {/* Spread Warning (if poor) */}
+          {liquidityMetrics.spreadPct !== null && liquidityMetrics.spreadPct > 3 && (
+            <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <div className="text-xs text-amber-400">
+                  Wide spread ({liquidityMetrics.spreadPct.toFixed(1)}%) - use limit orders
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Quote Time Footer */}
+          <div className="flex items-center justify-end gap-1.5 text-xs text-[var(--text-faint)] pt-2 border-t border-[var(--border-hairline)]">
+            <Clock className="w-3 h-3" />
+            <span className="tabular-nums">{formattedQuoteTime}</span>
+          </div>
+        </div>
       )}
 
-      {/* Contract Picker Modal/Sheet */}
+      {/* Contract Picker Modal */}
       {onContractSelect && (
         <ContractPicker
           symbol={symbol}
@@ -322,36 +227,6 @@ export function CockpitContractPanel({
           disabledReason={isEntered ? "Can't change contract after entry" : undefined}
         />
       )}
-    </div>
-  );
-}
-
-// ============================================================================
-// Metric Card
-// ============================================================================
-
-function MetricCard({
-  label,
-  value,
-  className,
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  className?: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "p-2 rounded border",
-        highlight
-          ? "bg-[var(--brand-primary)]/10 border-[var(--brand-primary)]/30"
-          : "bg-[var(--surface-2)] border-[var(--border-hairline)]"
-      )}
-    >
-      <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide">{label}</div>
-      <div className={cn("text-sm font-semibold tabular-nums", className)}>{value}</div>
     </div>
   );
 }
@@ -393,6 +268,41 @@ function LiquidityBadge({ rating }: { rating: "good" | "fair" | "poor" }) {
     >
       <Icon className="w-3 h-3" />
       {label}
+    </div>
+  );
+}
+
+// ============================================================================
+// Vol/OI Ratio Indicator
+// ============================================================================
+
+function VolOIRatio({ volume, oi }: { volume: number; oi: number }) {
+  const ratio = volume / oi;
+  const isUnusual = ratio > 1; // Volume exceeds OI - unusual activity
+  const isHigh = ratio > 0.5;
+
+  return (
+    <div
+      className={cn(
+        "text-sm font-bold tabular-nums",
+        isUnusual
+          ? "text-[var(--accent-positive)]"
+          : isHigh
+            ? "text-amber-400"
+            : "text-[var(--text-high)]"
+      )}
+      title={
+        isUnusual
+          ? "Unusual activity: Volume exceeds Open Interest"
+          : isHigh
+            ? "High activity relative to OI"
+            : "Normal trading activity"
+      }
+    >
+      {ratio.toFixed(2)}x
+      {isUnusual && (
+        <span className="text-[9px] ml-1 font-normal text-[var(--accent-positive)]">Unusual</span>
+      )}
     </div>
   );
 }

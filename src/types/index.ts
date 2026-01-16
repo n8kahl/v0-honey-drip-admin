@@ -156,6 +156,8 @@ export interface Trade {
   id: string;
   ticker: string;
   contract: Contract;
+  /** Canonical contract key for tracking (e.g., "OPT:SPY:2026-01-17:600:C") */
+  contractKey?: string;
   tradeType: TradeType;
   state: TradeState;
   setupType?: SetupType; // Detected pattern type

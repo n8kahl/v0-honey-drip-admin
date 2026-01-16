@@ -4,30 +4,88 @@ import { RiskCalculationInput, RiskCalculationResult, KeyLevels } from "./types"
 import { calculateRisk } from "./calculator";
 
 /**
+ * Live option prices for calculating chart levels
+ */
+interface LiveOptionPrices {
+  targetPrice?: number; // Option TP price from liveModel
+  stopLoss?: number; // Option SL price from liveModel
+  currentMid?: number; // Current option mid price from liveModel
+}
+
+/**
  * Build chart levels for a trade based on risk engine context
+ *
+ * IMPORTANT: Chart displays UNDERLYING stock prices, so we must use
+ * underlying price fields (targetUnderlyingPrice, stopUnderlyingPrice)
+ * rather than option premium prices (targetPrice, stopLoss).
+ *
+ * If underlying prices aren't stored, calculate them from option prices + delta.
+ *
+ * @param trade - The trade object
+ * @param keyLevels - Key market levels (VWAP, ORB, etc.)
+ * @param riskResult - Optional risk calculation result
+ * @param currentUnderlyingPrice - Current underlying price for calculations
+ * @param liveOptionPrices - Live option prices from useActiveTradeLiveModel
  */
 export function buildChartLevelsForTrade(
   trade: Trade,
   keyLevels: KeyLevels | undefined,
-  riskResult?: RiskCalculationResult
+  riskResult?: RiskCalculationResult,
+  currentUnderlyingPrice?: number,
+  liveOptionPrices?: LiveOptionPrices
 ): ChartLevel[] {
   const levels: ChartLevel[] = [];
 
-  // Always include ENTRY if known
-  if (trade.entryPrice) {
+  // Get reference underlying price and delta for calculations
+  // Try stored values first, then fallback to current price
+  const baseUnderlyingPrice =
+    trade.underlyingAtEntry || trade.underlyingPriceAtLoad || currentUnderlyingPrice || 0;
+  const delta = trade.contract?.delta || trade.deltaAtEntry || 0.5;
+  const isCall = trade.contract?.type === "C";
+
+  // For option price to underlying calculation, use current mid as reference
+  const referenceOptionPrice =
+    liveOptionPrices?.currentMid || trade.entryPrice || trade.contract?.mid || 0;
+
+  // Get TP/SL option prices - prefer live model values, fallback to trade values
+  const targetOptionPrice = liveOptionPrices?.targetPrice || trade.targetPrice;
+  const stopOptionPrice = liveOptionPrices?.stopLoss || trade.stopLoss;
+
+  /**
+   * Calculate underlying price from option price change using delta
+   * Uses current underlying as reference point
+   * For calls: underlying increases when option increases
+   * For puts: underlying decreases when option increases (negative delta)
+   */
+  function calculateUnderlyingFromOption(optionPrice: number): number | null {
+    if (!baseUnderlyingPrice || !referenceOptionPrice || !delta) return null;
+    const optionChange = optionPrice - referenceOptionPrice;
+    // Use absolute delta for calculation, direction handled by call/put logic
+    const underlyingChange = optionChange / Math.abs(delta);
+    // For calls: positive option change = positive underlying change
+    // For puts: positive option change = negative underlying change
+    return baseUnderlyingPrice + (isCall ? underlyingChange : -underlyingChange);
+  }
+
+  // Entry level - use underlying price at entry or load time
+  if (baseUnderlyingPrice > 0) {
     levels.push({
       type: "ENTRY",
       label: "Entry",
-      price: trade.entryPrice,
+      price: baseUnderlyingPrice,
     });
   }
 
-  // Always include TP levels
-  if (trade.targetPrice) {
+  // TP level - prefer stored underlying price, otherwise calculate from option price
+  let tpUnderlyingPrice = trade.targetUnderlyingPrice;
+  if (!tpUnderlyingPrice && targetOptionPrice && baseUnderlyingPrice > 0) {
+    tpUnderlyingPrice = calculateUnderlyingFromOption(targetOptionPrice) ?? undefined;
+  }
+  if (tpUnderlyingPrice && tpUnderlyingPrice > 0) {
     levels.push({
       type: "TP",
       label: "TP1",
-      price: trade.targetPrice,
+      price: tpUnderlyingPrice,
       meta: {
         tpIndex: 1,
         reason: riskResult?.reasoning,
@@ -35,24 +93,41 @@ export function buildChartLevelsForTrade(
     });
   }
 
-  // TP2 if available
-  if (riskResult?.targetPrice2) {
+  // TP2 if available (underlying price)
+  if (trade.targetUnderlyingPrice2 && trade.targetUnderlyingPrice2 > 0) {
     levels.push({
       type: "TP",
       label: "TP2",
-      price: riskResult.targetPrice2,
+      price: trade.targetUnderlyingPrice2,
       meta: {
         tpIndex: 2,
       },
     });
   }
 
-  // Always include SL
-  if (trade.stopLoss) {
+  // TP3 if available (from extended risk result or trade)
+  const tp3 = (riskResult as any)?.targetPrice3 || (trade as any)?.targetPrice3;
+  if (tp3) {
+    levels.push({
+      type: "TP",
+      label: "TP3",
+      price: tp3,
+      meta: {
+        tpIndex: 3,
+      },
+    });
+  }
+
+  // SL level - prefer stored underlying price, otherwise calculate from option price
+  let slUnderlyingPrice = trade.stopUnderlyingPrice;
+  if (!slUnderlyingPrice && stopOptionPrice && baseUnderlyingPrice > 0) {
+    slUnderlyingPrice = calculateUnderlyingFromOption(stopOptionPrice) ?? undefined;
+  }
+  if (slUnderlyingPrice && slUnderlyingPrice > 0) {
     levels.push({
       type: "SL",
       label: "SL",
-      price: trade.stopLoss,
+      price: slUnderlyingPrice,
       meta: {
         reason: riskResult?.reasoning,
       },
@@ -190,6 +265,19 @@ export function buildChartLevelsForCandidate(
       price: riskResult.targetPrice2,
       meta: {
         tpIndex: 2,
+      },
+    });
+  }
+
+  // TP3 if available (from extended risk result)
+  const tp3 = (riskResult as any)?.targetPrice3;
+  if (tp3) {
+    levels.push({
+      type: "TP",
+      label: "TP3",
+      price: tp3,
+      meta: {
+        tpIndex: 3,
       },
     });
   }

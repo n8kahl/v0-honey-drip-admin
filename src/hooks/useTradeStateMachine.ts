@@ -150,6 +150,8 @@ interface TradeStateMachineActions {
     comment?: string,
     priceOverrides?: PriceOverrides
   ) => void;
+  /** Open alert composer for entering a LOADED trade with alert */
+  handleOpenEnterAlert: () => void;
   handleCancelAlert: () => void;
   handleDiscard: () => void;
   handleUnloadTrade: () => void;
@@ -1694,6 +1696,38 @@ export function useTradeStateMachine({
     [handleEnterAndAlert]
   );
 
+  /**
+   * Open the alert composer for entering a LOADED trade with alert.
+   * This allows the user to customize the alert message before entering.
+   */
+  const handleOpenEnterAlert = useCallback(() => {
+    const trade = currentTrade || previewTrade;
+    if (!trade) {
+      log.warn("handleOpenEnterAlert: No trade available");
+      return;
+    }
+
+    // Only allow from LOADED or WATCHING state
+    if (trade.state !== "LOADED" && trade.state !== "WATCHING") {
+      log.warn("handleOpenEnterAlert: Invalid state", { state: trade.state });
+      toast.error("Cannot enter trade from current state");
+      return;
+    }
+
+    log.info("Opening enter alert composer", { tradeId: trade.id, state: trade.state });
+
+    // Use domain layer to create draft
+    const draft = startTradeAction("ENTER", { trade });
+    if (draft) {
+      setAlertDraft(draft);
+    }
+
+    // Set alert type to "enter" and show the composer
+    setAlertType("enter");
+    setAlertOptions({});
+    setShowAlert(true);
+  }, [currentTrade, previewTrade, toast]);
+
   const handleCancelAlert = useCallback(() => {
     setShowAlert(false);
     setAlertDraft(null); // Clear domain layer draft
@@ -1820,22 +1854,35 @@ export function useTradeStateMachine({
 
   const handleTakeProfit = useCallback(
     (_sendAlert?: boolean) => {
+      console.log("[handleTakeProfit] Called");
       // Read directly from store to avoid stale closure
       const storeState = useTradeStore.getState();
       const trade = storeState.currentTradeId
         ? storeState.activeTrades.find((t) => t.id === storeState.currentTradeId)
         : null;
 
-      if (!trade) return;
+      console.log("[handleTakeProfit] Trade found:", {
+        currentTradeId: storeState.currentTradeId,
+        trade: trade?.ticker || "null",
+        tradeState: trade?.state || "null",
+      });
+
+      if (!trade) {
+        console.log("[handleTakeProfit] No trade found, returning early");
+        return;
+      }
 
       // Use domain layer - TRIM intent for take profit
       const draft = startTradeAction("TRIM", { trade });
+      console.log("[handleTakeProfit] Draft created:", draft ? "yes" : "no");
+
       if (draft) {
         setAlertDraft(draft);
         // Backward compatibility: also set legacy state
         setAlertType("update");
         setAlertOptions({ updateKind: "take-profit", trimPercent: 50 });
         setShowAlert(true);
+        console.log("[handleTakeProfit] setShowAlert(true) called");
       } else {
         log.warn("handleTakeProfit: Invalid transition", { state: trade.state });
         toast.error("Cannot take profit from current state");
@@ -1846,77 +1893,50 @@ export function useTradeStateMachine({
 
   const handleExit = useCallback(
     async (_sendAlert?: boolean) => {
+      console.log("[handleExit] Called with sendAlert:", _sendAlert);
       // Read directly from store to avoid stale closure
       const storeState = useTradeStore.getState();
       const trade = storeState.currentTradeId
         ? storeState.activeTrades.find((t) => t.id === storeState.currentTradeId)
         : null;
 
-      if (!trade) return;
+      console.log("[handleExit] Trade found:", {
+        currentTradeId: storeState.currentTradeId,
+        trade: trade?.ticker || "null",
+        tradeState: trade?.state || "null",
+      });
 
-      // DETECT EXPIRATION / NULL PRICE - Force manual exit bypassing alert composer
+      if (!trade) {
+        console.log("[handleExit] No trade found, returning early");
+        return;
+      }
+
+      // DETECT EXPIRATION / NULL PRICE
       const isExpired = trade.contract.expiry && new Date(trade.contract.expiry) < new Date();
       const isZeroPrice =
         (!trade.currentPrice || trade.currentPrice === 0) &&
         (!trade.contract.mid || trade.contract.mid === 0);
 
-      if (isExpired || isZeroPrice) {
-        // === DIRECT EXIT FOR EXPIRED CONTRACTS ===
-        // Bypass all alert machinery and directly update DB + store
-        const now = new Date();
-        const entryPrice = trade.entryPrice || 0;
-        const exitPrice = 0; // Expired worthless
-        const movePercent = entryPrice > 0 ? -100 : 0; // Total loss
-
-        try {
-          // 1. Update database directly
-          await updateTradeApi(userId, trade.id, {
-            status: "exited",
-            exit_price: exitPrice,
-            exit_time: now.toISOString(),
-            move_percent: movePercent,
-          });
-
-          // 2. Optimistically move trade from activeTrades to historyTrades
-          const exitedTrade: Trade = {
-            ...trade,
-            state: "EXITED",
-            exitPrice,
-            exitTime: now,
-            movePercent,
-          };
-          useTradeStore.setState((state) => ({
-            activeTrades: state.activeTrades.filter((t) => t.id !== trade.id),
-            historyTrades: [...state.historyTrades, exitedTrade],
-            currentTradeId: null, // Clear focus
-          }));
-
-          // 3. Show success toast
-          toast.success("Expired Position Cleared", {
-            description: `${trade.ticker} expired contract removed from active trades.`,
-          });
-
-          // 4. Reload trades from DB
-          await loadTrades(userId);
-
-          log.info("Expired contract manually exited", { tradeId: trade.id, ticker: trade.ticker });
-        } catch (err) {
-          console.error("[handleExit] Failed to exit expired trade:", err);
-          toast.error("Failed to clear expired position", {
-            description: err instanceof Error ? err.message : "Unknown error",
-          });
-        }
-        return;
-      }
+      // FIX: Always show alert composer for exits, even for expired contracts
+      // User may want to edit the exit message before sending
+      // The alert composer will handle the expired state appropriately
+      console.log("[handleExit] Creating exit draft", { isExpired, isZeroPrice });
 
       // Use domain layer to create draft
       const draft = startTradeAction("EXIT", { trade });
+      console.log("[handleExit] Draft created:", draft ? "yes" : "no");
+
       if (draft) {
+        // For expired contracts, set exit price to 0 (worthless) in the draft
+        if (isExpired || isZeroPrice) {
+          draft.editablePrices.exitPrice = 0;
+        }
         setAlertDraft(draft);
         // Backward compatibility: also set legacy state
         setAlertType(intentToAlertType("EXIT"));
-        setAlertOptions({});
+        setAlertOptions({ isExpired: isExpired || isZeroPrice });
         setShowAlert(true);
+        console.log("[handleExit] setShowAlert(true) called");
       } else {
         log.warn("handleExit: Invalid transition", { state: trade.state });
         toast.error("Cannot exit from current state");
@@ -1959,6 +1979,7 @@ export function useTradeStateMachine({
       handleLoadAndAlert,
       handleEnterAndAlert,
       handleEnterTrade,
+      handleOpenEnterAlert,
       handleCancelAlert,
       handleDiscard,
       handleUnloadTrade,

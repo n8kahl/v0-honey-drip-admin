@@ -16,10 +16,11 @@
  * Only displayed when trade.state === "ENTERED"
  */
 
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, useCallback } from "react";
 import type { Trade, Ticker } from "../../types";
 import { useActiveTradeLiveModel } from "../../hooks/useActiveTradeLiveModel";
 import { useMarketDataStore } from "../../stores/marketDataStore";
+import { isContractExpired } from "../../stores/tradeStore";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { HDLiveChart } from "../hd/charts/HDLiveChart";
 import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
@@ -31,9 +32,12 @@ import {
   CockpitPlanPanel,
   CockpitContractPanel,
   CockpitActionsBar,
+  CockpitConfluencePanel,
+  CockpitRightPanel,
   type CockpitViewState,
 } from "./cockpit";
-import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
+import { HDStaleBanner, useStaleLevel } from "../hd/common/HDStaleBanner";
+import { useFlowContext } from "../../hooks/useFlowContext";
 
 // ============================================================================
 // Props
@@ -73,6 +77,7 @@ export function NowPanelManage({
   // Get additional context data
   const symbolData = useMarketDataStore((s) => s.symbols[trade.ticker]);
   const { keyLevels } = useKeyLevels(trade.ticker);
+  const flowContext = useFlowContext(trade.ticker);
 
   // Get subscribe action from store
   const subscribe = useMarketDataStore((s) => s.subscribe);
@@ -95,24 +100,77 @@ export function NowPanelManage({
   }, [trade.ticker, watchlist, activeTicker, liveModel?.underlyingPrice]);
 
   // Build chart levels for trade visualization
-  const chartLevels = useMemo(
-    () => buildChartLevelsForTrade(trade, keyLevels || undefined),
-    [trade, keyLevels]
-  );
+  // Pass current underlying price and live option prices for TP/SL calculation
+  const chartLevels = useMemo(() => {
+    const levels = buildChartLevelsForTrade(
+      trade,
+      keyLevels || undefined,
+      undefined,
+      liveModel?.underlyingPrice,
+      {
+        targetPrice: liveModel?.targetPrice,
+        stopLoss: liveModel?.stopLoss,
+        currentMid: liveModel?.effectiveMid,
+      }
+    );
+    console.log("[NowPanelManage] Chart levels built:", {
+      levelsCount: levels.length,
+      levels: levels.map((l) => ({ type: l.type, label: l.label, price: l.price })),
+      inputs: {
+        underlyingPrice: liveModel?.underlyingPrice,
+        targetPrice: liveModel?.targetPrice,
+        stopLoss: liveModel?.stopLoss,
+        currentMid: liveModel?.effectiveMid,
+        delta: trade.contract?.delta,
+      },
+    });
+    return levels;
+  }, [
+    trade,
+    keyLevels,
+    liveModel?.underlyingPrice,
+    liveModel?.targetPrice,
+    liveModel?.stopLoss,
+    liveModel?.effectiveMid,
+  ]);
 
   // Determine cockpit view state (entered or expired)
+  // CRITICAL: Use isContractExpired which checks for 4PM ET close time, NOT midnight UTC
   const viewState: CockpitViewState = useMemo(() => {
-    // Check if contract has expired
     const contract = trade.contract;
-    if (contract?.expiry && new Date(contract.expiry) < new Date()) {
+    if (contract?.expiry && isContractExpired(contract.expiry)) {
       return "expired";
     }
     return "entered";
   }, [trade.contract]);
 
-  // Underlying data freshness
+  // Underlying data freshness with enhanced staleness detection
   const lastUpdateTime = symbolData?.lastUpdated ? new Date(symbolData.lastUpdated) : null;
-  const isStale = symbolData?.lastUpdated ? Date.now() - symbolData.lastUpdated > 10000 : true;
+  const lastUpdateTs = symbolData?.lastUpdated || null;
+  const staleLevel = useStaleLevel(lastUpdateTs);
+  const isStale = staleLevel === "stale" || staleLevel === "critical" || liveModel?.optionIsStale;
+
+  // Refresh symbol data - use refreshStaleSymbols which will fetch latest data
+  const refreshStaleSymbols = useMarketDataStore((s) => s.refreshStaleSymbols);
+  const handleRetryData = useCallback(() => {
+    if (refreshStaleSymbols) {
+      refreshStaleSymbols();
+    }
+  }, [refreshStaleSymbols]);
+
+  // Render stale banner for critical staleness
+  const staleBanner = useMemo(() => {
+    if (staleLevel === "live" || staleLevel === "delayed") return null;
+    return (
+      <HDStaleBanner
+        lastUpdateTime={lastUpdateTs}
+        staleLevel={staleLevel}
+        dataSource={`${trade.ticker} live data`}
+        onRetry={handleRetryData}
+        onDismiss={() => {}}
+      />
+    );
+  }, [staleLevel, lastUpdateTs, trade.ticker, handleRetryData]);
 
   // Loading state if model not yet available
   if (!liveModel) {
@@ -134,6 +192,7 @@ export function NowPanelManage({
       contract={trade.contract}
       activeTicker={activeTicker}
       keyLevels={keyLevels}
+      staleBanner={staleBanner}
       data-testid="now-panel-manage-cockpit"
     >
       {{
@@ -151,7 +210,7 @@ export function NowPanelManage({
             contractAsk={liveModel.ask}
             contractMid={liveModel.effectiveMid}
             lastUpdateTime={lastUpdateTime}
-            isStale={isStale || liveModel.optionIsStale}
+            isStale={isStale}
           />
         ),
 
@@ -160,7 +219,7 @@ export function NowPanelManage({
           <div className="h-full w-full relative">
             <HDLiveChart
               ticker={trade.ticker}
-              height={180}
+              height="100%"
               initialTimeframe="5"
               indicators={{
                 ema: { periods: [9, 21] },
@@ -168,60 +227,53 @@ export function NowPanelManage({
               }}
               events={[]}
               levels={chartLevels}
-              showControls={false}
-              showHeader={false}
+              showControls={true}
+              showHeader={true}
             />
-            {/* Active Trade Indicator */}
-            <div className="absolute top-2 right-2 z-10 px-2 py-1 bg-[var(--accent-positive)]/20 backdrop-blur rounded text-[10px] font-medium text-[var(--accent-positive)] border border-[var(--accent-positive)]/30 flex items-center gap-1">
+            {/* Active Trade Indicator - positioned below header controls */}
+            <div className="absolute top-10 right-2 z-10 px-2 py-1 bg-[var(--accent-positive)]/20 backdrop-blur rounded text-[10px] font-medium text-[var(--accent-positive)] border border-[var(--accent-positive)]/30 flex items-center gap-1">
               <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-positive)] animate-pulse" />
               LIVE
             </div>
           </div>
         ),
 
-        /* ========== CONFLUENCE PANEL ========== */
+        /* ========== CONFLUENCE PANEL (Compact Bar for ENTERED) ========== */
         confluence: (
-          <ConfluencePanelPro
+          <CockpitConfluencePanel
             symbol={trade.ticker}
-            viewState={viewState}
             keyLevels={keyLevels}
             currentPrice={currentPrice}
-            showDegradationWarnings={true}
-            contractIV={trade.contract?.iv}
+            compact={true}
           />
         ),
 
-        /* ========== PLAN PANEL (Management Summary) ========== */
+        /* ========== UNIFIED RIGHT PANEL (P&L, Flow, Levels, Activity) ========== */
         plan: (
-          <CockpitPlanPanel
+          <CockpitRightPanel
             viewState={viewState}
             symbol={trade.ticker}
             trade={trade}
             contract={trade.contract}
-            entryPrice={liveModel.entryPrice}
-            stopLoss={liveModel.stopPrice}
-            targetPrice={liveModel.targetPrice}
-            riskReward={
-              liveModel.stopPrice && liveModel.entryPrice && liveModel.targetPrice
-                ? (liveModel.targetPrice - liveModel.entryPrice) /
-                  (liveModel.entryPrice - liveModel.stopPrice)
-                : null
-            }
+            keyLevels={keyLevels}
+            currentPrice={currentPrice}
+            underlyingPrice={liveModel.underlyingPrice}
+            lastQuoteTime={lastUpdateTime}
+            flowContext={flowContext}
+            pnl={{
+              percent: liveModel.pnlPercent ?? 0,
+              dollars: liveModel.pnlDollars ?? 0,
+              rMultiple: liveModel.rMultiple,
+              progressToTarget: liveModel.progressToTarget,
+              targetPrice: liveModel.targetPrice,
+              stopLoss: liveModel.stopLoss,
+              currentMid: liveModel.effectiveMid,
+            }}
           />
         ),
 
-        /* ========== CONTRACT PANEL ========== */
-        contractPanel: (
-          <CockpitContractPanel
-            symbol={trade.ticker}
-            trade={trade}
-            contract={trade.contract}
-            activeTicker={activeTicker}
-            underlyingPrice={liveModel.underlyingPrice}
-            underlyingChange={liveModel.underlyingChangePercent}
-            lastQuoteTime={lastUpdateTime}
-          />
-        ),
+        /* ========== CONTRACT PANEL (Deprecated - handled by CockpitRightPanel) ========== */
+        contractPanel: null,
 
         /* ========== ACTIONS BAR ========== */
         actions: (

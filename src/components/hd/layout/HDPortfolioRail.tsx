@@ -10,21 +10,110 @@
  * - Working Orders section for loaded strategies
  * - Honey Drip Gold for positive Net P&L
  * - Status Dot: Green if pnl > 0, Red if pnl < 0, Pulse if recent update
+ * - NO internal scrollbar - capped list with "View All" modal
  *
  * Anti-Pattern: NO action buttons here - monitoring only.
  * Actions happen in the Center Panel.
  */
 
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useCallback } from "react";
 import { useTradeStore } from "../../../stores";
 import { useMarketDataStore } from "../../../stores/marketDataStore";
 import { Trade } from "../../../types";
-import { Shield, Clock, Zap, ChevronRight } from "lucide-react";
+import { Shield, Clock, Zap, ChevronRight, X } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { HDInstitutionalRadar } from "../common/HDInstitutionalRadar";
 import { cn, formatPercent } from "../../../lib/utils";
 import { useActiveTradePnL } from "../../../hooks/useMassiveData";
 import { getEntryPriceFromUpdates } from "../../../lib/tradePnl";
 import { getPortfolioGreeks, PortfolioGreeks } from "../../../services/greeksMonitorService";
+
+// ============================================================================
+// Live P&L Aggregation System
+// ============================================================================
+
+/**
+ * LiveTradePnLTracker - Invisible component that tracks live P&L for a single trade
+ * Reports P&L changes to parent via callback for aggregation
+ */
+function LiveTradePnLTracker({
+  trade,
+  onPnLUpdate,
+}: {
+  trade: Trade;
+  onPnLUpdate: (tradeId: string, pnlPercent: number) => void;
+}) {
+  const contractTicker =
+    trade.contract?.id || trade.contract?.ticker || trade.contract?.symbol || null;
+  const entryPrice =
+    trade.entryPrice || getEntryPriceFromUpdates(trade.updates || []) || trade.contract?.mid || 0;
+
+  const { currentPrice, pnlPercent } = useActiveTradePnL(trade.id, contractTicker, entryPrice);
+
+  // Report P&L changes to parent
+  const displayPnlPercent = currentPrice > 0 ? pnlPercent : (trade.movePercent ?? 0);
+
+  useEffect(() => {
+    onPnLUpdate(trade.id, displayPnlPercent);
+  }, [trade.id, displayPnlPercent, onPnLUpdate]);
+
+  return null; // Invisible - only for P&L tracking
+}
+
+/**
+ * Hook to manage aggregated live P&L from multiple trades
+ */
+function useLivePortfolioPnL(trades: Trade[]) {
+  const [pnlMap, setPnlMap] = useState<Record<string, number>>({});
+
+  // Stable callback for P&L updates
+  const handlePnLUpdate = useCallback((tradeId: string, pnlPercent: number) => {
+    setPnlMap((prev) => {
+      if (prev[tradeId] === pnlPercent) return prev;
+      return { ...prev, [tradeId]: pnlPercent };
+    });
+  }, []);
+
+  // Clean up removed trades
+  const tradeIds = useMemo(() => new Set(trades.map((t) => t.id)), [trades]);
+  useEffect(() => {
+    setPnlMap((prev) => {
+      const cleaned: Record<string, number> = {};
+      for (const [id, pnl] of Object.entries(prev)) {
+        if (tradeIds.has(id)) {
+          cleaned[id] = pnl;
+        }
+      }
+      return cleaned;
+    });
+  }, [tradeIds]);
+
+  // Calculate aggregate
+  const aggregate = useMemo(() => {
+    const enteredTrades = trades.filter((t) => t.state === "ENTERED");
+    if (enteredTrades.length === 0) {
+      return { netPnL: 0, avgPnL: 0, tradeCount: 0 };
+    }
+
+    let totalPnL = 0;
+    for (const trade of enteredTrades) {
+      // Use live P&L from map, fallback to trade.movePercent
+      totalPnL += pnlMap[trade.id] ?? trade.movePercent ?? 0;
+    }
+
+    return {
+      netPnL: totalPnL,
+      avgPnL: totalPnL / enteredTrades.length,
+      tradeCount: enteredTrades.length,
+    };
+  }, [trades, pnlMap]);
+
+  return { ...aggregate, handlePnLUpdate, pnlMap };
+}
+
+// Maximum visible items in the capped list (fits 1440x900 without scrollbar)
+const MAX_VISIBLE_POSITIONS = 5;
+const MAX_VISIBLE_ORDERS = 3;
 
 /**
  * Thesis Dot Status - Based on flow alignment + P&L
@@ -187,8 +276,21 @@ function HDCompactTradeRow({
 /**
  * HDPendingOrderRow - Compact row for loaded strategies awaiting entry
  */
-function HDPendingOrderRow({ trade, onClick }: { trade: Trade; onClick?: () => void }) {
+function HDPendingOrderRow({
+  trade,
+  onClick,
+  onDismiss,
+}: {
+  trade: Trade;
+  onClick?: () => void;
+  onDismiss?: (tradeId: string) => void;
+}) {
   const mid = trade.contract?.mid ?? 0;
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger row click
+    onDismiss?.(trade.id);
+  };
 
   return (
     <div
@@ -212,34 +314,23 @@ function HDPendingOrderRow({ trade, onClick }: { trade: Trade; onClick?: () => v
       {/* Mid price */}
       <span className="text-xs tabular-nums text-[var(--text-muted)]">${mid.toFixed(2)}</span>
 
+      {/* Dismiss X button on hover */}
+      <button
+        onClick={handleDismiss}
+        className="p-1 rounded hover:bg-[var(--surface-3)] opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Dismiss loaded trade"
+        data-testid="dismiss-loaded-trade"
+      >
+        <X className="w-3 h-3 text-[var(--text-muted)] hover:text-[var(--accent-negative)]" />
+      </button>
+
       {/* Chevron on hover */}
       <ChevronRight className="w-3 h-3 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
     </div>
   );
 }
 
-/**
- * Calculate aggregate Net P&L from trades
- */
-function useAggregateNetPnL(trades: Trade[]) {
-  return useMemo(() => {
-    const enteredTrades = trades.filter((t) => t.state === "ENTERED");
-    if (enteredTrades.length === 0) {
-      return { netPnL: 0, avgPnL: 0, tradeCount: 0 };
-    }
-
-    let totalPnL = 0;
-    for (const trade of enteredTrades) {
-      totalPnL += trade.movePercent ?? 0;
-    }
-
-    return {
-      netPnL: totalPnL,
-      avgPnL: totalPnL / enteredTrades.length,
-      tradeCount: enteredTrades.length,
-    };
-  }, [trades]);
-}
+// Old useAggregateNetPnL removed - replaced by useLivePortfolioPnL above
 
 export function HDPortfolioRail({
   activeTrades: propActiveTrades,
@@ -248,6 +339,19 @@ export function HDPortfolioRail({
 }: HDPortfolioRailProps) {
   const storeActiveTrades = useTradeStore((state) => state.activeTrades);
   const currentTradeId = useTradeStore((state) => state.currentTradeId);
+  const deleteTrade = useTradeStore((state) => state.deleteTrade);
+
+  // Handle dismiss loaded trade
+  const handleDismissLoadedTrade = useCallback(
+    async (tradeId: string) => {
+      try {
+        await deleteTrade(tradeId);
+      } catch (error) {
+        console.error("Failed to dismiss trade:", error);
+      }
+    },
+    [deleteTrade]
+  );
 
   // Use props if provided, otherwise fall back to store
   const enteredTrades = useMemo(() => {
@@ -265,11 +369,21 @@ export function HDPortfolioRail({
     () => [...enteredTrades, ...loadedTrades],
     [enteredTrades, loadedTrades]
   );
-  const { netPnL, tradeCount } = useAggregateNetPnL(allTrades);
+  const { netPnL, tradeCount, handlePnLUpdate } = useLivePortfolioPnL(allTrades);
   const isProfit = netPnL >= 0;
 
   // Portfolio Greeks
   const [portfolioGreeks, setPortfolioGreeks] = useState<PortfolioGreeks | null>(null);
+
+  // Modal states
+  const [showPositionsModal, setShowPositionsModal] = useState(false);
+  const [showOrdersModal, setShowOrdersModal] = useState(false);
+
+  // Capped lists for display (no scrollbar)
+  const visiblePositions = enteredTrades.slice(0, MAX_VISIBLE_POSITIONS);
+  const hasMorePositions = enteredTrades.length > MAX_VISIBLE_POSITIONS;
+  const visibleOrders = loadedTrades.slice(0, MAX_VISIBLE_ORDERS);
+  const hasMoreOrders = loadedTrades.length > MAX_VISIBLE_ORDERS;
 
   useEffect(() => {
     const updateGreeks = () => {
@@ -283,7 +397,19 @@ export function HDPortfolioRail({
   }, [enteredTrades]);
 
   return (
-    <div className="w-full border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]">
+    <div
+      className="w-full border-l border-[var(--border-hairline)] flex flex-col h-full bg-[var(--surface-1)]"
+      data-testid="portfolio-rail"
+    >
+      {/* Invisible P&L trackers for each entered trade - updates aggregate in real-time */}
+      {enteredTrades.map((trade) => (
+        <LiveTradePnLTracker
+          key={`pnl-tracker-${trade.id}`}
+          trade={trade}
+          onPnLUpdate={handlePnLUpdate}
+        />
+      ))}
+
       {/* Header: Portfolio Risk */}
       <div className="p-3 border-b border-[var(--border-hairline)]">
         <div className="flex items-center justify-between mb-2">
@@ -340,9 +466,9 @@ export function HDPortfolioRail({
         )}
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Open Positions Section */}
+      {/* No overflow-y-auto - capped list with View All modal */}
+      <div className="flex-1 flex flex-col">
+        {/* Open Positions Section - Capped list */}
         {enteredTrades.length > 0 && (
           <div>
             <div className="px-3 py-2 bg-gradient-to-r from-yellow-500/10 to-transparent border-l-2 border-yellow-500">
@@ -350,8 +476,8 @@ export function HDPortfolioRail({
                 Open Positions
               </h3>
             </div>
-            <div className="divide-y divide-[var(--border-hairline)]">
-              {enteredTrades.map((trade) => (
+            <div className="divide-y divide-[var(--border-hairline)]" data-testid="positions-list">
+              {visiblePositions.map((trade) => (
                 <HDCompactTradeRow
                   key={trade.id}
                   trade={trade}
@@ -360,10 +486,21 @@ export function HDPortfolioRail({
                 />
               ))}
             </div>
+            {/* View All button when list is truncated */}
+            {hasMorePositions && (
+              <button
+                onClick={() => setShowPositionsModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                data-testid="positions-view-all-btn"
+              >
+                View All ({enteredTrades.length})
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
           </div>
         )}
 
-        {/* Working Orders Section (Loaded Strategies) */}
+        {/* Working Orders Section (Loaded Strategies) - Capped list */}
         {loadedTrades.length > 0 && (
           <div className="mt-2">
             <div className="px-3 py-2 bg-gradient-to-r from-blue-500/10 to-transparent border-l-2 border-blue-500">
@@ -371,15 +508,27 @@ export function HDPortfolioRail({
                 Working Orders
               </h3>
             </div>
-            <div className="divide-y divide-[var(--border-hairline)]">
-              {loadedTrades.map((trade) => (
+            <div className="divide-y divide-[var(--border-hairline)]" data-testid="orders-list">
+              {visibleOrders.map((trade) => (
                 <HDPendingOrderRow
                   key={trade.id}
                   trade={trade}
                   onClick={() => onTradeClick?.(trade)}
+                  onDismiss={handleDismissLoadedTrade}
                 />
               ))}
             </div>
+            {/* View All button when list is truncated */}
+            {hasMoreOrders && (
+              <button
+                onClick={() => setShowOrdersModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-blue-400 hover:bg-[var(--surface-2)] transition-colors"
+                data-testid="orders-view-all-btn"
+              >
+                View All ({loadedTrades.length})
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
           </div>
         )}
 
@@ -413,6 +562,88 @@ export function HDPortfolioRail({
           </div>
         </div>
       )}
+
+      {/* Positions View All Modal */}
+      <Dialog.Root open={showPositionsModal} onOpenChange={setShowPositionsModal}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] max-h-[80vh] bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-xl shadow-2xl z-50 flex flex-col"
+            data-testid="positions-modal"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-hairline)]">
+              <Dialog.Title className="text-sm font-semibold text-[var(--text-high)]">
+                Open Positions ({enteredTrades.length})
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-[var(--surface-3)] transition-colors"
+                  data-testid="positions-modal-close"
+                >
+                  <X className="w-4 h-4 text-[var(--text-muted)]" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto divide-y divide-[var(--border-hairline)]">
+              {enteredTrades.map((trade) => (
+                <HDCompactTradeRow
+                  key={trade.id}
+                  trade={trade}
+                  isActive={currentTradeId === trade.id}
+                  onClick={() => {
+                    onTradeClick?.(trade);
+                    setShowPositionsModal(false);
+                  }}
+                />
+              ))}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Orders View All Modal */}
+      <Dialog.Root open={showOrdersModal} onOpenChange={setShowOrdersModal}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] max-h-[80vh] bg-[var(--surface-1)] border border-[var(--border-hairline)] rounded-xl shadow-2xl z-50 flex flex-col"
+            data-testid="orders-modal"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-hairline)]">
+              <Dialog.Title className="text-sm font-semibold text-[var(--text-high)]">
+                Working Orders ({loadedTrades.length})
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-[var(--surface-3)] transition-colors"
+                  data-testid="orders-modal-close"
+                >
+                  <X className="w-4 h-4 text-[var(--text-muted)]" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto divide-y divide-[var(--border-hairline)]">
+              {loadedTrades.map((trade) => (
+                <HDPendingOrderRow
+                  key={trade.id}
+                  trade={trade}
+                  onClick={() => {
+                    onTradeClick?.(trade);
+                    setShowOrdersModal(false);
+                  }}
+                  onDismiss={handleDismissLoadedTrade}
+                />
+              ))}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

@@ -78,9 +78,9 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
     contracts,
     currentTrade,
     tradeState,
-    showAlert: _showAlert, // No longer used - alerts in NowPanel
-    alertType: _alertType,
-    alertOptions: _alertOptions,
+    showAlert,
+    alertType,
+    alertOptions,
     activeTrades,
     focus,
     isTransitioning,
@@ -169,6 +169,14 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
               isTransitioning={isTransitioning}
               channels={channels}
               challenges={challenges}
+              // Alert composer state and callbacks
+              showAlert={showAlert}
+              alertType={alertType}
+              alertOptions={alertOptions}
+              onSendAlert={actions.handleSendAlert}
+              onCancelAlert={actions.handleCancelAlert}
+              onOpenEnterAlert={actions.handleOpenEnterAlert}
+              onUnload={actions.handleUnloadTrade}
               // Action callbacks for NowPanelManage (absorbed from ActionRail)
               onTrim={actions.handleTrim}
               onMoveSLToBreakeven={actions.handleUpdateSL}
@@ -239,7 +247,7 @@ export function DesktopLiveCockpitSlim(props: DesktopLiveCockpitSlimProps) {
           trade={currentTrade}
           ticker={activeTicker?.symbol}
           state={tradeState}
-          hideWhenAlert={_showAlert}
+          hideWhenAlert={showAlert}
           confluence={DEFAULT_CONFLUENCE}
           onEnter={actions.handleEnterTrade}
           onDiscard={actions.handleDiscard}

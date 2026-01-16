@@ -2,11 +2,55 @@ import { Trade } from "../../../types";
 import { HDTagTradeType } from "../common/HDTagTradeType";
 import { formatPercent, cn } from "../../../lib/utils";
 import { ensureArray } from "../../../lib/utils/validation";
-import { X, Trophy } from "lucide-react";
+import { X, Trophy, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HDConfluenceDiscsCompact } from "../signals/HDConfluenceDiscs";
 import { HDSetupTypeBadgeCompact } from "../signals/HDSetupTypeBadge";
 import { useSettingsStore } from "../../../stores/settingsStore";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
+import { useMemo } from "react";
+import type { TradeConfluence, ConfluenceFactor } from "../../../types";
+
+/**
+ * Extract top reasoning points from confluence factors
+ */
+function getReasoningPreview(confluence: TradeConfluence | undefined): {
+  preview: string;
+  fullReasons: string[];
+} {
+  if (!confluence) return { preview: "", fullReasons: [] };
+
+  const reasons: string[] = [];
+
+  // Use highlights if available
+  if (confluence.highlights && confluence.highlights.length > 0) {
+    return {
+      preview: confluence.highlights.slice(0, 2).join(" • "),
+      fullReasons: confluence.highlights,
+    };
+  }
+
+  // Otherwise build from factors
+  const factors = confluence.factors;
+  const factorEntries = Object.entries(factors) as [string, ConfluenceFactor | undefined][];
+
+  // Sort by weight (highest first) and filter to bullish/bearish
+  const sortedFactors = factorEntries
+    .filter(([, f]) => f && f.status !== "neutral")
+    .sort((a, b) => (b[1]?.weight || 0) - (a[1]?.weight || 0));
+
+  for (const [, factor] of sortedFactors) {
+    if (factor?.label) {
+      const icon = factor.status === "bullish" ? "↑" : "↓";
+      reasons.push(`${icon} ${factor.label}`);
+    }
+  }
+
+  return {
+    preview: reasons.slice(0, 2).join(" • "),
+    fullReasons: reasons,
+  };
+}
 
 interface HDRowTradeProps {
   trade: Trade;
@@ -42,6 +86,12 @@ export function HDRowTrade({ trade, active, isFlashing, onClick, onRemove }: HDR
       ? "animate-flash-urgent"
       : "animate-flash-warning"
     : "";
+
+  // Extract reasoning preview for display
+  const { preview: reasoningPreview, fullReasons } = useMemo(
+    () => getReasoningPreview(trade.confluence),
+    [trade.confluence]
+  );
 
   return (
     <div
@@ -86,6 +136,36 @@ export function HDRowTrade({ trade, active, isFlashing, onClick, onRemove }: HDR
           {/* Confluence discs */}
           {trade.confluence && <HDConfluenceDiscsCompact confluence={trade.confluence} />}
         </div>
+
+        {/* Signal Reasoning Preview */}
+        {reasoningPreview && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-[var(--text-faint)] cursor-default">
+                <Info className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate max-w-[200px]">{reasoningPreview}</span>
+              </div>
+            </TooltipTrigger>
+            {fullReasons.length > 2 && (
+              <TooltipContent
+                side="bottom"
+                align="start"
+                className="text-xs bg-[var(--surface-2)] border-[var(--border-hairline)] max-w-[250px]"
+              >
+                <div className="space-y-1">
+                  <span className="font-medium text-[var(--text-high)]">Why this trade:</span>
+                  <ul className="space-y-0.5">
+                    {fullReasons.map((reason, i) => (
+                      <li key={i} className="text-[var(--text-muted)]">
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        )}
       </button>
 
       <div className="flex items-start gap-2">

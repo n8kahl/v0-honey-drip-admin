@@ -43,8 +43,19 @@ export const DISCORD_COLORS = {
   escalation_critical: 0xef4444, // Red
 };
 
+// Result type for individual send operations
+export interface DiscordSendResult {
+  ok: boolean;
+  messageId?: string;
+  timestamp?: string;
+  error?: string;
+}
+
 class DiscordWebhookClient {
-  private async sendMessageOnce(webhookUrl: string, message: DiscordMessage): Promise<boolean> {
+  private async sendMessageOnce(
+    webhookUrl: string,
+    message: DiscordMessage
+  ): Promise<DiscordSendResult> {
     // Call backend proxy instead of Discord directly to avoid CSP violations
     const response = await fetch("/api/discord/webhook", {
       method: "POST",
@@ -59,36 +70,65 @@ class DiscordWebhookClient {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error(`Discord webhook failed: ${errorData.error || response.statusText}`);
+      return {
+        ok: false,
+        error: errorData.error || response.statusText,
+      };
     }
 
-    return true;
+    // Parse the response to get messageId and timestamp
+    const data = await response.json().catch(() => ({}));
+    return {
+      ok: true,
+      messageId: data.messageId,
+      timestamp: data.timestamp,
+    };
   }
 
-  async sendMessage(webhookUrl: string, message: DiscordMessage, retries = 1): Promise<boolean> {
+  async sendMessage(
+    webhookUrl: string,
+    message: DiscordMessage,
+    retries = 1
+  ): Promise<DiscordSendResult> {
     try {
-      return await this.sendMessageOnce(webhookUrl, message);
-    } catch (error) {
-      console.error("[Discord] First attempt failed:", error);
-
-      // Retry once if retries > 0
-      if (retries > 0) {
-        console.log("[Discord] Retrying...");
-        try {
-          return await this.sendMessageOnce(webhookUrl, message);
-        } catch (retryError) {
-          console.error("[Discord] Retry failed:", retryError);
-          return false;
-        }
+      const result = await this.sendMessageOnce(webhookUrl, message);
+      if (result.ok) {
+        return result;
       }
 
-      return false;
+      // Retry once if retries > 0 and first attempt failed
+      if (retries > 0) {
+        console.log("[Discord] Retrying...");
+        const retryResult = await this.sendMessageOnce(webhookUrl, message);
+        if (!retryResult.ok) {
+          console.error("[Discord] Retry failed:", retryResult.error);
+        }
+        return retryResult;
+      }
+
+      return result;
+    } catch (error) {
+      console.error("[Discord] Request error:", error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
+  }
+
+  // Legacy method for backward compatibility - returns boolean
+  async sendMessageLegacy(
+    webhookUrl: string,
+    message: DiscordMessage,
+    retries = 1
+  ): Promise<boolean> {
+    const result = await this.sendMessage(webhookUrl, message, retries);
+    return result.ok;
   }
 
   // Test webhook with a simple message
   async testWebhook(webhookUrl: string): Promise<boolean> {
-    return this.sendMessage(webhookUrl, {
+    const result = await this.sendMessage(webhookUrl, {
       content: "✅ Honey Drip webhook test successful!",
       embeds: [
         {
@@ -101,6 +141,7 @@ class DiscordWebhookClient {
         },
       ],
     });
+    return result.ok;
   }
 
   // Send a load alert
@@ -205,7 +246,7 @@ class DiscordWebhookClient {
       fields.push({ name: "💭 Notes", value: data.notes, inline: false });
     }
 
-    return this.sendMessage(webhookUrl, {
+    const result = await this.sendMessage(webhookUrl, {
       embeds: [
         {
           title: `📊 LOADING: ${data.ticker}${dteBadge}`,
@@ -218,6 +259,7 @@ class DiscordWebhookClient {
         },
       ],
     });
+    return result.ok;
   }
 
   // Send an entry alert
@@ -363,7 +405,8 @@ class DiscordWebhookClient {
       embed.image = { url: data.imageUrl };
     }
 
-    return this.sendMessage(webhookUrl, { embeds: [embed] });
+    const result = await this.sendMessage(webhookUrl, { embeds: [embed] });
+    return result.ok;
   }
 
   // Send an update alert
@@ -421,7 +464,8 @@ class DiscordWebhookClient {
       embed.image = { url: data.imageUrl };
     }
 
-    return this.sendMessage(webhookUrl, { embeds: [embed] });
+    const result = await this.sendMessage(webhookUrl, { embeds: [embed] });
+    return result.ok;
   }
 
   // Send an exit alert
@@ -484,7 +528,8 @@ class DiscordWebhookClient {
       embed.image = { url: data.imageUrl };
     }
 
-    return this.sendMessage(webhookUrl, { embeds: [embed] });
+    const result = await this.sendMessage(webhookUrl, { embeds: [embed] });
+    return result.ok;
   }
 
   // Send a trailing stop alert
@@ -504,7 +549,7 @@ class DiscordWebhookClient {
     const optionType = data.type === "C" ? "Call" : "Put";
     const pnlSign = data.pnlPercent >= 0 ? "+" : "";
 
-    return this.sendMessage(webhookUrl, {
+    const result = await this.sendMessage(webhookUrl, {
       embeds: [
         {
           title: `🎯 TRAILING STOP: ${data.ticker}`,
@@ -523,6 +568,7 @@ class DiscordWebhookClient {
         },
       ],
     });
+    return result.ok;
   }
 
   // Send a challenge progress alert
@@ -606,7 +652,7 @@ class DiscordWebhookClient {
       },
     ];
 
-    return this.sendMessage(webhookUrl, {
+    const result = await this.sendMessage(webhookUrl, {
       embeds: [
         {
           title: `${emoji} Challenge Update: ${data.challengeName}`,
@@ -619,6 +665,7 @@ class DiscordWebhookClient {
         },
       ],
     });
+    return result.ok;
   }
 
   // Send a summary alert (for history exports)
@@ -637,7 +684,7 @@ class DiscordWebhookClient {
 
     const description = data.comment ? `${data.summaryText}\n\n${data.comment}` : data.summaryText;
 
-    return this.sendMessage(webhookUrl, {
+    const result = await this.sendMessage(webhookUrl, {
       embeds: [
         {
           title: `📊 ${data.title}`,
@@ -650,6 +697,7 @@ class DiscordWebhookClient {
         },
       ],
     });
+    return result.ok;
   }
 
   // Send an escalation alert (for urgent/critical alerts)
@@ -734,7 +782,7 @@ class DiscordWebhookClient {
       });
     }
 
-    return this.sendMessage(webhookUrl, {
+    const result = await this.sendMessage(webhookUrl, {
       content:
         data.severity === "CRITICAL"
           ? "@here **CRITICAL ALERT** - Immediate action required!"
@@ -752,13 +800,82 @@ class DiscordWebhookClient {
         },
       ],
     });
+    return result.ok;
   }
 }
 
 // Singleton instance
 export const discordWebhook = new DiscordWebhookClient();
 
-// Helper function to send to multiple channels
+// Per-URL result with full details
+export interface PerChannelSendResult {
+  url: string;
+  ok: boolean;
+  messageId?: string;
+  timestamp?: string;
+  error?: string;
+}
+
+// Aggregated results for multiple channel sends
+export interface MultiChannelSendResults {
+  success: number;
+  failed: number;
+  results: PerChannelSendResult[];
+}
+
+// Helper function to send to multiple channels with detailed results
+export async function sendToMultipleChannelsWithResults(
+  webhookUrls: string[],
+  messageFn: (client: DiscordWebhookClient, url: string) => Promise<DiscordSendResult>
+): Promise<MultiChannelSendResults> {
+  // Filter out empty/invalid URLs before sending
+  const validUrls = webhookUrls.filter((url) => {
+    if (!url || typeof url !== "string" || url.trim() === "") {
+      console.warn("[Discord] Invalid or empty webhook URL in batch - skipping");
+      return false;
+    }
+    return true;
+  });
+
+  // Early return if no valid URLs
+  if (validUrls.length === 0) {
+    console.warn("[Discord] No valid webhook URLs to send to");
+    return {
+      success: 0,
+      failed: webhookUrls.length,
+      results: webhookUrls.map((url) => ({
+        url,
+        ok: false,
+        error: "Invalid or empty webhook URL",
+      })),
+    };
+  }
+
+  const settledResults = await Promise.allSettled(
+    validUrls.map(async (url) => {
+      const result = await messageFn(discordWebhook, url);
+      return { url, ...result };
+    })
+  );
+
+  const results: PerChannelSendResult[] = settledResults.map((r, i) => {
+    if (r.status === "fulfilled") {
+      return r.value;
+    }
+    return {
+      url: validUrls[i],
+      ok: false,
+      error: r.reason instanceof Error ? r.reason.message : "Unknown error",
+    };
+  });
+
+  const success = results.filter((r) => r.ok).length;
+  const failed = results.length - success;
+
+  return { success, failed, results };
+}
+
+// Legacy helper function to send to multiple channels (backward compatible)
 export async function sendToMultipleChannels(
   webhookUrls: string[],
   messageFn: (client: DiscordWebhookClient, url: string) => Promise<boolean>

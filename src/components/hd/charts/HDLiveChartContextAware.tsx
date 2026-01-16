@@ -59,10 +59,12 @@ interface HDLiveChartContextAwareProps {
   hasLoadedContract: boolean;
   levels?: ChartLevel[];
   keyLevels?: Partial<KeyLevels>;
-  height?: number;
+  height?: number | string;
   className?: string;
   /** Show single chart (Phase 3) instead of dual 1m+5m */
   singleChart?: boolean;
+  /** Show metrics panel beside chart (default: false since CockpitRightPanel now handles this) */
+  showMetricsPanel?: boolean;
 }
 
 export function HDLiveChartContextAware({
@@ -76,6 +78,7 @@ export function HDLiveChartContextAware({
   height = 400,
   className = "",
   singleChart = false,
+  showMetricsPanel = false,
 }: HDLiveChartContextAwareProps) {
   // Extract underlying symbol from options ticker
   // When viewing options, we show the underlying's chart (has historical data)
@@ -107,10 +110,23 @@ export function HDLiveChartContextAware({
   // Show key levels when in LOADED or ENTERED mode
   const showKeyLevels = mode === "LOADED" || mode === "ENTERED";
 
+  // Debug logging for levels
+  console.log("[HDLiveChartContextAware] Levels debug:", {
+    mode,
+    showKeyLevels,
+    levelsReceived: levels.length,
+    levelsPassed: showKeyLevels ? levels.length : 0,
+    tradeState,
+    hasLoadedContract,
+    ticker: chartTicker,
+  });
+
   // Side-by-side layout: both charts get full height (not split)
   // Minimum height of 280px ensures charts render properly
+  // If height is "100%", use the default of 400 for calculations (CSS will handle actual height)
   const chartHeight = useMemo(() => {
-    return Math.max(280, height || 400);
+    const numericHeight = typeof height === "number" ? height : 400;
+    return Math.max(280, numericHeight);
   }, [height]);
 
   // For ENTERED state, reduce chart height to make room for metrics panel
@@ -124,45 +140,47 @@ export function HDLiveChartContextAware({
   // Compact chart height for single chart mode (reduced by ~50%)
   const compactChartHeight = 180;
 
-  // Single chart mode: Side-by-side chart + compact metrics panel
+  // Single chart mode: Chart only (metrics now in CockpitRightPanel)
   if (singleChart) {
     return (
       <div className={className}>
         <HDChartContainer title="📊 Chart" defaultExpanded={true}>
           <div className="flex flex-row gap-4 w-full p-4">
-            {/* Left: 1m chart (60% width, reduced height) */}
-            <div className="flex-[3] min-w-0">
+            {/* Chart takes full width when metrics panel is disabled */}
+            <div className={showMetricsPanel ? "flex-[3] min-w-0" : "flex-1 min-w-0"}>
               <HDLiveChart
                 ticker={chartTicker}
                 initialTimeframe="1"
                 indicators={indicatorConfig}
                 events={[]}
                 levels={showKeyLevels ? levels : []}
-                height={compactChartHeight}
+                height={showMetricsPanel ? compactChartHeight : finalChartHeight}
                 className="w-full"
-                showControls={false}
+                showControls={true}
                 showHeader={true}
                 loadDelay={0}
               />
             </div>
 
-            {/* Right: Compact metrics panel (40% width) */}
-            {(mode === "LOADED" || mode === "BROWSE") && currentTrade?.contract && (
-              <div className="flex-[2] min-w-[180px] max-w-[240px]">
-                <HDContractMetricsPanelCompact
-                  contract={currentTrade.contract}
-                  trade={currentTrade}
-                  underlyingPrice={activeTicker?.last}
-                  keyLevels={keyLevels}
-                  className="h-full"
-                />
-              </div>
-            )}
+            {/* Right: Compact metrics panel (only if explicitly enabled) */}
+            {showMetricsPanel &&
+              (mode === "LOADED" || mode === "BROWSE") &&
+              currentTrade?.contract && (
+                <div className="flex-[2] min-w-[180px] max-w-[240px]">
+                  <HDContractMetricsPanelCompact
+                    contract={currentTrade.contract}
+                    trade={currentTrade}
+                    underlyingPrice={activeTicker?.last}
+                    keyLevels={keyLevels}
+                    className="h-full"
+                  />
+                </div>
+              )}
           </div>
         </HDChartContainer>
 
         {/* Trade Metrics Panel for ENTERED state (P&L tracking) - below chart */}
-        {mode === "ENTERED" && currentTrade && currentTrade.contract && (
+        {showMetricsPanel && mode === "ENTERED" && currentTrade && currentTrade.contract && (
           <TradeMetricsPanel
             trade={currentTrade}
             contract={currentTrade.contract}
@@ -174,43 +192,44 @@ export function HDLiveChartContextAware({
     );
   }
 
-  // Default: Single 1m chart with metrics panel on right (Phase 2 layout)
-  // Metrics panel ALWAYS shows - Key Levels are underlying-dependent
+  // Default: Chart-only mode (metrics now in CockpitRightPanel)
   return (
     <div className={className}>
       <HDChartContainer title="📊 Chart" defaultExpanded={true}>
         <div className="flex flex-row gap-4 w-full p-4">
-          {/* Left: 1-minute chart (flex-grow to fill available space) */}
-          <div className="flex-[3] min-w-0">
+          {/* Chart takes full width when metrics panel is disabled */}
+          <div className={showMetricsPanel ? "flex-[3] min-w-0" : "flex-1 min-w-0"}>
             <HDLiveChart
               ticker={chartTicker}
               initialTimeframe="1"
               indicators={indicatorConfig}
               events={[]}
               levels={showKeyLevels ? levels : []}
-              height={compactChartHeight}
+              height={showMetricsPanel ? compactChartHeight : finalChartHeight}
               className="w-full"
-              showControls={false}
+              showControls={true}
               showHeader={true}
               loadDelay={0}
             />
           </div>
 
-          {/* Right: Compact metrics panel - ALWAYS visible */}
-          <div className="flex-[2] min-w-[180px] max-w-[280px]">
-            <HDContractMetricsPanelCompact
-              contract={currentTrade?.contract || null}
-              trade={currentTrade}
-              underlyingPrice={activeTicker?.last}
-              keyLevels={keyLevels}
-              className="h-full"
-            />
-          </div>
+          {/* Right: Compact metrics panel (only if explicitly enabled) */}
+          {showMetricsPanel && (
+            <div className="flex-[2] min-w-[180px] max-w-[280px]">
+              <HDContractMetricsPanelCompact
+                contract={currentTrade?.contract || null}
+                trade={currentTrade}
+                underlyingPrice={activeTicker?.last}
+                keyLevels={keyLevels}
+                className="h-full"
+              />
+            </div>
+          )}
         </div>
       </HDChartContainer>
 
       {/* Trade Metrics Panel below chart in ENTERED mode */}
-      {mode === "ENTERED" && currentTrade && currentTrade.contract && (
+      {showMetricsPanel && mode === "ENTERED" && currentTrade && currentTrade.contract && (
         <TradeMetricsPanel
           trade={currentTrade}
           contract={currentTrade.contract}

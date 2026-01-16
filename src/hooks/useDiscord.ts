@@ -1,6 +1,15 @@
 import { useState } from "react";
-import { discordWebhook, sendToMultipleChannels } from "../lib/discord/webhook";
+import {
+  discordWebhook,
+  sendToMultipleChannels,
+  sendToMultipleChannelsWithResults,
+  type MultiChannelSendResults,
+  type PerChannelSendResult,
+} from "../lib/discord/webhook";
 import type { DiscordChannel, Trade, Challenge } from "../types";
+
+// Re-export types for consumers
+export type { MultiChannelSendResults, PerChannelSendResult };
 
 export function useDiscord() {
   const [sending, setSending] = useState(false);
@@ -14,6 +23,68 @@ export function useDiscord() {
     }
   };
 
+  // Build load alert message payload
+  const buildLoadAlertMessage = (
+    trade: Trade,
+    notes?: string,
+    effectiveTargetPrice?: number,
+    effectiveStopLoss?: number,
+    effectiveTargetUnderlying?: number,
+    effectiveStopUnderlying?: number
+  ) => {
+    const dte = trade.contract.daysToExpiry;
+    const dteBadge =
+      dte === 0 ? " ⚠️ 0DTE" : dte && dte <= 2 ? ` 🔥 ${dte}DTE` : dte ? ` 📅 ${dte}DTE` : "";
+    const optionType = trade.contract.type === "C" ? "Call" : "Put";
+
+    const fields: Array<{ name: string; value: string; inline?: boolean }> = [
+      { name: "Option", value: `$${trade.contract.strike} ${optionType}`, inline: true },
+      { name: "Expiry", value: trade.contract.expiry, inline: true },
+      { name: "Trade Type", value: trade.tradeType, inline: true },
+    ];
+
+    if (trade.underlyingPriceAtLoad) {
+      fields.push({
+        name: `${trade.ticker} Price`,
+        value: `$${trade.underlyingPriceAtLoad.toFixed(2)}`,
+        inline: true,
+      });
+    }
+    fields.push({
+      name: "Current Price",
+      value: `$${trade.contract.mid.toFixed(2)}`,
+      inline: true,
+    });
+
+    if (effectiveTargetPrice) {
+      const targetValue = effectiveTargetUnderlying
+        ? `$${effectiveTargetPrice.toFixed(2)} | ${trade.ticker} @ $${effectiveTargetUnderlying.toFixed(2)}`
+        : `$${effectiveTargetPrice.toFixed(2)}`;
+      fields.push({ name: "🎯 Target", value: targetValue, inline: true });
+    }
+    if (effectiveStopLoss) {
+      const stopValue = effectiveStopUnderlying
+        ? `$${effectiveStopLoss.toFixed(2)} | ${trade.ticker} @ $${effectiveStopUnderlying.toFixed(2)}`
+        : `$${effectiveStopLoss.toFixed(2)}`;
+      fields.push({ name: "🛡️ Stop Loss", value: stopValue, inline: true });
+    }
+    if (notes) {
+      fields.push({ name: "💭 Notes", value: notes, inline: false });
+    }
+
+    return {
+      embeds: [
+        {
+          title: `📊 LOADING: ${trade.ticker}${dteBadge}`,
+          color: 0x3498db,
+          fields,
+          footer: { text: "Honey Drip • Load Alert" },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    };
+  };
+
   const sendLoadAlert = async (
     channels: DiscordChannel[],
     trade: Trade,
@@ -24,11 +95,10 @@ export function useDiscord() {
       targetUnderlyingPrice?: number;
       stopUnderlyingPrice?: number;
     }
-  ) => {
+  ): Promise<MultiChannelSendResults> => {
     setSending(true);
     try {
       const webhookUrls = channels.map((ch) => ch.webhookUrl);
-      // Use price overrides if provided (user-edited values), otherwise fall back to trade values
       const effectiveTargetPrice = priceOverrides?.targetPrice ?? trade.targetPrice;
       const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
       const effectiveTargetUnderlying =
@@ -36,32 +106,93 @@ export function useDiscord() {
       const effectiveStopUnderlying =
         priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice;
 
-      const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
-        client.sendLoadAlert(url, {
-          ticker: trade.ticker,
-          strike: trade.contract.strike,
-          expiry: trade.contract.expiry,
-          type: trade.contract.type,
-          tradeType: trade.tradeType,
-          price: trade.contract.mid,
-          targetPrice: effectiveTargetPrice,
-          stopLoss: effectiveStopLoss,
-          notes,
-          // Format C: Underlying price context for TP/SL display
-          underlyingPrice: trade.underlyingPriceAtLoad,
-          targetUnderlyingPrice: effectiveTargetUnderlying,
-          stopUnderlyingPrice: effectiveStopUnderlying,
-          // Enhanced fields
-          dte: trade.contract.daysToExpiry,
-          delta: trade.contract.delta,
-          iv: trade.contract.iv,
-          setupType: trade.setupType,
-        })
+      const message = buildLoadAlertMessage(
+        trade,
+        notes,
+        effectiveTargetPrice,
+        effectiveStopLoss,
+        effectiveTargetUnderlying,
+        effectiveStopUnderlying
+      );
+
+      const results = await sendToMultipleChannelsWithResults(webhookUrls, (client, url) =>
+        client.sendMessage(url, message)
       );
       return results;
     } finally {
       setSending(false);
     }
+  };
+
+  // Build entry alert message payload
+  const buildEntryAlertMessage = (
+    trade: Trade,
+    effectiveEntryPrice: number,
+    effectiveTargetPrice?: number,
+    effectiveStopLoss?: number,
+    effectiveTargetUnderlying?: number,
+    effectiveStopUnderlying?: number,
+    notes?: string,
+    imageUrl?: string,
+    challengeInfo?: { name: string }
+  ) => {
+    const dte = trade.contract.daysToExpiry;
+    const dteBadge =
+      dte === 0 ? " ⚠️ 0DTE" : dte && dte <= 2 ? ` 🔥 ${dte}DTE` : dte ? ` 📅 ${dte}DTE` : "";
+    const optionType = trade.contract.type === "C" ? "Call" : "Put";
+    const underlyingPrice = trade.underlyingPriceAtLoad ?? trade.underlyingAtEntry;
+
+    const fields: Array<{ name: string; value: string; inline?: boolean }> = [
+      { name: "Option", value: `$${trade.contract.strike} ${optionType}`, inline: true },
+      { name: "Expiry", value: trade.contract.expiry, inline: true },
+      { name: "Trade Type", value: trade.tradeType, inline: true },
+    ];
+
+    if (underlyingPrice) {
+      fields.push({
+        name: `${trade.ticker} Price`,
+        value: `$${underlyingPrice.toFixed(2)}`,
+        inline: true,
+      });
+    }
+    fields.push({
+      name: "✅ Entry Price",
+      value: `$${effectiveEntryPrice.toFixed(2)}`,
+      inline: true,
+    });
+
+    if (effectiveTargetPrice) {
+      const targetValue = effectiveTargetUnderlying
+        ? `$${effectiveTargetPrice.toFixed(2)} | ${trade.ticker} @ $${effectiveTargetUnderlying.toFixed(2)}`
+        : `$${effectiveTargetPrice.toFixed(2)}`;
+      fields.push({ name: "🎯 Target", value: targetValue, inline: true });
+    }
+    if (effectiveStopLoss) {
+      const stopValue = effectiveStopUnderlying
+        ? `$${effectiveStopLoss.toFixed(2)} | ${trade.ticker} @ $${effectiveStopUnderlying.toFixed(2)}`
+        : `$${effectiveStopLoss.toFixed(2)}`;
+      fields.push({ name: "🛡️ Stop Loss", value: stopValue, inline: true });
+    }
+    if (challengeInfo) {
+      fields.push({ name: "🏆 Challenge", value: challengeInfo.name, inline: true });
+    }
+    if (notes) {
+      fields.push({ name: "💭 Notes", value: notes, inline: false });
+    }
+
+    const embed: any = {
+      title: `🚀 ENTERED: ${trade.ticker}${dteBadge}`,
+      color: 0x2ecc71,
+      fields,
+      footer: { text: "Honey Drip • Entry Alert" },
+      timestamp: new Date().toISOString(),
+    };
+
+    if (imageUrl) {
+      embed.image = { url: imageUrl };
+    }
+
+    return { embeds: [embed] };
   };
 
   const sendEntryAlert = async (
@@ -77,12 +208,11 @@ export function useDiscord() {
       targetUnderlyingPrice?: number;
       stopUnderlyingPrice?: number;
     }
-  ) => {
+  ): Promise<MultiChannelSendResults> => {
     setSending(true);
     try {
       const webhookUrls = channels.map((ch) => ch.webhookUrl);
-      // Use price overrides if provided (user-edited values), otherwise fall back to trade values
-      const effectiveEntryPrice = priceOverrides?.entryPrice ?? trade.entryPrice!;
+      const effectiveEntryPrice = priceOverrides?.entryPrice ?? trade.entryPrice ?? 0;
       const effectiveTargetPrice = priceOverrides?.targetPrice ?? trade.targetPrice;
       const effectiveStopLoss = priceOverrides?.stopLoss ?? trade.stopLoss;
       const effectiveTargetUnderlying =
@@ -90,30 +220,20 @@ export function useDiscord() {
       const effectiveStopUnderlying =
         priceOverrides?.stopUnderlyingPrice ?? trade.stopUnderlyingPrice;
 
-      const results = await sendToMultipleChannels(webhookUrls, (client, url) =>
-        client.sendEntryAlert(url, {
-          ticker: trade.ticker,
-          strike: trade.contract.strike,
-          expiry: trade.contract.expiry,
-          type: trade.contract.type,
-          tradeType: trade.tradeType,
-          entryPrice: effectiveEntryPrice,
-          targetPrice: effectiveTargetPrice,
-          stopLoss: effectiveStopLoss,
-          notes,
-          imageUrl,
-          challengeInfo,
-          // Format C: Underlying price context for TP/SL display
-          underlyingPrice: trade.underlyingPriceAtLoad ?? trade.underlyingAtEntry,
-          targetUnderlyingPrice: effectiveTargetUnderlying,
-          stopUnderlyingPrice: effectiveStopUnderlying,
-          // Enhanced fields
-          dte: trade.contract.daysToExpiry,
-          delta: trade.contract.delta,
-          iv: trade.contract.iv,
-          setupType: trade.setupType,
-          confluence: trade.confluence,
-        })
+      const message = buildEntryAlertMessage(
+        trade,
+        effectiveEntryPrice,
+        effectiveTargetPrice,
+        effectiveStopLoss,
+        effectiveTargetUnderlying,
+        effectiveStopUnderlying,
+        notes,
+        imageUrl,
+        challengeInfo
+      );
+
+      const results = await sendToMultipleChannelsWithResults(webhookUrls, (client, url) =>
+        client.sendMessage(url, message)
       );
       return results;
     } finally {

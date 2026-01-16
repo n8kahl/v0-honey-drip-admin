@@ -18,7 +18,7 @@
  * The AlertPopover is kept as a floating element for quick alert access.
  */
 
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useEffect } from "react";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 import type { Ticker, Contract, Trade, TradeState, DiscordChannel, Challenge } from "../../types";
 import type { CompositeSignal } from "../../lib/composite/CompositeSignal";
@@ -34,9 +34,11 @@ import { NowPanelTrade } from "./NowPanelTrade";
 import { NowPanelManage } from "./NowPanelManage";
 import { useTradeActionManager } from "../../hooks/useTradeActionManager";
 import { HDAlertComposerPopover, type AlertMode } from "../hd/alerts/HDAlertComposerPopover";
+import { HDAlertComposer, type PriceOverrides } from "../hd/alerts/HDAlertComposer";
 import { useDiscord } from "../../hooks/useDiscord";
 import { useUIStore } from "../../stores/uiStore";
 import { Bell } from "lucide-react";
+import type { AlertType } from "../../types";
 
 // ============================================================================
 // Types
@@ -66,6 +68,23 @@ export interface NowPanelProps {
   // Discord/Challenge context (for alerts)
   channels?: DiscordChannel[];
   challenges?: Challenge[];
+  // Alert composer state - when true, shows full HDAlertComposer sidebar
+  showAlert?: boolean;
+  alertType?: AlertType;
+  alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number };
+  /** Called when alert is sent from composer */
+  onSendAlert?: (
+    channelIds: string[],
+    challengeIds: string[],
+    comment?: string,
+    priceOverrides?: PriceOverrides
+  ) => void;
+  /** Called when alert composer is cancelled */
+  onCancelAlert?: () => void;
+  /** Called to open alert composer for entering a trade */
+  onOpenEnterAlert?: () => void;
+  /** Called to unload/dismiss a loaded trade */
+  onUnload?: () => void;
   // Action callbacks for NowPanelManage (legacy - kept for backward compat)
   onTrim?: (percent: number) => void;
   onMoveSLToBreakeven?: () => void;
@@ -127,6 +146,13 @@ export function NowPanel({
   isTransitioning = false,
   channels = [],
   challenges = [],
+  showAlert = false,
+  alertType = "load",
+  alertOptions,
+  onSendAlert,
+  onCancelAlert,
+  onOpenEnterAlert,
+  onUnload,
   onTrim,
   onMoveSLToBreakeven,
   onTrailStop,
@@ -208,6 +234,7 @@ export function NowPanel({
             onChallengesChange={(challengeIds) =>
               manager.actions.updateAlertSettings({ challengeIds })
             }
+            onOpenEnterAlert={onOpenEnterAlert}
             onEnterAndAlert={async (channelIds, challengeIds) => {
               // For WATCHING state, this will "Load and Alert" first
               manager.actions.updateAlertSettings({ channelIds, challengeIds, sendAlert: true });
@@ -249,6 +276,7 @@ export function NowPanel({
               onChallengesChange={(challengeIds) =>
                 manager.actions.updateAlertSettings({ challengeIds })
               }
+              onOpenEnterAlert={onOpenEnterAlert}
               onEnterAndAlert={async (channelIds, challengeIds) => {
                 // Update alert settings then enter trade
                 manager.actions.updateAlertSettings({ channelIds, challengeIds, sendAlert: true });
@@ -354,63 +382,156 @@ export function NowPanel({
 
   const showLoadingOverlay = manager.state.isLoading || isTransitioning;
 
+  // Get underlying price for the alert composer
+  const underlyingPrice = activeTicker?.last || 0;
+  const underlyingChange = activeTicker?.changePercent || 0;
+
+  // Determine the trade to show in alert composer
+  // Priority: focusedTrade > currentTrade > first entered trade from activeTrades
+  const alertTrade = useMemo(() => {
+    if (focusedTrade) return focusedTrade;
+    if (currentTrade) return currentTrade;
+    // Fallback: find an ENTERED trade from activeTrades
+    const enteredTrade = activeTrades.find((t) => t.state === "ENTERED");
+    return enteredTrade || null;
+  }, [focusedTrade, currentTrade, activeTrades]);
+
+  // DEBUG: Track alert composer conditions
+  useEffect(() => {
+    if (showAlert) {
+      console.log("[NowPanel] showAlert is TRUE:", {
+        showAlert,
+        alertType,
+        alertOptions,
+        focusedTrade: focusedTrade?.ticker || "null",
+        currentTrade: currentTrade?.ticker || "null",
+        alertTrade: alertTrade?.ticker || "null",
+        activeTradesCount: activeTrades.length,
+        willShowComposer: !!(showAlert && alertTrade),
+      });
+    }
+  }, [
+    showAlert,
+    alertType,
+    alertOptions,
+    focusedTrade,
+    currentTrade,
+    alertTrade,
+    activeTrades.length,
+  ]);
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
-      {/* Floating Alert Button - Quick access to Discord alerts */}
-      {viewState !== "empty" && (
-        <div className="absolute top-2 right-2 z-30">
-          {channels.length > 0 ? (
-            <HDAlertComposerPopover
-              trade={focusedTrade || undefined}
-              mode={alertMode}
-              channels={channels}
-              onSend={handleAlertSend}
-            />
-          ) : (
-            <button
-              onClick={() => useUIStore.getState().openDiscordSettings()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--surface-1)]/90 backdrop-blur border border-[var(--border-hairline)] text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
-              data-testid="configure-alerts-btn"
-            >
-              <Bell className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Alerts</span>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Animated View Transition */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={viewState}
-          variants={viewAnimationVariants}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          className="flex-1 flex flex-col overflow-hidden"
-        >
-          {renderContent()}
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Loading Overlay */}
-      {showLoadingOverlay && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-[var(--surface-0)]/50 backdrop-blur-sm flex items-center justify-center z-10"
-        >
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 rounded-full border-2 border-[var(--brand-primary)] border-t-transparent animate-spin" />
-            <span className="text-sm text-[var(--text-muted)]">
-              {manager.state.currentAction
-                ? `${manager.state.currentAction.charAt(0).toUpperCase() + manager.state.currentAction.slice(1)}ing...`
-                : "Processing..."}
-            </span>
+    <div className="flex-1 flex overflow-hidden relative">
+      {/* Main Content Area */}
+      <div
+        className={`flex-1 flex flex-col overflow-hidden ${showAlert && alertTrade ? "lg:pr-0" : ""}`}
+      >
+        {/* Floating Alert Button - Quick access to Discord alerts (hide when full composer is showing) */}
+        {viewState !== "empty" && !showAlert && (
+          <div className="absolute top-2 right-2 z-30">
+            {channels.length > 0 ? (
+              <HDAlertComposerPopover
+                trade={focusedTrade || undefined}
+                mode={alertMode}
+                channels={channels}
+                onSend={handleAlertSend}
+              />
+            ) : (
+              <button
+                onClick={() => useUIStore.getState().openDiscordSettings()}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--surface-1)]/90 backdrop-blur border border-[var(--border-hairline)] text-[var(--brand-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+                data-testid="configure-alerts-btn"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Alerts</span>
+              </button>
+            )}
           </div>
-        </motion.div>
-      )}
+        )}
+
+        {/* Animated View Transition */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={viewState}
+            variants={viewAnimationVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex-1 flex flex-col overflow-hidden"
+          >
+            {renderContent()}
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Loading Overlay */}
+        {showLoadingOverlay && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-[var(--surface-0)]/50 backdrop-blur-sm flex items-center justify-center z-10"
+          >
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 rounded-full border-2 border-[var(--brand-primary)] border-t-transparent animate-spin" />
+              <span className="text-sm text-[var(--text-muted)]">
+                {manager.state.currentAction
+                  ? `${manager.state.currentAction.charAt(0).toUpperCase() + manager.state.currentAction.slice(1)}ing...`
+                  : "Processing..."}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Full Alert Composer Sidebar - Animated slide-in from right */}
+      <AnimatePresence mode="wait">
+        {showAlert && alertTrade && (
+          <motion.div
+            key="alert-composer-sidebar"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{
+              width: 320,
+              opacity: 1,
+              transition: {
+                width: { duration: 0.25, ease: "easeOut" },
+                opacity: { duration: 0.2, delay: 0.1 },
+              },
+            }}
+            exit={{
+              width: 0,
+              opacity: 0,
+              transition: {
+                opacity: { duration: 0.1 },
+                width: { duration: 0.2, delay: 0.05, ease: "easeIn" },
+              },
+            }}
+            className="hidden lg:flex lg:flex-col lg:flex-shrink-0 border-l border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-hidden"
+          >
+            <div className="w-80 h-full overflow-y-auto">
+              <HDAlertComposer
+                trade={alertTrade}
+                alertType={alertType}
+                alertOptions={alertOptions}
+                availableChannels={channels}
+                challenges={challenges}
+                onSend={onSendAlert || (() => {})}
+                onEnterAndAlert={
+                  alertType === "load" || alertType === "enter"
+                    ? (channelIds, challengeIds, comment, priceOverrides) => {
+                        // For load/enter alerts, this transitions state and sends alert
+                        onSendAlert?.(channelIds, challengeIds, comment, priceOverrides);
+                      }
+                    : undefined
+                }
+                onCancel={onCancelAlert}
+                onUnload={onUnload}
+                underlyingPrice={underlyingPrice}
+                underlyingChange={underlyingChange}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

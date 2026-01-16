@@ -27,8 +27,7 @@ import { useLoadedTradeLiveModel } from "../../hooks/useLoadedTradeLiveModel";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { Zap, Clock, TrendingUp } from "lucide-react";
 import { useMarketDataStore } from "../../stores/marketDataStore";
-import { buildChartLevelsForCandidate } from "../../lib/riskEngine/chartLevels";
-import type { RiskCalculationInput } from "../../lib/riskEngine/types";
+import type { ChartLevel } from "../../types/tradeLevels";
 
 // Cockpit components
 import {
@@ -37,9 +36,12 @@ import {
   CockpitPlanPanel,
   CockpitContractPanel,
   CockpitActionsBar,
+  CockpitConfluencePanel,
+  CockpitRightPanel,
   type CockpitViewState,
 } from "./cockpit";
-import { ConfluencePanelPro } from "./panels/ConfluencePanelPro";
+import { HDStaleBanner, useStaleLevel } from "../hd/common/HDStaleBanner";
+import { useFlowContext } from "../../hooks/useFlowContext";
 
 /** Trade type preset options */
 type TradeType = "scalp" | "day" | "swing";
@@ -100,6 +102,9 @@ export function NowPanelSymbol({
 
   // Get key levels
   const { keyLevels } = useKeyLevels(symbol);
+
+  // Get flow context for the symbol
+  const flowContext = useFlowContext(symbol);
 
   // Active contract = manual OR recommended (auto-selected)
   // NOTE: Moved up to enable live model hook
@@ -196,59 +201,80 @@ export function NowPanelSymbol({
     };
   }, [activeContract, liveModel, currentPrice, currentProfile]);
 
-  // Chart levels using canonical level builder
+  // Chart levels using planMetrics for underlying TP/SL (adjusts by trade type)
   const chartLevels = useMemo(() => {
-    if (!keyLevels || !activeContract || !liveModel || currentPrice <= 0) {
-      // Fallback: basic key levels only
-      if (keyLevels) {
-        return [
-          ...(keyLevels.vwap
-            ? [{ price: keyLevels.vwap, label: "VWAP", type: "VWAP" as const }]
-            : []),
-          ...(keyLevels.priorDayHigh
-            ? [{ price: keyLevels.priorDayHigh, label: "PDH", type: "PREV_DAY_HIGH" as const }]
-            : []),
-          ...(keyLevels.priorDayLow
-            ? [{ price: keyLevels.priorDayLow, label: "PDL", type: "PREV_DAY_LOW" as const }]
-            : []),
-        ];
+    const levels: ChartLevel[] = [];
+
+    // Add trade-type-aware TP/SL in UNDERLYING prices
+    if (planMetrics && currentPrice > 0) {
+      // Entry level (current underlying price as reference)
+      levels.push({
+        type: "ENTRY",
+        label: "Entry",
+        price: currentPrice,
+      });
+
+      // TP level (underlying target based on trade type)
+      if (planMetrics.targetUnderlying > 0) {
+        levels.push({
+          type: "TP",
+          label: `TP (${selectedTradeType})`,
+          price: planMetrics.targetUnderlying,
+          meta: {
+            tpIndex: 1,
+            reason: `${currentProfile.target}% option move`,
+          },
+        });
       }
-      return [];
+
+      // SL level (underlying stop based on trade type)
+      if (planMetrics.stopUnderlying > 0) {
+        levels.push({
+          type: "SL",
+          label: `SL (${selectedTradeType})`,
+          price: planMetrics.stopUnderlying,
+          meta: {
+            reason: `${currentProfile.stop}% option move`,
+          },
+        });
+      }
     }
 
-    // Build canonical chart levels using risk engine
-    const optPrice = liveModel.option.mid || activeContract.mid || 0;
-    const delta = liveModel.greeks.delta || activeContract.delta || 0.5;
-
-    if (optPrice <= 0) {
-      return [];
+    // Add key levels from keyLevels
+    if (keyLevels) {
+      if (keyLevels.vwap && keyLevels.vwap > 0) {
+        levels.push({ type: "VWAP", label: "VWAP", price: keyLevels.vwap });
+      }
+      if (keyLevels.priorDayHigh && keyLevels.priorDayHigh > 0) {
+        levels.push({ type: "PREV_DAY_HIGH", label: "PDH", price: keyLevels.priorDayHigh });
+      }
+      if (keyLevels.priorDayLow && keyLevels.priorDayLow > 0) {
+        levels.push({ type: "PREV_DAY_LOW", label: "PDL", price: keyLevels.priorDayLow });
+      }
+      if (keyLevels.orbHigh && keyLevels.orbHigh > 0) {
+        levels.push({ type: "ORB_HIGH", label: "ORB High", price: keyLevels.orbHigh });
+      }
+      if (keyLevels.orbLow && keyLevels.orbLow > 0) {
+        levels.push({ type: "ORB_LOW", label: "ORB Low", price: keyLevels.orbLow });
+      }
+      if (keyLevels.preMarketHigh && keyLevels.preMarketHigh > 0) {
+        levels.push({ type: "PREMARKET_HIGH", label: "PM High", price: keyLevels.preMarketHigh });
+      }
+      if (keyLevels.preMarketLow && keyLevels.preMarketLow > 0) {
+        levels.push({ type: "PREMARKET_LOW", label: "PM Low", price: keyLevels.preMarketLow });
+      }
     }
 
-    const riskInput: RiskCalculationInput = {
-      entryPrice: optPrice,
-      currentUnderlyingPrice: currentPrice,
-      currentOptionMid: optPrice,
-      keyLevels: keyLevels,
-      delta: delta,
-      defaults: {
-        mode: "calculated",
-        tpPercent: currentProfile.target,
-        slPercent: currentProfile.stop,
-      },
-      tradeType:
-        selectedTradeType === "scalp" ? "SCALP" : selectedTradeType === "day" ? "DAY" : "SWING",
-    };
+    console.log("[NowPanelSymbol] Chart levels computed:", {
+      levelsCount: levels.length,
+      levels: levels.map((l) => ({ type: l.type, label: l.label, price: l.price })),
+      hasKeyLevels: !!keyLevels,
+      hasPlanMetrics: !!planMetrics,
+      currentPrice,
+    });
 
-    return buildChartLevelsForCandidate(symbol, currentPrice, keyLevels, riskInput);
-  }, [
-    keyLevels,
-    activeContract,
-    liveModel,
-    currentPrice,
-    currentProfile,
-    selectedTradeType,
-    symbol,
-  ]);
+    return levels;
+  }, [keyLevels, planMetrics, currentPrice, selectedTradeType, currentProfile]);
 
   // Build a mock trade object for HDLiveChartContextAware
   const mockTrade: Trade | null = useMemo(() => {
@@ -294,8 +320,32 @@ export function NowPanelSymbol({
 
   // Determine underlying data freshness
   const symbolData = useMarketDataStore((state) => state.symbols[symbol]);
+  const refreshStaleSymbols = useMarketDataStore((state) => state.refreshStaleSymbols);
   const lastUpdateTime = symbolData?.lastUpdated ? new Date(symbolData.lastUpdated) : null;
-  const isStale = symbolData?.lastUpdated ? Date.now() - symbolData.lastUpdated > 10000 : true;
+  const lastUpdateTs = symbolData?.lastUpdated || null;
+  const staleLevel = useStaleLevel(lastUpdateTs);
+  const isStale = staleLevel === "stale" || staleLevel === "critical";
+
+  // Handle retry for stale data
+  const handleRetryData = useCallback(() => {
+    if (refreshStaleSymbols) {
+      refreshStaleSymbols();
+    }
+  }, [refreshStaleSymbols]);
+
+  // Render stale banner if needed
+  const staleBanner = useMemo(() => {
+    if (staleLevel === "live" || staleLevel === "delayed") return null;
+    return (
+      <HDStaleBanner
+        lastUpdateTime={lastUpdateTs}
+        staleLevel={staleLevel}
+        dataSource={`${symbol} data`}
+        onRetry={handleRetryData}
+        onDismiss={() => {}}
+      />
+    );
+  }, [staleLevel, lastUpdateTs, symbol, handleRetryData]);
 
   return (
     <CockpitLayout
@@ -304,6 +354,7 @@ export function NowPanelSymbol({
       contract={activeContract}
       activeTicker={activeTicker}
       keyLevels={keyLevels}
+      staleBanner={staleBanner}
       data-testid="now-panel-symbol-cockpit"
     >
       {{
@@ -335,7 +386,7 @@ export function NowPanelSymbol({
               hasLoadedContract={!!activeContract}
               levels={chartLevels}
               keyLevels={keyLevels}
-              height={180}
+              height="100%"
               singleChart={true}
             />
             {/* Plan active indicator */}
@@ -349,20 +400,17 @@ export function NowPanelSymbol({
 
         /* ========== CONFLUENCE PANEL ========== */
         confluence: (
-          <ConfluencePanelPro
+          <CockpitConfluencePanel
             symbol={symbol}
-            viewState="watch"
             keyLevels={keyLevels}
             currentPrice={currentPrice}
-            showDegradationWarnings={false}
-            contractIV={activeContract?.iv}
           />
         ),
 
-        /* ========== PLAN PANEL ========== */
+        /* ========== UNIFIED RIGHT PANEL (R:R, Key Levels, Flow, Activity) ========== */
         plan: (
           <div className="h-full flex flex-col">
-            {/* Trade Type Selector at top of plan */}
+            {/* Trade Type Selector at top of panel */}
             <div className="flex-shrink-0 px-3 pt-2 pb-1 border-b border-[var(--border-hairline)]">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] uppercase text-[var(--text-faint)] font-medium">
@@ -396,40 +444,27 @@ export function NowPanelSymbol({
               </div>
             </div>
 
-            {/* Plan content */}
-            <div className="flex-1 min-h-0">
-              <CockpitPlanPanel
+            {/* Unified Right Panel Content */}
+            <div className="flex-1 min-h-0 overflow-auto">
+              <CockpitRightPanel
                 viewState={viewState}
                 symbol={symbol}
+                trade={mockTrade}
                 contract={activeContract}
-                entryPrice={planMetrics?.entry}
-                stopLoss={planMetrics?.stop}
-                targetPrice={planMetrics?.target}
-                riskReward={planMetrics?.rr}
-                confidence={
-                  planMetrics
-                    ? Math.min(95, 60 + planMetrics.rr * 10 + (planMetrics.volume > 500 ? 10 : 0))
-                    : null
-                }
-                whyBullets={whyBullets}
+                keyLevels={keyLevels}
+                currentPrice={currentPrice}
+                underlyingPrice={currentPrice}
+                lastQuoteTime={lastUpdateTime}
+                flowContext={flowContext}
+                onContractSelect={handleContractSelect}
+                recommendation={recommendation}
               />
             </div>
           </div>
         ),
 
-        /* ========== CONTRACT PANEL ========== */
-        contractPanel: (
-          <CockpitContractPanel
-            symbol={symbol}
-            contract={activeContract}
-            activeTicker={activeTicker}
-            underlyingPrice={currentPrice}
-            underlyingChange={activeTicker?.changePercent}
-            lastQuoteTime={lastUpdateTime}
-            onContractSelect={handleContractSelect}
-            recommendation={recommendation}
-          />
-        ),
+        /* ========== CONTRACT PANEL (Deprecated - handled by CockpitRightPanel) ========== */
+        contractPanel: null,
 
         /* ========== ACTIONS BAR ========== */
         actions: (
@@ -439,7 +474,13 @@ export function NowPanelSymbol({
             hasDiscordChannels={true}
             onLoadPlan={(sendAlert) => {
               if (activeContract) {
-                handleLoadStrategy();
+                if (sendAlert) {
+                  // Open alert composer by using onContractSelect which triggers the alert flow
+                  onContractSelect(activeContract, { tradeType: selectedTradeType });
+                } else {
+                  // Direct load without alert
+                  handleLoadStrategy();
+                }
               }
             }}
           />

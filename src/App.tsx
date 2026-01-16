@@ -29,7 +29,11 @@ import type { Trade } from "./types";
 import { KeyboardShortcutsDialog } from "./components/shortcuts/KeyboardShortcutsDialog";
 import { MonitoringDashboard } from "./components/monitoring/MonitoringDashboard";
 import { ActiveTradePollingService } from "./services/ActiveTradePollingService";
+import { LiveDataInspector } from "./components/dev/LiveDataInspector";
 import "./styles/globals.css";
+
+// Dev-only Live Data Inspector toggle
+const SHOW_LIVE_INSPECTOR = import.meta.env.VITE_SHOW_LIVE_INSPECTOR === "1";
 
 // Hook to detect mobile viewport
 function useIsMobile(breakpoint = 768) {
@@ -484,6 +488,9 @@ export default function App() {
         onClose={() => setShowShortcutsDialog(false)}
         shortcuts={shortcuts}
       />
+
+      {/* Dev-only Live Data Inspector overlay */}
+      {SHOW_LIVE_INSPECTOR && <LiveDataInspector defaultCollapsed />}
 
       <Toaster />
     </div>

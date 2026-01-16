@@ -188,7 +188,11 @@ function getExpirationDateTime(expirationISO: string): Date {
   return new Date(`${expirationISO}${EXPIRATION_CLOSE_TIME_ET}`);
 }
 
-function isContractExpired(expirationISO: string, now = new Date()): boolean {
+/**
+ * Check if a contract has expired (after 4PM ET on expiry day)
+ * IMPORTANT: Use this function for ALL expiry checks to ensure correct 4PM ET cutoff
+ */
+export function isContractExpired(expirationISO: string, now = new Date()): boolean {
   return now >= getExpirationDateTime(expirationISO);
 }
 
@@ -751,10 +755,15 @@ export const useTradeStore = create<TradeStore>()(
             const dbTradeType = (t as any).trade_type as TradeType | undefined;
             const tradeType: TradeType = dbTradeType || "Day";
 
+            // Get contractKey from DB or generate from stored contract
+            const dbContractKey = (t as any).contract_key as string | undefined;
+            const contractKeyFromData = dbContractKey || storedContract?.contractKey || undefined;
+
             return {
               id: t.id,
               ticker: t.ticker,
               contract,
+              contractKey: contractKeyFromData,
               entryPrice,
               exitPrice: t.exit_price ? parseFloat(t.exit_price) : undefined,
               entryTime,

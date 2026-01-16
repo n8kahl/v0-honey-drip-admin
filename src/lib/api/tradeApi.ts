@@ -4,6 +4,8 @@
  */
 
 import { createClient } from "../supabase/client";
+import { generateContractKey, validateContract, fromLegacyContract } from "../contract";
+import type { Contract } from "../../types";
 
 /**
  * Get authentication headers with JWT token from Supabase session

@@ -16,6 +16,10 @@ import {
   Plus,
   ChevronDown,
   ChevronUp,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Clock,
 } from "lucide-react";
 import { HDCalculatorModal } from "../forms/HDCalculatorModal";
 import { HDTradeShareCard } from "../cards/HDTradeShareCard";
@@ -123,6 +127,17 @@ export interface PriceOverrides {
   trimPercent?: number;
 }
 
+// Send status types for displaying progress
+export type SendStatus = "idle" | "pending" | "success" | "error";
+
+export interface SendResultItem {
+  channelName?: string;
+  ok: boolean;
+  messageId?: string;
+  timestamp?: string;
+  error?: string;
+}
+
 interface HDAlertComposerProps {
   trade: Trade;
   alertType: AlertType;
@@ -146,6 +161,9 @@ interface HDAlertComposerProps {
   className?: string;
   underlyingPrice?: number;
   underlyingChange?: number;
+  // Send status for displaying progress
+  sendStatus?: SendStatus;
+  sendResults?: SendResultItem[];
 }
 
 export function HDAlertComposer({
@@ -161,6 +179,8 @@ export function HDAlertComposer({
   className,
   underlyingPrice,
   underlyingChange,
+  sendStatus = "idle",
+  sendResults,
 }: HDAlertComposerProps) {
   console.log("📝 HDAlertComposer rendered:", { alertType, alertOptions, trade: trade.ticker });
 
@@ -1715,10 +1735,17 @@ export function HDAlertComposer({
                     { entryPrice, currentPrice, targetPrice, stopLoss }
                   );
                 }}
-                disabled={!canSend || selectedChannels.length === 0}
+                disabled={!canSend || selectedChannels.length === 0 || sendStatus === "pending"}
                 className="w-full py-3 rounded-[var(--radius)] bg-[var(--accent-positive)] text-white hover:bg-[var(--accent-positive)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
               >
-                Enter Trade
+                {sendStatus === "pending" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Entering...
+                  </>
+                ) : (
+                  "Enter Trade"
+                )}
               </button>
             )}
             {/* Unload button - yellow (brand primary), removes trade from loaded list */}
@@ -1768,40 +1795,20 @@ export function HDAlertComposer({
                       : undefined,
                 });
               }}
-              disabled={!canSend || selectedChannels.length === 0}
+              disabled={!canSend || selectedChannels.length === 0 || sendStatus === "pending"}
               className="w-full py-3 rounded-[var(--radius)] bg-[var(--brand-primary)] text-[var(--bg-base)] hover:bg-[var(--brand-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
             >
-              {alertType === "load" ? "Load and Alert" : "Send Alert"}
+              {sendStatus === "pending" ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : alertType === "load" ? (
+                "Load and Alert"
+              ) : (
+                "Send Alert"
+              )}
             </button>
-            {/* Show "Enter and Alert" only for load alerts */}
-            {alertType === "load" && onEnterAndAlert && (
-              <button
-                onClick={() => {
-                  console.log("🔴 ENTER AND ALERT BUTTON CLICKED!");
-                  console.log("📋 Selected channels:", selectedChannels);
-                  console.log("📋 Selected challenges:", selectedChallenges);
-                  console.log("📋 Comment:", comment);
-                  console.log("📋 Price overrides:", {
-                    entryPrice,
-                    currentPrice,
-                    targetPrice,
-                    stopLoss,
-                  });
-                  persistChannelSelection();
-                  onEnterAndAlert(
-                    selectedChannels,
-                    selectedChallenges,
-                    comment.trim() || undefined,
-                    { entryPrice, currentPrice, targetPrice, stopLoss }
-                  );
-                  console.log("✅ onEnterAndAlert() called");
-                }}
-                disabled={!canSend || selectedChannels.length === 0}
-                className="w-full py-3 rounded-[var(--radius)] bg-[var(--accent-positive)] text-white hover:bg-[var(--accent-positive)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center"
-              >
-                Enter and Alert
-              </button>
-            )}
             {/* For other alert types: Show Discard if onCancel exists */}
             {onCancel && (
               <button
@@ -1812,6 +1819,96 @@ export function HDAlertComposer({
               </button>
             )}
           </>
+        )}
+
+        {/* Send Status Display */}
+        {sendStatus !== "idle" && (
+          <div
+            data-testid="send-status-display"
+            className={cn(
+              "mt-4 p-4 rounded-lg border",
+              sendStatus === "pending" &&
+                "bg-[var(--brand-primary)]/5 border-[var(--brand-primary)]/20",
+              sendStatus === "success" &&
+                "bg-[var(--accent-positive)]/5 border-[var(--accent-positive)]/20",
+              sendStatus === "error" &&
+                "bg-[var(--accent-negative)]/5 border-[var(--accent-negative)]/20"
+            )}
+          >
+            {/* Status Header */}
+            <div className="flex items-center gap-2 mb-2">
+              {sendStatus === "pending" && (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[var(--brand-primary)]" />
+                  <span className="text-sm font-medium text-[var(--brand-primary)]">
+                    Sending alerts...
+                  </span>
+                </>
+              )}
+              {sendStatus === "success" && (
+                <>
+                  <CheckCircle className="w-4 h-4 text-[var(--accent-positive)]" />
+                  <span className="text-sm font-medium text-[var(--accent-positive)]">
+                    Alerts sent successfully
+                  </span>
+                </>
+              )}
+              {sendStatus === "error" && (
+                <>
+                  <XCircle className="w-4 h-4 text-[var(--accent-negative)]" />
+                  <span className="text-sm font-medium text-[var(--accent-negative)]">
+                    Some alerts failed
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Results Details */}
+            {sendResults &&
+              sendResults.length > 0 &&
+              (sendStatus === "success" || sendStatus === "error") && (
+                <div className="space-y-2">
+                  {sendResults.map((result, index) => (
+                    <div
+                      key={index}
+                      className={cn(
+                        "flex items-start gap-2 text-xs",
+                        result.ok ? "text-[var(--text-muted)]" : "text-[var(--accent-negative)]"
+                      )}
+                    >
+                      {result.ok ? (
+                        <CheckCircle className="w-3 h-3 mt-0.5 text-[var(--accent-positive)]" />
+                      ) : (
+                        <XCircle className="w-3 h-3 mt-0.5 text-[var(--accent-negative)]" />
+                      )}
+                      <div className="flex-1">
+                        {result.channelName && (
+                          <span className="font-medium">{result.channelName}: </span>
+                        )}
+                        {result.ok ? (
+                          <span className="flex items-center gap-2">
+                            Sent
+                            {result.messageId && (
+                              <span className="opacity-60">
+                                ID: {result.messageId.slice(0, 8)}...
+                              </span>
+                            )}
+                            {result.timestamp && (
+                              <span className="flex items-center gap-1 opacity-60">
+                                <Clock className="w-3 h-3" />
+                                {new Date(result.timestamp).toLocaleTimeString()}
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span>{result.error || "Failed to send"}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
         )}
       </div>
 

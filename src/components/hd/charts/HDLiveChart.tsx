@@ -18,6 +18,7 @@ import {
 } from "../../../lib/indicators";
 import { Wifi, WifiOff, Activity, ChevronDown } from "lucide-react";
 import { ChartLevel } from "../../../types/tradeLevels";
+import { cn } from "../../../lib/utils";
 import {
   getSessionMarkersForBars,
   calculateKeyLevels,
@@ -94,7 +95,7 @@ interface HDLiveChartProps {
   levels?: ChartLevel[]; // Added levels prop
   marketHours?: { open: string; close: string; preMarket: string; afterHours: string };
   orbWindow?: number;
-  height?: number;
+  height?: number | "100%"; // Number (px) or "100%" for flex container
   className?: string;
   showControls?: boolean; // timeframe + indicators toggles
   showHeader?: boolean; // whether to show header at all (default true)
@@ -131,7 +132,8 @@ export function HDLiveChart({
     middle: ISeriesApi<"Line">;
     lower: ISeriesApi<"Line">;
   } | null>(null);
-  const levelSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  // Track price lines for cleanup (IPriceLine from lightweight-charts)
+  const levelPriceLinesRef = useRef<any[]>([]);
 
   // Zoom preservation on refresh
   const zoomStateRef = useRef<{ from: number; to: number } | null>(null);
@@ -147,6 +149,11 @@ export function HDLiveChart({
   const [fps, setFps] = useState<number>(60);
   const [ready, setReady] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
+
+  // Debounce buffer for WebSocket updates to prevent jitter
+  const wsUpdateBufferRef = useRef<Bar[]>([]);
+  const wsFlushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const WS_DEBOUNCE_MS = 250; // Batch updates every 250ms
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [chartReady, setChartReady] = useState(false);
   const waitingForChartRef = useRef(false);
@@ -229,6 +236,58 @@ export function HDLiveChart({
     // Series is created during chart initialization, just return it
     return candleSeriesRef.current;
   }, [chartReady]);
+
+  // Debounced flush function to batch WebSocket updates and reduce jitter
+  const flushWsBuffer = useCallback(() => {
+    if (wsUpdateBufferRef.current.length === 0) return;
+
+    const bufferedBars = wsUpdateBufferRef.current;
+    wsUpdateBufferRef.current = [];
+
+    setBars((prev) => {
+      const updated = [...prev];
+
+      // Process all buffered bars
+      for (const newBar of bufferedBars) {
+        const existingIndex = updated.findIndex((b) => b.time === newBar.time);
+        if (existingIndex >= 0) {
+          // Update existing bar
+          updated[existingIndex] = newBar;
+        } else {
+          // Insert new bar in sorted position (binary search for efficiency)
+          const insertIdx = updated.findIndex((b) => (b.time as number) > (newBar.time as number));
+          if (insertIdx === -1) {
+            updated.push(newBar);
+          } else {
+            updated.splice(insertIdx, 0, newBar);
+          }
+        }
+      }
+
+      return updated;
+    });
+
+    setIsConnected(true);
+    setDataSource("websocket");
+    setLastUpdate(Date.now());
+  }, []);
+
+  // Queue a bar update with debouncing
+  const queueBarUpdate = useCallback(
+    (newBar: Bar) => {
+      wsUpdateBufferRef.current.push(newBar);
+
+      // Clear existing timeout and set new one
+      if (wsFlushTimeoutRef.current) {
+        clearTimeout(wsFlushTimeoutRef.current);
+      }
+
+      wsFlushTimeoutRef.current = setTimeout(() => {
+        flushWsBuffer();
+      }, WS_DEBOUNCE_MS);
+    },
+    [flushWsBuffer]
+  );
 
   useEffect(() => {
     // Market holidays endpoint is unreliable; skip it entirely. Charts render fine without explicit gaps.
@@ -512,9 +571,12 @@ export function HDLiveChart({
 
       console.log("[HDLiveChart] Chart container mounted, initializing chart...");
 
+      // Use clientHeight when height is "100%", otherwise use the numeric value
+      const chartHeight = height === "100%" ? node.clientHeight : height;
+
       const chart = createChart(node, {
         width: node.clientWidth,
-        height,
+        height: chartHeight,
         layout: {
           background: { color: "transparent" }, // Use transparent to let CSS container bg show through
           textColor: "#9CA3AF",
@@ -691,14 +753,17 @@ export function HDLiveChart({
     return () => {
       if (chartRef.current) {
         console.log("[HDLiveChart] Cleaning up chart for ticker change");
-        levelSeriesRefs.current.forEach((series) => {
-          try {
-            chartRef.current?.removeSeries(series);
-          } catch (e) {
-            // Series might already be removed
-          }
-        });
-        levelSeriesRefs.current.clear();
+        // Clear price lines from candle series
+        if (candleSeriesRef.current && levelPriceLinesRef.current.length > 0) {
+          levelPriceLinesRef.current.forEach((priceLine) => {
+            try {
+              candleSeriesRef.current?.removePriceLine(priceLine);
+            } catch (e) {
+              // Price line might already be removed
+            }
+          });
+        }
+        levelPriceLinesRef.current = [];
         candleSeriesRef.current = null;
         volumeSeriesRef.current = null;
         emaSeriesRefs.current.clear();
@@ -977,22 +1042,8 @@ export function HDLiveChart({
               return;
             }
 
-            setBars((prev) => {
-              const updated = [...prev];
-              const existingIndex = updated.findIndex((b) => b.time === newBar.time);
-              if (existingIndex >= 0) {
-                // Update existing bar
-                updated[existingIndex] = newBar;
-              } else {
-                // Add new bar
-                updated.push(newBar);
-              }
-              return updated.sort((a, b) => (a.time as number) - (b.time as number));
-            });
-
-            setIsConnected(true);
-            setDataSource("websocket");
-            setLastUpdate(Date.now());
+            // Use debounced queue instead of direct setBars to reduce jitter
+            queueBarUpdate(newBar as Bar);
           }
         })
       : massive.subscribeAggregates([ticker], (message) => {
@@ -1019,51 +1070,79 @@ export function HDLiveChart({
               return;
             }
 
-            setBars((prev) => {
-              const updated = [...prev];
-              const existingIndex = updated.findIndex((b) => b.time === newBar.time);
-              if (existingIndex >= 0) {
-                updated[existingIndex] = newBar;
-              } else {
-                updated.push(newBar);
-              }
-              return updated.sort((a, b) => (a.time as number) - (b.time as number));
-            });
-
-            setIsConnected(true);
-            setDataSource("websocket");
-            setLastUpdate(Date.now());
+            // Use debounced queue instead of direct setBars to reduce jitter
+            queueBarUpdate(newBar as Bar);
           }
         });
 
     // REST fallback: if no data for 30 seconds, fetch historical
-    // Only check once per minute to avoid excessive polling
+    // Check staleness rather than empty bars to handle ENTERED state properly
     const fallbackInterval = setInterval(() => {
-      if (Date.now() - lastUpdate > 30000 && !document.hidden && bars.length === 0) {
+      const isStale = Date.now() - lastUpdate > 30000;
+      const needsData = bars.length === 0 || isStale;
+      if (needsData && !document.hidden) {
+        console.log(`[HDLiveChart] Fallback triggered - bars: ${bars.length}, stale: ${isStale}`);
         setIsConnected(false);
         setDataSource("rest");
         loadHistoricalBars();
       }
-    }, 60000); // Changed from 30s to 60s and only runs if no bars exist
+    }, 30000); // Check every 30s instead of 60s for better responsiveness
 
     return () => {
       unsubscribe();
       clearInterval(fallbackInterval);
+      // Clear any pending WebSocket buffer on cleanup
+      if (wsFlushTimeoutRef.current) {
+        clearTimeout(wsFlushTimeoutRef.current);
+      }
     };
-  }, [ticker, lastUpdate, loadHistoricalBars, currentTf]);
+  }, [ticker, lastUpdate, loadHistoricalBars, currentTf, queueBarUpdate, bars.length]);
 
   useEffect(() => {
-    if (!chartRef.current || levels.length === 0) return;
-
-    // Clear existing level series
-    levelSeriesRefs.current.forEach((series, key) => {
-      try {
-        chartRef.current?.removeSeries(series);
-      } catch (e) {
-        // Series might already be removed
-      }
+    console.log("[HDLiveChart] Levels effect triggered:", {
+      hasChartRef: !!chartRef.current,
+      chartReady,
+      hasCandleSeries: !!candleSeriesRef.current,
+      levelsCount: levels.length,
+      levels: levels.map((l) => ({ type: l.type, label: l.label, price: l.price })),
+      barsCount: bars.length,
+      ticker,
     });
-    levelSeriesRefs.current.clear();
+
+    // Must wait for chart AND candle series to be fully ready before adding levels
+    if (!chartRef.current || !chartReady || !candleSeriesRef.current) {
+      console.log(
+        "[HDLiveChart] Early return - no chart/series - chartRef:",
+        !!chartRef.current,
+        "chartReady:",
+        chartReady,
+        "candleSeries:",
+        !!candleSeriesRef.current
+      );
+      return;
+    }
+
+    if (levels.length === 0) {
+      console.log("[HDLiveChart] No levels to render, skipping");
+      return;
+    }
+
+    // Clear existing price lines from candle series
+    if (candleSeriesRef.current && levelPriceLinesRef.current.length > 0) {
+      console.log(
+        "[HDLiveChart] Clearing",
+        levelPriceLinesRef.current.length,
+        "existing price lines"
+      );
+      levelPriceLinesRef.current.forEach((priceLine) => {
+        try {
+          candleSeriesRef.current?.removePriceLine(priceLine);
+        } catch (e) {
+          // Price line might already be removed
+        }
+      });
+      levelPriceLinesRef.current = [];
+    }
 
     // Helper to get color and style for level type
     const getLevelStyle = (type: ChartLevel["type"]) => {
@@ -1094,6 +1173,13 @@ export function HDLiveChart({
       }
     };
 
+    // Get the candle series to attach price lines
+    const priceSeries = candleSeriesRef.current;
+    if (!priceSeries) {
+      console.warn("[HDLiveChart] No candle series available for levels");
+      return;
+    }
+
     // Sort levels by importance (entry/TP/SL first, then key levels)
     const sortedLevels = [...levels].sort((a, b) => {
       const importance: Record<string, number> = { ENTRY: 0, TP: 1, SL: 2 };
@@ -1102,23 +1188,13 @@ export function HDLiveChart({
       return aImportance - bImportance;
     });
 
-    // Create price line for each level
+    // Create price lines on the candle series (not separate line series)
+    // This ensures they're visible even without data
+    const createdLines: any[] = [];
     sortedLevels.forEach((level, index) => {
       const style = getLevelStyle(level.type);
-      const key = `${level.type}-${level.label}-${index}`;
 
       try {
-        const lineSeries = chartRef.current!.addLineSeries({
-          color: style.color,
-          lineWidth: style.width as any,
-          lineStyle: style.style as any,
-          title: `${level.label}`,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-
-        // Create a horizontal line by setting same price for all time points
-        // We'll use a single data point and rely on price line feature
         const priceLineOptions = {
           price: level.price,
           color: style.color,
@@ -1128,14 +1204,22 @@ export function HDLiveChart({
           title: level.label,
         };
 
-        lineSeries.createPriceLine(priceLineOptions);
-
-        levelSeriesRefs.current.set(key, lineSeries);
+        // Create price line directly on the candle series
+        const priceLine = priceSeries.createPriceLine(priceLineOptions);
+        createdLines.push(priceLine);
+        console.log(`[HDLiveChart] Created level line: ${level.label} @ $${level.price}`);
       } catch (error) {
         console.error(`[HDLiveChart] Failed to create level line for ${level.label}:`, error);
       }
     });
-  }, [levels, ticker]);
+    // Track for cleanup
+    levelPriceLinesRef.current = createdLines;
+    console.log(
+      "[HDLiveChart] Finished creating",
+      createdLines.length,
+      "level lines on candle series"
+    );
+  }, [levels, ticker, chartReady, bars.length]);
 
   // Effect: Render session markers (pre-market, regular, after-hours background zones)
   useEffect(() => {
@@ -1187,10 +1271,20 @@ export function HDLiveChart({
 
   // Effect: Add auto-calculated key levels (previous day/week high/low)
   useEffect(() => {
-    if (!chartRef.current || bars.length === 0) return;
+    console.log("[HDLiveChart] Auto-key-levels effect:", {
+      hasChartRef: !!chartRef.current,
+      barsLength: bars.length,
+      hasCandleSeries: !!candleSeriesRef.current,
+    });
+
+    if (!chartRef.current || bars.length === 0) {
+      console.log("[HDLiveChart] Auto-key-levels early return");
+      return;
+    }
 
     try {
       const keyLevels = calculateKeyLevels(bars);
+      console.log("[HDLiveChart] Auto-calculated key levels:", keyLevels.length, keyLevels);
 
       if (keyLevels.length > 0) {
         // Add key levels as price lines to the first series
@@ -1206,10 +1300,13 @@ export function HDLiveChart({
                 axisLabelVisible: true,
                 title: level.label,
               });
+              console.log(`[HDLiveChart] Created auto-key-level: ${level.label} @ $${level.price}`);
             } catch (e) {
               console.debug(`[HDLiveChart] Could not add key level ${level.label}:`, e);
             }
           });
+        } else {
+          console.log("[HDLiveChart] No candleSeries for auto-key-levels");
         }
       }
     } catch (e) {
@@ -1305,12 +1402,15 @@ export function HDLiveChart({
     loadHistoricalBars();
   }, [loadHistoricalBars]);
 
+  // Compute height style - handle both number and "100%"
+  const heightStyle = height === "100%" ? "100%" : `${height}px`;
+
   if (!ready) {
     const hasFailures = failedFetchesRef.current.size > 0;
     return (
       <div
         className="flex flex-col items-center justify-center gap-2 bg-[var(--surface-2)] rounded-[var(--radius)] border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] text-xs px-4 text-center"
-        style={{ height: `${height}px` }}
+        style={{ height: heightStyle }}
       >
         {!hasFailures && (
           <span className="animate-pulse">
@@ -1337,7 +1437,12 @@ export function HDLiveChart({
 
   return (
     <div
-      className={`bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden ${className} ${isTransitioning ? "animate-chart-transition" : ""}`}
+      className={cn(
+        "bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border-hairline)] overflow-hidden",
+        height === "100%" && "h-full flex flex-col",
+        isTransitioning && "animate-chart-transition",
+        className
+      )}
       style={{
         opacity,
         transition: "opacity 200ms ease-out",
@@ -1439,7 +1544,13 @@ export function HDLiveChart({
       {/* Chart Canvas */}
       <div
         ref={setChartContainerRef}
-        style={{ position: "relative", width: "100%", height: `${height}px` }}
+        className="flex-1"
+        style={{
+          position: "relative",
+          width: "100%",
+          height: heightStyle,
+          minHeight: height === "100%" ? "200px" : undefined,
+        }}
       />
     </div>
   );

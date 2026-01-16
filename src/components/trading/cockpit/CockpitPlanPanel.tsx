@@ -437,7 +437,137 @@ function AnchorReasonRow({ label, anchor, color }: AnchorReasonRowProps) {
 }
 
 // ============================================================================
-// Management Summary (ENTERED)
+// Position Health P&L Bar
+// ============================================================================
+
+interface PnLProgressBarProps {
+  entryPrice: number;
+  currentPrice: number;
+  stopLoss: number | null;
+  targetPrice: number | null;
+}
+
+function PnLProgressBar({ entryPrice, currentPrice, stopLoss, targetPrice }: PnLProgressBarProps) {
+  // Calculate positions on the bar (0-100)
+  // Bar goes from stop loss (left/0) to target (right/100), with entry in the middle
+  if (!stopLoss || !targetPrice || entryPrice === 0) {
+    return null;
+  }
+
+  const totalRange = targetPrice - stopLoss;
+  if (totalRange <= 0) return null;
+
+  // Calculate positions as percentages of total range
+  const entryPosition = ((entryPrice - stopLoss) / totalRange) * 100;
+  const currentPosition = ((currentPrice - stopLoss) / totalRange) * 100;
+  const clampedCurrent = Math.max(0, Math.min(100, currentPosition));
+
+  // Determine color based on position relative to entry
+  const isProfit = currentPrice >= entryPrice;
+  const barColor = isProfit ? "bg-emerald-500" : "bg-red-500";
+
+  return (
+    <div className="relative">
+      {/* Background bar with zones */}
+      <div className="h-3 rounded-full overflow-hidden flex">
+        {/* Loss zone (red) */}
+        <div className="bg-red-500/20" style={{ width: `${entryPosition}%` }} />
+        {/* Profit zone (green) */}
+        <div className="bg-emerald-500/20 flex-1" />
+      </div>
+
+      {/* Current position indicator */}
+      <div
+        className={cn("absolute top-0 h-3 rounded-full transition-all duration-500", barColor)}
+        style={{
+          left: isProfit ? `${entryPosition}%` : `${clampedCurrent}%`,
+          width: isProfit
+            ? `${clampedCurrent - entryPosition}%`
+            : `${entryPosition - clampedCurrent}%`,
+        }}
+      />
+
+      {/* Entry marker */}
+      <div className="absolute top-0 w-0.5 h-3 bg-white/70" style={{ left: `${entryPosition}%` }} />
+
+      {/* Labels */}
+      <div className="flex justify-between mt-1 text-[9px] text-[var(--text-faint)]">
+        <span className="text-red-400">SL ${stopLoss.toFixed(2)}</span>
+        <span className="text-[var(--text-muted)]">Entry</span>
+        <span className="text-emerald-400">TP ${targetPrice.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// R-Multiple Dial
+// ============================================================================
+
+interface RMultipleDialProps {
+  current: number | null;
+  target: number;
+}
+
+function RMultipleDial({ current, target }: RMultipleDialProps) {
+  if (current === null) return null;
+
+  // Arc goes from 0 to target R (default 2.0)
+  const radius = 32;
+  const strokeWidth = 6;
+  const circumference = Math.PI * radius; // Half circle
+  const progress = Math.min(1, Math.max(-0.5, current / target)); // Clamp between -0.5 and 1
+  const offset = circumference - progress * circumference;
+
+  // Color based on R-multiple value
+  const getColor = () => {
+    if (current >= 1) return "#10B981"; // emerald
+    if (current >= 0.5) return "#F59E0B"; // amber
+    if (current >= 0) return "#6B7280"; // gray
+    return "#EF4444"; // red
+  };
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="80" height="48" className="overflow-visible">
+        {/* Background arc */}
+        <path
+          d="M 8 44 A 32 32 0 0 1 72 44"
+          fill="none"
+          stroke="var(--surface-3)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+        {/* Progress arc */}
+        <path
+          d="M 8 44 A 32 32 0 0 1 72 44"
+          fill="none"
+          stroke={getColor()}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-all duration-700"
+        />
+        {/* Current R value */}
+        <text
+          x="40"
+          y="38"
+          textAnchor="middle"
+          className="text-lg font-bold fill-[var(--text-high)]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {current >= 0 ? "+" : ""}
+          {current.toFixed(1)}R
+        </text>
+      </svg>
+      <div className="text-[9px] text-[var(--text-faint)] -mt-1">Target: {target.toFixed(1)}R</div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Management Summary (ENTERED) - V2 with Position Health
 // ============================================================================
 
 function ManagementSummary({ trade, className }: { trade: Trade; className?: string }) {
@@ -454,16 +584,22 @@ function ManagementSummary({ trade, className }: { trade: Trade; className?: str
 
   const pnlStyle = getPnlStyle(liveModel.pnlPercent);
 
+  // Calculate target R from trade levels
+  const targetR =
+    liveModel.stopLoss && liveModel.entryPrice && liveModel.targetPrice
+      ? (liveModel.targetPrice - liveModel.entryPrice) / (liveModel.entryPrice - liveModel.stopLoss)
+      : 2.0;
+
   return (
     <div
       className={cn("h-full flex flex-col p-3 overflow-hidden", className)}
       data-testid="cockpit-management-summary"
     >
       {/* Header */}
-      <div className="flex items-center justify-between flex-shrink-0 mb-2">
+      <div className="flex items-center justify-between flex-shrink-0 mb-3">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-[var(--accent-positive)]" />
-          <span className="text-sm font-semibold text-[var(--text-high)]">Position Summary</span>
+          <span className="text-sm font-semibold text-[var(--text-high)]">Position Health</span>
         </div>
         <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
           <Clock className="w-3 h-3" />
@@ -471,99 +607,125 @@ function ManagementSummary({ trade, className }: { trade: Trade; className?: str
         </div>
       </div>
 
-      {/* P&L Display */}
-      <div className="flex items-center justify-between bg-[var(--surface-2)] rounded p-3 mb-3 flex-shrink-0">
-        <div>
-          <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide">
-            Unrealized P&L
+      {/* P&L + R-Multiple Row */}
+      <div className="flex items-stretch gap-3 mb-3 flex-shrink-0">
+        {/* P&L Display */}
+        <div className="flex-1 bg-[var(--surface-2)] rounded-lg p-3">
+          <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-1">
+            P&L
           </div>
-          <div className={cn("text-2xl font-bold tabular-nums", pnlStyle.className)}>
+          <div className={cn("text-2xl font-bold tabular-nums leading-none", pnlStyle.className)}>
             {liveModel.pnlPercent >= 0 ? "+" : ""}
             {liveModel.pnlPercent.toFixed(1)}%
           </div>
-        </div>
-        <div className="text-right">
-          <div className={cn("text-lg font-bold tabular-nums", pnlStyle.className)}>
+          <div className={cn("text-sm font-medium tabular-nums mt-1", pnlStyle.className)}>
             {liveModel.pnlDollars >= 0 ? "+" : ""}${Math.abs(liveModel.pnlDollars).toFixed(0)}
           </div>
-          {liveModel.rMultiple !== null && (
-            <div
-              className={cn(
-                "text-sm font-medium tabular-nums",
-                liveModel.rMultiple >= 0
-                  ? "text-[var(--accent-positive)]"
-                  : "text-[var(--accent-negative)]"
-              )}
-            >
-              {liveModel.rMultiple >= 0 ? "+" : ""}
-              {liveModel.rMultiple.toFixed(2)}R
-            </div>
-          )}
+        </div>
+
+        {/* R-Multiple Dial */}
+        <div className="flex-1 bg-[var(--surface-2)] rounded-lg p-2 flex items-center justify-center">
+          <RMultipleDial current={liveModel.rMultiple} target={targetR} />
         </div>
       </div>
 
-      {/* Progress + Distances */}
-      <div className="space-y-2 flex-shrink-0">
-        {/* Progress to TP */}
-        <div>
-          <div className="flex justify-between text-[10px] text-[var(--text-faint)] mb-1">
-            <span>Progress to Target</span>
-            <span className="tabular-nums">{liveModel.progressToTarget.toFixed(0)}%</span>
-          </div>
-          <div className="h-2 bg-[var(--surface-3)] rounded-full overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all duration-300",
-                liveModel.progressToTarget >= 100
-                  ? "bg-[var(--accent-positive)]"
-                  : liveModel.progressToTarget >= 50
-                    ? "bg-[var(--brand-primary)]"
-                    : "bg-[var(--text-muted)]"
-              )}
-              style={{ width: `${Math.min(100, Math.max(0, liveModel.progressToTarget))}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Distance to Stop / Target */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="flex items-center justify-between bg-[var(--surface-2)] rounded p-2">
-            <div className="flex items-center gap-1 text-[var(--accent-negative)]">
-              <Shield className="w-3 h-3" />
-              <span>Stop</span>
-            </div>
-            <span className="tabular-nums text-[var(--text-muted)]">
-              ${liveModel.stopLoss?.toFixed(2) ?? "--"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between bg-[var(--surface-2)] rounded p-2">
-            <div className="flex items-center gap-1 text-[var(--accent-positive)]">
-              <Target className="w-3 h-3" />
-              <span>Target</span>
-            </div>
-            <span className="tabular-nums text-[var(--text-muted)]">
-              ${liveModel.targetPrice?.toFixed(2) ?? "--"}
-            </span>
-          </div>
-        </div>
+      {/* P&L Progress Bar */}
+      <div className="flex-shrink-0 mb-3">
+        <PnLProgressBar
+          entryPrice={liveModel.entryPrice}
+          currentPrice={liveModel.effectiveMid}
+          stopLoss={liveModel.stopLoss}
+          targetPrice={liveModel.targetPrice}
+        />
       </div>
 
-      {/* Entry vs Current */}
-      <div className="mt-auto pt-2 border-t border-[var(--border-hairline)] text-xs text-[var(--text-muted)]">
-        <div className="flex justify-between">
-          <span>
-            Entry:{" "}
-            <span className="text-[var(--text-high)] font-medium">
+      {/* Trade Levels Card */}
+      <div className="flex-1 min-h-0 bg-[var(--surface-2)] rounded-lg p-3">
+        <div className="text-[9px] text-[var(--text-faint)] uppercase tracking-wide mb-2">
+          Trade Levels
+        </div>
+        <div className="space-y-2">
+          {/* Entry */}
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2">
+              <Crosshair className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+              <span className="text-[var(--text-muted)]">Entry</span>
+            </div>
+            <span className="font-semibold tabular-nums text-[var(--text-high)]">
               ${liveModel.entryPrice.toFixed(2)}
             </span>
-          </span>
-          <span>
-            Current:{" "}
-            <span className={cn("font-medium", pnlStyle.className)}>
-              ${liveModel.effectiveMid.toFixed(2)}
+          </div>
+
+          {/* Stop Loss */}
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-red-400" />
+              <span className="text-[var(--text-muted)]">Stop</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold tabular-nums text-[var(--text-high)]">
+                ${liveModel.stopLoss?.toFixed(2) ?? "--"}
+              </span>
+              {liveModel.stopLoss && (
+                <span className="text-[10px] text-red-400 tabular-nums">
+                  {(
+                    ((liveModel.stopLoss - liveModel.entryPrice) / liveModel.entryPrice) *
+                    100
+                  ).toFixed(1)}
+                  %
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Target */}
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2">
+              <Target className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[var(--text-muted)]">Target</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold tabular-nums text-[var(--text-high)]">
+                ${liveModel.targetPrice?.toFixed(2) ?? "--"}
+              </span>
+              {liveModel.targetPrice && (
+                <span className="text-[10px] text-emerald-400 tabular-nums">
+                  +
+                  {(
+                    ((liveModel.targetPrice - liveModel.entryPrice) / liveModel.entryPrice) *
+                    100
+                  ).toFixed(1)}
+                  %
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* R:R */}
+          <div className="flex items-center justify-between text-sm pt-2 border-t border-[var(--border-hairline)]">
+            <span className="text-[var(--text-muted)]">Risk:Reward</span>
+            <span
+              className={cn(
+                "font-bold tabular-nums",
+                targetR >= 2
+                  ? "text-emerald-400"
+                  : targetR >= 1.5
+                    ? "text-[var(--brand-primary)]"
+                    : "text-[var(--text-muted)]"
+              )}
+            >
+              1:{targetR.toFixed(1)}
             </span>
-          </span>
+          </div>
         </div>
+      </div>
+
+      {/* Current Price Footer */}
+      <div className="mt-2 pt-2 border-t border-[var(--border-hairline)] flex justify-between text-xs text-[var(--text-muted)]">
+        <span>Current</span>
+        <span className={cn("font-semibold", pnlStyle.className)}>
+          ${liveModel.effectiveMid.toFixed(2)}
+        </span>
       </div>
     </div>
   );

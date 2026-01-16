@@ -16,7 +16,7 @@ import { HDLiveChartContextAware } from "../hd/charts/HDLiveChartContextAware";
 import { HDLoadedTradeCard } from "../hd/cards/HDLoadedTradeCard";
 import { useKeyLevels } from "../../hooks/useKeyLevels";
 import { buildChartLevelsForTrade } from "../../lib/riskEngine/chartLevels";
-import { useSymbolData } from "../../stores/marketDataStore";
+import { useSymbolData, useMarketDataStore } from "../../stores/marketDataStore";
 import { cn } from "../../lib/utils";
 import {
   fmtPrice,
@@ -33,8 +33,11 @@ import {
   CockpitPlanPanel,
   CockpitContractPanel,
   CockpitActionsBar,
+  CockpitConfluencePanel,
+  CockpitRightPanel,
   type CockpitViewState,
 } from "./cockpit";
+import { useFlowContext } from "../../hooks/useFlowContext";
 import {
   Zap,
   Share2,
@@ -48,6 +51,8 @@ import {
 } from "lucide-react";
 import type { DiscordChannel, Challenge } from "../../types";
 import { FlowIntelligencePanel } from "../hd/terminal/FlowIntelligencePanel";
+import { HDRiskRewardHero } from "../hd/signals/HDRiskRewardHero";
+import { HDStaleBanner, useStaleLevel } from "../hd/common/HDStaleBanner";
 
 interface NowPanelTradeProps {
   trade: Trade;
@@ -62,6 +67,8 @@ interface NowPanelTradeProps {
   onChannelsChange?: (channels: string[]) => void;
   onChallengesChange?: (challenges: string[]) => void;
   onEnterAndAlert?: (channelIds: string[], challengeIds: string[]) => void;
+  /** Open alert composer for entering with alert */
+  onOpenEnterAlert?: () => void;
   /** Cancel/unload the trade */
   onCancel?: () => void;
 }
@@ -78,6 +85,7 @@ export function NowPanelTrade({
   onChannelsChange,
   onChallengesChange,
   onEnterAndAlert,
+  onOpenEnterAlert,
   onCancel,
 }: NowPanelTradeProps) {
   // Get current price
@@ -93,8 +101,140 @@ export function NowPanelTrade({
     [trade, keyLevels]
   );
 
+  // Determine underlying data freshness
+  const symbolData = useMarketDataStore((state) => state.symbols[trade.ticker]);
+  const refreshStaleSymbols = useMarketDataStore((state) => state.refreshStaleSymbols);
+  const lastUpdateTs = symbolData?.lastUpdated || null;
+  const staleLevel = useStaleLevel(lastUpdateTs);
+
+  // Handle retry for stale data
+  const handleRetryData = useCallback(() => {
+    if (refreshStaleSymbols) {
+      refreshStaleSymbols();
+    }
+  }, [refreshStaleSymbols]);
+
+  // Render stale banner if needed
+  const staleBanner = useMemo(() => {
+    if (staleLevel === "live" || staleLevel === "delayed") return null;
+    return (
+      <HDStaleBanner
+        lastUpdateTime={lastUpdateTs}
+        staleLevel={staleLevel}
+        dataSource={`${trade.ticker} data`}
+        onRetry={handleRetryData}
+        onDismiss={() => {}}
+      />
+    );
+  }, [staleLevel, lastUpdateTs, trade.ticker, handleRetryData]);
+
+  // Get R:R metrics for hero display
+  const rrMetrics = useMemo(() => {
+    const entry = trade.entryPrice || trade.contract?.mid || 0;
+    const stop = trade.stopLoss || entry * 0.85;
+    const target = trade.targetPrice || entry * 1.3;
+    const rr = entry > stop ? (target - entry) / (entry - stop) : 0;
+    return { entry, stop, target, rr };
+  }, [trade]);
+
+  // Get flow context for the symbol
+  const flowContext = useFlowContext(trade.ticker);
+
+  // Determine cockpit view state
+  const viewState: CockpitViewState =
+    tradeState === "LOADED" ? "loaded" : tradeState === "EXITED" ? "exited" : "plan";
+
+  // For LOADED state, use CockpitLayout with unified right panel
+  if (tradeState === "LOADED") {
+    return (
+      <CockpitLayout
+        viewState="loaded"
+        symbol={trade.ticker}
+        trade={trade}
+        contract={trade.contract}
+        activeTicker={activeTicker}
+        keyLevels={keyLevels}
+        staleBanner={staleBanner}
+      >
+        {{
+          header: (
+            <CockpitHeader
+              viewState="loaded"
+              symbol={trade.ticker}
+              contract={trade.contract}
+              activeTicker={activeTicker}
+              underlyingPrice={currentPrice}
+              underlyingChange={activeTicker?.changePercent}
+              contractBid={trade.contract?.bid}
+              contractAsk={trade.contract?.ask}
+              contractMid={trade.contract?.mid}
+              lastUpdateTime={lastUpdateTs ? new Date(lastUpdateTs) : null}
+              isStale={staleLevel === "stale" || staleLevel === "critical"}
+            />
+          ),
+          chart: (
+            <HDLiveChartContextAware
+              ticker={trade.ticker}
+              currentTrade={trade}
+              tradeState={tradeState}
+              activeTicker={activeTicker}
+              hasLoadedContract={!!trade.contract}
+              levels={chartLevels}
+              keyLevels={keyLevels || undefined}
+            />
+          ),
+          confluence: (
+            <CockpitConfluencePanel
+              symbol={trade.ticker}
+              keyLevels={keyLevels}
+              currentPrice={currentPrice}
+            />
+          ),
+          plan: (
+            <CockpitRightPanel
+              viewState="loaded"
+              symbol={trade.ticker}
+              trade={trade}
+              contract={trade.contract}
+              keyLevels={keyLevels}
+              currentPrice={currentPrice}
+              underlyingPrice={currentPrice}
+              lastQuoteTime={lastUpdateTs ? new Date(lastUpdateTs) : null}
+              flowContext={flowContext}
+            />
+          ),
+          contractPanel: null,
+          actions: (
+            <CockpitActionsBar
+              viewState="loaded"
+              trade={trade}
+              contract={trade.contract}
+              hasDiscordChannels={channels.length > 0}
+              onEnterTrade={(sendAlert) => {
+                if (sendAlert && onOpenEnterAlert) {
+                  // Open alert composer to let user customize the alert message
+                  onOpenEnterAlert();
+                } else if (sendAlert) {
+                  // Fallback: enter with selected channels if no alert composer handler
+                  onEnterAndAlert?.(selectedChannels, selectedChallenges);
+                } else {
+                  // Enter without alert
+                  onEnterAndAlert?.([], selectedChallenges);
+                }
+              }}
+            />
+          ),
+        }}
+      </CockpitLayout>
+    );
+  }
+
+  // For other states, use the original layout
   return (
     <div className="h-full flex flex-col overflow-hidden min-h-0 animate-crossfade">
+      {/* Stale Banner */}
+      {staleBanner}
+
       {/* Chart Section - Larger for better visualization */}
       <div className="flex-shrink-0 h-[280px] lg:h-[320px] border-b border-[var(--border-hairline)]">
         <HDLiveChartContextAware
@@ -120,24 +260,104 @@ export function NowPanelTrade({
         {tradeState === "WATCHING" && (
           <TradePreviewCard trade={trade} currentPrice={currentPrice} />
         )}
-        {tradeState === "LOADED" && (
-          <LoadedTradeSection
-            trade={trade}
-            currentPrice={currentPrice}
-            underlyingChange={activeTicker?.changePercent}
-            channels={channels}
-            challenges={challenges}
-            selectedChannels={selectedChannels}
-            selectedChallenges={selectedChallenges}
-            onChannelsChange={onChannelsChange}
-            onChallengesChange={onChallengesChange}
-            onEnterAndAlert={onEnterAndAlert}
-            onCancel={onCancel}
-          />
-        )}
         {/* Note: ENTERED state routes to NowPanelManage - handled in NowPanel.tsx */}
         {tradeState === "EXITED" && <TradeRecap trade={trade} />}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Alert Settings Component (for LOADED state)
+// ============================================================================
+
+interface LoadedAlertSettingsProps {
+  channels: DiscordChannel[];
+  challenges: Challenge[];
+  selectedChannels: string[];
+  selectedChallenges: string[];
+  onChannelsChange?: (channels: string[]) => void;
+  onChallengesChange?: (challenges: string[]) => void;
+}
+
+function LoadedAlertSettings({
+  channels,
+  challenges,
+  selectedChannels,
+  selectedChallenges,
+  onChannelsChange,
+  onChallengesChange,
+}: LoadedAlertSettingsProps) {
+  const toggleChannel = useCallback(
+    (channelId: string) => {
+      if (!onChannelsChange) return;
+      const newChannels = selectedChannels.includes(channelId)
+        ? selectedChannels.filter((id) => id !== channelId)
+        : [...selectedChannels, channelId];
+      onChannelsChange(newChannels);
+    },
+    [selectedChannels, onChannelsChange]
+  );
+
+  const toggleChallenge = useCallback(
+    (challengeId: string) => {
+      if (!onChallengesChange) return;
+      const newChallenges = selectedChallenges.includes(challengeId)
+        ? selectedChallenges.filter((id) => id !== challengeId)
+        : [...selectedChallenges, challengeId];
+      onChallengesChange(newChallenges);
+    },
+    [selectedChallenges, onChallengesChange]
+  );
+
+  return (
+    <div className="p-3 rounded-lg bg-[var(--surface-2)] space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <Bell className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+        <span className="text-[10px] font-medium text-[var(--text-muted)] uppercase">
+          Alert on Enter
+        </span>
+      </div>
+
+      {/* Channels */}
+      {channels.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {channels.map((channel) => (
+            <button
+              key={channel.id}
+              onClick={() => toggleChannel(channel.id)}
+              className={cn(
+                "px-2 py-1 rounded text-[10px] font-medium transition-all",
+                selectedChannels.includes(channel.id)
+                  ? "bg-[var(--brand-primary)] text-black"
+                  : "bg-[var(--surface-3)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]/80"
+              )}
+            >
+              #{channel.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Challenges */}
+      {challenges.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {challenges.map((challenge) => (
+            <button
+              key={challenge.id}
+              onClick={() => toggleChallenge(challenge.id)}
+              className={cn(
+                "px-2 py-1 rounded text-[10px] font-medium transition-all",
+                selectedChallenges.includes(challenge.id)
+                  ? "bg-amber-500 text-black"
+                  : "bg-[var(--surface-3)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]/80"
+              )}
+            >
+              {challenge.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
