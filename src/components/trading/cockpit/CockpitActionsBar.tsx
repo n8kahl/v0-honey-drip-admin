@@ -185,7 +185,7 @@ function PlanActions({
         </label>
       )}
 
-      {/* Load Plan Button */}
+      {/* Load Plan Button - Direct action, no modal */}
       <button
         onClick={() => onLoadPlan?.(sendAlert)}
         disabled={!hasContract || !onLoadPlan}
@@ -197,7 +197,7 @@ function PlanActions({
         )}
       >
         <Target className="w-4 h-4" />
-        Load Plan
+        {sendAlert ? "Load and Alert" : "Load Plan"}
         <ChevronRight className="w-4 h-4 ml-1" />
       </button>
     </div>

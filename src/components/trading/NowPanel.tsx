@@ -168,6 +168,10 @@ export function NowPanel({
   const manager = useTradeActionManager(currentTrade, activeTicker?.symbol || "");
 
   // ============================================================================
+  // Alert Composer State
+  // ============================================================================
+
+  // ============================================================================
   // Derived State
   // ============================================================================
 
@@ -426,7 +430,7 @@ export function NowPanel({
       <div
         className={`flex-1 flex flex-col overflow-hidden ${showAlert && alertTrade ? "lg:pr-0" : ""}`}
       >
-        {/* Floating Alert Button - Quick access to Discord alerts (hide when full composer is showing) */}
+        {/* Floating Alert Button - Quick access to Discord alerts (hide when composer is showing) */}
         {viewState !== "empty" && !showAlert && (
           <div className="absolute top-2 right-2 z-30">
             {channels.length > 0 ? (
@@ -483,7 +487,7 @@ export function NowPanel({
         )}
       </div>
 
-      {/* Full Alert Composer Sidebar - Animated slide-in from right */}
+      {/* Alert Composer Sidebar - Shows when explicitly triggered */}
       <AnimatePresence mode="wait">
         {showAlert && alertTrade && (
           <motion.div
@@ -493,8 +497,8 @@ export function NowPanel({
               width: 320,
               opacity: 1,
               transition: {
-                width: { duration: 0.25, ease: "easeOut" },
-                opacity: { duration: 0.2, delay: 0.1 },
+                width: { duration: 0.2, ease: "easeOut" },
+                opacity: { duration: 0.15, delay: 0.05 },
               },
             }}
             exit={{
@@ -502,12 +506,12 @@ export function NowPanel({
               opacity: 0,
               transition: {
                 opacity: { duration: 0.1 },
-                width: { duration: 0.2, delay: 0.05, ease: "easeIn" },
+                width: { duration: 0.15, delay: 0.05, ease: "easeIn" },
               },
             }}
             className="hidden lg:flex lg:flex-col lg:flex-shrink-0 border-l border-[var(--border-hairline)] bg-[var(--surface-1)] overflow-hidden"
           >
-            <div className="w-80 h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto w-[320px]">
               <HDAlertComposer
                 trade={alertTrade}
                 alertType={alertType}

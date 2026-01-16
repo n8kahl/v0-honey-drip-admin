@@ -20,6 +20,7 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Bell,
 } from "lucide-react";
 import { HDCalculatorModal } from "../forms/HDCalculatorModal";
 import { HDTradeShareCard } from "../cards/HDTradeShareCard";
@@ -144,6 +145,8 @@ interface HDAlertComposerProps {
   alertOptions?: { updateKind?: "trim" | "generic" | "sl" | "take-profit"; trimPercent?: number };
   availableChannels: DiscordChannel[];
   challenges: Challenge[];
+  /** When true, shows compact collapsed view instead of full composer */
+  collapsed?: boolean;
   onSend: (
     channels: string[],
     challengeIds: string[],
@@ -172,6 +175,7 @@ export function HDAlertComposer({
   alertOptions,
   availableChannels,
   challenges,
+  collapsed = false,
   onSend,
   onEnterAndAlert,
   onCancel,
@@ -182,7 +186,12 @@ export function HDAlertComposer({
   sendStatus = "idle",
   sendResults,
 }: HDAlertComposerProps) {
-  console.log("📝 HDAlertComposer rendered:", { alertType, alertOptions, trade: trade.ticker });
+  console.log("📝 HDAlertComposer rendered:", {
+    alertType,
+    alertOptions,
+    trade: trade.ticker,
+    collapsed,
+  });
 
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedChallenges, setSelectedChallenges] = useState<string[]>([]);
@@ -740,6 +749,88 @@ export function HDAlertComposer({
     validationErrors.length === 0 ||
     (validationErrors.length === 1 && validationErrors[0].includes("Discord channel"));
 
+  // Get the primary action button text for collapsed view
+  const getActionButtonText = () => {
+    if (alertType === "load") return "Load & Alert";
+    if (alertType === "enter") return "Enter Trade";
+    return "Send Alert";
+  };
+
+  // ============================================================================
+  // Collapsed View - Compact summary shown by default, expands on hover
+  // ============================================================================
+  if (collapsed) {
+    return (
+      <div className={cn("h-full flex flex-col bg-[var(--surface-2)] p-3", className)}>
+        {/* Compact Header */}
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-6 h-6 rounded-full bg-[var(--brand-primary)]/20 flex items-center justify-center">
+            <Bell className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="text-xs font-semibold text-[var(--text-high)]">Alert</span>
+            <span className="text-[10px] text-[var(--text-faint)] ml-1">
+              ({selectedChannels.length})
+            </span>
+          </div>
+        </div>
+
+        {/* Channel Summary */}
+        <div className="text-[10px] text-[var(--text-muted)] mb-2 line-clamp-2">
+          {selectedChannels.length > 0 ? (
+            <>
+              {availableChannels
+                .filter((ch) => selectedChannels.includes(ch.id))
+                .map((ch) => `#${ch.name}`)
+                .slice(0, 2)
+                .join(", ")}
+              {selectedChannels.length > 2 && ` +${selectedChannels.length - 2}`}
+            </>
+          ) : (
+            <span className="text-amber-400">Select channel</span>
+          )}
+        </div>
+
+        {/* Quick Action Button */}
+        <button
+          onClick={() => {
+            if (selectedChannels.length > 0) {
+              if (alertType === "enter" && onEnterAndAlert) {
+                onEnterAndAlert(selectedChannels, selectedChallenges, comment, undefined);
+              } else {
+                onSend(selectedChannels, selectedChallenges, comment, undefined);
+              }
+            }
+          }}
+          disabled={selectedChannels.length === 0 || sendStatus === "pending"}
+          className={cn(
+            "w-full py-2 px-3 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5",
+            selectedChannels.length === 0
+              ? "bg-[var(--surface-3)] text-[var(--text-faint)] cursor-not-allowed"
+              : alertType === "enter"
+                ? "bg-green-500 hover:bg-green-600 text-white"
+                : "bg-[var(--brand-primary)] hover:bg-[var(--brand-primary-hover)] text-white"
+          )}
+        >
+          {sendStatus === "pending" ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <>
+              {getActionButtonText()}
+              <ChevronDown className="w-3 h-3 rotate-[-90deg]" />
+            </>
+          )}
+        </button>
+
+        {/* Hover hint */}
+        <p className="text-[9px] text-[var(--text-faint)] text-center mt-2">Hover to configure</p>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // Full View - Expanded composer with all options
+  // ============================================================================
   return (
     <div className="h-full flex flex-col bg-[var(--surface-2)] overflow-hidden">
       {/* Header */}
